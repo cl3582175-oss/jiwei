@@ -10,6 +10,7 @@ import { countWords, deriveDoc, diffBlocks, type EmbedsData } from '../lib/deriv
 import { deviceId } from './device'
 import { recordActivity } from './stats'
 import { emit } from '../events'
+import { requestIndex } from './ai/indexer'
 import { DOC_FIELD, EMBEDS_FIELD, type DocJSON, type Revision, type RevisionInfo } from '@shared/types'
 
 // 笔记正文的持久化：
@@ -251,6 +252,7 @@ export function derive(noteId: string): void {
     maybeAutoRevision(noteId, state, note.title, countWords(d.plainText))
   }
   emit('notes:changed', { ids: [noteId] })
+  if (textChanged) requestIndex()
 }
 
 function maybeAutoRevision(noteId: string, state: Uint8Array, title: string, wordCount: number): void {

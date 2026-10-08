@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Dialog as D } from 'radix-ui'
 import {
@@ -20,7 +20,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Input, Tip } from '@/components/ui/primitives'
 import { prompt } from '@/components/ui/confirm'
-import { Library, Plus } from 'lucide-react'
+import { Library, Plus, Sparkles } from 'lucide-react'
+import { AiSettingsTab } from '../ai/AiSettings'
 import type { Language, Palette as PaletteId, ThemeMode } from '@shared/types'
 import { useAppInfo, useSettings, useUpdateSettings } from '@/lib/queries'
 import { useApp } from '@/store/app'
@@ -28,7 +29,7 @@ import { api, cn, formatDateTime } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Logo } from '@/components/Logo'
 
-type Tab = 'general' | 'appearance' | 'data' | 'about'
+type Tab = 'general' | 'ai' | 'appearance' | 'data' | 'about'
 
 const PALETTES: PaletteId[] = ['qinglu', 'celadon', 'dunhuang']
 
@@ -267,16 +268,21 @@ function DataTab() {
 
 export function SettingsDialog() {
   const { t } = useTranslation()
-  const { settingsOpen, setSettingsOpen } = useApp()
+  const { settingsOpen, setSettingsOpen, settingsTab } = useApp()
   const { data: s } = useSettings()
   const { data: info } = useAppInfo()
   const update = useUpdateSettings()
   const [tab, setTab] = useState<Tab>('general')
+  // 从其他地方跳转到指定标签页（如对话页“去设置模型”）
+  useEffect(() => {
+    if (settingsOpen && settingsTab) setTab(settingsTab as Tab)
+  }, [settingsOpen, settingsTab])
   if (!s) return null
   const dark = document.documentElement.dataset.theme === 'dark'
 
   const tabs: { id: Tab; icon: ReactNode }[] = [
     { id: 'general', icon: <Settings2 /> },
+    { id: 'ai', icon: <Sparkles /> },
     { id: 'appearance', icon: <Palette /> },
     { id: 'data', icon: <Database /> },
     { id: 'about', icon: <Info /> }
@@ -287,7 +293,7 @@ export function SettingsDialog() {
       <D.Portal>
         <D.Overlay className="fixed inset-0 z-40 bg-black/25 backdrop-blur-[2px] data-[state=open]:animate-[fade-in_160ms_ease-out]" />
         {/* 尺寸 760 × 470 ≈ φ */}
-        <D.Content className="fixed top-1/2 left-1/2 z-50 flex h-[470px] w-[min(94vw,760px)] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-2xl border border-border bg-surface shadow-float outline-none data-[state=open]:animate-[dialog-in_220ms_cubic-bezier(0.2,0.9,0.3,1)]">
+        <D.Content className="fixed top-1/2 left-1/2 z-50 flex h-[min(88vh,560px)] w-[min(94vw,906px)] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-2xl border border-border bg-surface shadow-float outline-none data-[state=open]:animate-[dialog-in_220ms_cubic-bezier(0.2,0.9,0.3,1)]">
           <D.Description className="sr-only">{t('settings.title')}</D.Description>
           <nav className="w-[200px] shrink-0 border-r border-border bg-sunken p-3">
             <D.Title className="px-3 pt-2 pb-4 font-serif text-md font-semibold text-fg">{t('settings.title')}</D.Title>
@@ -365,6 +371,7 @@ export function SettingsDialog() {
                 </Row>
               </>
             )}
+            {tab === 'ai' && <AiSettingsTab />}
             {tab === 'data' && info && <DataTab />}
             {tab === 'about' && info && (
               <div className="flex h-full flex-col items-center justify-center pb-6 text-center">

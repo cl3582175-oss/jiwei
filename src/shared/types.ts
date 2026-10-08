@@ -1,8 +1,31 @@
 // 主进程与渲染进程共享的数据类型（输出类型）。
 // 输入类型由 zod 模式推导（schemas.ts），API 由能力注册表推导（capabilities.ts）。
 
-import type { NoteMetaUpdate, NoteQuery, Origin, ProposalOp, SourceQuery, SourceUpdate } from './schemas'
-export type { NoteMetaUpdate, NoteQuery, Origin, ProposalOp, SourceQuery, SourceUpdate }
+import type {
+  AiSettings,
+  ChatScope,
+  NoteMetaUpdate,
+  NoteQuery,
+  Origin,
+  ProposalInput,
+  ProposalOp,
+  ProviderInput,
+  SourceQuery,
+  SourceUpdate
+} from './schemas'
+import type { Effort, ProviderKind, Usage } from './ai'
+export type {
+  AiSettings,
+  ChatScope,
+  NoteMetaUpdate,
+  NoteQuery,
+  Origin,
+  ProposalInput,
+  ProposalOp,
+  ProviderInput,
+  SourceQuery,
+  SourceUpdate
+}
 export type { JiweiAPI } from './capabilities'
 
 /** Tiptap / ProseMirror 文档 JSON */
@@ -175,6 +198,7 @@ export interface Settings {
   onboarded: boolean
   /** 侧栏（目录 / 资料分类）是否收起 */
   sidebarCollapsed: boolean
+  ai: AiSettings
 }
 
 export interface Vault {
@@ -264,6 +288,100 @@ export interface WorkspaceContext {
   sourceSegmentId: string | null
 }
 
+/* ——— AI ——— */
+
+export interface ProviderInfo {
+  id: string
+  kind: ProviderKind
+  name: string
+  baseUrl: string
+  hasKey: boolean
+  /** API Key 末四位提示（明文永不离开主进程） */
+  keyHint: string | null
+  models: string[]
+  sendEffort: boolean
+  enabled: boolean
+}
+
+export interface ProviderTestResult {
+  ok: boolean
+  latencyMs: number
+  message: string | null
+}
+
+export interface Conversation {
+  id: string
+  title: string
+  scope: ChatScope
+  pinned: boolean
+  createdAt: number
+  updatedAt: number
+}
+
+/** 回答引用的知识库片段 */
+export interface Citation {
+  /** 回答中的引用编号 [n] */
+  n: number
+  parentType: 'note' | 'source'
+  parentId: string
+  /** 笔记块 ID 或资料片段 ID */
+  ownerId: string
+  title: string
+  snippet: string
+  /** 资料内定位（如 page=12） */
+  locator: string | null
+  /** 时间：笔记为学习日期与段落修改时间；资料为发布 / 获取日期 */
+  learnedAt: number | null
+  updatedAt: number | null
+  status: KnowledgeStatus | null
+  origin: 'user' | 'ai' | 'ai_reviewed' | null
+}
+
+export interface ChatMessage {
+  id: string
+  conversationId: string
+  role: 'user' | 'assistant'
+  content: string
+  reasoning: string | null
+  citations: Citation[]
+  providerId: string | null
+  model: string | null
+  effort: Effort | null
+  usage: (Usage & { cost: number | null; durationMs: number }) | null
+  status: 'streaming' | 'done' | 'error' | 'stopped'
+  error: string | null
+  createdAt: number
+}
+
+export interface EmbeddingStatus {
+  mode: 'local' | 'cloud'
+  /** 本地模型：未下载 / 下载中 / 启动中 / 就绪 / 出错；云端：就绪 / 未配置 */
+  state: 'missing' | 'downloading' | 'starting' | 'ready' | 'error' | 'unconfigured'
+  /** 下载进度 0–1 */
+  progress: number
+  /** 当前下载来源（镜像） */
+  mirror: string | null
+  speed: number | null
+  message: string | null
+  /** 已建立索引 / 总分片数 */
+  indexed: number
+  total: number
+}
+
+export interface SearchHit {
+  parentType: 'note' | 'source'
+  parentId: string
+  ownerId: string
+  title: string
+  text: string
+  locator: string | null
+  score: number
+  learnedAt: number | null
+  updatedAt: number | null
+  status: KnowledgeStatus | null
+  origin: 'user' | 'ai' | 'ai_reviewed' | null
+}
+
 /** 主进程 → 渲染进程的事件 */
 export interface JiweiEvents {
   /** 应用即将退出 / 重载：请立即保存未写入的内容，然后调用 app.flushDone() */
@@ -276,6 +394,12 @@ export interface JiweiEvents {
   'jobs:changed': { ids: string[] }
   /** 资料分段已更新 */
   'segments:changed': { sourceId: string }
+  /** AI 回答的流式增量 */
+  'chat:delta': { messageId: string; conversationId: string; text?: string; reasoning?: string }
+  /** AI 回答完成 / 出错 / 停止（携带完整消息） */
+  'chat:done': { message: ChatMessage }
+  /** 向量模型与索引状态 */
+  'embedding:status': EmbeddingStatus
   /** 深层链接：jiwei://note/<id> 或 jiwei://source/<id> */
   'nav:open': { type: 'note' | 'source'; id: string }
 }

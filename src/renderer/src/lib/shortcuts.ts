@@ -54,6 +54,9 @@ export function useGlobalShortcuts(): void {
       } else if (k === '2') {
         e.preventDefault()
         s.setView('library')
+      } else if (k === '3') {
+        e.preventDefault()
+        s.setView('chat')
       }
     }
     window.addEventListener('keydown', onKey)

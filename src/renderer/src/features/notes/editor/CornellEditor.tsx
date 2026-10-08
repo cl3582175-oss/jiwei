@@ -159,6 +159,26 @@ export function CornellEditor({ noteId, ydoc, onReady }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor])
 
+  // AI 引用跳转：定位并高亮段落
+  const highlight = useApp((s) => s.highlight)
+  useEffect(() => {
+    if (!editor || highlight?.type !== 'block') return
+    let found = -1
+    editor.state.doc.descendants((node, pos) => {
+      if (found >= 0) return false
+      if (node.attrs.id === highlight.id) found = pos
+      return true
+    })
+    if (found < 0) return
+    const dom = editor.view.nodeDOM(found) as HTMLElement | null
+    if (dom) {
+      dom.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      dom.classList.add('is-flash')
+      setTimeout(() => dom.classList.remove('is-flash'), 2200)
+    }
+    useApp.getState().setHighlight(null)
+  }, [editor, highlight])
+
   // 工作区上下文：光标所在块 / 行、选中文字（AI 请求时随附）
   useEffect(() => {
     if (!editor) return

@@ -2,6 +2,7 @@ import { app } from 'electron'
 import { join } from 'path'
 import { existsSync, mkdirSync, readFileSync } from 'fs'
 import Database from 'better-sqlite3'
+import { getLoadablePath } from 'sqlite-vec'
 import { drizzle, type BetterSQLite3Database } from 'drizzle-orm/better-sqlite3'
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator'
 import log from 'electron-log/main'
@@ -45,6 +46,9 @@ export async function openDatabase(): Promise<DB> {
   sqlite.pragma('journal_mode = WAL')
   sqlite.pragma('synchronous = NORMAL')
   sqlite.pragma('foreign_keys = ON')
+  sqlite.pragma('busy_timeout = 5000')
+  // 向量检索扩展；安装包中原生文件位于 app.asar.unpacked
+  sqlite.loadExtension(getLoadablePath().replace('app.asar', 'app.asar.unpacked'))
 
   if (!isNew && hasPendingMigrations(sqlite)) {
     const target = join(backupsDir(), `pre-migrate-${Date.now()}.db`)

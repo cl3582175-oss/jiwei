@@ -3,6 +3,7 @@ import type { Messages } from './zh-CN'
 const en: Messages = {
   app: { name: 'Jiwei', slogan: 'Small steps, great knowledge' },
   nav: {
+    chat: 'AI Chat',
     collapseSidebar: 'Hide sidebar',
     expandSidebar: 'Show sidebar',
     back: 'Back',
@@ -191,6 +192,100 @@ const en: Messages = {
     body: 'Notes on the right; questions that prompt them on the left; a short summary at the bottom. To review, cover the right side and recall from the cues.',
     sample: 'Open the sample note'
   },
+  ai: {
+    providers: 'Model services',
+    addProvider: 'Add service',
+    noProviders: 'No model service yet. Click "Add service", choose a provider such as DeepSeek and enter your API key to start using AI.',
+    baseUrl: 'Base URL',
+    getKey: 'Get an API key',
+    keyKeep: 'Saved ({{hint}}); leave empty to keep',
+    keySecure:
+      'Your API key is encrypted with the system keychain and only used for requests from this computer. It is never shown in plain text.',
+    needKey: 'No API key',
+    noKeyNeeded: 'No key needed',
+    models: 'Models',
+    fetchModels: 'Fetch from provider',
+    addModel: 'Add a model…',
+    test: 'Test connection',
+    saved: 'Saved',
+    testOk: 'Connected ({{ms}} ms)',
+    testFail: 'Connection failed: {{msg}}',
+    modelsFetched: 'Fetched {{count}} models',
+    removeTitle: 'Remove "{{name}}"?',
+    removeDesc: 'Its API key will be deleted too.',
+    defaults: 'Default model and thinking effort',
+    model: 'Model',
+    pickModel: 'Choose a model',
+    noModels: 'Add a model service in Settings first',
+    effort: 'Thinking effort',
+    effortHint: 'Thinking effort: deeper is slower and costs more',
+    effortDesc:
+      '"Off" answers directly — fastest and cheapest. Low / Medium / High / Max think progressively deeper. Only the levels your provider supports are shown. You can also switch per question.',
+    efforts: { off: 'Off', low: 'Low', medium: 'Med', high: 'High', max: 'Max' },
+    effortTips: {
+      off: 'No thinking, answer directly (fastest)',
+      low: 'Light thinking for everyday questions',
+      medium: 'Moderate thinking',
+      high: 'Deep thinking for analysis and summaries',
+      max: 'Deepest thinking for hard problems (slower, costs more)'
+    },
+    kbTitle: 'Knowledge base embeddings',
+    kbDesc:
+      'Semantic search uses an embedding model. The built-in model runs on your computer so your notes never leave it; you can also use a cloud service.',
+    emb: {
+      local: 'Built-in (local)',
+      cloud: 'Cloud service',
+      localDesc:
+        'An open model by Google DeepMind that runs locally and works offline. First use downloads about 320 MB from the fastest mirror, with integrity checks.',
+      install: 'Download and enable',
+      downloading: 'Downloading {{pct}}% · from {{mirror}} · {{speed}}/s',
+      starting: 'Starting…',
+      ready: 'Ready · {{indexed}} / {{total}} passages indexed',
+      reindex: 'Rebuild index',
+      cloudDesc:
+        "Use a provider's embedding API (e.g. OpenAI, Qwen, Zhipu). Your note text is sent to that provider; items hidden from AI are never sent.",
+      provider: 'Choose a provider',
+      model: 'Embedding model name'
+    }
+  },
+  chat: {
+    title: 'AI Chat',
+    new: 'New chat',
+    noConversations: 'No chats yet',
+    placeholder: 'Ask your knowledge base…',
+    send: 'Send',
+    sendHint: 'Send (Enter), new line (Shift + Enter)',
+    stop: 'Stop',
+    stopped: 'Stopped',
+    keys: 'Enter to send · Shift + Enter for a new line',
+    emptyTitle: 'Ask your knowledge base',
+    emptyHint: 'Jiwei first finds relevant passages in your notes and sources, then answers with AI and cites where each point came from.',
+    setupModel: 'Set up a model service',
+    needModel: 'Choose a model first',
+    kbNotReady: 'Embeddings are off — keyword search only',
+    thinking: 'Thinking…',
+    thought: 'Reasoning',
+    thoughtFor: 'Reasoning ({{s}} s)',
+    fromKb: 'From your knowledge base · {{count}}',
+    generalOnly: "This answer doesn't cite your knowledge base; it comes from the model's general knowledge.",
+    copy: 'Copy',
+    effortLabel: 'Thinking: {{level}}',
+    reasoningTokens: '{{n}} reasoning',
+    deleteTitle: 'Delete chat "{{title}}"?',
+    deleteDesc: 'The conversation will be permanently deleted.',
+    s1: 'Summarize what I learned recently',
+    s2: 'Which of my notes contradict each other?',
+    s3: 'Quiz me with the Feynman technique',
+    scope: {
+      label: 'Search scope',
+      all: 'Whole knowledge base',
+      none: "Don't use knowledge base",
+      pick: 'Choose notes and sources…',
+      items: '{{count}} selected',
+      pickTitle: 'Choose search scope',
+      pickDesc: 'Only look for answers in the selected notes and sources'
+    }
+  },
   tags: {
     title: 'Tags',
     add: 'Add tag',
@@ -278,6 +373,7 @@ const en: Messages = {
   settings: {
     title: 'Settings',
     general: 'General',
+    ai: 'AI models',
     appearance: 'Appearance',
     data: 'Data',
     about: 'About',

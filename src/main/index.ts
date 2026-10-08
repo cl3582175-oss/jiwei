@@ -14,6 +14,10 @@ import { ensureIdentity } from './services/device'
 import { registerJobKinds } from './services/jobKinds'
 import { pruneJobs, startJobs, stopJobs } from './services/jobs'
 import { emit } from './events'
+import { registerIndexJob, requestIndex } from './services/ai/indexer'
+import { refreshStatus, shutdown as shutdownEmbedding } from './services/ai/embedding'
+import { stopAll as stopChats } from './services/ai/chat'
+import { importProvidersForTest } from './services/ai/providers'
 
 const HOUR = 3_600_000
 const DEEP_LINK = /^jiwei:\/\/(note|source)\/([0-9a-f-]{36})/i
@@ -40,7 +44,8 @@ app.on('open-url', (e, url) => {
 })
 
 log.initialize()
-log.errorHandler.startCatching()
+// 只记录不弹窗：退出过程中的偶发错误不能用对话框阻塞退出
+log.errorHandler.startCatching({ showDialog: false })
 registerSchemePrivileges()
 
 function createWindow(): void {
@@ -116,11 +121,18 @@ app.whenReady().then(async () => {
 
   await openDatabase()
   ensureIdentity()
+  // 仅开发 / 测试：导入服务商配置（见 importProvidersForTest）
+  if (!app.isPackaged && process.env.JIWEI_IMPORT_PROVIDERS_FROM) {
+    log.info('[test] imported providers:', importProvidersForTest(process.env.JIWEI_IMPORT_PROVIDERS_FROM))
+  }
   applyNativeTheme(getSettings())
   registerProtocol()
   registerIpc()
   registerJobKinds()
+  registerIndexJob()
   startJobs()
+  // 向量模型已安装则补齐索引（例如上次退出时未完成的部分）
+  void refreshStatus().then((s) => s.state === 'ready' && requestIndex())
   handleDeepLink(process.argv.find((a) => a.startsWith('jiwei://')))
 
   const maintenance = async (): Promise<void> => {
@@ -155,6 +167,8 @@ app.on('before-quit', (e) => {
   void requestRendererFlush()
     .catch(() => undefined)
     .finally(() => {
+      stopChats()
+      shutdownEmbedding()
       stopJobs()
       flushAll()
       closeDatabase()

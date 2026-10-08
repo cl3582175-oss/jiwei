@@ -1,0 +1,178 @@
+import { and, eq, inArray, isNull, or } from 'drizzle-orm'
+import log from 'electron-log/main'
+import { getDb, getSqlite } from '../../db'
+import { blocks, chunks, notes, sourceSegments, sources } from '../../db/schema'
+import { hashText } from '../../lib/derive'
+import { enqueue, registerJobKind } from '../jobs'
+import { currentModelId, embed, isReady, setStatus } from './embedding'
+
+// 知识库索引：笔记（康奈尔行 + 总结段落）与原始资料（分段）两类来源。
+// - “不发送给 AI”的笔记与资料不进入索引（使用云端向量服务时也不会外发）
+// - 内容哈希不变的分片不重复计算；切换向量模型后全部重建
+// - 由后台任务执行，可中断续跑
+
+interface DesiredChunk {
+  ownerType: 'block' | 'segment'
+  ownerId: string
+  parentType: 'note' | 'source'
+  parentId: string
+  title: string
+  text: string
+  hash: string
+}
+
+const MIN_TEXT = 6
+
+/** 当前应当被索引的全部分片 */
+function desiredChunks(): DesiredChunk[] {
+  const db = getDb()
+  const noteRows = db
+    .select({ id: blocks.id, noteId: blocks.noteId, text: blocks.text, title: notes.title })
+    .from(blocks)
+    .innerJoin(notes, eq(blocks.noteId, notes.id))
+    .where(
+      and(
+        isNull(blocks.deletedAt),
+        isNull(notes.deletedAt),
+        eq(notes.aiExcluded, false),
+        or(eq(blocks.section, 'row'), eq(blocks.section, 'summary'))
+      )
+    )
+    .all()
+  const segRows = db
+    .select({ id: sourceSegments.id, sourceId: sourceSegments.sourceId, text: sourceSegments.text, title: sources.title })
+    .from(sourceSegments)
+    .innerJoin(sources, eq(sourceSegments.sourceId, sources.id))
+    .where(and(isNull(sources.deletedAt), eq(sources.aiExcluded, false)))
+    .all()
+  return [
+    ...noteRows
+      .filter((r) => r.text.trim().length >= MIN_TEXT)
+      .map((r) => ({
+        ownerType: 'block' as const,
+        ownerId: r.id,
+        parentType: 'note' as const,
+        parentId: r.noteId,
+        title: r.title,
+        text: r.text,
+        hash: hashText(r.title, r.text)
+      })),
+    ...segRows
+      .filter((r) => r.text.trim().length >= MIN_TEXT)
+      .map((r) => ({
+        ownerType: 'segment' as const,
+        ownerId: r.id,
+        parentType: 'source' as const,
+        parentId: r.sourceId,
+        title: r.title,
+        text: r.text,
+        hash: hashText(r.title, r.text)
+      }))
+  ]
+}
+
+function deleteChunks(rowids: number[]): void {
+  if (!rowids.length) return
+  const sqlite = getSqlite()
+  const delVec = sqlite.prepare('DELETE FROM vec_chunks WHERE rowid = ?')
+  sqlite.transaction(() => {
+    for (const r of rowids) delVec.run(BigInt(r))
+  })()
+  for (let i = 0; i < rowids.length; i += 500)
+    getDb()
+      .delete(chunks)
+      .where(inArray(chunks.rowid, rowids.slice(i, i + 500)))
+      .run()
+}
+
+const BATCH = 32
+
+/** sqlite-vec 接收 float32 小端字节 */
+export function vecBuffer(v: number[]): Buffer {
+  const f = new Float32Array(v)
+  return Buffer.from(f.buffer, f.byteOffset, f.byteLength)
+}
+
+/** 同步索引：删除过期分片、补齐新分片 */
+export async function syncIndex(progress: (p: number) => void, canceled: () => boolean): Promise<{ added: number; removed: number }> {
+  const model = currentModelId()
+  const want = desiredChunks()
+  const wantMap = new Map(want.map((c) => [`${c.ownerType}:${c.ownerId}`, c]))
+  const have = getDb().select().from(chunks).all()
+  const stale = have.filter((h) => {
+    const w = wantMap.get(`${h.ownerType}:${h.ownerId}`)
+    return !w || w.hash !== h.hash || h.model !== model
+  })
+  deleteChunks(stale.map((s) => s.rowid))
+  const keep = new Set(have.filter((h) => !stale.includes(h)).map((h) => `${h.ownerType}:${h.ownerId}`))
+  const todo = want.filter((c) => !keep.has(`${c.ownerType}:${c.ownerId}`))
+  setStatus({ indexed: want.length - todo.length, total: want.length })
+  if (!todo.length) return { added: 0, removed: stale.length }
+
+  const sqlite = getSqlite()
+  const insVec = sqlite.prepare('INSERT INTO vec_chunks(rowid, embedding) VALUES (?, ?)')
+  let done = 0
+  for (let i = 0; i < todo.length; i += BATCH) {
+    if (canceled()) break
+    const batch = todo.slice(i, i + BATCH)
+    const vecs = await embed(
+      batch.map((c) => c.text),
+      'doc',
+      batch.map((c) => c.title)
+    )
+    sqlite.transaction(() => {
+      batch.forEach((c, j) => {
+        const row = getDb()
+          .insert(chunks)
+          .values({
+            ownerType: c.ownerType,
+            ownerId: c.ownerId,
+            parentType: c.parentType,
+            parentId: c.parentId,
+            hash: c.hash,
+            model,
+            createdAt: Date.now()
+          })
+          .onConflictDoUpdate({ target: [chunks.ownerType, chunks.ownerId], set: { hash: c.hash, model, createdAt: Date.now() } })
+          .returning({ rowid: chunks.rowid })
+          .get()
+        sqlite.prepare('DELETE FROM vec_chunks WHERE rowid = ?').run(BigInt(row.rowid))
+        insVec.run(BigInt(row.rowid), vecBuffer(vecs[j]))
+      })
+    })()
+    done += batch.length
+    progress(done / todo.length)
+    setStatus({ indexed: want.length - todo.length + done, total: want.length })
+  }
+  return { added: done, removed: stale.length }
+}
+
+/** 请求同步索引（合并重复请求；向量模型就绪后才执行） */
+export function requestIndex(): void {
+  void isReady().then((ready) => {
+    if (ready) enqueue('index.sync', {}, { dedupeKey: 'index.sync' })
+  })
+}
+
+export function registerIndexJob(): void {
+  registerJobKind('index.sync', {
+    title: () => '更新知识库索引',
+    async run(_p, ctx) {
+      const r = await syncIndex(ctx.progress, ctx.isCanceled)
+      log.info('[index] sync', r)
+      return r
+    }
+  })
+}
+
+/** 索引统计（用于设置页显示） */
+export function indexStats(): { indexed: number; total: number } {
+  const total = desiredChunks().length
+  const indexed = (getSqlite().prepare('SELECT COUNT(*) AS n FROM chunks WHERE model = ?').get(currentModelId()) as { n: number }).n
+  return { indexed: Math.min(indexed, total), total }
+}
+
+export function clearIndex(): void {
+  getSqlite().exec('DELETE FROM vec_chunks')
+  getDb().delete(chunks).run()
+}

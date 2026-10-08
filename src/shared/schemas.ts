@@ -71,6 +71,7 @@ export const SettingsPatchSchema = z.object({
   palette: z.enum(['qinglu', 'celadon', 'dunhuang']).optional(),
   onboarded: z.boolean().optional(),
   sidebarCollapsed: z.boolean().optional(),
+  ai: z.lazy(() => AiSettingsSchema).optional(),
   reflection: z
     .object({
       daily: z.boolean(),
@@ -132,3 +133,62 @@ export const ProposalInputSchema = z.object({
   sources: OriginSchema.shape.sources
 })
 export type ProposalInput = z.infer<typeof ProposalInputSchema>
+
+/* ——— AI ——— */
+
+export const ProviderKindSchema = z.enum(['deepseek', 'openai', 'anthropic', 'google', 'qwen', 'moonshot', 'zhipu', 'ollama', 'custom'])
+export const EffortSchema = z.enum(['off', 'low', 'medium', 'high', 'max'])
+
+export const ProviderInputSchema = z.object({
+  id: Id.optional(),
+  kind: ProviderKindSchema,
+  name: z.string().max(80).optional(),
+  baseUrl: z.string().max(500).optional(),
+  /** 传空字符串表示清除；不传表示保持不变 */
+  apiKey: z.string().max(500).optional(),
+  models: z.array(z.string().max(200)).max(500).optional(),
+  sendEffort: z.boolean().optional(),
+  enabled: z.boolean().optional()
+})
+export type ProviderInput = z.infer<typeof ProviderInputSchema>
+
+/** 对话的检索范围 */
+export const ChatScopeSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('all') }),
+  z.object({ type: z.literal('none') }),
+  z.object({ type: z.literal('items'), notes: z.array(Id).max(50), sources: z.array(Id).max(50) })
+])
+export type ChatScope = z.infer<typeof ChatScopeSchema>
+
+export const WorkspaceContextSchema = z.object({
+  noteId: Id.nullable(),
+  cursorBlockId: Id.nullable(),
+  cursorRowId: Id.nullable(),
+  noteSelection: z.string().max(8000).nullable(),
+  sourceId: Id.nullable(),
+  sourceLocator: z.string().max(200).nullable(),
+  sourceSelection: z.string().max(8000).nullable(),
+  sourceSegmentId: Id.nullable()
+})
+
+export const ChatSendSchema = z.object({
+  conversationId: Id.nullable(),
+  text: z.string().min(1).max(20000),
+  providerId: Id,
+  model: z.string().min(1).max(200),
+  effort: EffortSchema,
+  scope: ChatScopeSchema,
+  context: WorkspaceContextSchema.optional()
+})
+export type ChatSend = z.infer<typeof ChatSendSchema>
+
+export const AiSettingsSchema = z.object({
+  chat: z.object({ providerId: Id.nullable(), model: z.string().max(200).nullable() }),
+  effort: EffortSchema,
+  embedding: z.object({
+    mode: z.enum(['local', 'cloud']),
+    providerId: Id.nullable(),
+    model: z.string().max(200).nullable()
+  })
+})
+export type AiSettings = z.infer<typeof AiSettingsSchema>

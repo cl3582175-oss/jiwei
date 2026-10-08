@@ -1,5 +1,6 @@
 import { readFile } from 'fs/promises'
 import { segmentText, type TextSegment } from '../main/lib/segment'
+import { parseDocx, parseEpub, parseHtml, parsePdf } from './parsers'
 
 // 后台工作进程（Electron utilityProcess）：执行 CPU / IO 密集任务，不阻塞主进程与界面。
 // 协议：主进程发送 { id, task, payload }；本进程回复 { id, progress } 或 { id, ok, result | error }。
@@ -12,6 +13,18 @@ const tasks: Record<string, Task> = {
     const { path, ext } = payload as { path: string; ext: string }
     const raw = await readFile(path, 'utf8')
     return segmentText(raw, ext === 'md' || ext === 'markdown' ? 'markdown' : 'plain') satisfies TextSegment[]
+  },
+  async parsePdf(payload, progress) {
+    return parsePdf((payload as { path: string }).path, progress)
+  },
+  async parseDocx(payload) {
+    return parseDocx((payload as { path: string }).path)
+  },
+  async parseEpub(payload, progress) {
+    return parseEpub((payload as { path: string }).path, progress)
+  },
+  async parseHtml(payload) {
+    return parseHtml((payload as { path: string }).path)
   },
   /** 测试用：休眠指定毫秒并汇报进度 */
   async sleep(payload, progress) {

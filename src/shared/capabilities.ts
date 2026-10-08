@@ -6,6 +6,9 @@ import type {
   BackupInfo,
   BlockInfo,
   Category,
+  ChatMessage,
+  Conversation,
+  EmbeddingStatus,
   HeatmapDay,
   ImportResult,
   Job,
@@ -13,8 +16,11 @@ import type {
   NoteSummary,
   Profile,
   Proposal,
+  ProviderInfo,
+  ProviderTestResult,
   Revision,
   RevisionInfo,
+  SearchHit,
   Segment,
   Settings,
   Source,
@@ -208,6 +214,46 @@ export const capabilities = {
     restore: cap<void>()({ description: '还原', params: [['type', S.TrashTypeSchema], id()] }),
     purge: cap<void>()({ description: '永久删除', params: [['type', S.TrashTypeSchema], id()] }),
     empty: cap<void>()({ description: '清空最近删除', params: none })
+  },
+  providers: {
+    list: cap<ProviderInfo[]>()({ description: '列出模型服务商（不含 API Key 明文）', params: none }),
+    save: cap<ProviderInfo>()({ description: '新增或修改模型服务商', params: [['input', S.ProviderInputSchema]] }),
+    remove: cap<void>()({ description: '删除模型服务商', params: [id()] }),
+    fetchModels: cap<string[]>()({ description: '从服务商拉取可用模型列表', params: [id()] }),
+    test: cap<ProviderTestResult>()({ description: '测试服务商连接', params: [id()] })
+  },
+  chat: {
+    conversations: cap<Conversation[]>()({ description: '列出 AI 对话', params: none }),
+    messages: cap<ChatMessage[]>()({ description: '读取对话消息', params: [id('conversationId')] }),
+    send: cap<{ conversation: Conversation; userMessage: ChatMessage; assistantMessageId: string }>()({
+      description: '发送消息并开始生成回答（流式结果通过事件推送）',
+      params: [['input', S.ChatSendSchema]]
+    }),
+    stop: cap<void>()({ description: '停止生成', params: [id('messageId')] }),
+    update: cap<void>()({
+      description: '修改对话标题、检索范围或置顶',
+      params: [
+        id(),
+        ['patch', z.object({ title: z.string().max(200).optional(), scope: S.ChatScopeSchema.optional(), pinned: z.boolean().optional() })]
+      ]
+    }),
+    remove: cap<void>()({ description: '删除对话', params: [id()] })
+  },
+  embedding: {
+    status: cap<EmbeddingStatus>()({ description: '向量模型与索引状态', params: none }),
+    installLocal: cap<void>()({ description: '下载并启动内置向量模型（EmbeddingGemma 2）', params: none }),
+    reindex: cap<void>()({ description: '重建知识库索引', params: none })
+  },
+  knowledge: {
+    search: cap<SearchHit[]>()({
+      description: '在知识库（笔记与资料）中检索与问题相关的片段，结果带时间与状态',
+      params: [
+        ['query', z.string().min(1).max(2000)],
+        ['scope', S.ChatScopeSchema],
+        ['limit', z.number().int().min(1).max(30).optional()]
+      ],
+      ai: { effect: 'read' }
+    })
   },
   stats: {
     heatmap: cap<HeatmapDay[]>()({ description: '学习热力图数据', params: [['days', z.number().int().min(1).max(3660)]] })

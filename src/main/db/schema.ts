@@ -482,3 +482,83 @@ export const jobs = sqliteTable(
   },
   (t) => [index('jobs_status_idx').on(t.status, t.runAfter), index('jobs_dedupe_idx').on(t.dedupeKey)]
 )
+
+/* ————————————————— AI 服务与对话 ————————————————— */
+
+/** 模型服务商；API Key 用系统钥匙串（Electron safeStorage）加密后存储 */
+export const providers = sqliteTable('providers', {
+  id: text('id').primaryKey(),
+  kind: text('kind').notNull(),
+  name: text('name').notNull(),
+  baseUrl: text('base_url').notNull(),
+  apiKeyEnc: blob('api_key_enc', { mode: 'buffer' }),
+  /** 可用模型列表（JSON 数组） */
+  models: text('models').notNull().default('[]'),
+  /** 是否在请求中发送思考强度参数（部分兼容接口不支持） */
+  sendEffort: integer('send_effort', { mode: 'boolean' }).notNull().default(true),
+  enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
+  ...syncCols
+})
+
+export const conversations = sqliteTable(
+  'conversations',
+  {
+    id: text('id').primaryKey(),
+    title: text('title').notNull().default(''),
+    /** 检索范围（JSON）：全部知识库 / 指定笔记与资料 / 不使用知识库 */
+    scope: text('scope').notNull().default('{"type":"all"}'),
+    pinned: integer('pinned', { mode: 'boolean' }).notNull().default(false),
+    ...syncCols
+  },
+  (t) => [index('conversations_updated_idx').on(t.updatedAt)]
+)
+
+export const messages = sqliteTable(
+  'messages',
+  {
+    id: text('id').primaryKey(),
+    conversationId: text('conversation_id').notNull(),
+    role: text('role', { enum: ['user', 'assistant'] }).notNull(),
+    content: text('content').notNull().default(''),
+    /** 模型的思考过程 */
+    reasoning: text('reasoning'),
+    /** 引用的知识库片段（JSON） */
+    citations: text('citations'),
+    /** 发送时的工作区上下文（JSON） */
+    context: text('context'),
+    providerId: text('provider_id'),
+    model: text('model'),
+    effort: text('effort'),
+    /** 用量（JSON：输入、输出、思考、缓存命中 token，估算费用） */
+    usage: text('usage'),
+    status: text('status', { enum: ['streaming', 'done', 'error', 'stopped'] })
+      .notNull()
+      .default('done'),
+    error: text('error'),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull()
+  },
+  (t) => [index('messages_conversation_idx').on(t.conversationId, t.createdAt)]
+)
+
+/**
+ * 知识库检索分片：笔记行 / 总结段落 / 资料分段。
+ * 整数主键与 vec_chunks 向量表的 rowid 一一对应（显式整数主键在 VACUUM 后不会改变）。
+ */
+export const chunks = sqliteTable(
+  'chunks',
+  {
+    rowid: integer('rowid').primaryKey({ autoIncrement: true }),
+    ownerType: text('owner_type', { enum: ['block', 'segment'] }).notNull(),
+    ownerId: text('owner_id').notNull(),
+    /** 所属笔记或资料 */
+    parentType: text('parent_type', { enum: ['note', 'source'] }).notNull(),
+    parentId: text('parent_id').notNull(),
+    /** 参与向量化的文本哈希：内容不变不重复计算 */
+    hash: text('hash').notNull(),
+    /** 生成向量的模型；切换模型后据此重建 */
+    model: text('model').notNull(),
+    createdAt: integer('created_at').notNull()
+  },
+  (t) => [uniqueIndex('chunks_owner_idx').on(t.ownerType, t.ownerId), index('chunks_parent_idx').on(t.parentType, t.parentId)]
+)

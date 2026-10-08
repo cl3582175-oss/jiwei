@@ -13,6 +13,8 @@ function defaults(): Settings {
     // 测试环境可跳过首次引导
     onboarded: process.env.JIWEI_SKIP_ONBOARDING === '1',
     sidebarCollapsed: false,
+    // AI：默认思考强度“高”（DeepSeek 默认值）；向量默认使用内置本地模型
+    ai: { chat: { providerId: null, model: null }, effort: 'high', embedding: { mode: 'local', providerId: null, model: null } },
     // 默认节奏：每天 1 分钟微复盘 + 每周日晚完整复盘
     reflection: { daily: true, weekly: true, weeklyDay: 0, time: '21:00' }
   }

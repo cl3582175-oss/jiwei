@@ -10,6 +10,7 @@ import { NavRail } from './components/NavRail'
 import { NotesView } from './features/notes/NotesView'
 import { LibraryView } from './features/library/LibraryView'
 import { TrashView } from './features/trash/TrashView'
+import { ChatView } from './features/chat/ChatView'
 import { SettingsDialog } from './features/settings/SettingsDialog'
 import { CommandPalette } from './features/palette/CommandPalette'
 import { Onboarding } from './features/onboarding/Onboarding'
@@ -95,6 +96,7 @@ export function App() {
         <main className="relative min-w-0 flex-1">
           {view === 'notes' && <NotesView />}
           {view === 'library' && <LibraryView />}
+          {view === 'chat' && <ChatView />}
           {view === 'trash' && <TrashView />}
         </main>
       </div>

@@ -1,0 +1,178 @@
+import { and, eq, inArray, isNull } from 'drizzle-orm'
+import { getDb, getSqlite } from '../../db'
+import { blocks, chunks, notes, sourceSegments, sources } from '../../db/schema'
+import type { ChatScope } from '@shared/schemas'
+import type { KnowledgeStatus, SearchHit } from '@shared/types'
+import { embed, isReady } from './embedding'
+import { vecBuffer } from './indexer'
+
+// 混合检索：关键词（FTS5 trigram）+ 向量（sqlite-vec）→ RRF 融合 → 时间与可信度加权。
+//   - 检索单位：笔记的康奈尔行 / 总结段落，资料的分段
+//   - 隐私：“不发送给 AI”的笔记与资料、已删除内容一律排除
+//   - 时间：已过时 ×0.55、存疑 ×0.85；AI 生成未审阅 ×0.85；最近修改的内容略微加分
+//   - 每条结果都带学习日期、修改时间、状态与来源，供模型判断新旧冲突
+
+const RRF_K = 60
+const DAY = 86_400_000
+
+type Key = string // `${ownerType}:${ownerId}`
+
+/** 把问题切成 trigram 关键词（中文按 3 字窗口、英文按单词）组成 OR 查询 */
+function ftsQuery(q: string): string | null {
+  const terms = new Set<string>()
+  for (const run of q.match(/[㐀-鿿]+/g) ?? []) {
+    if (run.length < 3) continue
+    for (let i = 0; i + 3 <= run.length; i++) terms.add(run.slice(i, i + 3))
+  }
+  for (const w of q.match(/[A-Za-z0-9_]{3,}/g) ?? []) terms.add(w.toLowerCase())
+  const list = [...terms].slice(0, 40)
+  return list.length ? list.map((t) => `"${t.replace(/"/g, '""')}"`).join(' OR ') : null
+}
+
+function keywordHits(q: string, limit: number): Key[] {
+  const fq = ftsQuery(q)
+  if (!fq) return []
+  const sqlite = getSqlite()
+  const b = sqlite.prepare('SELECT block_id FROM blocks_fts WHERE blocks_fts MATCH ? ORDER BY rank LIMIT ?').all(fq, limit * 3) as {
+    block_id: string
+  }[]
+  const s = sqlite.prepare('SELECT segment_id FROM segments_fts WHERE segments_fts MATCH ? ORDER BY rank LIMIT ?').all(fq, limit * 3) as {
+    segment_id: string
+  }[]
+  // 段落命中归并到所在的康奈尔行（检索单位），总结段落保持自身
+  const rows = b.length
+    ? getDb()
+        .select({ id: blocks.id, rowId: blocks.rowId, section: blocks.section })
+        .from(blocks)
+        .where(
+          inArray(
+            blocks.id,
+            b.map((x) => x.block_id)
+          )
+        )
+        .all()
+    : []
+  const byId = new Map(rows.map((r) => [r.id, r]))
+  const keys: Key[] = []
+  const seen = new Set<Key>()
+  const push = (k: Key): void => {
+    if (!seen.has(k)) {
+      seen.add(k)
+      keys.push(k)
+    }
+  }
+  // 交替合并笔记与资料命中，避免某一类挤占
+  for (let i = 0; i < Math.max(b.length, s.length); i++) {
+    const r = b[i] && byId.get(b[i].block_id)
+    if (r) push(`block:${r.section === 'row' || r.section === 'summary' ? r.id : (r.rowId ?? r.id)}`)
+    if (s[i]) push(`segment:${s[i].segment_id}`)
+  }
+  return keys.slice(0, limit * 2)
+}
+
+async function vectorHits(q: string, limit: number): Promise<Key[]> {
+  if (!(await isReady())) return []
+  const [v] = await embed([q], 'query')
+  const rows = getSqlite()
+    .prepare('SELECT rowid, distance FROM vec_chunks WHERE embedding MATCH ? AND k = ? ORDER BY distance')
+    .all(vecBuffer(v), limit * 3) as { rowid: number; distance: number }[]
+  if (!rows.length) return []
+  const meta = getDb()
+    .select({ rowid: chunks.rowid, ownerType: chunks.ownerType, ownerId: chunks.ownerId })
+    .from(chunks)
+    .where(
+      inArray(
+        chunks.rowid,
+        rows.map((r) => Number(r.rowid))
+      )
+    )
+    .all()
+  const byRow = new Map(meta.map((m) => [m.rowid, `${m.ownerType}:${m.ownerId}`]))
+  return rows.map((r) => byRow.get(Number(r.rowid))).filter((k): k is Key => !!k)
+}
+
+/** 读取候选分片的内容与元数据（同时完成隐私与范围过滤） */
+function hydrate(keys: Key[], scope: ChatScope): Map<Key, SearchHit> {
+  const db = getDb()
+  const out = new Map<Key, SearchHit>()
+  const blockIds = keys.filter((k) => k.startsWith('block:')).map((k) => k.slice(6))
+  const segIds = keys.filter((k) => k.startsWith('segment:')).map((k) => k.slice(8))
+  const noteScope = scope.type === 'items' ? new Set(scope.notes) : null
+  const srcScope = scope.type === 'items' ? new Set(scope.sources) : null
+
+  if (blockIds.length) {
+    const rows = db
+      .select({ b: blocks, n: notes })
+      .from(blocks)
+      .innerJoin(notes, eq(blocks.noteId, notes.id))
+      .where(and(inArray(blocks.id, blockIds), isNull(blocks.deletedAt), isNull(notes.deletedAt), eq(notes.aiExcluded, false)))
+      .all()
+    for (const { b, n } of rows) {
+      if (noteScope && !noteScope.has(n.id)) continue
+      out.set(`block:${b.id}`, {
+        parentType: 'note',
+        parentId: n.id,
+        ownerId: b.id,
+        title: n.title,
+        text: b.text,
+        locator: null,
+        score: 0,
+        learnedAt: n.learnedAt,
+        updatedAt: b.updatedAt,
+        status: n.status as KnowledgeStatus,
+        origin: b.origin
+      })
+    }
+  }
+  if (segIds.length) {
+    const rows = db
+      .select({ g: sourceSegments, s: sources })
+      .from(sourceSegments)
+      .innerJoin(sources, eq(sourceSegments.sourceId, sources.id))
+      .where(and(inArray(sourceSegments.id, segIds), isNull(sources.deletedAt), eq(sources.aiExcluded, false)))
+      .all()
+    for (const { g, s } of rows) {
+      if (srcScope && !srcScope.has(s.id)) continue
+      const loc = JSON.parse(g.locator) as { value?: string }
+      out.set(`segment:${g.id}`, {
+        parentType: 'source',
+        parentId: s.id,
+        ownerId: g.id,
+        title: s.title,
+        text: g.text,
+        locator: typeof loc.value === 'string' ? loc.value : null,
+        score: 0,
+        learnedAt: s.publishedAt ?? s.accessedAt,
+        updatedAt: s.accessedAt,
+        status: null,
+        origin: null
+      })
+    }
+  }
+  return out
+}
+
+function weight(h: SearchHit): number {
+  let w = 1
+  if (h.status === 'outdated') w *= 0.55
+  else if (h.status === 'disputed') w *= 0.85
+  if (h.origin === 'ai') w *= 0.85
+  // 最近修改的内容略微加分（半衰期约半年，最多 +15%）
+  if (h.updatedAt) w *= 1 + 0.15 * Math.exp(-(Date.now() - h.updatedAt) / (180 * DAY))
+  return w
+}
+
+/** 检索知识库，返回按相关度与时间加权排序的片段 */
+export async function retrieve(query: string, scope: ChatScope, limit = 8): Promise<SearchHit[]> {
+  if (scope.type === 'none' || !query.trim()) return []
+  const [kw, vec] = await Promise.all([Promise.resolve(keywordHits(query, limit)), vectorHits(query, limit).catch(() => [] as Key[])])
+  const rrf = new Map<Key, number>()
+  kw.forEach((k, i) => rrf.set(k, (rrf.get(k) ?? 0) + 1 / (RRF_K + i)))
+  // 向量命中权重略高：语义相关比字面重合更可靠
+  vec.forEach((k, i) => rrf.set(k, (rrf.get(k) ?? 0) + 1.2 / (RRF_K + i)))
+  const hits = hydrate([...rrf.keys()], scope)
+  return [...hits.entries()]
+    .map(([k, h]) => ({ ...h, score: (rrf.get(k) ?? 0) * weight(h) }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+}

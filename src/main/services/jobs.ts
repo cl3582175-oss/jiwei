@@ -33,6 +33,8 @@ const kinds = new Map<string, JobKind>()
 const running = new Set<string>()
 const canceled = new Set<string>()
 let timer: NodeJS.Timeout | null = null
+/** 退出时置位：之后不再调度任何任务、不再写库 */
+let stopped = false
 
 export function registerJobKind<P>(kind: string, def: JobKind<P>): void {
   kinds.set(kind, def as JobKind)
@@ -99,11 +101,12 @@ function toJob(r: Row): Job {
 
 export function enqueue(kind: string, payload: unknown, opts?: { dedupeKey?: string }): string {
   const db = getDb()
+  // 去重只合并“排队中”的任务：正在运行的任务不会包含它开始之后的变化
   if (opts?.dedupeKey) {
     const existing = db
       .select({ id: jobs.id })
       .from(jobs)
-      .where(and(eq(jobs.dedupeKey, opts.dedupeKey), inArray(jobs.status, ['queued', 'running'])))
+      .where(and(eq(jobs.dedupeKey, opts.dedupeKey), eq(jobs.status, 'queued')))
       .get()
     if (existing) return existing.id
   }
@@ -126,6 +129,7 @@ export function enqueue(kind: string, payload: unknown, opts?: { dedupeKey?: str
 }
 
 function setStatus(id: string, set: Partial<Row>): void {
+  if (stopped) return
   getDb()
     .update(jobs)
     .set({ ...set, updatedAt: Date.now() })
@@ -172,6 +176,7 @@ async function execute(r: Row): Promise<void> {
 }
 
 function tick(): void {
+  if (stopped) return
   const free = CONCURRENCY - running.size
   if (free <= 0) return
   const due = getDb()
@@ -186,6 +191,7 @@ function tick(): void {
 }
 
 export function startJobs(): void {
+  stopped = false
   // 上次退出时仍在运行的任务重新排队
   getDb().update(jobs).set({ status: 'queued', updatedAt: Date.now() }).where(eq(jobs.status, 'running')).run()
   timer = setInterval(tick, TICK_MS)
@@ -193,6 +199,9 @@ export function startJobs(): void {
 }
 
 export function stopJobs(): void {
+  stopped = true
+  // 正在运行的任务标记为取消：它们的后续结果不会再写入
+  running.forEach((id) => canceled.add(id))
   if (timer) clearInterval(timer)
   timer = null
   child?.kill()

@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next'
-import { NotebookPen, Library, Trash2, Settings, Search, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
+import { NotebookPen, Library, Trash2, Settings, Search, PanelLeftClose, PanelLeftOpen, Sparkles } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useApp, type View } from '@/store/app'
 import { cn, isMac, modKey } from '@/lib/utils'
@@ -46,7 +46,8 @@ export function NavRail() {
   const sidebar = useSidebar()
   const items: { id: View; label: string; icon: ReactNode }[] = [
     { id: 'notes', label: `${t('nav.notes')}  ${modKey}1`, icon: <NotebookPen /> },
-    { id: 'library', label: `${t('nav.library')}  ${modKey}2`, icon: <Library /> }
+    { id: 'library', label: `${t('nav.library')}  ${modKey}2`, icon: <Library /> },
+    { id: 'chat', label: `${t('nav.chat')}  ${modKey}3`, icon: <Sparkles /> }
   ]
 
   return (

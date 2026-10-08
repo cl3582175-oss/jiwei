@@ -18,6 +18,17 @@ import * as jobs from './services/jobs'
 import * as vaults from './services/vaults'
 import { getProfile, setProfileName } from './services/device'
 import { resolveFlush } from './lifecycle'
+import * as providers from './services/ai/providers'
+import * as chat from './services/ai/chat'
+import * as embedding from './services/ai/embedding'
+import { clearIndex, indexStats, requestIndex } from './services/ai/indexer'
+import { retrieve } from './services/ai/retrieve'
+
+/** 会影响知识库内容（或隐私范围）的操作完成后，更新索引 */
+const reindexAfter = <T>(v: T): T => {
+  requestIndex()
+  return v
+}
 import { capabilities, eachCapability, parseArgs, type Capabilities, type ParsedArgs, type ResultOf } from '@shared/capabilities'
 
 type Ctx = { win: BrowserWindow | null }
@@ -79,8 +90,11 @@ const handlers: Handlers = {
     get: (_, id) => notes.getNote(id),
     create: (_, init) => notes.createNote(init),
     createSample: (_, lang) => notes.createSampleNote(lang),
-    update: (_, id, patch) => notes.updateNote(id, patch),
-    trash: (_, id) => notes.trashNote(id),
+    update: (_, id, patch) =>
+      patch.aiExcluded !== undefined || patch.status !== undefined
+        ? reindexAfter(notes.updateNote(id, patch))
+        : notes.updateNote(id, patch),
+    trash: (_, id) => reindexAfter(notes.trashNote(id)),
     loadDoc: (_, id) => docs.loadDoc(id),
     pushUpdate: (_, id, update) => docs.pushUpdate(id, update),
     blocks: (_, id) => docs.listBlocks(id)
@@ -116,16 +130,48 @@ const handlers: Handlers = {
     importDialog: ({ win }, categoryId) => sources.importDialog(win, categoryId),
     importPaths: (_, paths, categoryId) => sources.importPaths(paths, categoryId),
     addUrl: (_, url, title, categoryId) => sources.addUrl(url, title, categoryId),
-    update: (_, id, patch) => sources.updateSource(id, patch),
+    update: (_, id, patch) => reindexAfter(sources.updateSource(id, patch)),
     open: (_, id) => sources.openSource(id),
     reveal: (_, id) => sources.revealSource(id),
-    trash: (_, id) => sources.trashSource(id)
+    trash: (_, id) => reindexAfter(sources.trashSource(id))
   },
   trash: {
     list: () => trash.listTrash(),
-    restore: (_, type, id) => trash.restore(type, id),
-    purge: (_, type, id) => trash.purge(type, id),
+    restore: (_, type, id) => reindexAfter(trash.restore(type, id)),
+    purge: async (_, type, id) => reindexAfter(await trash.purge(type, id)),
     empty: () => trash.emptyTrash()
+  },
+  providers: {
+    list: () => providers.listProviders(),
+    save: (_, input) => providers.saveProvider(input),
+    remove: (_, id) => providers.removeProvider(id),
+    fetchModels: (_, id) => providers.fetchModels(id),
+    test: (_, id) => providers.testProvider(id)
+  },
+  chat: {
+    conversations: () => chat.listConversations(),
+    messages: (_, id) => chat.listMessages(id),
+    send: (_, input) => chat.send(input),
+    stop: (_, id) => chat.stop(id),
+    update: (_, id, patch) => chat.updateConversation(id, patch),
+    remove: (_, id) => chat.deleteConversation(id)
+  },
+  embedding: {
+    status: async () => {
+      await embedding.refreshStatus()
+      return { ...embedding.getStatus(), ...indexStats() }
+    },
+    installLocal: async () => {
+      await embedding.installLocal()
+      requestIndex()
+    },
+    reindex: () => {
+      clearIndex()
+      requestIndex()
+    }
+  },
+  knowledge: {
+    search: (_, query, scope, limit) => retrieve(query, scope, limit)
   },
   stats: {
     heatmap: (_, days) => stats.heatmap(days)

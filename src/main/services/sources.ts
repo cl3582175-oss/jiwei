@@ -10,7 +10,7 @@ import { recordActivity } from './stats'
 import { deletedCategoryIds, descendantIds } from './categories'
 import { entitiesWithTag, tagIdsFor } from './tags'
 import { assetPath, assetUrl, collectGarbage, importFile } from './assets'
-import { canSegment, enqueueSegment } from './jobKinds'
+import { canSegment, enqueueFetch, enqueueSegment } from './jobKinds'
 import { deleteSegments } from './segments'
 import type { ImportResult, Source, SourceKind, SourceQuery, SourceUpdate } from '@shared/types'
 
@@ -174,6 +174,7 @@ export function addUrl(url: string, title?: string, categoryId?: string | null):
     })
     .run()
   recordActivity('source_add')
+  enqueueFetch(id)
   return getSource(id)!
 }
 

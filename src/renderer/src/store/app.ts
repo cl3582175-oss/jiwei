@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import type { NoteSort, WorkspaceContext } from '@shared/types'
 
-export type View = 'notes' | 'library' | 'trash'
+export type View = 'notes' | 'library' | 'chat' | 'trash'
 
 /** 笔记列表筛选：全部 / 置顶 / 未分类 / 某分类 / 某标签 */
 export type NoteFilter =
@@ -47,12 +47,22 @@ interface AppState extends Location {
   context: WorkspaceContext
   setContext: (patch: Partial<WorkspaceContext>) => void
 
+  /** 当前 AI 对话（null 为新对话） */
+  conversationId: string | null
+  openConversation: (id: string | null) => void
+  /** 打开笔记 / 资料后需要定位并高亮的段落（来自 AI 引用） */
+  highlight: { type: 'block' | 'segment'; id: string; locator?: string | null } | null
+  setHighlight: (h: AppState['highlight']) => void
+
   noteFilter: NoteFilter
   setNoteFilter: (f: NoteFilter) => void
   noteSort: NoteSort
   setNoteSort: (s: NoteSort) => void
   settingsOpen: boolean
   setSettingsOpen: (o: boolean) => void
+  /** 打开设置时定位的标签页 */
+  settingsTab: string | null
+  openSettings: (tab?: string) => void
   paletteOpen: boolean
   setPaletteOpen: (o: boolean) => void
 }
@@ -114,12 +124,22 @@ export const useApp = create<AppState>((set, get) => {
     context: emptyContext,
     setContext: (patch) => set((s) => ({ context: { ...s.context, ...patch } })),
 
+    conversationId: null,
+    openConversation: (conversationId) => {
+      set({ conversationId })
+      get().navigate({ view: 'chat' })
+    },
+    highlight: null,
+    setHighlight: (highlight) => set({ highlight }),
+
     noteFilter: { type: 'all' },
     setNoteFilter: (noteFilter) => set({ noteFilter }),
     noteSort: 'edited',
     setNoteSort: (noteSort) => set({ noteSort }),
     settingsOpen: false,
     setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
+    settingsTab: null,
+    openSettings: (tab) => set({ settingsOpen: true, settingsTab: tab ?? null }),
     paletteOpen: false,
     setPaletteOpen: (paletteOpen) => set({ paletteOpen })
   }

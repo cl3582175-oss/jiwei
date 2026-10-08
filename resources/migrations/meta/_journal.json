@@ -29,6 +29,20 @@
       "when": 1791447675383,
       "tag": "0003_segments_fts",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1791452530111,
+      "tag": "0004_ai",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1791452530523,
+      "tag": "0005_vectors",
+      "breakpoints": true
     }
   ]
 }

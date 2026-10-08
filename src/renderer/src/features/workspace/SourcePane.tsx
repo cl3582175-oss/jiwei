@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { X, ExternalLink, Loader2, FileQuestion } from 'lucide-react'
@@ -33,8 +33,24 @@ function TextSegments({ source }: { source: Source }) {
   }
   if (!isFetched) return <Centered icon={<Loader2 className="animate-spin" />} />
   if (!segs?.length) return <Centered icon={<Loader2 className="animate-spin" />} text={t('workspace.parsing')} />
+  return <SegmentList segs={segs} onSelect={onSelect} />
+}
+
+function SegmentList({ segs, onSelect }: { segs: Segment[]; onSelect: () => void }) {
+  const highlight = useApp((s) => s.highlight)
+  const ref = useRef<HTMLElement>(null)
+  // AI 引用跳转：定位并高亮片段
+  useEffect(() => {
+    if (highlight?.type !== 'segment') return
+    const el = ref.current?.querySelector<HTMLElement>(`[data-segment="${highlight.id}"]`)
+    if (!el) return
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    el.classList.add('is-flash')
+    setTimeout(() => el.classList.remove('is-flash'), 2200)
+    useApp.getState().setHighlight(null)
+  }, [highlight, segs])
   return (
-    <article className="source-text select-text" onMouseUp={onSelect} onKeyUp={onSelect}>
+    <article ref={ref} className="source-text select-text" onMouseUp={onSelect} onKeyUp={onSelect}>
       {segs.map((s: Segment) =>
         s.kind === 'heading' ? (
           <h3 key={s.id} data-segment={s.id}>
@@ -82,6 +98,30 @@ function Media({ source }: { source: Source }) {
   )
 }
 
+/** 内置 PDF 查看器；AI 引用带页码时跳到对应页 */
+function PdfFrame({ source }: { source: Source }) {
+  const highlight = useApp((s) => s.highlight)
+  const [page, setPage] = useState<string | null>(null)
+  useEffect(() => {
+    const m = highlight?.type === 'segment' ? highlight.locator?.match(/page=(\d+)/) : null
+    if (m) {
+      setPage(m[1])
+      useApp.getState().setHighlight(null)
+    }
+  }, [highlight])
+  return (
+    <iframe
+      key={page ?? 'p'}
+      title={source.title}
+      src={`${source.assetUrl}${page ? `#page=${page}` : ''}`}
+      className="h-full w-full border-0 bg-surface"
+    />
+  )
+}
+
+/** 解析为文本分段后在应用内阅读的格式 */
+const TEXT_EXTS = ['md', 'markdown', 'txt', 'docx', 'epub', 'html', 'htm']
+
 function Body({ source }: { source: Source }) {
   const { t } = useTranslation()
   const ext = source.originalName?.split('.').pop()?.toLowerCase() ?? ''
@@ -92,10 +132,9 @@ function Body({ source }: { source: Source }) {
       </div>
     )
   if ((source.kind === 'video' || source.kind === 'audio') && source.assetUrl) return <Media source={source} />
-  if (source.kind === 'pdf' && source.assetUrl)
-    return <iframe title={source.title} src={source.assetUrl} className="h-full w-full border-0 bg-surface" />
-  if (['md', 'markdown', 'txt'].includes(ext)) return <TextSegments source={source} />
-  return <Centered icon={<FileQuestion />} text={source.kind === 'web' ? t('workspace.webHint') : t('workspace.unsupported')} />
+  if (source.kind === 'pdf' && source.assetUrl) return <PdfFrame source={source} />
+  if (TEXT_EXTS.includes(ext) || source.kind === 'web') return <TextSegments source={source} />
+  return <Centered icon={<FileQuestion />} text={t('workspace.unsupported')} />
 }
 
 export function SourcePane({ sourceId }: { sourceId: string }) {

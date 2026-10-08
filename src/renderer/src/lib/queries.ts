@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import type { CategoryKind, NoteQuery, Settings, SourceQuery } from '@shared/types'
 import { api } from './utils'
@@ -60,6 +61,22 @@ export function useTrash() {
 
 export function useTags() {
   return useQuery({ queryKey: keys.tags, queryFn: () => api.tags.list() })
+}
+
+export function useProviders() {
+  return useQuery({ queryKey: ['providers'], queryFn: () => api.providers.list() })
+}
+
+export function useConversations() {
+  return useQuery({ queryKey: ['conversations'], queryFn: () => api.chat.conversations() })
+}
+
+/** 向量模型与索引状态：订阅主进程推送 */
+export function useEmbeddingStatus() {
+  const qc = useQueryClient()
+  const q = useQuery({ queryKey: ['embedding'], queryFn: () => api.embedding.status() })
+  useEffect(() => window.jiweiEvents.on('embedding:status', (s) => qc.setQueryData(['embedding'], s)), [qc])
+  return q
 }
 
 export function useHeatmap(days: number) {
