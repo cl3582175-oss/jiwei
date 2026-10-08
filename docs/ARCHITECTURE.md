@@ -186,3 +186,21 @@ AI 不直接修改笔记，而是创建提案（`proposals` 表）。提案里�
 - 粉彩色通过 `data-tint` 加 `.tint` 或 `.tint-ink` 使用；分类颜色存在 `categories.color` 中，未设置时按 ID 稳定分配。
 - SVG 的 presentation 属性不能使用 CSS 变量，填充颜色要写在 `style` 中。
 - 插画统一使用 `currentColor` 加配色变量，以适配所有配色和深色模式。
+
+## 25. AI 服务与思考强度（v0.2）
+
+- 所有模型调用都在主进程中进行（Vercel AI SDK），使用 Electron `net.fetch` 以继承系统代理。渲染进程永远拿不到 API Key。
+- API Key 由 `safeStorage` 加密后存入 `providers.api_key_enc`。换机器或重装系统后需要重新填写。
+- 思考强度统一为 `off / low / medium / high / max`。`src/shared/ai.ts` 声明每个服务商支持的档位，`model.ts` 将档位翻译成各家参数（例如 DeepSeek 使用 `thinking` 加 `reasoning_effort`）。新增服务商只需修改这两处。
+
+## 26. 知识库检索
+
+- 笔记段落与资料片段统一切成 `chunks`，其整数 rowid 对应 `vec_chunks`（sqlite-vec，512 维，余弦距离）。
+- EmbeddingGemma 原生输出 768 维，按 MRL 截断到 512 维后归一化。更换向量模型会触发重建索引。
+- 检索流程：FTS5 与向量检索各取候选，经 RRF 融合，再按时间和知识状态（过时 / 存疑降权）加权。标记为 `aiExcluded` 的内容在检索阶段过滤掉。
+- 回答中的 `[n]` 对应系统提示中的编号片段。只有被引用的片段会作为引用保存，编号保持原样，以便和正文对应。
+
+## 27. 真实服务端到端测试
+
+- `e2e/chat-live.spec.ts` 仅在设置 `JIWEI_IMPORT_PROVIDERS_FROM=<用户数据库>` 时运行。它把加密后的服务商配置复制到临时数据目录，测试代码不解密 Key，也不输出 Key。
+- Playwright 默认注入 `--use-mock-keychain`，会导致无法解密 Key。开发构建在设置上述变量时会移除这个开关，安装版不受影响。

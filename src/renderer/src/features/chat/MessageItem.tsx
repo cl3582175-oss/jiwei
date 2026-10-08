@@ -81,7 +81,7 @@ function CitationCard({ c }: { c: Citation }) {
           {c.origin === 'ai' && <Sparkles className="size-3 shrink-0 text-subtle" />}
           <span className="ml-auto shrink-0 text-2xs text-subtle">{date ? formatDate(date, i18n.language) : ''}</span>
         </span>
-        <span className="mt-0.5 line-clamp-2 block text-2xs leading-relaxed text-muted">{c.snippet}</span>
+        <span className="mt-0.5 line-clamp-2 block text-2xs leading-relaxed text-muted">{c.snippet.replace(/^#{1,6}\s+/gm, '')}</span>
       </span>
     </button>
   )

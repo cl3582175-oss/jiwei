@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useLayoutEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { HeatmapDay } from '@shared/types'
 import { Tip } from '@/components/ui/primitives'
@@ -29,6 +29,12 @@ const LEVEL_BG = [
 export function Heatmap({ days }: { days: HeatmapDay[] }) {
   const { t, i18n } = useTranslation()
   const level = useMemo(() => levels(days), [days])
+  const scroller = useRef<HTMLDivElement>(null)
+  // 空间不足时默认停在最近的日期（最右侧）
+  useLayoutEffect(() => {
+    const el = scroller.current
+    if (el) el.scrollLeft = el.scrollWidth
+  }, [days])
 
   // 按周排列（周一为一周开始），首列前补空位
   const weeks = useMemo(() => {
@@ -46,7 +52,7 @@ export function Heatmap({ days }: { days: HeatmapDay[] }) {
 
   return (
     <div>
-      <div className="overflow-x-auto pb-1">
+      <div ref={scroller} className="overflow-x-auto pb-1">
         <div className="inline-flex flex-col" style={{ gap: GAP }}>
           {/* 月份标签 */}
           <div className="relative h-4 text-2xs text-subtle">

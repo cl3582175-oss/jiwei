@@ -37,8 +37,8 @@ test('provider imported and knowledge base ready', async () => {
   const providers = await page.evaluate(() => window.jiwei.providers.list())
   expect(providers.length).toBeGreaterThan(0)
   expect(providers.some((p) => p.hasKey)).toBe(true)
-  const test = await page.evaluate((id) => window.jiwei.providers.test(id), providers.find((p) => p.hasKey)!.id)
-  expect(test.ok, test.message ?? '').toBe(true)
+  const conn = await page.evaluate((id) => window.jiwei.providers.test(id), providers.find((p) => p.hasKey)!.id)
+  expect(conn.ok, conn.message ?? '').toBe(true)
   await page.evaluate(() => window.jiwei.embedding.installLocal())
   await page.evaluate(() => window.jiwei.notes.createSample('zh-CN'))
   const dir = mkdtempSync(join(tmpdir(), 'jiwei-live-src-'))
@@ -95,7 +95,7 @@ test('stop generation', async () => {
 
 test('no knowledge base: answer marked as general knowledge', async () => {
   test.setTimeout(120_000)
-  await page.getByRole('button', { name: '新建' }).click()
+  await page.getByRole('button', { name: '新对话', exact: true }).click()
   await page.getByRole('button', { name: '检索范围' }).click()
   await page.getByRole('menuitem', { name: '不使用知识库' }).click()
   await ask('用一句话解释什么是光合作用。')

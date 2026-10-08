@@ -4,6 +4,8 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 
 // AI 设置与对话界面（不需要 API Key）：添加服务商、思考强度档位、对话空状态
+// 导入真实服务商时（chat-live）跳过：本用例假设没有任何服务商
+test.skip(!!process.env.JIWEI_IMPORT_PROVIDERS_FROM, '已导入真实服务商')
 test('AI settings and chat UI without a key', async () => {
   const app = await electron.launch({
     args: ['.', `--user-data-dir=${mkdtempSync(join(tmpdir(), 'jiwei-e2e-ai-'))}`],

@@ -46,6 +46,9 @@ app.on('open-url', (e, url) => {
 log.initialize()
 // 只记录不弹窗：退出过程中的偶发错误不能用对话框阻塞退出
 log.errorHandler.startCatching({ showDialog: false })
+
+// 真实服务商端到端测试：Playwright 默认注入 --use-mock-keychain，会导致无法解密用户保存的 API Key
+if (!app.isPackaged && process.env.JIWEI_IMPORT_PROVIDERS_FROM) app.commandLine.removeSwitch('use-mock-keychain')
 registerSchemePrivileges()
 
 function createWindow(): void {
