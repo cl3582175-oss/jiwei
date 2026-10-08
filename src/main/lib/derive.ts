@@ -71,6 +71,8 @@ export function nodeText(node: DocNode): string {
   if (node.type === 'text') return node.text ?? ''
   if (node.type === 'hardBreak') return '\n'
   if (!node.content) return ''
+  // 表格：同一行的单元格以“ | ”分隔，便于检索与模型阅读
+  if (node.type === 'tableRow') return node.content.map(nodeText).join(' | ')
   const inline = node.content.every((c) => c.type === 'text' || c.type === 'hardBreak' || c.type === 'image')
   return node.content.map(nodeText).join(inline ? '' : '\n')
 }

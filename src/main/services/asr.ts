@@ -1,4 +1,7 @@
-import { chmod, mkdir, rm, stat } from 'fs/promises'
+import { chmod, mkdir, mkdtemp, readdir, readFile, rm, stat } from 'fs/promises'
+import { spawn } from 'child_process'
+import { tmpdir } from 'os'
+import { net } from 'electron'
 import { existsSync, readFileSync } from 'fs'
 import { join } from 'path'
 import { eq } from 'drizzle-orm'
@@ -14,6 +17,8 @@ import { enqueue, registerJobKind } from './jobs'
 import { replaceSegments } from './segments'
 import { requestIndex } from './ai/indexer'
 import { cuesToSegments, parseSubtitles, type Cue } from '../lib/subtitles'
+import { decryptKey, getProviderRow } from './ai/providers'
+import { getSettings } from './settings'
 import type { AsrStatus } from '@shared/types'
 
 // 语音转写（视频 / 音频的“文字层”）：
@@ -197,14 +202,8 @@ export function installAsr(): Promise<void> {
         done.set('native', pkg.size)
       }
 
-      if (!existsSync(ffmpegPath())) {
-        const tgz = join(tmp, ff.file)
-        await download({ name: 'ffmpeg', size: ff.size, sha256: ff.sha256, urls: NPM(ff.pkg, ff.file), dest: tgz }, report('ffmpeg'))
-        await mkdir(ffmpegDir(), { recursive: true })
-        await untar({ file: tgz, cwd: ffmpegDir(), strip: 1 })
-        if (process.platform !== 'win32') await chmod(ffmpegPath(), 0o755)
-        await rm(tgz, { force: true })
-      } else done.set('ffmpeg', ff.size)
+      if (!existsSync(ffmpegPath())) await ensureFfmpeg(report('ffmpeg'))
+      else done.set('ffmpeg', ff.size)
 
       for (const key of ['vad', 'tokens', 'model'] as const) {
         const m = MODELS[key]
@@ -225,6 +224,103 @@ export function installAsr(): Promise<void> {
     }
   })()
   return installing
+}
+
+/** 只安装 ffmpeg（云端转写只需要它来切分音频） */
+export async function ensureFfmpeg(onProgress?: (p: { received: number; speed: number; mirror: string }) => void): Promise<void> {
+  if (existsSync(ffmpegPath())) return
+  const ff = FFMPEG[PLATFORM]
+  if (!ff) throw new Error(`暂不支持此平台：${PLATFORM}`)
+  const tmp = join(modelsDir(), 'tmp')
+  await mkdir(tmp, { recursive: true })
+  const tgz = join(tmp, ff.file)
+  await download({ name: 'ffmpeg', size: ff.size, sha256: ff.sha256, urls: NPM(ff.pkg, ff.file), dest: tgz }, onProgress ?? (() => {}))
+  await mkdir(ffmpegDir(), { recursive: true })
+  await untar({ file: tgz, cwd: ffmpegDir(), strip: 1 })
+  if (process.platform !== 'win32') await chmod(ffmpegPath(), 0o755)
+  await rm(tgz, { force: true })
+}
+
+/* ——— 云端转写（OpenAI 兼容 /audio/transcriptions） ——— */
+
+const CHUNK_SEC = 600
+
+function run(cmd: string, args: string[]): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const p = spawn(cmd, args)
+    let err = ''
+    p.stderr.on('data', (d: Buffer) => (err = (err + d.toString()).slice(-2000)))
+    p.on('error', reject)
+    p.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`ffmpeg 失败（${code}）：${err.split('\n').slice(-3).join(' ')}`))))
+  })
+}
+
+/**
+ * 云端转写：ffmpeg 切成 10 分钟的低码率单声道片段（远小于接口的 25 MB 限制），逐段上传，
+ * 取 verbose_json 的分句时间，按片段偏移拼回完整时间轴。音频会上传到所选服务商。
+ */
+export async function transcribeCloud(file: string, providerId: string, model: string, progress: (p: number) => void): Promise<Cue[]> {
+  const row = getProviderRow(providerId)
+  const key = decryptKey(row)
+  const base = row.baseUrl.replace(/\/+$/, '')
+  await ensureFfmpeg()
+  const dir = await mkdtemp(join(tmpdir(), 'jiwei-asr-'))
+  try {
+    await run(ffmpegPath(), [
+      '-hide_banner',
+      '-nostdin',
+      '-i',
+      file,
+      '-vn',
+      '-ac',
+      '1',
+      '-ar',
+      '16000',
+      '-b:a',
+      '32k',
+      '-f',
+      'segment',
+      '-segment_time',
+      String(CHUNK_SEC),
+      '-reset_timestamps',
+      '1',
+      join(dir, 'part%03d.mp3')
+    ])
+    const parts = (await readdir(dir)).filter((n) => n.endsWith('.mp3')).sort()
+    const cues: Cue[] = []
+    for (const [i, name] of parts.entries()) {
+      const form = new FormData()
+      form.append('file', new Blob([await readFile(join(dir, name))], { type: 'audio/mpeg' }), name)
+      form.append('model', model)
+      form.append('response_format', 'verbose_json')
+      form.append('timestamp_granularities[]', 'segment')
+      const res = await net.fetch(`${base}/audio/transcriptions`, {
+        method: 'POST',
+        headers: key ? { Authorization: `Bearer ${key}` } : {},
+        body: form
+      })
+      if (!res.ok) throw new Error(`云端转写失败：HTTP ${res.status} ${(await res.text()).slice(0, 300)}`)
+      const json = (await res.json()) as { text?: string; duration?: number; segments?: { start: number; end: number; text: string }[] }
+      const off = i * CHUNK_SEC
+      if (json.segments?.length)
+        for (const sg of json.segments) {
+          const text = sg.text.trim()
+          if (text) cues.push({ start: off + sg.start, end: off + sg.end, text })
+        }
+      else if (json.text?.trim()) cues.push({ start: off, end: off + (json.duration ?? CHUNK_SEC), text: json.text.trim() })
+      progress((i + 1) / parts.length)
+    }
+    return cues
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+}
+
+/** 当前设置下能否自动转写（本地引擎已安装，或已配置云端转写） */
+export function canAutoTranscribe(): boolean {
+  const t = getSettings().ai.transcription
+  if (t?.mode === 'cloud') return !!t.providerId && !!t.model
+  return asrStatus().state === 'ready'
 }
 
 /* ——— 字幕与转写任务 ——— */
@@ -271,10 +367,15 @@ export function registerAsrJob(): void {
         .where(eq(sources.id, sourceId))
         .get()
       if (!row?.a) return { skipped: 'no file' }
-      if (!installed()) await installAsr()
       const file = assetPath(row.a.id, row.a.ext)
       await stat(file)
-      const cues = await ctx.worker<Cue[]>('transcribe', { file, ...asrPaths() })
+      const t = getSettings().ai.transcription
+      let cues: Cue[]
+      if (t?.mode === 'cloud' && t.providerId && t.model) cues = await transcribeCloud(file, t.providerId, t.model, (p) => ctx.progress(p))
+      else {
+        if (!installed()) await installAsr()
+        cues = await ctx.worker<Cue[]>('transcribe', { file, ...asrPaths() })
+      }
       if (ctx.isCanceled()) return
       if (!cues.length) return { segments: 0, note: 'no speech' }
       const n = replaceSegments(sourceId, cuesToSegments(cues))

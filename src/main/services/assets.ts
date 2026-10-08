@@ -1,3 +1,4 @@
+import { sandboxResponse } from './sandbox'
 import { createHash } from 'crypto'
 import { createReadStream } from 'fs'
 import { copyFile, mkdir, rename, rm, stat, writeFile } from 'fs/promises'
@@ -169,6 +170,7 @@ export function registerSchemePrivileges(): void {
 export function registerProtocol(): void {
   protocol.handle('jiwei', async (req) => {
     const url = new URL(req.url)
+    if (url.hostname === 'sandbox') return sandboxResponse(url.pathname.slice(1))
     if (url.hostname !== 'asset') return new Response('Not found', { status: 404 })
     const m = /^\/([0-9a-f]{64})\.([a-z0-9]{1,10})$/.exec(url.pathname)
     if (!m) return new Response('Bad request', { status: 400 })

@@ -12,9 +12,26 @@ import { api, cn, formatRelative } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { applyOp, ProposalTargetMissing } from './editor/applyProposal'
 import { diffKey, DIFF_DECISION, type DiffDecision, type DiffItem } from './editor/proposalDiff'
+import { embedViews } from './editor/embeds/registry'
+import { embedsMap, writeEmbed } from './editor/embeds/ydata'
 import { previewExtensions } from './editor/preview'
 
 /** AI 修改提案面板：逐条预览、接受或拒绝；接受的内容以 AI 来源写入，可撤销 */
+/** 富内容块预览：用真正的显示组件渲染（导图、图表、图示……），数据放在临时的 Yjs 文档中 */
+function EmbedPreview({ kind, data }: { kind: string; data: unknown }) {
+  const entry = useMemo(() => {
+    const doc = new Y.Doc()
+    writeEmbed(doc, 'preview', kind, data)
+    return embedsMap(doc).get('preview') as Y.Map<unknown>
+  }, [kind, data])
+  const View = embedViews[kind].View
+  return (
+    <div className="proposal-embed-live overflow-hidden rounded-lg border border-border bg-surface">
+      <View entry={entry} id="preview" editable={false} />
+    </div>
+  )
+}
+
 /** 文档 JSON 的纯文本（块之间换行） */
 function jsonText(nodes: unknown[]): string {
   const out: string[] = []
@@ -180,7 +197,9 @@ export function ProposalPanel({ noteId, editor, ydoc }: { noteId: string; editor
     if (embeds.length) {
       return embeds.map((n) => {
         const e = p.embeds[n.attrs?.id ?? '']
-        return (
+        return e && embedViews[e.kind] ? (
+          <EmbedPreview key={n.attrs?.id} kind={e.kind} data={e.data} />
+        ) : (
           <pre key={n.attrs?.id} className="proposal-embed">
             <Network className="mb-1 size-3.5 text-accent" />
             {e ? embedText(e.kind, e.data) : '—'}

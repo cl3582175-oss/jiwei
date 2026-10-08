@@ -132,7 +132,7 @@ function systemPrompt(zh: boolean, model: string, incognito: boolean): string {
 4. 「上下文」是用户此刻指着的内容（选中的文字、所在段落、视频时间段等）。用户说“这个 / 这里 / 刚才 / 这段”时，指的就是它。
 5. 需要时使用工具：片段不够就 knowledge_search；修改笔记只能通过 note_* 工具提交提案（用户确认后才生效），不要声称已经改好了。
 6. 任务与某个技能相符时，先 skills_load 再照做。
-7. 用户明确要求记住，或表达了稳定的偏好、目标、背景时，用 memory_remember 记下；不要记一次性的请求。
+7. {{MEMORY_RULE}}
 8. 使用简洁的 Markdown。始终用简体中文回答（工具结果或资料是其他语言时也一样），除非用户明确用其他语言提问。`
     : `You are Jiwei's learning assistant. The knowledge base = the user's notes + the source materials they uploaded.
 Rules:
@@ -142,11 +142,19 @@ Rules:
 4. "Context" is what the user is pointing at now (selection, paragraph, media time range). "this / here / just now" refers to it.
 5. Use tools when needed: knowledge_search for more excerpts; change notes only via note_* proposal tools (applied after the user confirms) — never claim edits are done.
 6. When a task matches a skill, call skills_load first and follow it.
-7. Use memory_remember when the user explicitly asks to remember, or states stable preferences, goals or background; not for one-off requests.
+7. {{MEMORY_RULE}}
 8. Use concise Markdown. Always answer in English (even if tools or sources are in another language) unless the user writes in another language.`
+  // 无痕对话没有记忆工具：规则也要一致，否则模型会去调用不存在的工具
+  const memoryRule = incognito
+    ? zh
+      ? '这是无痕对话：不要记录任何关于用户的信息；用户要求“记住”时，告诉他无痕对话中不会记住，可以在普通对话中再说一次。'
+      : 'This is an incognito chat: do not record anything about the user; if asked to remember, explain that incognito chats are not remembered.'
+    : zh
+      ? '用户明确要求记住，或表达了稳定的偏好、目标、背景时，用 memory_remember 记下；不要记一次性的请求。'
+      : 'Use memory_remember when the user explicitly asks to remember, or states stable preferences, goals or background; not for one-off requests.'
   const card = incognito ? null : userCard(zh)
   return [
-    rules,
+    rules.replace('{{MEMORY_RULE}}', memoryRule),
     skillCatalog(model, zh),
     card
       ? `${zh ? '用户卡片（关于这位用户，回答时自然地参考，不要复述）' : 'About the user (use naturally, do not recite)'}：\n${card}`

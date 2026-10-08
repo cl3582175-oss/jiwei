@@ -30,10 +30,14 @@ describe('markdownToNodes', () => {
     expect(markdownToNodes('')).toEqual([{ type: 'paragraph' }])
   })
 
-  it('degrades tables to paragraphs', () => {
-    const nodes = markdownToNodes('| a | b |\n|---|---|\n| 1 | 2 |')
-    expect(nodes.every((n) => n.type === 'paragraph')).toBe(true)
-    expect(nodes).toHaveLength(2)
+  it('converts GFM tables (padding short rows) and back', async () => {
+    const { nodesToMarkdown } = await import('../markdown')
+    const nodes = markdownToNodes('| 方法 | 作用 |\n|---|---|\n| 间隔重复 | 对抗遗忘 |\n| 提取练习 |')
+    expect(nodes).toHaveLength(1)
+    expect(nodes[0].type).toBe('table')
+    expect(nodes[0].content!.map((r) => r.content!.length)).toEqual([2, 2, 2])
+    expect(nodes[0].content![0].content![0].type).toBe('tableHeader')
+    expect(nodesToMarkdown(nodes)).toBe('| 方法 | 作用 |\n| --- | --- |\n| 间隔重复 | 对抗遗忘 |\n| 提取练习 |  |')
   })
 })
 

@@ -1,3 +1,4 @@
+import { TableKit } from '@tiptap/extension-table'
 import StarterKit from '@tiptap/starter-kit'
 import Image from '@tiptap/extension-image'
 import UniqueID from '@tiptap/extension-unique-id'
@@ -28,6 +29,8 @@ export function schemaExtensions(labels: SchemaLabels): AnyExtension[] {
       // 允许应用内链接 jiwei://note|source/<id>（否则会被当作不安全链接清空）
       link: { openOnClick: false, autolink: true, protocols: ['jiwei'] }
     }),
+    // 表格（AI 生成表格、用户粘贴表格）
+    TableKit.configure({ table: { resizable: false } }),
     CornellDocument,
     CornellRow,
     CornellCue,

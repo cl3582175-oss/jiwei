@@ -99,7 +99,7 @@ test('note beside source: AI proposal with a mind map is previewed and accepted'
     { noteId, segId: segs[0].id }
   )
   await expect(page.getByText('根据《学习科学》生成思维导图')).toBeVisible()
-  await expect(page.locator('.proposal-embed')).toContainText('提取练习')
+  await expect(page.locator('.proposal-embed-live, .proposal-embed')).toContainText('提取练习')
   await shot('21-proposal')
   await page.getByRole('button', { name: '全部接受' }).click()
 

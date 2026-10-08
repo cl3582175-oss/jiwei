@@ -12,7 +12,7 @@ import { deletedCategoryIds, descendantIds } from './categories'
 import { entitiesWithTag, tagIdsFor } from './tags'
 import { assetPath, assetUrl, collectGarbage, importFile } from './assets'
 import { canSegment, enqueueFetch, enqueueSegment } from './jobKinds'
-import { applySubtitleFile, asrStatus, enqueueTranscribe, findSidecarSubtitles, isMedia } from './asr'
+import { applySubtitleFile, canAutoTranscribe, enqueueTranscribe, findSidecarSubtitles, isMedia } from './asr'
 import { deleteSegments } from './segments'
 import type { ImportResult, Source, SourceKind, SourceQuery, SourceUpdate } from '@shared/types'
 
@@ -154,7 +154,7 @@ export async function importPaths(paths: string[], categoryId?: string | null): 
         } catch (e) {
           log.warn('[sources] subtitles', e)
         }
-      } else if (asrStatus().state === 'ready') enqueueTranscribe(id)
+      } else if (canAutoTranscribe()) enqueueTranscribe(id)
     }
   }
   return out

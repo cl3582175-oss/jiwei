@@ -1193,3 +1193,112 @@
   color: var(--muted);
   font-size: 0.9em;
 }
+
+/* ——— 表格 ——— */
+.prose-jiwei table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.6em 0;
+  font-size: 0.92em;
+  table-layout: auto;
+}
+.prose-jiwei th,
+.prose-jiwei td {
+  border: 1px solid var(--border);
+  padding: 6px 10px;
+  vertical-align: top;
+  text-align: left;
+  min-width: 3em;
+}
+.prose-jiwei th {
+  background: var(--sunken);
+  font-weight: 600;
+}
+.prose-jiwei td > p,
+.prose-jiwei th > p {
+  margin: 0;
+}
+.prose-jiwei .selectedCell {
+  background: color-mix(in oklab, var(--accent) 12%, transparent);
+}
+.prose-jiwei .tableWrapper {
+  overflow-x: auto;
+}
+
+/* ——— 时间线 ——— */
+.timeline {
+  position: relative;
+  display: grid;
+  gap: 14px;
+}
+.timeline-item {
+  display: grid;
+  grid-template-columns: 7.5em 14px 1fr;
+  align-items: start;
+  gap: 10px;
+  position: relative;
+}
+.timeline-item::before {
+  content: '';
+  position: absolute;
+  left: calc(7.5em + 10px + 6px);
+  top: 16px;
+  bottom: -18px;
+  width: 2px;
+  background: var(--border);
+}
+.timeline-item:last-child::before {
+  display: none;
+}
+.timeline-date {
+  text-align: right;
+  font-size: 12px;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  padding-top: 2px;
+}
+.timeline-dot {
+  width: 12px;
+  height: 12px;
+  margin-top: 4px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 2.5px solid var(--accent);
+  position: relative;
+  z-index: 1;
+}
+
+/* ——— 代码分步讲解 ——— */
+.steps-code {
+  margin: 10px 12px;
+  padding: 10px 0;
+  border-radius: 10px;
+  background: var(--sunken);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.7;
+  overflow-x: auto;
+}
+.steps-line {
+  display: flex;
+  padding-right: 14px;
+  transition: background-color 250ms ease;
+  border-left: 3px solid transparent;
+}
+.steps-line.is-on {
+  background: color-mix(in oklab, var(--accent) 14%, transparent);
+  border-left-color: var(--accent);
+}
+.steps-ln {
+  width: 2.6em;
+  flex-shrink: 0;
+  text-align: right;
+  padding-right: 12px;
+  color: var(--subtle);
+  user-select: none;
+}
+
+/* 提案中的富内容块预览 */
+.proposal-embed-live .chart-canvas {
+  height: 240px;
+}

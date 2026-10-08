@@ -15,7 +15,8 @@ import {
   Sparkles,
   Database,
   ChevronDown,
-  Plug
+  Plug,
+  AudioLines
 } from 'lucide-react'
 import { PROVIDER_ORDER, PROVIDER_PRESETS, type Effort, type ProviderKind } from '@shared/ai'
 import type { ProviderInfo } from '@shared/types'
@@ -333,6 +334,81 @@ function EmbeddingSection() {
 }
 
 /** 设置 → AI */
+/** 视频 / 音频转写：本地（离线）或云端（OpenAI 兼容接口，音频会上传） */
+const ASR_MODELS = ['whisper-1', 'gpt-4o-transcribe', 'gpt-4o-mini-transcribe', 'whisper-large-v3-turbo', 'FunAudioLLM/SenseVoiceSmall']
+
+function TranscriptionSection() {
+  const { t } = useTranslation()
+  const { data: s } = useSettings()
+  const update = useUpdateSettings()
+  const { data: providers = [] } = useProviders()
+  if (!s) return null
+  const tr = s.ai.transcription ?? { mode: 'local' as const, providerId: null, model: null }
+  const set = (patch: Partial<typeof tr>): void => update.mutate({ ai: { ...s.ai, transcription: { ...tr, ...patch } } })
+  const usable = providers.filter((p) => p.kind !== 'deepseek' && p.kind !== 'anthropic')
+  return (
+    <section className="space-y-3">
+      <h4 className="flex items-center gap-2 text-sm font-medium text-fg">
+        <AudioLines className="size-4 text-accent" />
+        {t('ai.asr.title')}
+      </h4>
+      <p className="text-xs leading-relaxed text-muted">{t('ai.asr.desc')}</p>
+      <div className="flex flex-wrap items-center gap-2" role="radiogroup" aria-label={t('ai.asr.title')}>
+        {(['local', 'cloud'] as const).map((m) => (
+          <button
+            key={m}
+            role="radio"
+            aria-checked={tr.mode === m}
+            onClick={() => set({ mode: m })}
+            className={cn(
+              'rounded-lg border px-3 py-1.5 text-xs transition-colors',
+              tr.mode === m ? 'border-accent bg-accent-soft text-accent' : 'border-border text-muted hover:text-fg'
+            )}
+          >
+            {t(`ai.asr.${m}`)}
+          </button>
+        ))}
+      </div>
+      {tr.mode === 'cloud' && (
+        <div className="space-y-2 rounded-xl border border-border bg-surface p-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              aria-label={t('ai.asr.provider')}
+              value={tr.providerId ?? ''}
+              onChange={(e) => set({ providerId: e.target.value || null })}
+              className="h-8 rounded-lg border border-border bg-surface px-2 text-xs text-fg"
+            >
+              <option value="">{t('ai.asr.pickProvider')}</option>
+              {usable.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+            <Input
+              aria-label={t('ai.asr.model')}
+              list="asr-models"
+              placeholder="whisper-1"
+              defaultValue={tr.model ?? ''}
+              onBlur={(e) => set({ model: e.target.value.trim() || null })}
+              className="h-8 w-[240px] text-xs"
+            />
+            <datalist id="asr-models">
+              {ASR_MODELS.map((m) => (
+                <option key={m} value={m} />
+              ))}
+            </datalist>
+          </div>
+          <p className="flex items-start gap-1.5 text-2xs leading-relaxed text-muted">
+            <CircleAlert className="mt-px size-3 shrink-0 text-[#b8862b]" />
+            {t('ai.asr.privacy')}
+          </p>
+        </div>
+      )}
+    </section>
+  )
+}
+
 export function AiSettingsTab() {
   const { t } = useTranslation()
   const qc = useQueryClient()
@@ -409,6 +485,7 @@ export function AiSettingsTab() {
       )}
 
       <EmbeddingSection />
+      <TranscriptionSection />
     </div>
   )
 }

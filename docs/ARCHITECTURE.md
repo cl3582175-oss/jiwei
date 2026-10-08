@@ -271,3 +271,23 @@ AI 不直接修改笔记，而是创建提案（`proposals` 表）。提案里�
 - mind-elixir 的 `contextMenu.locale` 需要传入语言包对象（`mind-elixir/i18n`），不能传语言代码。
 - AI 修改导图：上下文给出带 `{segmentId}` 的缩进大纲，模型通过 `note_update_mindmap` 提交完整的新树，生成替换整个导图块的提案（在顶部面板中预览）。
 
+## 36. 生成类内容（v0.3.3）
+
+- 数据模型位于 `shared/embeds/visuals.ts`（zod），包括 chart、diagram、timeline、steps、interactive。每种都能转为纯文本，进入检索。工具只接收数据，样式由渲染组件统一处理（`VisualViews.tsx`），并跟随配色和深色模式。
+- 有些校验 schema 做不到，需要额外检查：图表数据个数与类目个数一致；代码步骤的行号在代码范围内；交互演示不得引用外链或访问网络。工具执行时抛出错误，AI SDK 会把错误作为工具结果返回给模型，模型据此修正后重试。
+- Mermaid 语法需要浏览器环境才能校验：主进程通过 `executeJavaScript` 调用渲染进程的 `window.__jiweiValidate`，把错误信息反馈给模型。
+- Mermaid 使用 `htmlLabels: false`（纯 SVG 文字），这样导出时可以转为位图；含 foreignObject 的 SVG 会污染画布。
+- 交互演示通过 `jiwei://sandbox/<哈希>` 加载：独立的源，响应头带严格的 CSP（允许内联脚本，禁止所有网络）；iframe 设置 `sandbox="allow-scripts"`，不允许同源。不使用 srcdoc / blob，因为它们会继承应用自身的 CSP，内联脚本无法运行。端到端测试验证了无法联网、无法访问父页面。
+- `note_add_interactive` 只在 `modelTier` 判定为强模型时提供。
+
+## 37. 导出
+
+- 渲染进程截取富内容块的 SVG：把 CSS 变量换成具体颜色，并去掉绝对定位；可以转位图时再生成 PNG。主进程用纯函数 `lib/exportFormats.ts` 生成 Markdown / HTML，PDF 由隐藏窗口 `printToPDF` 打印，Word 由 docx 库生成（康奈尔版式为两栏表格）。
+- 没有截图的富内容块以文字形式导出：导图为列表，图示为 Mermaid 源码，图表为数据表，代码讲解为代码加步骤。
+- 开发构建设置 `JIWEI_EXPORT_DIR` 时跳过保存对话框，供端到端测试使用。
+
+## 38. 云端转写
+
+- 设置项为 `ai.transcription`（local / cloud）。云端模式下用 ffmpeg 把音频切成 10 分钟、32 kbps 的单声道 mp3，逐段 POST 到 `{baseUrl}/audio/transcriptions`（`verbose_json`），再按片段偏移拼回时间轴。只需要 ffmpeg，不需要本地模型。
+- 端到端测试用本地 HTTP 服务模拟接口，覆盖上传、解析和片段合并。
+

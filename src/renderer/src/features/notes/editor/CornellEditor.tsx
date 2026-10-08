@@ -16,6 +16,7 @@ import { OriginAttribute } from './origin'
 import { ProposalDiff } from './proposalDiff'
 import { Embed } from './embeds/EmbedNode'
 import './embeds/MindmapView'
+import './embeds/VisualViews'
 import { useApp, openSourceAt } from '@/store/app'
 import { MindmapActions } from './embeds/MindmapActions'
 

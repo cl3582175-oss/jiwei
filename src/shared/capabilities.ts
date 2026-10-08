@@ -80,6 +80,7 @@ const id = (name = 'id') => [name, S.Id] as const
 
 export const capabilities = {
   app: {
+    showInFolder: cap<void>()({ description: '在文件管理器中显示文件', params: [['path', z.string().min(1).max(4096)]] }),
     info: cap<AppInfo>()({ description: '应用版本与数据目录信息', params: none }),
     openDataDir: cap<void>()({ description: '在系统文件管理器中打开数据目录', params: none }),
     changeDataDir: cap<boolean>()({ description: '把当前知识库迁移到新的空文件夹并重启', params: none }),
@@ -136,6 +137,25 @@ export const capabilities = {
     list: cap<NoteSummary[]>()({ description: '按条件列出 / 检索笔记', params: [['query', S.NoteQuerySchema]], ai: { effect: 'read' } }),
     get: cap<Note | null>()({ description: '读取笔记元信息', params: [id()], ai: { effect: 'read' } }),
     create: cap<Note>()({ description: '新建笔记', params: [['init', S.NoteInitSchema]] }),
+    export: cap<string | null>()({
+      description: '导出笔记（Markdown / HTML / PDF / Word）',
+      params: [
+        id(),
+        ['format', z.enum(['md', 'html', 'pdf', 'docx'])],
+        [
+          'images',
+          z.record(
+            z.string().max(64),
+            z.object({
+              svg: z.string().max(4_000_000).optional(),
+              png: z.string().max(12_000_000).optional(),
+              width: z.number().optional(),
+              height: z.number().optional()
+            })
+          )
+        ]
+      ]
+    }),
     createSample: cap<Note>()({ description: '创建示例笔记《如何使用康奈尔笔记法》', params: [['lang', z.enum(['zh-CN', 'en'])]] }),
     update: cap<NoteSummary>()({ description: '修改笔记元信息', params: [id(), ['patch', S.NoteMetaUpdateSchema]] }),
     trash: cap<void>()({ description: '删除笔记（进入最近删除）', params: [id()] }),
@@ -162,6 +182,9 @@ export const capabilities = {
       description: '接受或拒绝提案中的一条操作',
       params: [id(), ['opIndex', z.number().int().min(0)], ['decision', z.enum(['accepted', 'rejected'])]]
     })
+  },
+  sandbox: {
+    register: cap<string>()({ description: '登记交互演示页面，返回沙箱地址', params: [['html', z.string().min(1).max(400_000)]] })
   },
   assets: {
     importBytes: cap<AssetRef>()({

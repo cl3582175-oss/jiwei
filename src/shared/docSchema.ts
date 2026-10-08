@@ -13,5 +13,6 @@ export const ID_TYPES = [
   'listItem',
   'horizontalRule',
   'image',
-  'embed'
+  'embed',
+  'table'
 ]

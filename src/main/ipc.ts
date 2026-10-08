@@ -26,6 +26,8 @@ import { retrieve } from './services/ai/retrieve'
 import * as memory from './services/memory'
 import * as asr from './services/asr'
 import { saveAnswer } from './services/saveAnswer'
+import { exportNote } from './services/exportNote'
+import { registerSandbox } from './services/sandbox'
 import * as skills from './services/ai/skills'
 
 /** 会影响知识库内容（或隐私范围）的操作完成后，更新索引 */
@@ -49,6 +51,7 @@ type Handlers = {
 
 const handlers: Handlers = {
   app: {
+    showInFolder: (_, path) => shell.showItemInFolder(path),
     info: () => appSvc.appInfo(),
     openDataDir: () => appSvc.openDataDir(),
     changeDataDir: ({ win }) => appSvc.changeDataDir(win),
@@ -93,6 +96,7 @@ const handlers: Handlers = {
     list: (_, q) => notes.listNotes(q),
     get: (_, id) => notes.getNote(id),
     create: (_, init) => notes.createNote(init),
+    export: ({ win }, id, format, images) => exportNote(win, id, format, images),
     createSample: (_, lang) => notes.createSampleNote(lang),
     update: (_, id, patch) =>
       patch.aiExcluded !== undefined || patch.status !== undefined
@@ -125,6 +129,9 @@ const handlers: Handlers = {
     list: () => jobs.listJobs(),
     cancel: (_, id) => jobs.cancelJob(id),
     retry: (_, id) => jobs.retryJob(id)
+  },
+  sandbox: {
+    register: (_, html) => registerSandbox(html)
   },
   assets: {
     importBytes: (_, name, mime, bytes) => assets.importBytes(name, mime, bytes)

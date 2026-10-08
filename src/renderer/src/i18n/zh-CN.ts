@@ -89,6 +89,16 @@ const zhCN = {
     aiWordsHint: 'AI 生成且尚未经你修改的内容不计入学习统计。修改后会自动标记为“已审阅”。'
   },
   embeds: {
+    chart: '图表',
+    diagram: '图示',
+    timeline: '时间线',
+    steps: '代码分步讲解',
+    interactive: '交互演示',
+    stepOf: '第 {{n}} 步 / 共 {{total}} 步',
+    prevStep: '上一步',
+    nextStep: '下一步',
+    play: '自动播放',
+    pause: '暂停',
     mindmap: '思维导图',
     missing: '内容缺失',
     toRows: '展开为康奈尔行',
@@ -195,6 +205,16 @@ const zhCN = {
     sample: '打开示例笔记'
   },
   ai: {
+    asr: {
+      title: '视频 / 音频转写',
+      desc: '为视频、音频生成带时间的转写稿，用于选中提问、按时间跳转和知识库检索。',
+      local: '本地（离线，SenseVoice）',
+      cloud: '云端（OpenAI 兼容接口）',
+      provider: '转写服务商',
+      pickProvider: '选择服务商…',
+      model: '转写模型',
+      privacy: '云端转写会把音频上传到所选服务商。DeepSeek 暂不提供语音转写，可使用 OpenAI、Groq、硅基流动等。'
+    },
     providers: '模型服务',
     addProvider: '添加服务',
     noProviders: '还没有添加模型服务。点击右上角「添加服务」，选择 DeepSeek 等服务商，填入 API Key 即可开始使用 AI。',
@@ -483,12 +503,22 @@ const zhCN = {
     noTranscript: '还没有转写稿',
     noTranscriptDesc:
       '生成转写稿后，可以选中文字提问、按时间跳转，内容也会进入知识库。首次使用需下载本地转写引擎（约 {{size}}），之后完全离线运行。',
+    noTranscriptCloud: '将使用设置中的云端转写服务（音频会上传到该服务商）。',
     noTranscriptReady: '生成转写稿后，可以选中文字提问、按时间跳转，内容也会进入知识库。转写在本机完成。',
     transcribe: '生成转写稿',
     importSubtitles: '导入字幕',
     downloading: '正在下载转写引擎… {{p}}%（{{mirror}}）',
     transcribing: '正在转写… {{p}}%',
     transcribingHint: '可以先看视频或做别的事，完成后转写稿会出现在这里。'
+  },
+  export: {
+    title: '导出',
+    md: 'Markdown（.md，图片另存文件夹）',
+    html: '网页（.html，单个文件）',
+    pdf: 'PDF',
+    docx: 'Word（.docx）',
+    done: '已导出',
+    show: '在文件夹中显示'
   },
   memory: {
     profileTitle: '个人档案',

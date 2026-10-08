@@ -48,6 +48,7 @@ function EmbedView(props: NodeViewProps) {
     <NodeViewWrapper
       className={cn('embed-block group/embed', selected && 'is-selected')}
       data-kind={kind}
+      data-embed-id={id}
       data-origin={origin ? (origin.reviewed ? 'ai-reviewed' : 'ai') : undefined}
     >
       <div className="embed-head" contentEditable={false}>

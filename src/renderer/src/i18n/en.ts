@@ -91,6 +91,16 @@ const en: Messages = {
     aiWordsHint: 'AI-generated content you have not edited is excluded from learning stats. Editing it marks it as reviewed.'
   },
   embeds: {
+    chart: 'Chart',
+    diagram: 'Diagram',
+    timeline: 'Timeline',
+    steps: 'Code walkthrough',
+    interactive: 'Interactive demo',
+    stepOf: 'Step {{n}} of {{total}}',
+    prevStep: 'Previous step',
+    nextStep: 'Next step',
+    play: 'Play',
+    pause: 'Pause',
     mindmap: 'Mind map',
     missing: 'Content missing',
     toRows: 'Expand into Cornell rows',
@@ -204,6 +214,17 @@ const en: Messages = {
     sample: 'Open the sample note'
   },
   ai: {
+    asr: {
+      title: 'Video / audio transcription',
+      desc: 'Generate timed transcripts for video and audio: ask about selected lines, jump by time, and search them.',
+      local: 'Local (offline, SenseVoice)',
+      cloud: 'Cloud (OpenAI-compatible)',
+      provider: 'Transcription provider',
+      pickProvider: 'Choose a provider…',
+      model: 'Transcription model',
+      privacy:
+        'Cloud transcription uploads the audio to the chosen provider. DeepSeek has no speech API; use OpenAI, Groq, SiliconFlow, etc.'
+    },
     providers: 'Model services',
     addProvider: 'Add service',
     noProviders: 'No model service yet. Click "Add service", choose a provider such as DeepSeek and enter your API key to start using AI.',
@@ -497,6 +518,7 @@ const en: Messages = {
     noTranscript: 'No transcript yet',
     noTranscriptDesc:
       'With a transcript you can select text to ask, jump by time, and search it in your knowledge base. The first run downloads the local transcription engine (about {{size}}); after that it works fully offline.',
+    noTranscriptCloud: 'Your cloud transcription provider will be used (the audio is uploaded to it).',
     noTranscriptReady:
       'With a transcript you can select text to ask, jump by time, and search it in your knowledge base. Transcription runs on this device.',
     transcribe: 'Generate transcript',
@@ -504,6 +526,15 @@ const en: Messages = {
     downloading: 'Downloading the transcription engine… {{p}}% ({{mirror}})',
     transcribing: 'Transcribing… {{p}}%',
     transcribingHint: 'Feel free to watch or do something else; the transcript will appear here.'
+  },
+  export: {
+    title: 'Export',
+    md: 'Markdown (.md, images in a folder)',
+    html: 'Web page (.html, single file)',
+    pdf: 'PDF',
+    docx: 'Word (.docx)',
+    done: 'Exported',
+    show: 'Show in folder'
   },
   memory: {
     profileTitle: 'Profile',

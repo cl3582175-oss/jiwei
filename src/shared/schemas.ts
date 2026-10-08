@@ -193,7 +193,9 @@ export const AiSettingsSchema = z.object({
     model: z.string().max(200).nullable()
   }),
   /** 停用的技能名称 */
-  disabledSkills: z.array(z.string().max(64)).max(200).optional()
+  disabledSkills: z.array(z.string().max(64)).max(200).optional(),
+  /** 视频 / 音频转写：本地（SenseVoice，离线）或云端（OpenAI 兼容 /audio/transcriptions） */
+  transcription: z.object({ mode: z.enum(['local', 'cloud']), providerId: Id.nullable(), model: z.string().max(200).nullable() }).optional()
 })
 export type AiSettings = z.infer<typeof AiSettingsSchema>
 

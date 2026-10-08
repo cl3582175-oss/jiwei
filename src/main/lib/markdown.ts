@@ -111,11 +111,20 @@ function blocks(tokens: Token[]): DocNode[] {
         out.push({ type: 'horizontalRule' })
         break
       case 'table': {
-        // 表格在 v0.3.3 支持；先降级为每行一个段落
         const tb = t as Tokens.Table
-        const row = (cells: Tokens.TableCell[]): DocNode =>
-          para(cells.flatMap((c, i) => [...(i ? [{ type: 'text', text: ' | ' }] : []), ...inline(c.tokens)]))
-        out.push(row(tb.header), ...tb.rows.map(row))
+        const cells = (cs: Tokens.TableCell[], type: string): DocNode[] => cs.map((c) => ({ type, content: [para(inline(c.tokens))] }))
+        const width = tb.header.length
+        // 补齐缺失的单元格，保证每行列数一致
+        const blank = { text: '', tokens: [], header: false, align: null } as Tokens.TableCell
+        const pad = (cs: Tokens.TableCell[]): Tokens.TableCell[] =>
+          cs.length >= width ? cs.slice(0, width) : [...cs, ...Array.from({ length: width - cs.length }, () => blank)]
+        out.push({
+          type: 'table',
+          content: [
+            { type: 'tableRow', content: cells(tb.header, 'tableHeader') },
+            ...tb.rows.map((r) => ({ type: 'tableRow', content: cells(pad(r), 'tableCell') }))
+          ]
+        })
         break
       }
       case 'space':
@@ -190,6 +199,20 @@ export function nodesToMarkdown(nodes: DocNode[], indent = ''): string {
       case 'horizontalRule':
         out.push('---')
         break
+      case 'table': {
+        const rows = (n.content ?? []).map((r) =>
+          (r.content ?? []).map((c) =>
+            nodesToMarkdown(c.content ?? [])
+              .replace(/\n+/g, ' ')
+              .replace(/\|/g, '\\|')
+          )
+        )
+        if (!rows.length) break
+        const w = Math.max(...rows.map((r) => r.length))
+        const line = (r: string[]): string => `| ${[...r, ...Array<string>(w - r.length).fill('')].join(' | ')} |`
+        out.push([line(rows[0]), `| ${Array<string>(w).fill('---').join(' | ')} |`, ...rows.slice(1).map(line)].join('\n'))
+        break
+      }
       default:
         if (n.content) out.push(nodesToMarkdown(n.content, indent))
     }

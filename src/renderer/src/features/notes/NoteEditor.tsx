@@ -24,14 +24,27 @@ import {
   ChevronLeft,
   ChevronRight,
   PanelLeftOpen,
-  Sparkles
+  Sparkles,
+  Download
 } from 'lucide-react'
 import type { KnowledgeStatus, NoteMetaUpdate, NoteSummary } from '@shared/types'
 import { useCategories, useNote, invalidate } from '@/lib/queries'
 import { api, cn, formatDate, formatDateTime, formatRelative, toDateInput, fromDateInput } from '@/lib/utils'
 import { useApp } from '@/store/app'
 import { Button } from '@/components/ui/button'
-import { Menu, MenuContent, MenuItem, MenuLabel, MenuSeparator, MenuTrigger, Tip } from '@/components/ui/primitives'
+import {
+  Menu,
+  MenuContent,
+  MenuItem,
+  MenuLabel,
+  MenuSeparator,
+  MenuSub,
+  MenuSubContent,
+  MenuSubTrigger,
+  MenuTrigger,
+  Tip
+} from '@/components/ui/primitives'
+import { exportCurrentNote } from './exportNote'
 import { confirm } from '@/components/ui/confirm'
 import { CornellEditor } from './editor/CornellEditor'
 import { useNoteDoc } from './editor/useNoteDoc'
@@ -341,6 +354,19 @@ function EditorBody({ note: initial }: { note: NoteSummary }) {
                 {t('notes.supersede')}
               </MenuItem>
               <MenuSeparator />
+              <MenuSub>
+                <MenuSubTrigger>
+                  <Download />
+                  {t('export.title')}
+                </MenuSubTrigger>
+                <MenuSubContent>
+                  {(['md', 'html', 'pdf', 'docx'] as const).map((f) => (
+                    <MenuItem key={f} onSelect={() => void exportCurrentNote(note.id, f)}>
+                      {t(`export.${f}`)}
+                    </MenuItem>
+                  ))}
+                </MenuSubContent>
+              </MenuSub>
               <MenuItem onSelect={() => void saveVersion()}>
                 <Bookmark />
                 {t('history.saveVersion')}

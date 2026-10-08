@@ -124,6 +124,8 @@ test('incognito: no memory tools, nothing remembered', async () => {
   const before = (await page.evaluate(() => window.jiwei.memory.list({}))).length
   const m = await chat({ text: '请记住：我最喜欢的颜色是绿色。', incognito: true, scope: { type: 'none' } })
   expect(m.steps.some((s) => s.tool.startsWith('memory_'))).toBe(false)
+  // 告诉用户无痕对话不会记住
+  expect(m.content).toMatch(/无痕/)
   expect((await page.evaluate(() => window.jiwei.memory.list({}))).length).toBe(before)
 })
 
@@ -168,7 +170,7 @@ test('agent: mind map from a source becomes a proposal in the note', async () =>
   await page.waitForSelector('nav')
   await page.getByRole('button', { name: /^笔记/ }).first().click()
   await page.getByText('学习方法笔记').first().click()
-  await expect(page.locator('.proposal-embed').first()).toBeVisible({ timeout: 15_000 })
+  await expect(page.locator('.proposal-embed-live, .proposal-embed').first()).toBeVisible({ timeout: 15_000 })
   if (shots) await page.screenshot({ path: join(shots, '75-agent-mindmap-proposal.png') })
   await page.getByRole('button', { name: '全部接受' }).first().click()
   await expect(page.locator('.embed-block[data-kind="mindmap"] svg.mindmap-svg')).toBeVisible({ timeout: 15_000 })

@@ -10,6 +10,9 @@ import { createProposal } from '../proposals'
 import { nodeText } from '../../lib/derive'
 import { markdownToNodes } from '../../lib/markdown'
 import { fromNested, type NestedNode } from '@shared/embeds/mindmap'
+import { ChartDataSchema, checkChart, checkInteractive, checkSteps, InteractiveDataSchema, StepsDataSchema } from '@shared/embeds/visuals'
+import { modelTier } from '@shared/ai'
+import { validateInRenderer } from './rendererValidate'
 import { newId } from '../../lib/ids'
 import { loadSkill, readSkillFile } from './skills'
 import { retrieve } from './retrieve'
@@ -165,6 +168,35 @@ export function buildTools(s: AgentSession): ToolSet {
       ? `已提交提案“${title}”（${p.ops.length} 处修改），等待用户在笔记中确认。不要在回答中重复提案内容。`
       : `Proposal "${title}" submitted (${p.ops.length} change(s)); the user will review it in the note.`
   }
+
+  /** 插入位置：新增一行（cue 为线索问题），或插在某个段落之后（afterBlockId） */
+  const PLACE = {
+    noteId: z.string().max(64),
+    title: z
+      .string()
+      .min(1)
+      .max(100)
+      .describe(zh ? '一句话说明这次修改' : 'One-line summary'),
+    cue: z
+      .string()
+      .max(200)
+      .optional()
+      .describe(zh ? '新增一行时的线索问题' : 'Cue question for the new row'),
+    afterBlockId: z
+      .string()
+      .max(64)
+      .optional()
+      .describe(zh ? '插到这个段落之后（不新增行）' : 'Insert after this block instead of a new row')
+  }
+  const placeOps = (nodes: (DocNode & { type: string })[], cue?: string, afterBlockId?: string): ProposalOp[] =>
+    afterBlockId
+      ? [{ op: 'insert_after', blockId: afterBlockId, nodes }]
+      : [{ op: 'insert_row', afterRowId: null, cue: cue?.trim() ? markdownToNodes(cue) : [], body: nodes }]
+  const visual = (noteId: string, title: string, kind: string, data: unknown, cue?: string, afterBlockId?: string, segs?: string[]) =>
+    proposal(noteId, title, placeOps([{ type: 'embed', attrs: { id: 'v', kind } }], cue, afterBlockId), {
+      embeds: { v: { kind, data } },
+      segs
+    })
 
   const tools: ToolSet = {
     skills_load: tool({
@@ -343,6 +375,96 @@ export function buildTools(s: AgentSession): ToolSet {
         )
       }
     }),
+    note_add_table: tool({
+      description: zh
+        ? '在笔记中插入表格（提案）。markdown 为 GFM 表格（可在表格前后加一两句说明）。'
+        : 'Insert a table (proposal). markdown = a GFM table, optionally with a sentence before/after.',
+      inputSchema: z.object({ ...PLACE, markdown: z.string().min(10).max(20000) }),
+      execute: async ({ noteId, title, cue, afterBlockId, markdown }) => {
+        mustNote(noteId, zh)
+        const nodes = markdownToNodes(markdown)
+        if (!nodes.some((n) => n.type === 'table'))
+          throw new Error(zh ? 'markdown 中没有表格（需要表头行和 |---| 分隔行）' : 'No GFM table found')
+        return proposal(noteId, title, placeOps(nodes, cue, afterBlockId))
+      }
+    }),
+    note_add_chart: tool({
+      description: zh
+        ? '在笔记中插入图表（提案）：bar 柱状 / line 折线 / pie 饼图 / scatter 散点 / radar 雷达。只给数据，样式由程序处理。'
+        : 'Insert a chart (proposal): bar / line / pie / scatter / radar. Provide data only.',
+      inputSchema: z.object({ ...PLACE, chart: ChartDataSchema.omit({ anchor: true }) }),
+      execute: async ({ noteId, title, cue, afterBlockId, chart }) => {
+        mustNote(noteId, zh)
+        const err = checkChart(chart)
+        if (err) throw new Error(err)
+        return visual(noteId, title, 'chart', chart, cue, afterBlockId)
+      }
+    }),
+    note_add_diagram: tool({
+      description: zh
+        ? '在笔记中插入图示（提案），code 为 Mermaid 源码：flowchart 流程图、sequenceDiagram 时序图、classDiagram、stateDiagram-v2、erDiagram、quadrantChart 四象限等。'
+        : 'Insert a diagram (proposal); code = Mermaid source.',
+      inputSchema: z.object({ ...PLACE, code: z.string().min(5).max(12000), diagramTitle: z.string().max(120).optional() }),
+      execute: async ({ noteId, title, cue, afterBlockId, code, diagramTitle }) => {
+        mustNote(noteId, zh)
+        const err = await validateInRenderer('diagram', { code })
+        if (err) throw new Error(`${zh ? 'Mermaid 语法错误，请修正后重试' : 'Mermaid syntax error, fix and retry'}：${err}`)
+        return visual(noteId, title, 'diagram', { code, ...(diagramTitle ? { title: diagramTitle } : {}) }, cue, afterBlockId)
+      }
+    }),
+    note_add_timeline: tool({
+      description: zh ? '在笔记中插入时间线（提案）：按时间顺序排列的事件。' : 'Insert a timeline (proposal).',
+      inputSchema: z.object({
+        ...PLACE,
+        timelineTitle: z.string().max(120).optional(),
+        events: z
+          .array(
+            z.object({
+              date: z.string().min(1).max(40),
+              title: z.string().min(1).max(120),
+              detail: z.string().max(600).optional(),
+              segmentId: z
+                .string()
+                .max(64)
+                .optional()
+                .describe(zh ? '来自资料时：对应的片段 ID' : 'Source segment ID')
+            })
+          )
+          .min(2)
+          .max(60)
+      }),
+      execute: async ({ noteId, title, cue, afterBlockId, timelineTitle, events }) => {
+        mustNote(noteId, zh)
+        const data = {
+          ...(timelineTitle ? { title: timelineTitle } : {}),
+          events: events.map(({ segmentId, ...e }) => ({
+            ...e,
+            ...(segmentId ? { anchor: { type: 'segment' as const, id: segmentId } } : {})
+          }))
+        }
+        return visual(
+          noteId,
+          title,
+          'timeline',
+          data,
+          cue,
+          afterBlockId,
+          events.flatMap((e) => (e.segmentId ? [e.segmentId] : []))
+        )
+      }
+    }),
+    note_add_code_steps: tool({
+      description: zh
+        ? '在笔记中插入“代码分步讲解”（提案）：代码 + 若干步骤，每步高亮几行并讲解，可附带变量取值。适合讲算法、讲程序执行过程。'
+        : 'Insert a step-by-step code walkthrough (proposal).',
+      inputSchema: z.object({ ...PLACE, steps: StepsDataSchema }),
+      execute: async ({ noteId, title, cue, afterBlockId, steps }) => {
+        mustNote(noteId, zh)
+        const err = checkSteps(steps)
+        if (err) throw new Error(err)
+        return visual(noteId, title, 'steps', steps, cue, afterBlockId)
+      }
+    }),
     note_delete_block: tool({
       description: zh
         ? '删除笔记中的一个段落（提案）。用于把多段合并为一段后删除多余的段落。'
@@ -389,6 +511,24 @@ export function buildTools(s: AgentSession): ToolSet {
       }
     })
   })
+
+  // 交互演示：自由 HTML 只对强模型开放（弱模型生成的质量不可控）
+  if (modelTier(s.model) === 'strong') {
+    Object.assign(tools, {
+      note_add_interactive: tool({
+        description: zh
+          ? '在笔记中插入交互演示（提案）：完整的单文件 HTML（内联 CSS / JS，不得访问网络），在沙箱中运行。'
+          : 'Insert an interactive demo (proposal): a single self-contained HTML file run in a sandbox.',
+        inputSchema: z.object({ ...PLACE, demo: InteractiveDataSchema }),
+        execute: async ({ noteId, title, cue, afterBlockId, demo }) => {
+          mustNote(noteId, zh)
+          const err = checkInteractive(demo)
+          if (err) throw new Error(err)
+          return visual(noteId, title, 'interactive', demo, cue, afterBlockId)
+        }
+      })
+    })
+  }
 
   if (!s.incognito) {
     Object.assign(tools, {
@@ -458,6 +598,12 @@ export function stepLabel(name: string, input: unknown, zh: boolean): Pick<Agent
     note_replace_block: [`提案：${q('title')}`, `Proposal: ${q('title')}`],
     note_delete_block: [`提案：${q('title')}`, `Proposal: ${q('title')}`],
     note_update_mindmap: [`提案：${q('title')}`, `Proposal: ${q('title')}`],
+    note_add_table: [`提案：${q('title')}`, `Proposal: ${q('title')}`],
+    note_add_chart: [`提案：${q('title')}`, `Proposal: ${q('title')}`],
+    note_add_diagram: [`提案：${q('title')}`, `Proposal: ${q('title')}`],
+    note_add_timeline: [`提案：${q('title')}`, `Proposal: ${q('title')}`],
+    note_add_code_steps: [`提案：${q('title')}`, `Proposal: ${q('title')}`],
+    note_add_interactive: [`提案：${q('title')}`, `Proposal: ${q('title')}`],
     note_add_mindmap: ['提案：思维导图', 'Proposal: mind map'],
     memory_remember: [`记住：${q('content')}`, `Remembering: ${q('content')}`],
     memory_search: [`回忆：${q('query')}`, `Recalling: ${q('query')}`]

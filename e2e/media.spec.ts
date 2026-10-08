@@ -118,3 +118,56 @@ test('later imports are transcribed automatically once the engine is installed',
     .poll(async () => (await page.evaluate((sid) => window.jiwei.segments.list(sid), id)).map((x) => x.text).join(''), { timeout: 90_000 })
     .toContain('遗忘')
 })
+
+test('cloud transcription (OpenAI-compatible endpoint, mocked locally)', async () => {
+  test.setTimeout(120_000)
+  const { createServer } = await import('http')
+  const seen: { model: boolean; file: boolean } = { model: false, file: false }
+  const server = createServer((req, res) => {
+    const chunks: Buffer[] = []
+    req.on('data', (c: Buffer) => chunks.push(c))
+    req.on('end', () => {
+      const body = Buffer.concat(chunks).toString('latin1')
+      seen.model = body.includes('name="model"') && body.includes('whisper-1')
+      seen.file = body.includes('filename="part000.mp3"')
+      res.setHeader('Content-Type', 'application/json')
+      res.end(
+        JSON.stringify({
+          text: 'x',
+          segments: [
+            { start: 0, end: 2, text: ' 云端转写第一句。' },
+            { start: 2.2, end: 4, text: '云端转写第二句。' }
+          ]
+        })
+      )
+    })
+  })
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', r))
+  const port = (server.address() as { port: number }).port
+  try {
+    const p = await page.evaluate(
+      (url) => window.jiwei.providers.save({ kind: 'custom', name: 'Mock ASR', baseUrl: url }),
+      `http://127.0.0.1:${port}/v1`
+    )
+    const s = await page.evaluate(() => window.jiwei.settings.get())
+    await page.evaluate(
+      ([ai, id]) => window.jiwei.settings.set({ ai: { ...ai, transcription: { mode: 'cloud', providerId: id, model: 'whisper-1' } } }),
+      [s.ai, p.id] as const
+    )
+    const r = await page.evaluate((f) => window.jiwei.sources.importPaths([f]), makeAudio('云端转写'))
+    const id = r.imported[0].id
+    await expect
+      .poll(async () => (await page.evaluate((sid) => window.jiwei.segments.list(sid), id)).map((x) => x.text).join(''), {
+        timeout: 90_000
+      })
+      .toBe('云端转写第一句。云端转写第二句。')
+    expect(seen).toEqual({ model: true, file: true })
+  } finally {
+    server.close()
+    const s = await page.evaluate(() => window.jiwei.settings.get())
+    await page.evaluate(
+      (ai) => window.jiwei.settings.set({ ai: { ...ai, transcription: { mode: 'local', providerId: null, model: null } } }),
+      s.ai
+    )
+  }
+})

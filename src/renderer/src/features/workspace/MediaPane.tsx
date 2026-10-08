@@ -10,6 +10,7 @@ import { useApp } from '@/store/app'
 import { Button } from '@/components/ui/button'
 import { Tip } from '@/components/ui/primitives'
 import { useAssist, elementRect, type Rect } from '../assist/store'
+import { useSettings } from '@/lib/queries'
 import { askInline } from '../assist/actions'
 import { useSourceSelection } from './SourcePane'
 
@@ -78,6 +79,8 @@ function LineEditor({ seg, onDone }: { seg: Segment; onDone: () => void }) {
 function TranscriptEmpty({ source }: { source: Source }) {
   const { t } = useTranslation()
   const asr = useAsrStatus()
+  const { data: settings } = useSettings()
+  const cloud = settings?.ai.transcription?.mode === 'cloud'
   const { data: jobs = [] } = useQuery({ queryKey: ['jobs'], queryFn: () => api.jobs.list() })
   const job = jobs.find((j) => j.key === `transcribe:${source.id}` && (j.status === 'queued' || j.status === 'running'))
   const failed = jobs.find((j) => j.key === `transcribe:${source.id}` && j.status === 'failed')
@@ -98,7 +101,11 @@ function TranscriptEmpty({ source }: { source: Source }) {
       <Captions className="size-7 text-subtle" />
       <p className="text-sm font-medium text-fg">{t('media.noTranscript')}</p>
       <p className="max-w-[320px] text-xs leading-relaxed text-muted">
-        {asr?.state === 'ready' ? t('media.noTranscriptReady') : t('media.noTranscriptDesc', { size: formatBytes(ASR_DOWNLOAD) })}
+        {cloud
+          ? t('media.noTranscriptCloud')
+          : asr?.state === 'ready'
+            ? t('media.noTranscriptReady')
+            : t('media.noTranscriptDesc', { size: formatBytes(ASR_DOWNLOAD) })}
       </p>
       {(failed || asr?.state === 'error') && (
         <p className="max-w-[320px] text-2xs break-all text-danger">{failed?.error ?? asr?.message}</p>
