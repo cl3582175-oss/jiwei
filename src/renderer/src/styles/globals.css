@@ -1,0 +1,288 @@
+@import 'tailwindcss';
+
+/*
+ * 积微设计系统
+ * - 比例：黄金比例 φ ≈ 1.618。字号与间距按 φ 递进，主要分栏按 0.382 / 0.618 切分。
+ * - 色彩：宣纸暖白 + 墨色文字；强调色取自中国传统色（玉、黛、朱、琥珀、紫藤）。
+ */
+
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
+:root {
+  --phi: 1.618;
+
+  /* 中性色（浅色：宣纸） */
+  --bg: #fbfaf7;
+  --bg-sunken: #f4f2ec;
+  --surface: #ffffff;
+  --surface-hover: #f6f4ef;
+  --border: #e8e4da;
+  --border-strong: #d8d2c4;
+  --fg: #23211d;
+  --fg-muted: #6b665c;
+  --fg-subtle: #a19b8e;
+  --shadow-color: 40 30 10;
+  --heat-0: #efece4;
+
+  /* 强调色（默认：玉） */
+  --accent: #3d8a74;
+  --accent-fg: #ffffff;
+  --accent-soft: color-mix(in oklab, var(--accent) 12%, transparent);
+  --danger: #c0473a;
+  --danger-soft: color-mix(in oklab, var(--danger) 10%, transparent);
+
+  --radius: 10px;
+  /* Windows/Linux 右上角原生窗口按钮占位 */
+  --tb-right: 0px;
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei UI',
+    'Microsoft YaHei', 'Noto Sans CJK SC', 'Source Han Sans SC', sans-serif;
+  --font-serif: 'Songti SC', 'STSong', 'Noto Serif CJK SC', 'Source Han Serif SC', 'SimSun', Georgia, serif;
+  --font-mono: 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+}
+
+[data-os='win32'],
+[data-os='linux'] {
+  --tb-right: 140px;
+}
+
+[data-theme='dark'] {
+  --bg: #16181a;
+  --bg-sunken: #111314;
+  --surface: #1d2023;
+  --surface-hover: #24282b;
+  --border: #2b2f33;
+  --border-strong: #3a3f44;
+  --fg: #e9e6df;
+  --fg-muted: #a09b91;
+  --fg-subtle: #6e6a62;
+  --shadow-color: 0 0 0;
+  --heat-0: #23272a;
+  --accent-fg: #0f1110;
+  --danger: #e0685a;
+}
+
+[data-accent='jade'] { --accent: #3d8a74; }
+[data-accent='indigo'] { --accent: #4b5cb8; }
+[data-accent='cinnabar'] { --accent: #c2553b; }
+[data-accent='amber'] { --accent: #b3832a; }
+[data-accent='wisteria'] { --accent: #8a63b0; }
+[data-theme='dark'][data-accent='jade'] { --accent: #5fb49a; }
+[data-theme='dark'][data-accent='indigo'] { --accent: #8494e6; }
+[data-theme='dark'][data-accent='cinnabar'] { --accent: #e47a5e; }
+[data-theme='dark'][data-accent='amber'] { --accent: #d9a74a; }
+[data-theme='dark'][data-accent='wisteria'] { --accent: #b28fd6; }
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-sunken: var(--bg-sunken);
+  --color-surface: var(--surface);
+  --color-surface-hover: var(--surface-hover);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-fg: var(--fg);
+  --color-muted: var(--fg-muted);
+  --color-subtle: var(--fg-subtle);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-soft: var(--accent-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --font-sans: var(--font-sans);
+  --font-serif: var(--font-serif);
+  --font-mono: var(--font-mono);
+  --radius-md: var(--radius);
+
+  /* φ 字号阶梯：13 → 16 → 21 → 26 → 42 */
+  --text-2xs: 11px;
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-base: 14.5px;
+  --text-md: 16px;
+  --text-lg: 21px;
+  --text-xl: 26px;
+  --text-2xl: 42px;
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-sans);
+    font-size: var(--text-base);
+    line-height: 1.618;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    overflow: hidden;
+    user-select: none;
+  }
+  input,
+  textarea,
+  [contenteditable] {
+    user-select: text;
+  }
+  ::selection {
+    background: color-mix(in oklab, var(--accent) 24%, transparent);
+  }
+  :focus-visible {
+    outline: 2px solid color-mix(in oklab, var(--accent) 60%, transparent);
+    outline-offset: 1px;
+  }
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: color-mix(in oklab, var(--fg) 14%, transparent);
+    border-radius: 99px;
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: color-mix(in oklab, var(--fg) 24%, transparent);
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+@utility drag {
+  -webkit-app-region: drag;
+}
+@utility no-drag {
+  -webkit-app-region: no-drag;
+}
+@utility shadow-float {
+  box-shadow:
+    0 1px 2px rgb(var(--shadow-color) / 0.06),
+    0 8px 24px -6px rgb(var(--shadow-color) / 0.14),
+    0 0 0 1px rgb(var(--shadow-color) / 0.04);
+}
+@utility shadow-card {
+  box-shadow:
+    0 1px 2px rgb(var(--shadow-color) / 0.04),
+    0 2px 8px -2px rgb(var(--shadow-color) / 0.06);
+}
+
+/* ——— 编辑器正文排版 ——— */
+.prose-jiwei {
+  font-size: var(--text-md);
+  line-height: 1.75;
+  color: var(--fg);
+  outline: none;
+  min-height: 100%;
+}
+.prose-jiwei > * + * {
+  margin-top: 0.62em;
+}
+.prose-jiwei h1,
+.prose-jiwei h2,
+.prose-jiwei h3 {
+  font-family: var(--font-serif);
+  font-weight: 600;
+  line-height: 1.38;
+  letter-spacing: 0.01em;
+}
+.prose-jiwei h1 {
+  font-size: 1.618em;
+  margin-top: 1em;
+}
+.prose-jiwei h2 {
+  font-size: 1.31em;
+  margin-top: 1em;
+}
+.prose-jiwei h3 {
+  font-size: 1.1em;
+  margin-top: 0.8em;
+}
+.prose-jiwei ul {
+  list-style: disc;
+  padding-left: 1.4em;
+}
+.prose-jiwei ol {
+  list-style: decimal;
+  padding-left: 1.4em;
+}
+.prose-jiwei li > p {
+  margin: 0.15em 0;
+}
+.prose-jiwei blockquote {
+  border-left: 3px solid var(--accent);
+  padding-left: 1em;
+  color: var(--fg-muted);
+}
+.prose-jiwei code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 0.1em 0.35em;
+}
+.prose-jiwei pre {
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.9em 1.1em;
+  overflow-x: auto;
+}
+.prose-jiwei pre code {
+  background: none;
+  border: 0;
+  padding: 0;
+}
+.prose-jiwei hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 1.4em 0;
+}
+.prose-jiwei a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: color-mix(in oklab, var(--accent) 40%, transparent);
+}
+.prose-jiwei mark {
+  background: color-mix(in oklab, #f5c84b 45%, transparent);
+  color: inherit;
+  border-radius: 3px;
+  padding: 0 0.1em;
+}
+.prose-jiwei p.is-editor-empty:first-child::before,
+.prose-jiwei .is-empty::before {
+  content: attr(data-placeholder);
+  color: var(--fg-subtle);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+.prose-cue {
+  font-size: var(--text-base);
+  color: var(--fg-muted);
+}
+.prose-cue strong {
+  color: var(--fg);
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+}
+@keyframes dialog-in {
+  from { opacity: 0; transform: translate(-50%, -48%) scale(0.97); }
+}
+@keyframes pop-in {
+  from { opacity: 0; transform: scale(0.97) translateY(-2px); }
+}
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(6px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 1ms !important; transition-duration: 1ms !important; }
+}

@@ -1,0 +1,42 @@
+appId: io.github.cl3582175-oss.jiwei
+productName: 积微
+artifactName: Jiwei-${version}-${os}-${arch}.${ext}
+copyright: Copyright © 2026 cl3582175-oss
+directories:
+  buildResources: build
+  output: release/${version}
+files:
+  - '!**/.vscode/*'
+  - '!src/*'
+  - '!docs/*'
+  - '!electron.vite.config.{js,ts,mjs,cjs}'
+  - '!drizzle.config.ts'
+  - '!{.gitignore,.editorconfig,.prettierrc,README*.md,CHANGELOG.md}'
+  - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+asarUnpack:
+  - resources/**
+extraResources:
+  - from: resources/migrations
+    to: migrations
+mac:
+  category: public.app-category.education
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  shortcutName: 积微
+linux:
+  category: Education
+  target: [AppImage, deb]
+  maintainer: cl3582175-oss
+publish:
+  provider: github
+  owner: cl3582175-oss
+  repo: jiwei
+  private: true

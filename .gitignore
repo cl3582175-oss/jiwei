@@ -1,0 +1,14 @@
+node_modules/
+out/
+dist/
+release/
+*.log
+.DS_Store
+.env
+.env.*
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.tsbuildinfo
+test-results/
+playwright-report/
