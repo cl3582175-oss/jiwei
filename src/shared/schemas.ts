@@ -70,6 +70,7 @@ export const SettingsPatchSchema = z.object({
   theme: z.enum(['system', 'light', 'dark']).optional(),
   palette: z.enum(['qinglu', 'celadon', 'dunhuang']).optional(),
   onboarded: z.boolean().optional(),
+  sidebarCollapsed: z.boolean().optional(),
   reflection: z
     .object({
       daily: z.boolean(),

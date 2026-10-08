@@ -93,7 +93,7 @@ export function NotesSidebar() {
   }
 
   return (
-    <aside className="flex h-full w-[300px] shrink-0 flex-col">
+    <aside className="flex h-full w-full flex-col">
       <div className="drag flex h-[52px] shrink-0 items-end justify-between px-4 pb-1.5">
         <h2 className="font-serif text-lg font-semibold tracking-wide text-fg">{t('notes.title')}</h2>
         <div className="no-drag flex items-center gap-0.5">

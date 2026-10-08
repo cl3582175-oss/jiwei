@@ -1,8 +1,9 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useApp } from '@/store/app'
 import { api } from './utils'
 import { invalidate } from './queries'
+import { useSidebar } from '@/components/CollapsibleSidebar'
 
 /** 新建笔记并打开（继承当前分类筛选） */
 export function useCreateNote() {
@@ -19,6 +20,10 @@ export function useCreateNote() {
 
 export function useGlobalShortcuts(): void {
   const createNote = useCreateNote()
+  const sidebar = useSidebar()
+  // 用 ref 保存最新的切换函数，避免每次设置变化都重新绑定键盘事件
+  const sidebarToggle = useRef(sidebar.toggle)
+  sidebarToggle.current = sidebar.toggle
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       const mod = e.metaKey || e.ctrlKey
@@ -34,6 +39,9 @@ export function useGlobalShortcuts(): void {
       } else if (k === ',') {
         e.preventDefault()
         s.setSettingsOpen(true)
+      } else if (k === '\\') {
+        e.preventDefault()
+        sidebarToggle.current()
       } else if (k === '[') {
         e.preventDefault()
         s.back()

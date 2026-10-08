@@ -12,6 +12,7 @@ function defaults(): Settings {
     palette: 'qinglu',
     // 测试环境可跳过首次引导
     onboarded: process.env.JIWEI_SKIP_ONBOARDING === '1',
+    sidebarCollapsed: false,
     // 默认节奏：每天 1 分钟微复盘 + 每周日晚完整复盘
     reflection: { daily: true, weekly: true, weeklyDay: 0, time: '21:00' }
   }

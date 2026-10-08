@@ -1,6 +1,8 @@
 const zhCN = {
   app: { name: '积微', slogan: '积微成著，日进有功' },
   nav: {
+    collapseSidebar: '收起侧栏',
+    expandSidebar: '展开侧栏',
     back: '后退',
     forward: '前进',
     home: '返回首页',
@@ -173,7 +175,7 @@ const zhCN = {
   celebrate: {
     saved: '已存',
     streak: '连续学习 {{count}} 天，积微成著！',
-    firstNote: '第一篇笔记已写下，好的开始。'
+    firstNote: '开始了你的第一篇笔记，好的开始。'
   },
   cornellHelp: {
     title: '康奈尔笔记法',

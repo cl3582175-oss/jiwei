@@ -3,6 +3,8 @@ import type { Messages } from './zh-CN'
 const en: Messages = {
   app: { name: 'Jiwei', slogan: 'Small steps, great knowledge' },
   nav: {
+    collapseSidebar: 'Hide sidebar',
+    expandSidebar: 'Show sidebar',
     back: 'Back',
     forward: 'Forward',
     home: 'Back to home',
@@ -182,7 +184,7 @@ const en: Messages = {
   celebrate: {
     saved: 'Saved',
     streak: '{{count}}-day learning streak — keep going!',
-    firstNote: 'Your first note is written. A great start.'
+    firstNote: 'You started your first note. A great beginning.'
   },
   cornellHelp: {
     title: 'The Cornell method',

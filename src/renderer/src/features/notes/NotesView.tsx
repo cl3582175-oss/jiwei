@@ -5,6 +5,7 @@ import { NoteEditor } from './NoteEditor'
 import { NotesHome } from '../home/NotesHome'
 import { SourcePane } from '../workspace/SourcePane'
 import { FloatingPanel } from '@/components/FloatingPanel'
+import { CollapsibleSidebar } from '@/components/CollapsibleSidebar'
 
 /** 笔记工作区：侧栏 | [资料] | 笔记（资料栏可拖动，默认按黄金比例 0.382） */
 export function NotesView() {
@@ -12,7 +13,9 @@ export function NotesView() {
   const main = noteId ? <NoteEditor noteId={noteId} /> : <NotesHome />
   return (
     <div className="flex h-full">
-      <NotesSidebar />
+      <CollapsibleSidebar>
+        <NotesSidebar />
+      </CollapsibleSidebar>
       <FloatingPanel flushLeft>
         {sourceId ? (
           <Group

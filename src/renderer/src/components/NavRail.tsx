@@ -1,19 +1,33 @@
 import { useTranslation } from 'react-i18next'
-import { NotebookPen, Library, Trash2, Settings, Search } from 'lucide-react'
+import { NotebookPen, Library, Trash2, Settings, Search, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useApp, type View } from '@/store/app'
 import { cn, isMac, modKey } from '@/lib/utils'
 import { Tip } from './ui/primitives'
 import { Logo } from './Logo'
 import { JobsIndicator } from './JobsIndicator'
+import { useSidebar } from './CollapsibleSidebar'
 
-function RailButton({ active, label, onClick, children }: { active?: boolean; label: string; onClick: () => void; children: ReactNode }) {
+function RailButton({
+  active,
+  pressed,
+  label,
+  onClick,
+  children
+}: {
+  active?: boolean
+  pressed?: boolean
+  label: string
+  onClick: () => void
+  children: ReactNode
+}) {
   return (
     <Tip label={label}>
       <button
         onClick={onClick}
         aria-label={label}
         aria-current={active ? 'page' : undefined}
+        aria-pressed={pressed}
         className={cn(
           'no-drag relative grid size-10 place-items-center rounded-[10px] transition-colors duration-150 [&_svg]:size-[19px]',
           active ? 'bg-accent-soft text-accent' : 'text-subtle hover:bg-surface-hover hover:text-fg'
@@ -29,6 +43,7 @@ function RailButton({ active, label, onClick, children }: { active?: boolean; la
 export function NavRail() {
   const { t } = useTranslation()
   const { view, setView, openNote, setSettingsOpen, setPaletteOpen } = useApp()
+  const sidebar = useSidebar()
   const items: { id: View; label: string; icon: ReactNode }[] = [
     { id: 'notes', label: `${t('nav.notes')}  ${modKey}1`, icon: <NotebookPen /> },
     { id: 'library', label: `${t('nav.library')}  ${modKey}2`, icon: <Library /> }
@@ -39,6 +54,16 @@ export function NavRail() {
       <div className="mb-4">
         <Logo />
       </div>
+      {/* 侧栏收展：最多四栏并存时，把空间让给资料与笔记 */}
+      {view !== 'trash' && (
+        <RailButton
+          label={`${sidebar.collapsed ? t('nav.expandSidebar') : t('nav.collapseSidebar')}  ${modKey}\\`}
+          pressed={!sidebar.collapsed}
+          onClick={sidebar.toggle}
+        >
+          {sidebar.collapsed ? <PanelLeftOpen /> : <PanelLeftClose />}
+        </RailButton>
+      )}
       <RailButton label={`${t('nav.search')}  ${modKey}K`} onClick={() => setPaletteOpen(true)}>
         <Search />
       </RailButton>

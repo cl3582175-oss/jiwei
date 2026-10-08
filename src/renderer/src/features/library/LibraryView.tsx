@@ -46,6 +46,7 @@ import {
 } from '@/components/ui/primitives'
 import { confirm } from '@/components/ui/confirm'
 import { FloatingPanel } from '@/components/FloatingPanel'
+import { CollapsibleSidebar } from '@/components/CollapsibleSidebar'
 import { KIND_TINT } from '@/lib/tint'
 import { InkLibrary } from '@/components/Illustrations'
 import { useApp } from '@/store/app'
@@ -337,30 +338,32 @@ export function LibraryView() {
       onDrop={(e) => void onDrop(e)}
     >
       {/* 左栏：类型 + 分类 */}
-      <aside className="flex h-full w-[300px] shrink-0 flex-col">
-        <div className="drag flex h-[52px] shrink-0 items-end px-4 pb-1.5">
-          <h2 className="font-serif text-lg font-semibold tracking-wide text-fg">{t('library.title')}</h2>
-        </div>
-        <div className="space-y-0.5 overflow-y-auto px-3 pt-1">
-          <SectionHeader label={t('library.typeHeader')} />
-          {row(!kind, <Layers />, t('library.kinds.all'), () => setKind(undefined))}
-          {KINDS.map((k) => (
-            <div key={k}>{row(kind === k, KIND_ICON[k], t(`library.kinds.${k}`), () => setKind(k))}</div>
-          ))}
-          <CategoryTree
-            kind="source"
-            activeId={cat.type === 'category' ? cat.id : null}
-            onSelect={(id) => setCat({ type: 'category', id })}
-            onRemoved={(id) => cat.type === 'category' && cat.id === id && setCat({ type: 'all' })}
-            leading={
-              <div className="space-y-0.5">
-                {row(cat.type === 'all', <Layers />, t('library.allCategories'), () => setCat({ type: 'all' }))}
-                {row(cat.type === 'uncategorized', <Inbox />, t('common.uncategorized'), () => setCat({ type: 'uncategorized' }))}
-              </div>
-            }
-          />
-        </div>
-      </aside>
+      <CollapsibleSidebar>
+        <aside className="flex h-full w-full flex-col">
+          <div className="drag flex h-[52px] shrink-0 items-end px-4 pb-1.5">
+            <h2 className="font-serif text-lg font-semibold tracking-wide text-fg">{t('library.title')}</h2>
+          </div>
+          <div className="space-y-0.5 overflow-y-auto px-3 pt-1">
+            <SectionHeader label={t('library.typeHeader')} />
+            {row(!kind, <Layers />, t('library.kinds.all'), () => setKind(undefined))}
+            {KINDS.map((k) => (
+              <div key={k}>{row(kind === k, KIND_ICON[k], t(`library.kinds.${k}`), () => setKind(k))}</div>
+            ))}
+            <CategoryTree
+              kind="source"
+              activeId={cat.type === 'category' ? cat.id : null}
+              onSelect={(id) => setCat({ type: 'category', id })}
+              onRemoved={(id) => cat.type === 'category' && cat.id === id && setCat({ type: 'all' })}
+              leading={
+                <div className="space-y-0.5">
+                  {row(cat.type === 'all', <Layers />, t('library.allCategories'), () => setCat({ type: 'all' }))}
+                  {row(cat.type === 'uncategorized', <Inbox />, t('common.uncategorized'), () => setCat({ type: 'uncategorized' }))}
+                </div>
+              }
+            />
+          </div>
+        </aside>
+      </CollapsibleSidebar>
 
       {/* 主区：浮动面板 */}
       <FloatingPanel flushLeft className="flex flex-col">

@@ -173,6 +173,8 @@ export interface Settings {
   reflection: ReflectionSettings
   /** 是否已完成首次启动引导 */
   onboarded: boolean
+  /** 侧栏（目录 / 资料分类）是否收起 */
+  sidebarCollapsed: boolean
 }
 
 export interface Vault {
