@@ -2,11 +2,21 @@ import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { ChevronRight, Folder, FolderOpen, MoreHorizontal, Pencil, Trash2, FolderPlus } from 'lucide-react'
+import { ChevronRight, Folder, FolderOpen, MoreHorizontal, Pencil, Trash2, FolderPlus, Palette } from 'lucide-react'
+import { TINTS, tintFor } from '@/lib/tint'
 import type { Category, CategoryKind } from '@shared/types'
 import { useCategories, invalidate } from '@/lib/queries'
 import { api, cn } from '@/lib/utils'
-import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from '@/components/ui/primitives'
+import {
+  Menu,
+  MenuContent,
+  MenuItem,
+  MenuSeparator,
+  MenuSub,
+  MenuSubContent,
+  MenuSubTrigger,
+  MenuTrigger
+} from '@/components/ui/primitives'
 import { prompt } from '@/components/ui/confirm'
 
 /** 分类 ID → “父 / 子 / 孙” 路径名 */
@@ -73,9 +83,11 @@ interface TreeProps {
   onSelect: (id: string) => void
   /** 分类被删除后回调（用于重置筛选） */
   onRemoved?: (id: string) => void
+  /** 显示在“分类”标题下方、分类列表之前的固定行 */
+  leading?: ReactNode
 }
 
-export function CategoryTree({ kind, activeId, onSelect, onRemoved }: TreeProps) {
+export function CategoryTree({ kind, activeId, onSelect, onRemoved, leading }: TreeProps) {
   const { t } = useTranslation()
   const qc = useQueryClient()
   const { data: cats = [] } = useCategories(kind)
@@ -135,7 +147,15 @@ export function CategoryTree({ kind, activeId, onSelect, onRemoved }: TreeProps)
               <ChevronRight className={cn('size-3 transition-transform', open && 'rotate-90')} />
             </button>
           }
-          icon={activeId === c.id ? <FolderOpen /> : <Folder />}
+          icon={
+            <span data-tint={tintFor(c.id, c.color)} className="grid size-4 shrink-0 place-items-center">
+              {activeId === c.id ? (
+                <FolderOpen className="tint-ink size-4" style={{ fill: 'var(--tint)' }} />
+              ) : (
+                <Folder className="tint-ink size-4" style={{ fill: 'var(--tint)' }} />
+              )}
+            </span>
+          }
           label={c.name}
           trailing={
             <Menu>
@@ -156,6 +176,31 @@ export function CategoryTree({ kind, activeId, onSelect, onRemoved }: TreeProps)
                   <Pencil />
                   {t('common.rename')}
                 </MenuItem>
+                <MenuSub>
+                  <MenuSubTrigger>
+                    <Palette />
+                    {t('categories.color')}
+                  </MenuSubTrigger>
+                  <MenuSubContent>
+                    <div className="flex gap-1.5 p-1.5">
+                      {TINTS.map((tn) => (
+                        <button
+                          key={tn}
+                          data-tint={tn}
+                          title={t(`tints.${tn}`)}
+                          aria-label={t(`tints.${tn}`)}
+                          onClick={() => void api.categories.update(c.id, { color: tn }).then(() => invalidate(qc, 'categories'))}
+                          className={cn(
+                            'tint grid size-6 place-items-center rounded-full ring-offset-1 ring-offset-surface',
+                            tintFor(c.id, c.color) === tn && 'ring-2 ring-[var(--tint-ink)]'
+                          )}
+                        >
+                          <span className="tint-dot size-2 rounded-full" />
+                        </button>
+                      ))}
+                    </div>
+                  </MenuSubContent>
+                </MenuSub>
                 <MenuSeparator />
                 <MenuItem danger onSelect={() => void remove(c)}>
                   <Trash2 />
@@ -173,6 +218,7 @@ export function CategoryTree({ kind, activeId, onSelect, onRemoved }: TreeProps)
   return (
     <>
       <SectionHeader label={t('notes.categories')} onAdd={() => void add(null)} addLabel={t('notes.newCategory')} />
+      {leading}
       <div className="space-y-0.5">{children(null).map((c) => render(c, 0))}</div>
     </>
   )

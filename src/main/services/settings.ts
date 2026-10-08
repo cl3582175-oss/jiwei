@@ -9,7 +9,9 @@ function defaults(): Settings {
     // JIWEI_LANG 便于测试固定界面语言
     language: (process.env.JIWEI_LANG as Settings['language']) || (app.getLocale().toLowerCase().startsWith('zh') ? 'zh-CN' : 'en'),
     theme: 'system',
-    accent: 'jade',
+    palette: 'qinglu',
+    // 测试环境可跳过首次引导
+    onboarded: process.env.JIWEI_SKIP_ONBOARDING === '1',
     // 默认节奏：每天 1 分钟微复盘 + 每周日晚完整复盘
     reflection: { daily: true, weekly: true, weeklyDay: 0, time: '21:00' }
   }

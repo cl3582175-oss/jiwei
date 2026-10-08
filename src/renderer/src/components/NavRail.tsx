@@ -35,12 +35,7 @@ export function NavRail() {
   ]
 
   return (
-    <nav
-      className={cn(
-        'drag flex w-[72px] shrink-0 flex-col items-center gap-1.5 border-r border-border bg-sunken pb-4',
-        isMac ? 'pt-12' : 'pt-3'
-      )}
-    >
+    <nav className={cn('drag flex w-[72px] shrink-0 flex-col items-center gap-1.5 pb-4', isMac ? 'pt-12' : 'pt-3')}>
       <div className="mb-4">
         <Logo />
       </div>

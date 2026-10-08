@@ -21,7 +21,7 @@ import { toast } from 'sonner'
 import { Input, Tip } from '@/components/ui/primitives'
 import { prompt } from '@/components/ui/confirm'
 import { Library, Plus } from 'lucide-react'
-import type { Language, ThemeMode } from '@shared/types'
+import type { Language, Palette as PaletteId, ThemeMode } from '@shared/types'
 import { useAppInfo, useSettings, useUpdateSettings } from '@/lib/queries'
 import { useApp } from '@/store/app'
 import { api, cn, formatDateTime } from '@/lib/utils'
@@ -30,13 +30,55 @@ import { Logo } from '@/components/Logo'
 
 type Tab = 'general' | 'appearance' | 'data' | 'about'
 
-const ACCENTS: { id: string; light: string; dark: string }[] = [
-  { id: 'jade', light: '#3d8a74', dark: '#5fb49a' },
-  { id: 'indigo', light: '#4b5cb8', dark: '#8494e6' },
-  { id: 'cinnabar', light: '#c2553b', dark: '#e47a5e' },
-  { id: 'amber', light: '#b3832a', dark: '#d9a74a' },
-  { id: 'wisteria', light: '#8a63b0', dark: '#b28fd6' }
-]
+const PALETTES: PaletteId[] = ['qinglu', 'celadon', 'dunhuang']
+
+/** 配色方案卡片：卡片内部按该方案的变量渲染一个迷你界面，所见即所得 */
+export function PaletteCard({ id, active, dark, onPick }: { id: PaletteId; active: boolean; dark: boolean; onPick: () => void }) {
+  const { t } = useTranslation()
+  return (
+    <button
+      onClick={onPick}
+      className="group flex flex-col items-center gap-2"
+      aria-pressed={active}
+      aria-label={t(`settings.palettes.${id}`)}
+    >
+      <div
+        data-palette={id}
+        data-theme={dark ? 'dark' : 'light'}
+        className={cn(
+          'relative h-[74px] w-[120px] overflow-hidden rounded-xl p-1.5 ring-offset-2 ring-offset-surface transition-shadow',
+          active ? 'ring-2 ring-[var(--accent)]' : 'ring-1 ring-border group-hover:ring-border-strong'
+        )}
+        style={{ background: 'var(--desk)' }}
+      >
+        <div className="flex h-full gap-1.5">
+          <div className="flex w-5 flex-col gap-1 pt-1">
+            <span className="h-2 rounded-sm" style={{ background: 'var(--accent)' }} />
+            <span className="h-1.5 rounded-sm opacity-40" style={{ background: 'var(--fg-subtle)' }} />
+            <span className="h-1.5 rounded-sm opacity-40" style={{ background: 'var(--fg-subtle)' }} />
+          </div>
+          <div className="flex-1 rounded-md p-1.5" style={{ background: 'var(--panel)', boxShadow: 'var(--shadow-1)' }}>
+            <span className="block h-1.5 w-10 rounded-sm" style={{ background: 'var(--fg)' }} />
+            <div className="mt-1.5 rounded-sm p-1" style={{ background: 'var(--paper)', boxShadow: 'var(--shadow-1)' }}>
+              <span className="block h-1 w-12 rounded-sm opacity-50" style={{ background: 'var(--fg-muted)' }} />
+              <span className="mt-1 block h-1 w-8 rounded-sm opacity-50" style={{ background: 'var(--fg-muted)' }} />
+            </div>
+            <span className="mt-1.5 block h-2 w-8 rounded-sm" style={{ background: 'var(--accent)' }} />
+          </div>
+        </div>
+        {active && (
+          <span
+            className="absolute top-1.5 right-1.5 grid size-4 place-items-center rounded-full"
+            style={{ background: 'var(--accent)', color: 'var(--accent-fg)' }}
+          >
+            <Check className="size-2.5" />
+          </span>
+        )}
+      </div>
+      <span className={cn('text-xs', active ? 'font-medium text-fg' : 'text-muted')}>{t(`settings.palettes.${id}`)}</span>
+    </button>
+  )
+}
 
 function Row({ label, desc, children }: { label: ReactNode; desc?: ReactNode; children: ReactNode }) {
   return (
@@ -50,7 +92,7 @@ function Row({ label, desc, children }: { label: ReactNode; desc?: ReactNode; ch
   )
 }
 
-function Segmented<T extends string>({
+export function Segmented<T extends string>({
   value,
   options,
   onChange
@@ -314,26 +356,10 @@ export function SettingsDialog() {
                     ]}
                   />
                 </Row>
-                <Row label={t('settings.accent')}>
+                <Row label={t('settings.palette')} desc={t('settings.paletteDesc')}>
                   <div className="flex gap-3">
-                    {ACCENTS.map((a) => (
-                      <button
-                        key={a.id}
-                        onClick={() => update.mutate({ accent: a.id })}
-                        className="group flex flex-col items-center gap-1.5"
-                        aria-label={t(`settings.accents.${a.id}`)}
-                      >
-                        <span
-                          className={cn(
-                            'grid size-7 place-items-center rounded-full ring-offset-2 ring-offset-surface transition-shadow',
-                            s.accent === a.id ? 'ring-2' : 'group-hover:ring-1'
-                          )}
-                          style={{ background: dark ? a.dark : a.light, ['--tw-ring-color' as string]: dark ? a.dark : a.light }}
-                        >
-                          {s.accent === a.id && <Check className="size-3.5 text-white" />}
-                        </span>
-                        <span className="text-2xs text-muted">{t(`settings.accents.${a.id}`)}</span>
-                      </button>
+                    {PALETTES.map((id) => (
+                      <PaletteCard key={id} id={id} dark={dark} active={s.palette === id} onPick={() => update.mutate({ palette: id })} />
                     ))}
                   </div>
                 </Row>

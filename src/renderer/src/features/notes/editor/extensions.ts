@@ -3,23 +3,10 @@ import Image from '@tiptap/extension-image'
 import UniqueID from '@tiptap/extension-unique-id'
 import type { AnyExtension } from '@tiptap/core'
 import type { Transaction } from '@tiptap/pm/state'
-import { CornellBody, CornellCue, CornellDocument, CornellPlaceholder, CornellRow, CornellSummary, CORNELL } from './cornell'
+import { CornellBody, CornellCue, CornellDocument, CornellPlaceholder, CornellRow, CornellSummary } from './cornell'
 
-/** 带永久 ID 的节点：段落级时间戳、批注锚点、RAG 分片都依赖它 */
-export const ID_TYPES = [
-  CORNELL.row,
-  CORNELL.summary,
-  'paragraph',
-  'heading',
-  'blockquote',
-  'codeBlock',
-  'bulletList',
-  'orderedList',
-  'listItem',
-  'horizontalRule',
-  'image',
-  'embed'
-]
+export { ID_TYPES } from '@shared/docSchema'
+import { ID_TYPES } from '@shared/docSchema'
 
 export interface SchemaLabels {
   summary: string

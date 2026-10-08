@@ -5,6 +5,7 @@ import log from 'electron-log/main'
 import { getDb } from '../db'
 import { blocks, links, noteAssets, noteDocs, noteRevisions, noteUpdates, notes } from '../db/schema'
 import { newId } from '../lib/ids'
+import { jsonToYState } from '../lib/yjson'
 import { countWords, deriveDoc, diffBlocks, type EmbedsData } from '../lib/derive'
 import { deviceId } from './device'
 import { recordActivity } from './stats'
@@ -55,6 +56,20 @@ export function initDoc(noteId: string): void {
     .insert(noteDocs)
     .values({ noteId, state: Buffer.from(state), updatedAt: Date.now() })
     .run()
+}
+
+/** 用文档 JSON 整体替换笔记正文（仅用于尚未在编辑器中打开的新笔记，如示例笔记、导入） */
+export function replaceDoc(noteId: string, doc: DocJSON): void {
+  const db = getDb()
+  const state = jsonToYState(doc)
+  db.transaction((tx) => {
+    tx.delete(noteUpdates).where(eq(noteUpdates.noteId, noteId)).run()
+    tx.insert(noteDocs)
+      .values({ noteId, state: Buffer.from(state), updatedAt: Date.now() })
+      .onConflictDoUpdate({ target: noteDocs.noteId, set: { state: Buffer.from(state), updatedAt: Date.now() } })
+      .run()
+  })
+  derive(noteId)
 }
 
 export function loadDoc(noteId: string): Uint8Array {

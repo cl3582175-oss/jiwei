@@ -66,7 +66,7 @@ export function DialogContent({
       <D.Overlay className="fixed inset-0 z-40 bg-black/25 backdrop-blur-[2px] data-[state=open]:animate-[fade-in_160ms_ease-out]" />
       <D.Content
         className={cn(
-          'fixed top-1/2 left-1/2 z-50 w-[min(92vw,440px)] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-surface p-6 shadow-float outline-none data-[state=open]:animate-[dialog-in_200ms_cubic-bezier(0.2,0.9,0.3,1)]',
+          'fixed top-1/2 left-1/2 z-50 w-[min(92vw,440px)] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-border/70 bg-surface p-6 shadow-[var(--shadow-4)] outline-none data-[state=open]:animate-[dialog-in_200ms_cubic-bezier(0.2,0.9,0.3,1)]',
           className
         )}
       >
@@ -106,7 +106,7 @@ export function MenuContent({
         align={align}
         sideOffset={6}
         className={cn(
-          'z-50 min-w-[180px] rounded-lg border border-border bg-surface p-1 shadow-float outline-none data-[state=open]:animate-[pop-in_140ms_ease-out]',
+          'glass z-50 min-w-[180px] rounded-xl border border-border/70 p-1 shadow-[var(--shadow-3)] outline-none data-[state=open]:animate-[pop-in_140ms_ease-out]',
           className
         )}
       >
@@ -144,7 +144,7 @@ export function MenuSubContent({ children }: { children: ReactNode }) {
     <M.Portal>
       <M.SubContent
         sideOffset={4}
-        className="z-50 max-h-[50vh] min-w-[160px] overflow-y-auto rounded-lg border border-border bg-surface p-1 shadow-float"
+        className="glass z-50 max-h-[50vh] min-w-[160px] overflow-y-auto rounded-xl border border-border/70 p-1 shadow-[var(--shadow-3)]"
       >
         {children}
       </M.SubContent>
@@ -170,9 +170,7 @@ export function Kbd({ children, className }: { children: ReactNode; className?: 
 export function EmptyState({ icon, title, hint, action }: { icon: ReactNode; title: ReactNode; hint?: ReactNode; action?: ReactNode }) {
   return (
     <div className="flex h-full flex-col items-center justify-center px-8 text-center">
-      <div className="mb-5 grid size-16 place-items-center rounded-2xl border border-border bg-surface text-subtle shadow-card [&_svg]:size-7">
-        {icon}
-      </div>
+      <div className="mb-6 text-subtle">{icon}</div>
       <p className="text-md font-medium text-fg">{title}</p>
       {hint && <p className="mt-1.5 max-w-[340px] text-sm leading-relaxed text-muted">{hint}</p>}
       {action && <div className="mt-6">{action}</div>}

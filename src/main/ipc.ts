@@ -78,6 +78,7 @@ const handlers: Handlers = {
     list: (_, q) => notes.listNotes(q),
     get: (_, id) => notes.getNote(id),
     create: (_, init) => notes.createNote(init),
+    createSample: (_, lang) => notes.createSampleNote(lang),
     update: (_, id, patch) => notes.updateNote(id, patch),
     trash: (_, id) => notes.trashNote(id),
     loadDoc: (_, id) => docs.loadDoc(id),

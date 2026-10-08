@@ -126,6 +126,7 @@ export const capabilities = {
     list: cap<NoteSummary[]>()({ description: '按条件列出 / 检索笔记', params: [['query', S.NoteQuerySchema]], ai: { effect: 'read' } }),
     get: cap<Note | null>()({ description: '读取笔记元信息', params: [id()], ai: { effect: 'read' } }),
     create: cap<Note>()({ description: '新建笔记', params: [['init', S.NoteInitSchema]] }),
+    createSample: cap<Note>()({ description: '创建示例笔记《如何使用康奈尔笔记法》', params: [['lang', z.enum(['zh-CN', 'en'])]] }),
     update: cap<NoteSummary>()({ description: '修改笔记元信息', params: [id(), ['patch', S.NoteMetaUpdateSchema]] }),
     trash: cap<void>()({ description: '删除笔记（进入最近删除）', params: [id()] }),
     loadDoc: cap<Uint8Array>()({ description: '读取 Yjs 文档状态', params: [id()] }),

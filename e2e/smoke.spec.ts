@@ -10,7 +10,10 @@ let app: ElectronApplication
 let page: Page
 
 async function launch(): Promise<void> {
-  app = await electron.launch({ args: ['.', `--user-data-dir=${userData}`], env: { ...process.env, JIWEI_LANG: 'zh-CN' } })
+  app = await electron.launch({
+    args: ['.', `--user-data-dir=${userData}`],
+    env: { ...process.env, JIWEI_LANG: 'zh-CN', JIWEI_SKIP_ONBOARDING: '1' }
+  })
   page = await app.firstWindow()
   await page.waitForSelector('nav')
 }
@@ -27,7 +30,7 @@ test.afterAll(async () => {
 })
 
 test('home renders', async () => {
-  await expect(page.getByText('学习热力图')).toBeVisible()
+  await expect(page.getByText('学习热力图', { exact: true })).toBeVisible()
 })
 
 test('Cornell rows: title → notes, cue, new row, summary', async () => {
@@ -134,7 +137,7 @@ test('delete note → trash → restore', async () => {
   await page.getByRole('button', { name: '最近删除' }).click()
   await expect(page.getByText('30 天后永久删除')).toBeVisible()
   await page.getByRole('button', { name: '还原' }).click()
-  await expect(page.getByText('没有最近删除的内容')).toBeVisible()
+  await expect(page.getByText('这里很干净')).toBeVisible()
 })
 
 test('settings data tab shows location and backups', async () => {

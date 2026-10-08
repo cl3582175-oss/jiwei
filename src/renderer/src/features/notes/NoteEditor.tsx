@@ -40,6 +40,8 @@ import { NotePicker } from './NotePicker'
 import { HistoryDialog } from './HistoryDialog'
 import { categoryPaths } from './CategoryTree'
 import { ProposalPanel } from './ProposalPanel'
+import { CornellHelp } from './CornellHelp'
+import { SaveSeal } from './SaveSeal'
 import { SourcePicker } from '../workspace/SourcePicker'
 import { modKey } from '@/lib/utils'
 
@@ -283,6 +285,7 @@ function EditorBody({ note: initial }: { note: NoteSummary }) {
               {saving
                 ? t('common.saving')
                 : `${t('common.words', { count: note.wordCount })} · ${t('notes.editedAgo', { time: formatRelative(note.editedAt, i18n.language) })}`}
+              <SaveSeal saving={saving} />
             </span>
           </Tip>
           {note.aiExcluded && (
@@ -357,7 +360,7 @@ function EditorBody({ note: initial }: { note: NoteSummary }) {
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-[1120px] px-10 pt-9 pb-24">
+        <div className="mx-auto max-w-[1120px] animate-[rise-in_320ms_cubic-bezier(0.2,0.9,0.3,1)] px-10 pt-9 pb-24">
           {/* 已过时 / 被取代提示 */}
           {note.status !== 'active' && (
             <div
@@ -414,8 +417,11 @@ function EditorBody({ note: initial }: { note: NoteSummary }) {
 
           {/* 康奈尔版面：表头 + 文档（行 = 线索 0.382 | 笔记 0.618，底部总结） */}
           <div className="cornell-card mt-7">
-            <div className="cornell-head" aria-hidden>
-              <span>{t('notes.cue')}</span>
+            <div className="cornell-head">
+              <span className="inline-flex items-center">
+                {t('notes.cue')}
+                <CornellHelp />
+              </span>
               <span>{t('notes.content')}</span>
             </div>
             {ydoc ? (

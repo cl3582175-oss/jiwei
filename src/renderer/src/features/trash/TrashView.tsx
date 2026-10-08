@@ -9,6 +9,8 @@ import { Button } from '@/components/ui/button'
 import { EmptyState, Tip } from '@/components/ui/primitives'
 import { confirm } from '@/components/ui/confirm'
 import { FileStack } from 'lucide-react'
+import { FloatingPanel } from '@/components/FloatingPanel'
+import { InkLeaf } from '@/components/Illustrations'
 
 export function TrashView() {
   const { t, i18n } = useTranslation()
@@ -46,7 +48,7 @@ export function TrashView() {
   }
 
   return (
-    <div className="flex h-full flex-col">
+    <FloatingPanel flushLeft className="flex flex-col">
       <header className="drag flex h-[52px] shrink-0 items-center justify-end border-b border-border/70 pr-[calc(var(--tb-right)+16px)] pl-8" />
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto max-w-[860px] px-10 pt-10 pb-16">
@@ -65,7 +67,7 @@ export function TrashView() {
 
           {isFetched && items.length === 0 ? (
             <div className="h-[50vh]">
-              <EmptyState icon={<Trash2 />} title={t('trash.empty')} />
+              <EmptyState icon={<InkLeaf size={170} />} title={t('empty.trashTitle')} hint={t('empty.trashHint')} />
             </div>
           ) : (
             <div className="mt-8 divide-y divide-border overflow-hidden rounded-xl border border-border bg-surface shadow-card">
@@ -110,6 +112,6 @@ export function TrashView() {
           )}
         </div>
       </div>
-    </div>
+    </FloatingPanel>
   )
 }

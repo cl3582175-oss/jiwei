@@ -178,3 +178,11 @@ AI 不直接修改笔记，而是创建提案（`proposals` 表）。提案里�
 ## 23. 编辑器加载期间的输入
 
 标题回车时，如果编辑器还在加载（Yjs 文档读取为异步），随后的按键会按顺序缓冲：文字直接缓冲，功能键（Tab、Enter、退格）作为按键事件缓冲。编辑器就绪后，这些输入通过编辑器自己的按键处理逐一重放，保证一个字都不会丢、也不会落到标题里。
+
+## 24. 设计系统（v0.1.3）
+
+- 设计令牌集中在 `src/renderer/src/styles/globals.css`：配色方案通过 `<html data-palette>` 切换，深色通过 `data-theme` 切换，两者可以组合。
+- 自定义设计类（`.panel`、`.paper`、`.glass`、`.tint`、`.stack`）放在 `@layer components` 中，以确保 Tailwind 工具类可以覆盖它们。**新增设计类也必须放在这一层。**
+- 粉彩色通过 `data-tint` 加 `.tint` 或 `.tint-ink` 使用；分类颜色存在 `categories.color` 中，未设置时按 ID 稳定分配。
+- SVG 的 presentation 属性不能使用 CSS 变量，填充颜色要写在 `style` 中。
+- 插画统一使用 `currentColor` 加配色变量，以适配所有配色和深色模式。

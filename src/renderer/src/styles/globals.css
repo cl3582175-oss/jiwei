@@ -1,9 +1,12 @@
 @import 'tailwindcss';
 
 /*
- * 积微设计系统
+ * 积微设计系统 · 东方新极简
  * - 比例：黄金比例 φ ≈ 1.618。字号与间距按 φ 递进，主要分栏按 0.382 / 0.618 切分。
- * - 色彩：宣纸暖白 + 墨色文字；强调色取自中国传统色（玉、黛、朱、琥珀、紫藤）。
+ * - 色彩：宣纸暖白 + 墨色文字；强调色（玉、黛、朱、琥珀、紫藤）用于操作，
+ *         中国传统粉彩（竹青、天青、藕荷、杏、樱、鹅黄、月白）用于分类、类型、标签。
+ * - 层级：0 桌面（窗口材质）→ 1 面板（浮动圆角）→ 2 纸张（笔记）→ 3 卡片 → 4 浮层（半透明）。
+ * - 质感：纸张有极淡的纸纹；分隔线细而温和。
  */
 
 @custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
@@ -24,6 +27,46 @@
   --shadow-color: 40 30 10;
   --heat-0: #efece4;
 
+  /* 层级 0：桌面（macOS / Windows 上半透明，透出系统窗口材质） */
+  --desk: #efece5;
+  --desk-glass: rgb(239 236 229 / 0.82);
+  /* 层级 1：面板；层级 2：纸张 */
+  --panel: #fbfaf7;
+  --paper: #fffefb;
+  --overlay: rgb(255 254 251 / 0.86);
+
+  /* 五档阴影 */
+  --shadow-1: 0 0 0 1px rgb(var(--shadow-color) / 0.05), 0 1px 3px rgb(var(--shadow-color) / 0.05);
+  --shadow-2:
+    0 0 0 1px rgb(var(--shadow-color) / 0.04), 0 2px 6px -1px rgb(var(--shadow-color) / 0.06),
+    0 8px 24px -12px rgb(var(--shadow-color) / 0.1);
+  --shadow-3:
+    0 0 0 1px rgb(var(--shadow-color) / 0.04), 0 6px 16px -4px rgb(var(--shadow-color) / 0.1),
+    0 18px 40px -16px rgb(var(--shadow-color) / 0.16);
+  --shadow-4:
+    0 0 0 1px rgb(var(--shadow-color) / 0.06), 0 12px 32px -8px rgb(var(--shadow-color) / 0.18),
+    0 32px 64px -24px rgb(var(--shadow-color) / 0.24);
+
+  /* 纸纹（SVG 噪点，极淡） */
+  --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.35 0 0 0 0 0.3 0 0 0 0 0.2 0 0 0 0.55 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  --grain-opacity: 0.045;
+
+  /* 中国传统粉彩：底色 / 墨色（文字、图标） */
+  --p-bamboo: #dcebdf;
+  --p-bamboo-ink: #3f6b52;
+  --p-sky: #d6e6ef;
+  --p-sky-ink: #3e6680;
+  --p-lotus: #eadbe8;
+  --p-lotus-ink: #7a4f74;
+  --p-apricot: #f5e4cc;
+  --p-apricot-ink: #8a5a22;
+  --p-sakura: #f3dcda;
+  --p-sakura-ink: #9a4b47;
+  --p-gosling: #f3ebc6;
+  --p-gosling-ink: #7d6a1f;
+  --p-moon: #e1e6ee;
+  --p-moon-ink: #4f5d70;
+
   /* 强调色（默认：玉） */
   --accent: #3d8a74;
   --accent-fg: #ffffff;
@@ -31,13 +74,16 @@
   --danger: #c0473a;
   --danger-soft: color-mix(in oklab, var(--danger) 10%, transparent);
 
-  --radius: 10px;
+  --radius: 12px;
   /* Windows/Linux 右上角原生窗口按钮占位 */
   --tb-right: 0px;
   --font-sans:
     -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei UI', 'Microsoft YaHei',
     'Noto Sans CJK SC', 'Source Han Sans SC', sans-serif;
-  --font-serif: 'Songti SC', 'STSong', 'Noto Serif CJK SC', 'Source Han Serif SC', 'SimSun', Georgia, serif;
+  /* 内置开源字体，三个平台显示一致（见 main.tsx 中的字体导入） */
+  --font-serif: 'Noto Serif SC Variable', 'Songti SC', 'Noto Serif CJK SC', Georgia, serif;
+  --font-kai: 'LXGW WenKai', 'Kaiti SC', 'STKaiti', 'KaiTi', serif;
+  --font-display: var(--font-serif);
   --font-mono: 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
 }
 
@@ -60,41 +106,165 @@
   --heat-0: #23272a;
   --accent-fg: #0f1110;
   --danger: #e0685a;
+
+  --desk: #121416;
+  --desk-glass: rgb(18 20 22 / 0.8);
+  --panel: #191b1e;
+  --paper: #1d2023;
+  --overlay: rgb(32 35 38 / 0.86);
+  --grain-opacity: 0.03;
+
+  --p-bamboo: #1f3327;
+  --p-bamboo-ink: #9fd0b0;
+  --p-sky: #1d2f3a;
+  --p-sky-ink: #a3c8de;
+  --p-lotus: #33263a;
+  --p-lotus-ink: #d9b4d3;
+  --p-apricot: #3a2c1c;
+  --p-apricot-ink: #e8c393;
+  --p-sakura: #3b2425;
+  --p-sakura-ink: #eab2ad;
+  --p-gosling: #35301a;
+  --p-gosling-ink: #e2d38c;
+  --p-moon: #252b33;
+  --p-moon-ink: #b9c4d3;
 }
 
-[data-accent='jade'] {
-  --accent: #3d8a74;
+/*
+ * 配色方案（取自中国传统绘画与器物，避开当下常见的“米白 + 灰绿”）：
+ *   qinglu   青绿山水 —— 《千里江山图》石青石绿；与 WGSN×Coloro 2026 年度色 Transformative Teal 同向
+ *   celadon  汝窑天青 —— 宋瓷天青釉 + 朱砂印泥
+ *   dunhuang 敦煌     —— 莫高窟砂岩底色 + 青金石群青
+ * 粉彩辅助色在各方案中共用。
+ */
+[data-palette='qinglu'] {
+  --desk: #e7ecea;
+  --desk-glass: rgb(231 236 234 / 0.84);
+  --panel: #f5f7f4;
+  --paper: #fbfcf9;
+  --bg: #f5f7f4;
+  --bg-sunken: #ecf0ed;
+  --surface: #fdfdfb;
+  --surface-hover: #eef2ef;
+  --border: #dce3df;
+  --border-strong: #c6d0cb;
+  --fg: #1b292d;
+  --fg-muted: #53646a;
+  --fg-subtle: #8b999c;
+  --accent: #19707a;
+  --accent-fg: #ffffff;
+  --heat-0: #e4eae7;
+  --shadow-color: 20 50 55;
+  --overlay: rgb(251 252 249 / 0.86);
 }
-[data-accent='indigo'] {
-  --accent: #4b5cb8;
+[data-theme='dark'][data-palette='qinglu'] {
+  --desk: #0b1618;
+  --desk-glass: rgb(11 22 24 / 0.82);
+  --panel: #0f1f22;
+  --paper: #132629;
+  --bg: #0f1f22;
+  --bg-sunken: #0a181a;
+  --surface: #16292c;
+  --surface-hover: #1b3236;
+  --border: #20373b;
+  --border-strong: #2d4a4f;
+  --fg: #e2ece9;
+  --fg-muted: #9db1ae;
+  --fg-subtle: #678481;
+  --accent: #4cc2b1;
+  --accent-fg: #052124;
+  --heat-0: #17302f;
+  --shadow-color: 0 0 0;
+  --overlay: rgb(22 41 44 / 0.86);
 }
-[data-accent='cinnabar'] {
-  --accent: #c2553b;
+
+[data-palette='celadon'] {
+  --desk: #dde7e5;
+  --desk-glass: rgb(221 231 229 / 0.84);
+  --panel: #f3f6f4;
+  --paper: #fbfbf7;
+  --bg: #f3f6f4;
+  --bg-sunken: #e8efed;
+  --surface: #fdfdfa;
+  --surface-hover: #ebf1ef;
+  --border: #d6e1df;
+  --border-strong: #bfcfcc;
+  --fg: #242a2b;
+  --fg-muted: #5a6466;
+  --fg-subtle: #919b9c;
+  --accent: #b5402c;
+  --accent-fg: #ffffff;
+  --heat-0: #e1eae8;
+  --shadow-color: 35 60 60;
+  --overlay: rgb(251 251 247 / 0.86);
 }
-[data-accent='amber'] {
-  --accent: #b3832a;
+[data-theme='dark'][data-palette='celadon'] {
+  --desk: #101617;
+  --desk-glass: rgb(16 22 23 / 0.82);
+  --panel: #151c1d;
+  --paper: #1a2223;
+  --bg: #151c1d;
+  --bg-sunken: #0f1516;
+  --surface: #1c2526;
+  --surface-hover: #222d2e;
+  --border: #263132;
+  --border-strong: #354243;
+  --fg: #e5eae8;
+  --fg-muted: #a3adab;
+  --fg-subtle: #6e7a79;
+  --accent: #e2755d;
+  --accent-fg: #1c0c08;
+  --heat-0: #1f2a2b;
+  --shadow-color: 0 0 0;
+  --overlay: rgb(28 37 38 / 0.86);
 }
-[data-accent='wisteria'] {
-  --accent: #8a63b0;
+
+[data-palette='dunhuang'] {
+  --desk: #e9dfcd;
+  --desk-glass: rgb(233 223 205 / 0.86);
+  --panel: #f6f0e4;
+  --paper: #fcf8ef;
+  --bg: #f6f0e4;
+  --bg-sunken: #efe6d6;
+  --surface: #fefbf4;
+  --surface-hover: #f1e9da;
+  --border: #e6dac5;
+  --border-strong: #d4c4a8;
+  --fg: #2a2018;
+  --fg-muted: #6c5b49;
+  --fg-subtle: #a59580;
+  --accent: #34529b;
+  --accent-fg: #ffffff;
+  --heat-0: #ece2d0;
+  --shadow-color: 70 45 15;
+  --overlay: rgb(252 248 239 / 0.86);
 }
-[data-theme='dark'][data-accent='jade'] {
-  --accent: #5fb49a;
-}
-[data-theme='dark'][data-accent='indigo'] {
-  --accent: #8494e6;
-}
-[data-theme='dark'][data-accent='cinnabar'] {
-  --accent: #e47a5e;
-}
-[data-theme='dark'][data-accent='amber'] {
-  --accent: #d9a74a;
-}
-[data-theme='dark'][data-accent='wisteria'] {
-  --accent: #b28fd6;
+[data-theme='dark'][data-palette='dunhuang'] {
+  --desk: #15110c;
+  --desk-glass: rgb(21 17 12 / 0.84);
+  --panel: #1c1712;
+  --paper: #221c16;
+  --bg: #1c1712;
+  --bg-sunken: #15110d;
+  --surface: #251f18;
+  --surface-hover: #2c251d;
+  --border: #322a20;
+  --border-strong: #43392c;
+  --fg: #eee5d6;
+  --fg-muted: #b3a48f;
+  --fg-subtle: #7e705d;
+  --accent: #8ea6ec;
+  --accent-fg: #0d1430;
+  --heat-0: #2a2219;
+  --shadow-color: 0 0 0;
+  --overlay: rgb(37 31 24 / 0.86);
 }
 
 @theme inline {
   --color-bg: var(--bg);
+  --color-desk: var(--desk);
+  --color-panel: var(--panel);
+  --color-paper: var(--paper);
   --color-sunken: var(--bg-sunken);
   --color-surface: var(--surface);
   --color-surface-hover: var(--surface-hover);
@@ -112,6 +282,12 @@
   --font-serif: var(--font-serif);
   --font-mono: var(--font-mono);
   --radius-md: var(--radius);
+  --shadow-1: var(--shadow-1);
+  --shadow-2: var(--shadow-2);
+  --shadow-3: var(--shadow-3);
+  --shadow-4: var(--shadow-4);
+  --font-display: var(--font-display);
+  --font-kai: var(--font-kai);
 
   /* φ 字号阶梯：13 → 16 → 21 → 26 → 42 */
   --text-2xs: 11px;
@@ -132,7 +308,7 @@
   }
   body {
     margin: 0;
-    background: var(--bg);
+    background: var(--desk);
     color: var(--fg);
     font-family: var(--font-sans);
     font-size: var(--text-base);
@@ -328,12 +504,24 @@
 /* ——— 康奈尔版面 ——— */
 .cornell-card {
   position: relative;
-  border: 1px solid var(--border);
   border-radius: 14px;
-  background: var(--surface);
-  box-shadow:
-    0 1px 2px rgb(var(--shadow-color) / 0.04),
-    0 2px 8px -2px rgb(var(--shadow-color) / 0.06);
+  background-color: var(--paper);
+  box-shadow: var(--shadow-2);
+  isolation: isolate;
+}
+.cornell-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background-image: var(--grain);
+  opacity: var(--grain-opacity);
+  pointer-events: none;
+  z-index: -1;
+  mix-blend-mode: multiply;
+}
+[data-theme='dark'] .cornell-card::after {
+  mix-blend-mode: screen;
 }
 .cornell-head {
   display: grid;
@@ -622,4 +810,143 @@
 }
 .source-text ::selection {
   background: color-mix(in oklab, #f5c84b 45%, transparent);
+}
+
+/* ——— 层级与材质 ——— */
+
+/* 桌面：macOS / Windows 透出系统窗口材质 */
+[data-os='darwin'] body,
+[data-os='win32'] body {
+  background: var(--desk-glass);
+}
+
+/* 设计类放在 components 层：Tailwind 工具类（如 fixed、absolute）可以覆盖它们 */
+@layer components {
+  /* 浮动面板（层级 1） */
+  .panel {
+    background: var(--panel);
+    border-radius: 14px;
+    box-shadow: var(--shadow-1);
+    overflow: hidden;
+  }
+
+  /* 纸张（层级 2）：带极淡纸纹 */
+  .paper {
+    position: relative;
+    background-color: var(--paper);
+    isolation: isolate;
+  }
+  .paper::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background-image: var(--grain);
+    opacity: var(--grain-opacity);
+    pointer-events: none;
+    z-index: -1;
+    mix-blend-mode: multiply;
+  }
+  [data-theme='dark'] .paper::after {
+    mix-blend-mode: screen;
+  }
+
+  /* 浮层（层级 4）：半透明 + 模糊 */
+  .glass {
+    background: var(--overlay);
+    backdrop-filter: blur(18px) saturate(1.4);
+    -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  }
+
+  /* 粉彩：在元素上设置 data-tint 即可 */
+  [data-tint='bamboo'] {
+    --tint: var(--p-bamboo);
+    --tint-ink: var(--p-bamboo-ink);
+  }
+  [data-tint='sky'] {
+    --tint: var(--p-sky);
+    --tint-ink: var(--p-sky-ink);
+  }
+  [data-tint='lotus'] {
+    --tint: var(--p-lotus);
+    --tint-ink: var(--p-lotus-ink);
+  }
+  [data-tint='apricot'] {
+    --tint: var(--p-apricot);
+    --tint-ink: var(--p-apricot-ink);
+  }
+  [data-tint='sakura'] {
+    --tint: var(--p-sakura);
+    --tint-ink: var(--p-sakura-ink);
+  }
+  [data-tint='gosling'] {
+    --tint: var(--p-gosling);
+    --tint-ink: var(--p-gosling-ink);
+  }
+  [data-tint='moon'] {
+    --tint: var(--p-moon);
+    --tint-ink: var(--p-moon-ink);
+  }
+  .tint {
+    background: var(--tint);
+    color: var(--tint-ink);
+  }
+  .tint-ink {
+    color: var(--tint-ink);
+  }
+  .tint-dot {
+    background: var(--tint-ink);
+  }
+
+  /* 卡片叠放：分类 / 多篇内容的“一叠纸”效果 */
+  .stack {
+    position: relative;
+  }
+  .stack::before,
+  .stack::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: var(--paper);
+    box-shadow: var(--shadow-1);
+    z-index: -1;
+    transition: transform 220ms cubic-bezier(0.2, 0.9, 0.3, 1);
+  }
+  .stack::before {
+    transform: translate(4px, 4px) rotate(1deg);
+  }
+  .stack::after {
+    transform: translate(8px, 8px) rotate(2deg);
+    opacity: 0.6;
+  }
+  .stack:hover::before {
+    transform: translate(6px, 6px) rotate(2deg);
+  }
+  .stack:hover::after {
+    transform: translate(12px, 11px) rotate(3.5deg);
+  }
+}
+
+/* 印章落下：放大落下 → 停留 → 淡出 */
+@keyframes seal-stamp {
+  0% {
+    opacity: 0;
+    scale: 1.8;
+    rotate: -8deg;
+  }
+  14% {
+    opacity: 1;
+    scale: 0.94;
+    rotate: -4deg;
+  }
+  22% {
+    scale: 1;
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
 }

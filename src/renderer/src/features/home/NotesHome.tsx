@@ -7,8 +7,9 @@ import { useCreateNote } from '@/lib/shortcuts'
 import { formatRelative, modKey } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Kbd } from '@/components/ui/primitives'
-import { Logo } from '@/components/Logo'
 import { Heatmap } from './Heatmap'
+import { InkNotes } from '@/components/Illustrations'
+import type { Tint } from '@/lib/tint'
 
 const HEAT_DAYS = 364
 
@@ -17,10 +18,17 @@ function greetingKey(): 'morning' | 'noon' | 'afternoon' | 'evening' {
   return h < 11 ? 'morning' : h < 13 ? 'noon' : h < 18 ? 'afternoon' : 'evening'
 }
 
-function Stat({ icon, label, value }: { icon: React.ReactNode; label: string; value: React.ReactNode }) {
+/** 数值为 0 时显示鼓励文字，而不是冷冰冰的 0 */
+function ZeroHint({ text }: { text: string }) {
+  return <span className="font-kai text-md font-normal text-muted">{text}</span>
+}
+
+function Stat({ icon, label, value, tint }: { icon: React.ReactNode; label: string; value: React.ReactNode; tint: Tint }) {
   return (
-    <div className="flex items-center gap-3.5 rounded-xl border border-border bg-surface px-5 py-4 shadow-card">
-      <div className="grid size-10 place-items-center rounded-lg bg-accent-soft text-accent [&_svg]:size-[18px]">{icon}</div>
+    <div className="flex items-center gap-3.5 paper rounded-2xl px-5 py-4 shadow-[var(--shadow-1)]">
+      <div data-tint={tint} className="tint grid size-10 place-items-center rounded-xl [&_svg]:size-[18px]">
+        {icon}
+      </div>
       <div>
         <div className="text-2xs tracking-wide text-subtle">{label}</div>
         <div className="font-serif text-lg leading-tight font-semibold text-fg tabular-nums">{value}</div>
@@ -56,11 +64,11 @@ export function NotesHome() {
         {/* 问候 */}
         <div className="flex items-end justify-between gap-6">
           <div>
-            <p className="text-sm text-subtle">{today}</p>
-            <h1 className="mt-1 font-serif text-2xl leading-tight font-semibold tracking-wide text-fg">
+            <p className="font-kai text-md text-subtle">{today}</p>
+            <h1 className="mt-2 font-display text-[52px] leading-[1.15] font-semibold tracking-[0.06em] text-fg">
               {t(`home.greeting.${greetingKey()}`)}
             </h1>
-            <p className="mt-2 text-sm text-muted">{t('app.slogan')}</p>
+            <p className="mt-3 font-kai text-md tracking-wide text-muted">{t('app.slogan')}</p>
           </div>
           <Button variant="primary" onClick={() => void createNote()}>
             <PenLine />
@@ -71,14 +79,25 @@ export function NotesHome() {
 
         {/* 统计 */}
         <div className="mt-10 grid grid-cols-3 gap-4">
-          <Stat icon={<NotebookText />} label={t('home.stats.notes')} value={notes.length} />
-          <Stat icon={<Flame />} label={t('home.stats.streak')} value={t('home.stats.days', { count: streak })} />
-          <Stat icon={<CalendarCheck />} label={t('home.stats.activeDays')} value={t('home.stats.days', { count: active })} />
+          <Stat
+            icon={<NotebookText />}
+            label={t('home.stats.notes')}
+            value={notes.length || <ZeroHint text={t('empty.statZero')} />}
+            tint="bamboo"
+          />
+          <Stat
+            icon={<Flame />}
+            label={t('home.stats.streak')}
+            value={streak ? t('home.stats.days', { count: streak }) : <ZeroHint text={t('empty.streakZero')} />}
+            tint="apricot"
+          />
+          <Stat icon={<CalendarCheck />} label={t('home.stats.activeDays')} value={t('home.stats.days', { count: active })} tint="sky" />
         </div>
 
         {/* 热力图 */}
-        <section className="mt-6 rounded-xl border border-border bg-surface px-6 py-5 shadow-card">
+        <section className="paper mt-6 rounded-2xl px-6 py-5 shadow-[var(--shadow-1)]">
           <h3 className="mb-4 text-sm font-medium text-fg">{t('home.heatmap')}</h3>
+          {active === 0 && <p className="-mt-2 mb-4 font-kai text-md text-muted">{t('empty.heatmapFirst')}</p>}
           <Heatmap days={heat} />
         </section>
 
@@ -86,10 +105,10 @@ export function NotesHome() {
         <section className="mt-10">
           <h3 className="mb-4 text-sm font-medium text-fg">{t('home.recent')}</h3>
           {notes.length === 0 ? (
-            <div className="flex flex-col items-center rounded-xl border border-dashed border-border-strong py-14 text-center">
-              <Logo size={44} className="opacity-90" />
-              <p className="mt-5 text-md font-medium text-fg">{t('notes.empty')}</p>
-              <p className="mt-1 text-sm text-muted">{t('notes.emptyHint')}</p>
+            <div className="flex flex-col items-center rounded-2xl border border-dashed border-border-strong py-12 text-center">
+              <InkNotes size={170} className="text-subtle" />
+              <p className="mt-5 font-display text-md font-semibold text-fg">{t('empty.homeTitle')}</p>
+              <p className="mt-1.5 text-sm text-muted">{t('empty.homeHint')}</p>
               <Button className="mt-6" variant="primary" onClick={() => void createNote()}>
                 <PenLine />
                 {t('home.startWriting')}
@@ -102,14 +121,14 @@ export function NotesHome() {
                 <button
                   key={n.id}
                   onClick={() => openNote(n.id)}
-                  className="group flex aspect-[1.618] flex-col rounded-xl border border-border bg-surface p-5 text-left shadow-card transition-all duration-200 hover:-translate-y-0.5 hover:border-border-strong hover:shadow-float"
+                  className="paper group flex aspect-[1.618] flex-col rounded-2xl p-5 text-left shadow-[var(--shadow-1)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[var(--shadow-3)]"
                 >
                   <div className="flex items-start justify-between gap-2">
                     <span className="line-clamp-1 font-serif text-md font-semibold text-fg">{n.title || t('common.untitled')}</span>
                     <ArrowUpRight className="size-4 shrink-0 text-subtle opacity-0 transition-opacity group-hover:opacity-100" />
                   </div>
-                  <p className="mt-2 line-clamp-3 flex-1 text-xs leading-[1.7] text-muted">{n.excerpt}</p>
-                  <p className="mt-2 text-2xs text-subtle">{formatRelative(n.editedAt, i18n.language)}</p>
+                  <p className="mt-2 line-clamp-3 text-xs leading-[1.7] text-muted">{n.excerpt}</p>
+                  <p className="mt-auto pt-2 text-2xs text-subtle">{formatRelative(n.editedAt, i18n.language)}</p>
                 </button>
               ))}
             </div>

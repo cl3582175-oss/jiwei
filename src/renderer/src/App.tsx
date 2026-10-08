@@ -12,7 +12,9 @@ import { LibraryView } from './features/library/LibraryView'
 import { TrashView } from './features/trash/TrashView'
 import { SettingsDialog } from './features/settings/SettingsDialog'
 import { CommandPalette } from './features/palette/CommandPalette'
+import { Onboarding } from './features/onboarding/Onboarding'
 import { useGlobalShortcuts } from './lib/shortcuts'
+import { useCelebrations } from './lib/celebrate'
 
 function useThemeSync(): 'light' | 'dark' {
   const { data: s } = useSettings()
@@ -31,8 +33,8 @@ function useThemeSync(): 'light' | 'dark' {
   }, [mode, prefersDark])
 
   useEffect(() => {
-    document.documentElement.dataset.accent = s?.accent ?? 'jade'
-  }, [s?.accent])
+    document.documentElement.dataset.palette = s?.palette ?? 'qinglu'
+  }, [s?.palette])
 
   useEffect(() => {
     if (s?.language && i18n.language !== s.language) {
@@ -81,13 +83,14 @@ export function App() {
   const view = useApp((s) => s.view)
   const { isSuccess } = useSettings()
   useGlobalShortcuts()
+  useCelebrations()
 
   // 设置加载完成前不渲染，避免语言/主题闪烁
   if (!isSuccess) return null
 
   return (
     <TooltipProvider>
-      <div className="flex h-full bg-bg">
+      <div className="flex h-full">
         <NavRail />
         <main className="relative min-w-0 flex-1">
           {view === 'notes' && <NotesView />}
@@ -97,6 +100,7 @@ export function App() {
       </div>
       <SettingsDialog />
       <CommandPalette />
+      <Onboarding />
       <DialogHost />
       <Toaster
         theme={theme}

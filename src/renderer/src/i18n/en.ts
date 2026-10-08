@@ -79,6 +79,7 @@ const en: Messages = {
     deleteCategoryTitle: 'Delete category “{{name}}”?',
     deleteCategoryDesc: 'Items inside will not be deleted; they become uncategorized.'
   },
+  tints: { bamboo: 'Bamboo', sky: 'Sky', lotus: 'Lotus', apricot: 'Apricot', sakura: 'Sakura', gosling: 'Gosling', moon: 'Moon' },
   origin: {
     ai: 'AI generated',
     aiReviewed: 'AI generated · reviewed',
@@ -137,6 +138,57 @@ const en: Messages = {
     name: 'Your name',
     desc: 'Shown next to your edits when collaborating. This device: {{device}}'
   },
+  onboarding: {
+    title: 'Welcome to Jiwei',
+    dialogTitle: 'Jiwei · First-run guide',
+    intro:
+      'Jiwei helps you turn what you learn into what you understand: record with Cornell notes, connect with your library and AI, then internalize through reflection and review. Everything stays on your computer.',
+    p1: 'Record',
+    p1d: 'Cornell notes — cues, notes and summary, organized as you learn',
+    p2: 'Connect',
+    p2d: 'Books, videos, web pages and notes linked together; AI finds the source',
+    p3: 'Internalize',
+    p3d: 'Reflection and spaced review turn notes into understanding (coming soon)',
+    start: 'Get started',
+    next: 'Next',
+    back: 'Back',
+    skip: 'Skip',
+    personalize: 'Make Jiwei yours',
+    personalizeDesc: 'You can change these anytime in Settings.',
+    namePlaceholder: 'Name shown when collaborating',
+    cornell: 'The Cornell method in three minutes',
+    cornellDesc:
+      'Each row is one idea: key points on the right, a question that prompts them on the left, and a short summary at the bottom. To review, cover the right side and answer from the questions.',
+    cueEx: 'Why do we forget?',
+    cueHow: 'After class: keywords or questions that trigger recall',
+    bodyEx: 'About 66% is forgotten after one day; reviewing resets the curve.',
+    bodyHow: 'While learning: key points, examples, derivations — in your own words',
+    summaryHow: "The page's core in 2–3 sentences — if you can't write it, you haven't understood it yet",
+    openSample: 'Open the sample note',
+    blank: 'Start blank'
+  },
+  empty: {
+    homeTitle: 'Start with your first note today',
+    homeHint: 'Write down one small thing you learned today — great knowledge starts here.',
+    heatmapFirst: 'The heatmap tracks your daily effort. Write your first note to light up the first square.',
+    statZero: 'Write your first',
+    streakZero: 'Start a streak today',
+    searchNone: 'Nothing found — try another keyword',
+    libraryTitle: 'Bring in your learning materials',
+    libraryHint: 'Books, PDFs, videos, audio, images or web links. Drop them here or click Import.',
+    trashTitle: 'All clear',
+    trashHint: 'Deleted items stay here for 30 days and can be restored anytime.'
+  },
+  celebrate: {
+    saved: 'Saved',
+    streak: '{{count}}-day learning streak — keep going!',
+    firstNote: 'Your first note is written. A great start.'
+  },
+  cornellHelp: {
+    title: 'The Cornell method',
+    body: 'Notes on the right; questions that prompt them on the left; a short summary at the bottom. To review, cover the right side and recall from the cues.',
+    sample: 'Open the sample note'
+  },
   tags: {
     title: 'Tags',
     add: 'Add tag',
@@ -147,6 +199,7 @@ const en: Messages = {
   },
   categories: {
     newSub: 'New subcategory',
+    color: 'Color',
     removed: 'Deleted “{{name}}” — restore it from Recently Deleted'
   },
   history: {
@@ -195,6 +248,8 @@ const en: Messages = {
       other: 'Other'
     },
     invalidUrl: 'Please enter a valid http(s) URL',
+    typeHeader: 'Type',
+    allCategories: 'All categories',
     duplicates: '{{count}} file(s) already in your library were skipped',
     info: 'Source details',
     author: 'Author',
@@ -227,8 +282,9 @@ const en: Messages = {
     language: 'Language',
     theme: 'Theme',
     themes: { system: 'System', light: 'Light', dark: 'Dark' },
-    accent: 'Accent',
-    accents: { jade: 'Jade', indigo: 'Indigo', cinnabar: 'Cinnabar', amber: 'Amber', wisteria: 'Wisteria' },
+    palette: 'Palette',
+    paletteDesc: 'Three palettes drawn from classical Chinese painting and ceramics',
+    palettes: { qinglu: 'Blue-green landscape', celadon: 'Ru celadon', dunhuang: 'Dunhuang' },
     dataDir: 'Data directory',
     dataDirDesc: 'Your notes database and imported files are stored locally in this folder.',
     openDataDir: 'Open folder',

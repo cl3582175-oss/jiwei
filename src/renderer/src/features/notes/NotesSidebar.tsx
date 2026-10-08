@@ -5,13 +5,14 @@ import { Plus, Search, Pin, Layers, Inbox, ArrowDownUp, Check, X, Hash, Trash2, 
 import type { NoteQuery, NoteSort, NoteSummary } from '@shared/types'
 import { useApp, type NoteFilter } from '@/store/app'
 import { useNotes, useTags, invalidate } from '@/lib/queries'
-import { api, cn, formatDate, formatRelative } from '@/lib/utils'
+import { api, cn, formatDate, formatRelative, modKey } from '@/lib/utils'
 import { useCreateNote } from '@/lib/shortcuts'
 import { Button } from '@/components/ui/button'
 import { Menu, MenuContent, MenuItem, MenuTrigger, Tip } from '@/components/ui/primitives'
 import { confirm } from '@/components/ui/confirm'
 import { CategoryTree, FilterRow, SectionHeader } from './CategoryTree'
 import { STATUS_META } from './NoteEditor'
+import { InkMountains } from '@/components/Illustrations'
 
 export function filterToQuery(f: NoteFilter): Pick<NoteQuery, 'categoryId' | 'pinnedOnly' | 'tagId' | 'includeDescendants'> {
   switch (f.type) {
@@ -92,7 +93,7 @@ export function NotesSidebar() {
   }
 
   return (
-    <aside className="flex h-full w-[300px] shrink-0 flex-col border-r border-border bg-sunken/60">
+    <aside className="flex h-full w-[300px] shrink-0 flex-col">
       <div className="drag flex h-[52px] shrink-0 items-end justify-between px-4 pb-1.5">
         <h2 className="font-serif text-lg font-semibold tracking-wide text-fg">{t('notes.title')}</h2>
         <div className="no-drag flex items-center gap-0.5">
@@ -113,9 +114,16 @@ export function NotesSidebar() {
               ))}
             </MenuContent>
           </Menu>
-          <Tip label={t('notes.new')} side="bottom">
-            <Button variant="ghost" size="icon-sm" onClick={() => void createNote()} aria-label={t('notes.new')}>
+          <Tip label={`${t('notes.new')}  ${modKey}N`} side="bottom">
+            <Button
+              variant="outline"
+              size="sm"
+              className="ml-1 h-7 rounded-full px-2.5"
+              onClick={() => void createNote()}
+              aria-label={t('notes.new')}
+            >
               <Plus />
+              {t('common.create')}
             </Button>
           </Tip>
         </div>
@@ -202,7 +210,10 @@ export function NotesSidebar() {
           <NoteItem key={n.id} note={n} sort={noteSort} active={n.id === activeNoteId} onClick={() => openNote(n.id)} />
         ))}
         {isFetched && notes.length === 0 && (
-          <p className="px-3 py-8 text-center text-xs text-subtle">{search ? t('notes.noResults') : t('notes.empty')}</p>
+          <div className="flex flex-col items-center px-3 py-8 text-center">
+            {search && <InkMountains size={110} className="mb-3 text-subtle" />}
+            <p className="text-xs text-subtle">{search ? t('notes.noResults') : t('notes.empty')}</p>
+          </div>
         )}
       </div>
     </aside>

@@ -8,6 +8,7 @@ import { useApp } from '@/store/app'
 import { Button } from '@/components/ui/button'
 import { Tip } from '@/components/ui/primitives'
 import { KIND_ICON } from '../library/LibraryView'
+import { KIND_TINT } from '@/lib/tint'
 
 // 工作区左栏：在应用内查看资料，并把“看到哪里 / 选中了什么”同步到工作区上下文。
 
@@ -105,7 +106,7 @@ export function SourcePane({ sourceId }: { sourceId: string }) {
   return (
     <div className="flex h-full flex-col bg-sunken/50">
       <header className="drag flex h-[52px] shrink-0 items-center gap-2.5 border-b border-border/70 px-4">
-        <span className="grid size-7 shrink-0 place-items-center rounded-md bg-accent-soft text-accent [&_svg]:size-4">
+        <span data-tint={KIND_TINT[source.kind]} className="tint grid size-7 shrink-0 place-items-center rounded-lg [&_svg]:size-4">
           {KIND_ICON[source.kind]}
         </span>
         <div className="min-w-0 flex-1">

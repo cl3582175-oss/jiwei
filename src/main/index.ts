@@ -52,7 +52,12 @@ function createWindow(): void {
     minHeight: 640,
     show: false,
     title: '积微',
-    backgroundColor: nativeTheme.shouldUseDarkColors ? '#16181a' : '#fbfaf7',
+    // 层级 0（桌面）：macOS 毛玻璃、Windows 11 Mica 材质；Linux 使用不透明底色
+    ...(isMac
+      ? { vibrancy: 'under-window' as const, visualEffectState: 'active' as const, backgroundColor: '#00000000' }
+      : process.platform === 'win32'
+        ? { backgroundMaterial: 'mica' as const, backgroundColor: '#00000000' }
+        : { backgroundColor: nativeTheme.shouldUseDarkColors ? '#0b1618' : '#e7ecea' }),
     titleBarStyle: isMac ? 'hiddenInset' : 'hidden',
     trafficLightPosition: { x: 16, y: 18 },
     ...(isMac ? {} : { titleBarOverlay: { color: '#00000000', symbolColor: '#888', height: 44 } }),

@@ -45,9 +45,12 @@ import {
   EmptyState
 } from '@/components/ui/primitives'
 import { confirm } from '@/components/ui/confirm'
+import { FloatingPanel } from '@/components/FloatingPanel'
+import { KIND_TINT } from '@/lib/tint'
+import { InkLibrary } from '@/components/Illustrations'
 import { useApp } from '@/store/app'
 import { PanelLeftOpen } from 'lucide-react'
-import { CategoryTree, categoryPaths } from '../notes/CategoryTree'
+import { CategoryTree, SectionHeader, categoryPaths } from '../notes/CategoryTree'
 import { TagEditor } from '../notes/TagEditor'
 
 export const KIND_ICON: Record<SourceKind, ReactNode> = {
@@ -201,10 +204,12 @@ function SourceCard({ s }: { s: Source }) {
   return (
     <div
       onDoubleClick={() => useApp.getState().openSource(s.id)}
-      className="group relative flex flex-col rounded-xl border border-border bg-surface p-4 shadow-card transition-all duration-200 hover:-translate-y-0.5 hover:border-border-strong hover:shadow-float"
+      className="paper group relative flex flex-col rounded-2xl p-4 shadow-[var(--shadow-1)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[var(--shadow-3)]"
     >
       <div className="flex items-start justify-between">
-        <div className="grid size-11 place-items-center rounded-lg bg-accent-soft text-accent [&_svg]:size-5">{KIND_ICON[s.kind]}</div>
+        <div data-tint={KIND_TINT[s.kind]} className="tint grid size-11 place-items-center rounded-xl [&_svg]:size-5">
+          {KIND_ICON[s.kind]}
+        </div>
         <Menu>
           <MenuTrigger asChild>
             <Button
@@ -332,30 +337,33 @@ export function LibraryView() {
       onDrop={(e) => void onDrop(e)}
     >
       {/* 左栏：类型 + 分类 */}
-      <aside className="flex h-full w-[300px] shrink-0 flex-col border-r border-border bg-sunken/60">
+      <aside className="flex h-full w-[300px] shrink-0 flex-col">
         <div className="drag flex h-[52px] shrink-0 items-end px-4 pb-1.5">
           <h2 className="font-serif text-lg font-semibold tracking-wide text-fg">{t('library.title')}</h2>
         </div>
-        <div className="space-y-0.5 overflow-y-auto px-3 pt-3">
+        <div className="space-y-0.5 overflow-y-auto px-3 pt-1">
+          <SectionHeader label={t('library.typeHeader')} />
           {row(!kind, <Layers />, t('library.kinds.all'), () => setKind(undefined))}
           {KINDS.map((k) => (
             <div key={k}>{row(kind === k, KIND_ICON[k], t(`library.kinds.${k}`), () => setKind(k))}</div>
           ))}
-          <div className="space-y-0.5 pt-4">
-            {row(cat.type === 'all', <Layers />, t('common.all'), () => setCat({ type: 'all' }))}
-            {row(cat.type === 'uncategorized', <Inbox />, t('common.uncategorized'), () => setCat({ type: 'uncategorized' }))}
-          </div>
           <CategoryTree
             kind="source"
             activeId={cat.type === 'category' ? cat.id : null}
             onSelect={(id) => setCat({ type: 'category', id })}
             onRemoved={(id) => cat.type === 'category' && cat.id === id && setCat({ type: 'all' })}
+            leading={
+              <div className="space-y-0.5">
+                {row(cat.type === 'all', <Layers />, t('library.allCategories'), () => setCat({ type: 'all' }))}
+                {row(cat.type === 'uncategorized', <Inbox />, t('common.uncategorized'), () => setCat({ type: 'uncategorized' }))}
+              </div>
+            }
           />
         </div>
       </aside>
 
-      {/* 主区 */}
-      <div className="flex min-w-0 flex-1 flex-col">
+      {/* 主区：浮动面板 */}
+      <FloatingPanel flushLeft className="flex flex-col">
         <header className="drag flex h-[52px] shrink-0 items-center justify-end gap-2 border-b border-border/70 pr-[calc(var(--tb-right)+16px)] pl-6">
           <div className="no-drag relative w-[260px]">
             <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-subtle" />
@@ -394,9 +402,9 @@ export function LibraryView() {
         <div className="min-h-0 flex-1 overflow-y-auto">
           {isFetched && items.length === 0 ? (
             <EmptyState
-              icon={<BookOpen />}
-              title={t('library.empty')}
-              hint={t('library.emptyHint')}
+              icon={<InkLibrary size={180} />}
+              title={t('empty.libraryTitle')}
+              hint={t('empty.libraryHint')}
               action={
                 <Button variant="primary" onClick={() => void importDialog()}>
                   <Upload />
@@ -412,7 +420,7 @@ export function LibraryView() {
             </div>
           )}
         </div>
-      </div>
+      </FloatingPanel>
 
       {dragging && (
         <div className="pointer-events-none absolute inset-3 z-30 grid place-items-center rounded-2xl border-2 border-dashed border-accent bg-accent-soft backdrop-blur-[1px]">

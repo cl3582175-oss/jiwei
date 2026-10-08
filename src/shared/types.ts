@@ -163,11 +163,16 @@ export interface ReflectionSettings {
   time: string
 }
 
+/** 配色方案：青绿山水 / 汝窑天青 / 敦煌 */
+export type Palette = 'qinglu' | 'celadon' | 'dunhuang'
+
 export interface Settings {
   language: Language
   theme: ThemeMode
-  accent: string
+  palette: Palette
   reflection: ReflectionSettings
+  /** 是否已完成首次启动引导 */
+  onboarded: boolean
 }
 
 export interface Vault {

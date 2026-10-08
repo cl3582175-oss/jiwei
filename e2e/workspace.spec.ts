@@ -11,7 +11,10 @@ let page: Page
 let noteId = ''
 
 async function launch(): Promise<void> {
-  app = await electron.launch({ args: ['.', `--user-data-dir=${userData}`], env: { ...process.env, JIWEI_LANG: 'zh-CN' } })
+  app = await electron.launch({
+    args: ['.', `--user-data-dir=${userData}`],
+    env: { ...process.env, JIWEI_LANG: 'zh-CN', JIWEI_SKIP_ONBOARDING: '1' }
+  })
   page = await app.firstWindow()
   await page.waitForSelector('nav')
 }

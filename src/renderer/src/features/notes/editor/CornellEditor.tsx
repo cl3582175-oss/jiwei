@@ -171,13 +171,11 @@ export function CornellEditor({ noteId, ydoc, onReady }: Props) {
         if (!blockId && typeof n.attrs.id === 'string' && n.type.name !== CORNELL.row) blockId = n.attrs.id
         if (n.type.name === CORNELL.row) rowId = (n.attrs.id as string) ?? null
       }
-      useApp
-        .getState()
-        .setContext({
-          cursorBlockId: blockId,
-          cursorRowId: rowId,
-          noteSelection: empty ? null : editor.state.doc.textBetween(from, to, '\n').slice(0, 4000)
-        })
+      useApp.getState().setContext({
+        cursorBlockId: blockId,
+        cursorRowId: rowId,
+        noteSelection: empty ? null : editor.state.doc.textBetween(from, to, '\n').slice(0, 4000)
+      })
     }
     editor.on('selectionUpdate', update)
     return () => {

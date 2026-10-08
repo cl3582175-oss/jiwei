@@ -6,6 +6,7 @@ import { Command } from 'cmdk'
 import { Hash, Plus, X, Check } from 'lucide-react'
 import { useTags, invalidate } from '@/lib/queries'
 import { api, cn } from '@/lib/utils'
+import { tintFor } from '@/lib/tint'
 
 /** 标签编辑：已有标签以小胶囊展示，点击 + 搜索或新建 */
 export function TagEditor({ entityType, entityId, tagIds }: { entityType: 'note' | 'source'; entityId: string; tagIds: string[] }) {
@@ -38,12 +39,16 @@ export function TagEditor({ entityType, entityId, tagIds }: { entityType: 'note'
         const tag = byId.get(id)
         if (!tag) return null
         return (
-          <span key={id} className="group inline-flex h-6 items-center gap-1 rounded-full bg-sunken pr-1.5 pl-2 text-xs text-muted">
-            <Hash className="size-3 text-subtle" />
+          <span
+            key={id}
+            data-tint={tintFor(tag.id, tag.color)}
+            className="tint group inline-flex h-6 items-center gap-1 rounded-full pr-1.5 pl-2 text-xs"
+          >
+            <Hash className="size-3 opacity-60" />
             {tag.name}
             <button
               onClick={() => toggle(id)}
-              className="rounded-full text-subtle opacity-0 group-hover:opacity-100 hover:text-fg"
+              className="rounded-full opacity-0 group-hover:opacity-70 hover:opacity-100"
               aria-label={t('common.delete')}
             >
               <X className="size-3" />

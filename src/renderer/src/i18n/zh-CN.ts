@@ -77,6 +77,7 @@ const zhCN = {
     deleteCategoryTitle: '删除分类“{{name}}”？',
     deleteCategoryDesc: '分类中的内容不会被删除，将回到“未分类”。'
   },
+  tints: { bamboo: '竹青', sky: '天青', lotus: '藕荷', apricot: '杏', sakura: '樱', gosling: '鹅黄', moon: '月白' },
   origin: {
     ai: 'AI 生成',
     aiReviewed: 'AI 生成 · 已审阅',
@@ -129,6 +130,56 @@ const zhCN = {
     name: '你的名字',
     desc: '协作时显示在你修改的内容旁。当前设备：{{device}}'
   },
+  onboarding: {
+    title: '欢迎来到积微',
+    dialogTitle: '积微 · 首次使用引导',
+    intro:
+      '积微是一个陪你把学到的东西变成自己认知的地方：用康奈尔笔记记录，用资料库和 AI 连接，再通过复盘与复习真正内化。所有数据都只保存在你的电脑上。',
+    p1: '记录',
+    p1d: '康奈尔笔记：线索、笔记、总结三栏，边学边整理',
+    p2: '连接',
+    p2d: '书籍、视频、网页与笔记互相关联，AI 帮你找到出处',
+    p3: '内化',
+    p3d: '复盘与间隔复习，把记下的东西变成自己的认知（即将推出）',
+    start: '开始',
+    next: '下一步',
+    back: '上一步',
+    skip: '跳过',
+    personalize: '让积微更像你的',
+    personalizeDesc: '这些随时可以在设置中修改。',
+    namePlaceholder: '协作时显示的名字',
+    cornell: '康奈尔笔记法，三分钟上手',
+    cornellDesc: '每一行是一个知识点：右边记要点，左边写能引出它的问题，最后在底部用几句话总结。复习时遮住右边，看着问题回忆答案。',
+    cueEx: '为什么会遗忘？',
+    cueHow: '课后补上：关键词或问题，用来提示回忆',
+    bodyEx: '学习后 1 天会遗忘约 66%，复习能重置遗忘曲线。',
+    bodyHow: '学习时记录：要点、例子、推导，用自己的话',
+    summaryHow: '用 2–3 句话写出整页的核心——写不出来，说明还没真正理解',
+    openSample: '打开示例笔记',
+    blank: '从空白开始'
+  },
+  empty: {
+    homeTitle: '今天，从第一条笔记开始',
+    homeHint: '把今天学到的一件小事写下来——积微成著，就从这里开始。',
+    heatmapFirst: '学习热力图会记录你每天的投入。写下第一条笔记，点亮第一个格子。',
+    statZero: '写下第一篇吧',
+    streakZero: '今天开始连续学习',
+    searchNone: '没有找到相关内容，换个关键词试试',
+    libraryTitle: '把学习资料放进来',
+    libraryHint: '书籍、PDF、视频、音频、图片或网页链接都可以。拖到这里，或点击导入。',
+    trashTitle: '这里很干净',
+    trashHint: '删除的内容会在这里保留 30 天，随时可以还原。'
+  },
+  celebrate: {
+    saved: '已存',
+    streak: '连续学习 {{count}} 天，积微成著！',
+    firstNote: '第一篇笔记已写下，好的开始。'
+  },
+  cornellHelp: {
+    title: '康奈尔笔记法',
+    body: '右侧“笔记”记要点；左侧“线索”写能引出这段内容的问题；底部“总结”用几句话概括。复习时遮住右边，看着线索回忆。',
+    sample: '打开示例笔记'
+  },
   tags: {
     title: '标签',
     add: '添加标签',
@@ -139,6 +190,7 @@ const zhCN = {
   },
   categories: {
     newSub: '新建子分类',
+    color: '颜色',
     removed: '已删除分类“{{name}}”，可在最近删除中还原'
   },
   history: {
@@ -187,6 +239,8 @@ const zhCN = {
       other: '其他'
     },
     invalidUrl: '请输入有效的 http(s) 网址',
+    typeHeader: '类型',
+    allCategories: '全部分类',
     duplicates: '{{count}} 个文件已在资料库中，已跳过',
     info: '资料信息',
     author: '作者',
@@ -219,8 +273,9 @@ const zhCN = {
     language: '语言',
     theme: '主题',
     themes: { system: '跟随系统', light: '浅色', dark: '深色' },
-    accent: '强调色',
-    accents: { jade: '玉', indigo: '黛', cinnabar: '朱', amber: '琥珀', wisteria: '紫藤' },
+    palette: '配色',
+    paletteDesc: '取自中国传统绘画与器物的三套配色',
+    palettes: { qinglu: '青绿山水', celadon: '汝窑天青', dunhuang: '敦煌' },
     dataDir: '数据目录',
     dataDirDesc: '笔记数据库与导入的资料都保存在本机此目录中。',
     openDataDir: '打开目录',

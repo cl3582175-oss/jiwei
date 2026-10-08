@@ -4,7 +4,8 @@ import { notes, taggings } from '../db/schema'
 import { newId } from '../lib/ids'
 import { deviceId } from './device'
 import { recordActivity } from './stats'
-import { initDoc } from './docs'
+import { initDoc, replaceDoc } from './docs'
+import { sampleNote } from '../lib/sampleNote'
 import { deletedCategoryIds, descendantIds } from './categories'
 import { entitiesWithTag, tagIdsFor } from './tags'
 import { DOC_VERSIONS, type Note, type NoteKind, type NoteMetaUpdate, type NoteQuery, type NoteSummary } from '@shared/types'
@@ -125,6 +126,14 @@ export function createNote(init?: { categoryId?: string | null; title?: string; 
   initDoc(id)
   recordActivity('note_create')
   return getNote(id)!
+}
+
+/** 创建示例笔记《如何使用康奈尔笔记法》 */
+export function createSampleNote(lang: string): Note {
+  const sample = sampleNote(lang)
+  const note = createNote({ title: sample.title })
+  replaceDoc(note.id, sample.doc)
+  return getNote(note.id)!
 }
 
 export function updateNote(id: string, patch: NoteMetaUpdate): NoteSummary {

@@ -68,7 +68,8 @@ export const CategoryPatchSchema = z.object({
 export const SettingsPatchSchema = z.object({
   language: z.enum(['zh-CN', 'en']).optional(),
   theme: z.enum(['system', 'light', 'dark']).optional(),
-  accent: z.string().max(32).optional(),
+  palette: z.enum(['qinglu', 'celadon', 'dunhuang']).optional(),
+  onboarded: z.boolean().optional(),
   reflection: z
     .object({
       daily: z.boolean(),
