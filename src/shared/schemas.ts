@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { ContextPacketSchema } from './context'
+import { AnchorSchema, ContextPacketSchema } from './context'
 
 // 所有跨进程输入的 zod 模式。类型由模式推导，保证“声明一次、处处一致”。
 
@@ -131,7 +131,9 @@ export const ProposalInputSchema = z.object({
   /** 新富内容块的数据，键为节点 attrs.id */
   embeds: z.record(z.string(), EmbedPayloadSchema).optional(),
   model: z.string().max(120).optional(),
-  sources: OriginSchema.shape.sources
+  sources: OriginSchema.shape.sources,
+  /** 用户主动操作产生的写入（如“存入笔记”）：笔记打开时直接应用，无需逐条确认 */
+  auto: z.boolean().optional()
 })
 export type ProposalInput = z.infer<typeof ProposalInputSchema>
 
@@ -172,7 +174,13 @@ export const ChatSendSchema = z.object({
   /** 由快捷操作直接指定的技能（省去路由） */
   skill: z.string().max(64).optional(),
   /** 无痕：不读取、不形成记忆（仅新建对话时生效） */
-  incognito: z.boolean().optional()
+  incognito: z.boolean().optional(),
+  /** 对话类型（仅新建时生效）：chat 对话页；workspace 工作区面板；inline 选区就地提问 */
+  kind: z.enum(['chat', 'workspace', 'inline']).optional(),
+  /** 就地提问的锚点（仅新建时生效） */
+  anchor: AnchorSchema.optional(),
+  /** 框选区域 / 视频画面（PNG data URL）；只发送给能看图的模型 */
+  images: z.array(z.string().max(8_000_000).startsWith('data:image/')).max(4).optional()
 })
 export type ChatSend = z.infer<typeof ChatSendSchema>
 
@@ -219,3 +227,15 @@ export const UserProfileSchema = z.object({
   style: z.string().max(1000).optional(),
   avoid: z.string().max(1000).optional()
 })
+
+/** 「存入笔记」：把 AI 的回答（连同出处）写成笔记中的一行 */
+export const SaveAnswerSchema = z.object({
+  /** 目标笔记；null 时新建一篇（以资料名命名） */
+  noteId: Id.nullable(),
+  sourceId: Id.nullable().optional(),
+  cue: z.string().max(500),
+  answer: z.string().min(1).max(20000),
+  anchor: AnchorSchema.optional(),
+  model: z.string().max(200).optional()
+})
+export type SaveAnswer = z.infer<typeof SaveAnswerSchema>

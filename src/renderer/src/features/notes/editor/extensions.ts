@@ -25,7 +25,8 @@ export function schemaExtensions(labels: SchemaLabels): AnyExtension[] {
       document: false,
       undoRedo: false,
       heading: { levels: [1, 2, 3] },
-      link: { openOnClick: false, autolink: true }
+      // 允许应用内链接 jiwei://note|source/<id>（否则会被当作不安全链接清空）
+      link: { openOnClick: false, autolink: true, protocols: ['jiwei'] }
     }),
     CornellDocument,
     CornellRow,

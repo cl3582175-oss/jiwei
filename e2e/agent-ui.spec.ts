@@ -111,3 +111,22 @@ test('chat: incognito toggle for a new conversation', async () => {
   await sw.click()
   await expect(sw).toHaveAttribute('aria-checked', 'true')
 })
+
+test('save answer: fills a blank new note (no empty row left), applied without review', async () => {
+  const r = await page.evaluate(() =>
+    window.jiwei.chat.saveAnswer({
+      noteId: null,
+      sourceId: null,
+      cue: '什么是合意困难？',
+      answer: '**一句话**：短期更难、长期更好的学习难度。'
+    })
+  )
+  expect(r.created).toBe(true)
+  await page.reload()
+  await page.waitForSelector('nav')
+  await page.getByRole('button', { name: /^笔记/ }).first().click()
+  await page.getByText('无标题').first().click()
+  await expect(page.locator('.cornell-row')).toHaveCount(1)
+  await expect(page.locator('.cornell-row').first()).toContainText('短期更难、长期更好的学习难度')
+  await expect(page.getByRole('button', { name: '全部接受' })).toHaveCount(0)
+})

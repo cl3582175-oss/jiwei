@@ -1,5 +1,5 @@
 import { stepCountIs, streamText, type ModelMessage } from 'ai'
-import { and, asc, desc, eq, isNull } from 'drizzle-orm'
+import { and, asc, desc, eq, isNull, ne } from 'drizzle-orm'
 import log from 'electron-log/main'
 import { getDb } from '../../db'
 import { conversations, messages } from '../../db/schema'
@@ -7,8 +7,9 @@ import { newId } from '../../lib/ids'
 import { deviceId } from '../device'
 import { emit } from '../../events'
 import { getSettings } from '../settings'
-import { estimateCost, type Effort, type Usage } from '@shared/ai'
+import { estimateCost, supportsVision, type Effort, type Usage } from '@shared/ai'
 import type { ChatScope, ChatSend } from '@shared/schemas'
+import type { Anchor } from '@shared/context'
 import type { AgentStep, ChatMessage, Citation, Conversation } from '@shared/types'
 import { buildModel } from './model'
 import { retrieve } from './retrieve'
@@ -33,6 +34,8 @@ const toConversation = (r: ConvRow): Conversation => ({
   scope: JSON.parse(r.scope) as ChatScope,
   pinned: r.pinned,
   incognito: r.incognito,
+  kind: r.kind,
+  anchor: r.anchor ? (JSON.parse(r.anchor) as Anchor) : null,
   createdAt: r.createdAt,
   updatedAt: r.updatedAt
 })
@@ -55,12 +58,24 @@ const toMessage = (r: MsgRow): ChatMessage => ({
   createdAt: r.createdAt
 })
 
+/** 对话页列表：就地提问（inline）不在其中，它们挂在原文旁边 */
 export function listConversations(): Conversation[] {
   return getDb()
     .select()
     .from(conversations)
-    .where(isNull(conversations.deletedAt))
+    .where(and(isNull(conversations.deletedAt), ne(conversations.kind, 'inline')))
     .orderBy(desc(conversations.pinned), desc(conversations.updatedAt))
+    .all()
+    .map(toConversation)
+}
+
+/** 某份资料 / 笔记上的就地提问（用于原文边缘标记） */
+export function listThreads(parentId: string): Conversation[] {
+  return getDb()
+    .select()
+    .from(conversations)
+    .where(and(isNull(conversations.deletedAt), eq(conversations.kind, 'inline'), eq(conversations.anchorParentId, parentId)))
+    .orderBy(asc(conversations.createdAt))
     .all()
     .map(toConversation)
 }
@@ -173,6 +188,9 @@ export function send(input: ChatSend): SendResult {
         title: input.text.replace(/\s+/g, ' ').slice(0, 40),
         scope: JSON.stringify(input.scope),
         incognito: !!input.incognito,
+        kind: input.kind ?? 'chat',
+        anchor: input.anchor ? JSON.stringify(input.anchor) : null,
+        anchorParentId: input.anchor?.parentId ?? null,
         createdAt: now,
         updatedAt: now,
         updatedBy: deviceId()
@@ -305,7 +323,22 @@ async function generate(conversationId: string, messageId: string, input: ChatSe
     const msgs: ModelMessage[] = history.map((m) => ({ role: m.role, content: m.content }))
     // 最后一条（本轮）用户消息附上上下文、片段与技能
     const last = msgs.at(-1)
-    if (last?.role === 'user') last.content = turnMessage(zh, input.text, ctx.text, kb, skillBody)
+    if (last?.role === 'user') {
+      const vision = supportsVision(input.model)
+      const imageNote =
+        input.images?.length && !vision
+          ? zh
+            ? '（用户框选了一块图像区域，但当前模型看不到图像；请依据区域中的文字和上下文回答，并在开头提示用户：换用能看图的模型可以得到更准确的解释。）'
+            : '(The user selected an image region, but this model cannot see images; answer from the region text and context, and mention that a vision model would do better.)'
+          : ''
+      const text = turnMessage(zh, input.text, [ctx.text, imageNote].filter(Boolean).join('\n\n'), kb, skillBody)
+      if (input.images?.length && vision)
+        msgs[msgs.length - 1] = {
+          role: 'user',
+          content: [{ type: 'text', text }, ...input.images.map((image) => ({ type: 'image' as const, image }))]
+        }
+      else last.content = text
+    }
 
     const built = buildModel({ providerId: input.providerId, model: input.model, effort: input.effort })
     const run = (withTools: boolean) =>

@@ -1,21 +1,24 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { X, ExternalLink, Loader2, FileQuestion } from 'lucide-react'
-import type { Segment, Source } from '@shared/types'
+import type { Conversation, Segment, Source } from '@shared/types'
 import { api, cn, formatBytes } from '@/lib/utils'
 import { useApp } from '@/store/app'
 import { Button } from '@/components/ui/button'
 import { Tip } from '@/components/ui/primitives'
 import { KIND_ICON } from '../library/LibraryView'
 import { KIND_TINT } from '@/lib/tint'
+import { useAssist, elementRect } from '../assist/store'
+import { textSelectionAnchor } from '../assist/actions'
+import { PdfViewer } from './PdfViewer'
+import { MediaPane } from './MediaPane'
 
 // 工作区左栏：在应用内查看资料，并把“看到哪里 / 选中了什么”同步到工作区上下文。
 
 function TextSegments({ source }: { source: Source }) {
   const { t } = useTranslation()
   const qc = useQueryClient()
-  const setContext = useApp((s) => s.setContext)
   const { data: segs, isFetched } = useQuery({ queryKey: ['segments', source.id], queryFn: () => api.segments.list(source.id) })
   useEffect(
     () =>
@@ -24,21 +27,70 @@ function TextSegments({ source }: { source: Source }) {
       }),
     [qc, source.id]
   )
-  const onSelect = (): void => {
-    const sel = window.getSelection()
-    const text = sel?.toString().trim() ?? ''
-    const el = sel?.anchorNode instanceof Element ? sel.anchorNode : sel?.anchorNode?.parentElement
-    const segId = el?.closest<HTMLElement>('[data-segment]')?.dataset.segment ?? null
-    setContext({ sourceSelection: text ? text.slice(0, 4000) : null, sourceSegmentId: segId })
-  }
   if (!isFetched) return <Centered icon={<Loader2 className="animate-spin" />} />
   if (!segs?.length) return <Centered icon={<Loader2 className="animate-spin" />} text={t('workspace.parsing')} />
-  return <SegmentList segs={segs} onSelect={onSelect} />
+  return <SegmentList sourceId={source.id} segs={segs} />
 }
 
-function SegmentList({ segs, onSelect }: { segs: Segment[]; onSelect: () => void }) {
+/** 选中资料文字：同步到工作区上下文，并弹出选区浮条 */
+export function useSourceSelection(sourceId: string): () => void {
+  const setContext = useApp((s) => s.setContext)
+  return () => {
+    // 等浏览器完成选区更新
+    requestAnimationFrame(() => {
+      const r = textSelectionAnchor(sourceId)
+      setContext({ sourceSelection: r?.anchor.quote?.slice(0, 4000) ?? null, sourceSegmentId: r?.anchor.ownerId ?? null })
+      useAssist.getState().showToolbar(r && r.anchor.quote!.length >= 1 ? r : null)
+    })
+  }
+}
+
+/** 片段的位置属性：页码 / 时间段（用于锚点） */
+function segAttrs(s: Segment): Record<string, string> {
+  const v = String((s.locator as { value?: unknown }).value ?? '')
+  const page = v.match(/page=(\d+)/)
+  const t = v.match(/t=([\d.]+)(?:,([\d.]+))?/)
+  return {
+    'data-segment': s.id,
+    ...(page ? { 'data-page': page[1] } : {}),
+    ...(t ? { 'data-t0': t[1], 'data-t1': t[2] ?? t[1] } : {})
+  }
+}
+
+/** 原文边缘的就地提问标记：点开回到当时的对话 */
+function ThreadMarks({ threads, segId }: { threads: Conversation[]; segId: string }) {
+  const { t } = useTranslation()
+  const mine = threads.filter((c) => c.anchor?.ownerId === segId)
+  if (!mine.length) return null
+  return (
+    <span className="thread-marks" contentEditable={false}>
+      {mine.map((c) => (
+        <button
+          key={c.id}
+          className="thread-dot"
+          aria-label={t('assist.thread', { title: c.title })}
+          title={c.title}
+          onMouseUp={(e) => e.stopPropagation()}
+          onClick={(e) =>
+            useAssist.getState().openCard({
+              anchor: c.anchor!,
+              rect: elementRect(e.currentTarget),
+              action: 'ask',
+              conversationId: c.id,
+              question: c.title
+            })
+          }
+        />
+      ))}
+    </span>
+  )
+}
+
+function SegmentList({ sourceId, segs }: { sourceId: string; segs: Segment[] }) {
   const highlight = useApp((s) => s.highlight)
   const ref = useRef<HTMLElement>(null)
+  const onSelect = useSourceSelection(sourceId)
+  const { data: threads = [] } = useQuery({ queryKey: ['threads', sourceId], queryFn: () => api.chat.threads(sourceId) })
   // AI 引用跳转：定位并高亮片段
   useEffect(() => {
     if (highlight?.type !== 'segment') return
@@ -53,15 +105,17 @@ function SegmentList({ segs, onSelect }: { segs: Segment[]; onSelect: () => void
     <article ref={ref} className="source-text select-text" onMouseUp={onSelect} onKeyUp={onSelect}>
       {segs.map((s: Segment) =>
         s.kind === 'heading' ? (
-          <h3 key={s.id} data-segment={s.id}>
+          <h3 key={s.id} {...segAttrs(s)}>
+            <ThreadMarks threads={threads} segId={s.id} />
             {s.text.replace(/^#+\s*/, '')}
           </h3>
         ) : s.kind === 'code' ? (
-          <pre key={s.id} data-segment={s.id}>
+          <pre key={s.id} {...segAttrs(s)}>
             {s.text.replace(/^```\w*\n?|```$/g, '')}
           </pre>
         ) : (
-          <p key={s.id} data-segment={s.id}>
+          <p key={s.id} {...segAttrs(s)}>
+            <ThreadMarks threads={threads} segId={s.id} />
             {s.text}
           </p>
         )
@@ -79,46 +133,6 @@ function Centered({ icon, text }: { icon: React.ReactNode; text?: string }) {
   )
 }
 
-function Media({ source }: { source: Source }) {
-  const setContext = useApp((s) => s.setContext)
-  const ref = useRef<HTMLVideoElement & HTMLAudioElement>(null)
-  const onTime = (): void => {
-    const t = ref.current?.currentTime ?? 0
-    setContext({ sourceLocator: `t=${Math.floor(t)}` })
-  }
-  const props = { ref, src: source.assetUrl!, controls: true, onTimeUpdate: onTime, onSeeked: onTime }
-  return source.kind === 'video' ? (
-    <div className="flex h-full items-center bg-black">
-      <video {...props} className="max-h-full w-full" />
-    </div>
-  ) : (
-    <div className="flex h-full items-center justify-center p-8">
-      <audio {...props} className="w-full" />
-    </div>
-  )
-}
-
-/** 内置 PDF 查看器；AI 引用带页码时跳到对应页 */
-function PdfFrame({ source }: { source: Source }) {
-  const highlight = useApp((s) => s.highlight)
-  const [page, setPage] = useState<string | null>(null)
-  useEffect(() => {
-    const m = highlight?.type === 'segment' ? highlight.locator?.match(/page=(\d+)/) : null
-    if (m) {
-      setPage(m[1])
-      useApp.getState().setHighlight(null)
-    }
-  }, [highlight])
-  return (
-    <iframe
-      key={page ?? 'p'}
-      title={source.title}
-      src={`${source.assetUrl}${page ? `#page=${page}` : ''}`}
-      className="h-full w-full border-0 bg-surface"
-    />
-  )
-}
-
 /** 解析为文本分段后在应用内阅读的格式 */
 const TEXT_EXTS = ['md', 'markdown', 'txt', 'docx', 'epub', 'html', 'htm']
 
@@ -131,8 +145,8 @@ function Body({ source }: { source: Source }) {
         <img src={source.assetUrl} alt={source.title} className="max-h-full max-w-full rounded-lg object-contain shadow-card" />
       </div>
     )
-  if ((source.kind === 'video' || source.kind === 'audio') && source.assetUrl) return <Media source={source} />
-  if (source.kind === 'pdf' && source.assetUrl) return <PdfFrame source={source} />
+  if ((source.kind === 'video' || source.kind === 'audio') && source.assetUrl) return <MediaPane source={source} />
+  if (source.kind === 'pdf' && source.assetUrl) return <PdfViewer source={source} />
   if (TEXT_EXTS.includes(ext) || source.kind === 'web') return <TextSegments source={source} />
   return <Centered icon={<FileQuestion />} text={t('workspace.unsupported')} />
 }

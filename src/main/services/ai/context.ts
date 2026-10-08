@@ -61,7 +61,9 @@ const segLabel = (s: Segment): string => {
 const clip = (s: string, n: number): string => (s.length > n ? s.slice(0, n) + '…' : s)
 
 /** 资料中的锚点：片段 + 前后片段（媒体按时间段取转写稿） */
-function sourceAnchor(a: Anchor, zh: boolean): string | null {
+function sourceAnchor(anchor: Anchor, zh: boolean): string | null {
+  // 媒体播放中、没有标出时间段：取当前时刻之前 30 秒的转写稿（“他刚才说的”）
+  const a: Anchor = anchor.kind === 'viewport' && anchor.t ? { ...anchor, t: [Math.max(0, anchor.t[0] - 30), anchor.t[0] + 5] } : anchor
   const src = sourceRow(a.parentId)
   if (!src) return null
   const segs = listSegments(a.parentId)

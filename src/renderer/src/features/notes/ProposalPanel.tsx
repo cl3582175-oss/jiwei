@@ -1,12 +1,12 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { generateHTML } from '@tiptap/core'
 import type { Editor } from '@tiptap/react'
-import type * as Y from 'yjs'
+import * as Y from 'yjs'
 import { toast } from 'sonner'
 import { Sparkles, Check, X, BookOpen, Network } from 'lucide-react'
-import type { Proposal, ProposalOp } from '@shared/types'
+import { DOC_FIELD, type Proposal, type ProposalOp } from '@shared/types'
 import { embedText } from '@shared/embeds'
 import { api, cn, formatRelative } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -72,7 +72,35 @@ export function ProposalPanel({ noteId, editor, ydoc }: { noteId: string; editor
     for (let i = 0; i < p.ops.length; i++) if (p.opStatus[i] === 'pending') await decide(p, i, decision)
   }
 
-  if (list.length === 0) return null
+  // 用户主动操作产生的写入（如“存入笔记”）：编辑器与 Yjs 内容同步完成后直接应用。
+  // y-prosemirror 在编辑器创建后才把文档内容同步进来；过早应用会写到占位文档上。
+  const applying = useRef(new Set<string>())
+  useEffect(() => {
+    if (!editor || !ydoc || !list.some((p) => p.auto && !applying.current.has(p.id))) return
+    let tries = 0
+    let timer = 0
+    const run = (): void => {
+      if (editor.isDestroyed) return
+      const first = ydoc.getXmlFragment(DOC_FIELD).get(0)
+      const yId = first instanceof Y.XmlElement ? first.getAttribute('id') : undefined
+      const synced = !yId || editor.state.doc.firstChild?.attrs.id === yId
+      if (!synced && tries++ < 40) {
+        timer = window.setTimeout(run, 50)
+        return
+      }
+      for (const p of list) {
+        if (!p.auto || applying.current.has(p.id)) continue
+        applying.current.add(p.id)
+        void decideAll(p, 'accepted')
+      }
+    }
+    run()
+    return () => window.clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [list, editor, ydoc])
+
+  const visible = list.filter((p) => !p.auto)
+  if (visible.length === 0) return null
 
   const opLabel = (op: ProposalOp): string => t(`proposals.op.${op.op}`)
   const preview = (p: Proposal, op: ProposalOp): React.ReactNode => {
@@ -95,7 +123,7 @@ export function ProposalPanel({ noteId, editor, ydoc }: { noteId: string; editor
 
   return (
     <div className="mb-6 space-y-3">
-      {list.map((p) => (
+      {visible.map((p) => (
         <section key={p.id} className="overflow-hidden rounded-xl border border-accent/30 bg-accent-soft/40 shadow-card">
           <header className="flex items-center gap-2.5 border-b border-accent/20 px-4 py-2.5">
             <Sparkles className="size-4 text-accent" />

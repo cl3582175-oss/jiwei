@@ -161,7 +161,7 @@ export async function collectGarbage(): Promise<number> {
 /** 必须在 app ready 之前调用 */
 export function registerSchemePrivileges(): void {
   protocol.registerSchemesAsPrivileged([
-    { scheme: 'jiwei', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }
+    { scheme: 'jiwei', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true } }
   ])
 }
 
@@ -177,6 +177,8 @@ export function registerProtocol(): void {
     const headers = new Headers(res.headers)
     if (MIME[m[2]]) headers.set('Content-Type', MIME[m[2]])
     headers.set('Cache-Control', 'public, max-age=31536000, immutable')
+    // 渲染进程（pdf.js 等）以 fetch 读取素材
+    headers.set('Access-Control-Allow-Origin', '*')
     return new Response(res.body, { status: res.status, headers })
   })
 }

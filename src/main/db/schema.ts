@@ -510,6 +510,14 @@ export const conversations = sqliteTable(
     pinned: integer('pinned', { mode: 'boolean' }).notNull().default(false),
     /** 无痕：不使用、不形成记忆 */
     incognito: integer('incognito', { mode: 'boolean' }).notNull().default(false),
+    /** chat 对话页；workspace 工作区面板；inline 选区就地提问 */
+    kind: text('kind', { enum: ['chat', 'workspace', 'inline'] })
+      .notNull()
+      .default('chat'),
+    /** 就地提问的锚点（JSON Anchor） */
+    anchor: text('anchor'),
+    /** 锚点所在的资料 / 笔记（用于在原文边缘显示标记） */
+    anchorParentId: text('anchor_parent_id'),
     ...syncCols
   },
   (t) => [index('conversations_updated_idx').on(t.updatedAt)]

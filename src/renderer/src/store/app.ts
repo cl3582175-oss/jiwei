@@ -147,3 +147,15 @@ export const useApp = create<AppState>((set, get) => {
 
 /** 读取当前工作区上下文（AI 请求时随附） */
 export const getWorkspaceContext = (): WorkspaceContext => useApp.getState().context
+
+/**
+ * 打开资料并定位：seg 片段、page 页码、t 秒（出处链接 jiwei://source/<id>?seg=&page=&t=）。
+ * 定位信息通过 highlight 交给资料面板处理。
+ */
+export function openSourceAt(id: string, q: URLSearchParams): void {
+  const s = useApp.getState()
+  const seg = q.get('seg')
+  const locator = q.get('t') ? `t=${q.get('t')}` : q.get('page') ? `page=${q.get('page')}` : null
+  if (seg || locator) s.setHighlight({ type: 'segment', id: seg ?? '', locator })
+  s.openSource(id)
+}

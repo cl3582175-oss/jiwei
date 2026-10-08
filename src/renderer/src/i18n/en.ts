@@ -16,6 +16,7 @@ const en: Messages = {
     search: 'Search'
   },
   common: {
+    close: 'Close',
     cancel: 'Cancel',
     confirm: 'Confirm',
     delete: 'Delete',
@@ -406,6 +407,70 @@ const en: Messages = {
     licenseDesc: 'PolyForm Noncommercial 1.0.0 — free for personal use, no commercial use.',
     me: 'About me',
     skills: 'Skills'
+  },
+  assist: {
+    cueClarify: 'What does “{{q}}” mean?',
+    qRegion: { explain: 'Explain this part', clarify: 'Walk me through this', translate: 'Translate this part' },
+    region: 'Ask about a region',
+    regionHint: 'Drag over a figure, formula or table to ask AI about it',
+    pageOf: 'Page {{n}} of {{total}}',
+    zoomIn: 'Zoom in',
+    zoomOut: 'Zoom out',
+    pdfError: "Couldn't open this PDF",
+    toolbar: 'Selection actions',
+    actions: { explain: 'Explain', clarify: 'Clarify', translate: 'Translate', ask: 'Ask AI' },
+    q: {
+      explain: 'What does "{{q}}" mean?',
+      clarify: "I don't get this passage — explain it",
+      translate: 'Translate this',
+      ask: '{{q}}'
+    },
+    card: 'Answer',
+    askPh: 'What would you like to ask? e.g. why does it say this here',
+    followUp: 'Follow up…',
+    toPanel: 'Continue in the AI panel',
+    saveToNote: 'Save to note',
+    saved: 'Saved to note',
+    savedNew: 'Created a note and saved',
+    thread: 'Question: {{title}}',
+    page: 'p. {{n}}',
+    panel: 'AI assistant',
+    pin: 'Pin to the right',
+    unpin: 'Unpin',
+    panelHint:
+      "I can see the source you're reading and the note you're writing. Select text in the source to ask about it, or ask me to add a mind map, cue questions or a summary to the note (you confirm first).",
+    panelPh: 'Ask AI to help… (Enter to send)',
+    context: 'Context attached to this message',
+    removeContext: "Don't attach: {{label}}",
+    restoreContext: 'Attach again: {{label}}',
+    s1: 'Draw a mind map in my note from the source on the left',
+    s2: 'Generate cue questions for this note',
+    s3: 'Write a summary for this note'
+  },
+  media: {
+    timeline: 'Timeline',
+    transcript: 'Transcript',
+    editLine: 'Edit this line (fix transcription errors)',
+    notGetIt: "Didn't get it",
+    notGetItHint: 'Pause and have AI explain the last 30 seconds',
+    range: 'Mark a range',
+    rangeEnd: 'From {{t}} to here',
+    rangeHint: 'Click once to mark the start, again to mark the end, then ask about it',
+    clearRange: 'Clear range',
+    frame: 'Ask about this frame',
+    frameHint: 'Capture the current frame (with the surrounding narration) and ask AI',
+    frameError: "Couldn't capture this video's frame",
+    needTranscript: 'Generate a transcript first so AI knows what the video says',
+    noTranscript: 'No transcript yet',
+    noTranscriptDesc:
+      'With a transcript you can select text to ask, jump by time, and search it in your knowledge base. The first run downloads the local transcription engine (about {{size}}); after that it works fully offline.',
+    noTranscriptReady:
+      'With a transcript you can select text to ask, jump by time, and search it in your knowledge base. Transcription runs on this device.',
+    transcribe: 'Generate transcript',
+    importSubtitles: 'Import subtitles',
+    downloading: 'Downloading the transcription engine… {{p}}% ({{mirror}})',
+    transcribing: 'Transcribing… {{p}}%',
+    transcribingHint: 'Feel free to watch or do something else; the transcript will appear here.'
   },
   memory: {
     profileTitle: 'Profile',

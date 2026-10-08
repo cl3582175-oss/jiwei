@@ -16,11 +16,11 @@ import { OriginAttribute, PROPOSAL_META } from './origin'
 import { Embed } from './embeds/EmbedNode'
 import './embeds/MindmapView'
 import { MindmapDataSchema, toCornellRows } from '@shared/embeds/mindmap'
-import { useApp } from '@/store/app'
+import { useApp, openSourceAt } from '@/store/app'
 import { Tip } from '@/components/ui/primitives'
 import { Rows3 } from 'lucide-react'
 
-const INTERNAL_LINK = /^jiwei:\/\/(note|source)\/([0-9a-f-]{36})/i
+const INTERNAL_LINK = /^jiwei:\/\/(note|source)\/([0-9a-f-]{36})(?:\?(.*))?/i
 
 /** 思维导图 → 康奈尔行：插入到导图所在行之后，沿用导图的来源标记 */
 function mindmapToRows(editor: Editor, entry: Y.Map<unknown>, getPos: () => number | undefined, originAttr: string | null): void {
@@ -139,7 +139,7 @@ export function CornellEditor({ noteId, ydoc, onReady }: Props) {
           if (!m) return false
           event.preventDefault()
           if (m[1] === 'note') useApp.getState().openNote(m[2])
-          else useApp.getState().openSource(m[2])
+          else openSourceAt(m[2], new URLSearchParams(m[3] ?? ''))
           return true
         },
         handleDrop: (view, event) => {

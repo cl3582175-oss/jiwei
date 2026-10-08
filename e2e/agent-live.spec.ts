@@ -190,7 +190,7 @@ test('agent: cue questions and summary on an existing note', async () => {
   expect(rows).toBeTruthy()
   await expect(page.getByRole('button', { name: '全部接受' }).first()).toBeVisible({ timeout: 15_000 })
   await page.getByRole('button', { name: '全部接受' }).first().click()
-  await expect(page.locator('.cornell-row')).toHaveCount(4, { timeout: 15_000 })
+  await expect(page.locator('.cornell-row')).toHaveCount(3, { timeout: 15_000 })
 
   // 线索栏为空的行：生成线索问题（技能 cornell-cues → note_set_cues）
   const m2 = await chat({ text: '给这篇笔记生成线索问题。', context: { targets: [], noteId } })

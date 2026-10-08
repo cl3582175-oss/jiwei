@@ -4,6 +4,7 @@ import { useApp } from '@/store/app'
 import { api } from './utils'
 import { invalidate } from './queries'
 import { useSidebar } from '@/components/CollapsibleSidebar'
+import { useAssist } from '@/features/assist/store'
 
 /** 新建笔记并打开（继承当前分类筛选） */
 export function useCreateNote() {
@@ -57,6 +58,12 @@ export function useGlobalShortcuts(): void {
       } else if (k === '3') {
         e.preventDefault()
         s.setView('chat')
+      } else if (k === 'j') {
+        // 工作区 AI 面板
+        e.preventDefault()
+        if (s.view !== 'notes') s.setView('notes')
+        const a = useAssist.getState()
+        a.setPanel({ panelOpen: !a.panelOpen || s.view !== 'notes' })
       }
     }
     window.addEventListener('keydown', onKey)

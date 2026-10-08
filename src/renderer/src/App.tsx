@@ -17,6 +17,8 @@ import { Onboarding } from './features/onboarding/Onboarding'
 import { useGlobalShortcuts } from './lib/shortcuts'
 import { useCelebrations } from './lib/celebrate'
 import { useMemoryToasts } from './features/memory/useMemoryToasts'
+import { SelectionToolbar } from './features/assist/SelectionToolbar'
+import { AnswerCard } from './features/assist/AnswerCard'
 
 function useThemeSync(): 'light' | 'dark' {
   const { data: s } = useSettings()
@@ -106,6 +108,8 @@ export function App() {
       <CommandPalette />
       <Onboarding />
       <DialogHost />
+      <SelectionToolbar />
+      <AnswerCard />
       <Toaster
         theme={theme}
         position="bottom-center"

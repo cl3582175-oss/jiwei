@@ -185,6 +185,26 @@ export function modelTier(model: string): 'basic' | 'strong' {
   return STRONG_MODELS.some((r) => r.test(model)) ? 'strong' : 'basic'
 }
 
+/** 能看图的模型（按名称识别）：框选区域 / 视频画面提问时才发送图像，否则只发送区域内的文字 */
+const VISION_MODELS = [
+  /gpt-4o/i,
+  /gpt-4\.1/i,
+  /gpt-5/i,
+  /claude/i,
+  /gemini/i,
+  /-vl/i,
+  /vision/i,
+  /glm-4v/i,
+  /glm-4\.\dv/i,
+  /qwen.*omni/i,
+  /llava/i,
+  /llama3\.2-vision/i,
+  /pixtral/i
+]
+export function supportsVision(model: string): boolean {
+  return VISION_MODELS.some((r) => r.test(model))
+}
+
 export const LOCAL_EMBEDDING = {
   id: 'local:embeddinggemma-2',
   name: 'EmbeddingGemma 2（本地）',

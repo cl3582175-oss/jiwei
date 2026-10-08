@@ -1,6 +1,7 @@
 import { readFile } from 'fs/promises'
 import { segmentText, type TextSegment } from '../main/lib/segment'
 import { parseDocx, parseEpub, parseHtml, parsePdf } from './parsers'
+import { transcribe } from './transcribe'
 
 // 后台工作进程（Electron utilityProcess）：执行 CPU / IO 密集任务，不阻塞主进程与界面。
 // 协议：主进程发送 { id, task, payload }；本进程回复 { id, progress } 或 { id, ok, result | error }。
@@ -25,6 +26,10 @@ const tasks: Record<string, Task> = {
   },
   async parseHtml(payload) {
     return parseHtml((payload as { path: string }).path)
+  },
+  /** 视频 / 音频转写 */
+  async transcribe(payload, progress) {
+    return transcribe(payload as Parameters<typeof transcribe>[0], progress)
   },
   /** 测试用：休眠指定毫秒并汇报进度 */
   async sleep(payload, progress) {

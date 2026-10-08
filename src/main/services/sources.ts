@@ -1,3 +1,4 @@
+import log from 'electron-log/main'
 import { basename, extname } from 'path'
 import { stat } from 'fs/promises'
 import { BrowserWindow, dialog, shell } from 'electron'
@@ -11,6 +12,7 @@ import { deletedCategoryIds, descendantIds } from './categories'
 import { entitiesWithTag, tagIdsFor } from './tags'
 import { assetPath, assetUrl, collectGarbage, importFile } from './assets'
 import { canSegment, enqueueFetch, enqueueSegment } from './jobKinds'
+import { applySubtitleFile, asrStatus, enqueueTranscribe, findSidecarSubtitles, isMedia } from './asr'
 import { deleteSegments } from './segments'
 import type { ImportResult, Source, SourceKind, SourceQuery, SourceUpdate } from '@shared/types'
 
@@ -143,6 +145,17 @@ export async function importPaths(paths: string[], categoryId?: string | null): 
     recordActivity('source_add')
     out.imported.push(getSource(id)!)
     if (canSegment(row.ext)) enqueueSegment(id)
+    else if (isMedia(row.ext)) {
+      // 视频 / 音频：同名字幕优先；否则转写引擎已安装时自动转写
+      const sub = findSidecarSubtitles(p)
+      if (sub) {
+        try {
+          applySubtitleFile(id, sub)
+        } catch (e) {
+          log.warn('[sources] subtitles', e)
+        }
+      } else if (asrStatus().state === 'ready') enqueueTranscribe(id)
+    }
   }
   return out
 }
@@ -224,4 +237,12 @@ export async function purgeSource(id: string): Promise<void> {
   db.delete(sources).where(eq(sources.id, id)).run()
   deleteSegments(id)
   await collectGarbage()
+}
+
+/** 为视频 / 音频导入字幕（替换现有转写稿） */
+export async function importSubtitlesDialog(win: BrowserWindow | null, sourceId: string): Promise<number | null> {
+  const opts: Electron.OpenDialogOptions = { properties: ['openFile'], filters: [{ name: 'Subtitles', extensions: ['srt', 'vtt'] }] }
+  const res = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts)
+  if (res.canceled || !res.filePaths[0]) return null
+  return applySubtitleFile(sourceId, res.filePaths[0])
 }

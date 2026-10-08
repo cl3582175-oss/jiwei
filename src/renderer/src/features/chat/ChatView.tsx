@@ -1,13 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Plus, MessageSquare, Trash2, ArrowUp, Square, Settings2, Pin, EyeOff } from 'lucide-react'
-import { PROVIDER_PRESETS, type Effort } from '@shared/ai'
-import type { ChatMessage } from '@shared/types'
+import { PROVIDER_PRESETS } from '@shared/ai'
 import type { ChatScope } from '@shared/schemas'
 import { packetFromWorkspace } from '@shared/context'
-import { useConversations, useProviders, useSettings, useEmbeddingStatus } from '@/lib/queries'
+import { useConversations, useProviders, useEmbeddingStatus } from '@/lib/queries'
 import { api, cn, formatRelative, modKey } from '@/lib/utils'
 import { useApp, getWorkspaceContext } from '@/store/app'
 import { Button } from '@/components/ui/button'
@@ -16,13 +15,11 @@ import { confirm } from '@/components/ui/confirm'
 import { FloatingPanel } from '@/components/FloatingPanel'
 import { CollapsibleSidebar } from '@/components/CollapsibleSidebar'
 import { InkMountains } from '@/components/Illustrations'
-import { ModelPicker, type ModelChoice } from '../ai/ModelPicker'
+import { ModelPicker } from '../ai/ModelPicker'
 import { EffortPicker } from '../ai/EffortPicker'
 import { ScopePicker } from './ScopePicker'
 import { MessageItem } from './MessageItem'
-
-const errText = (e: unknown): string =>
-  String(e instanceof Error ? e.message : e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
+import { errText, sendChat, useChatThread, useModelChoice } from './useChat'
 
 function ChatSidebar() {
   const { t, i18n } = useTranslation()
@@ -164,77 +161,25 @@ function ChatPanel() {
   const { t } = useTranslation()
   const qc = useQueryClient()
   const { conversationId, openConversation, openSettings } = useApp()
-  const { data: settings } = useSettings()
   const { data: providers = [] } = useProviders()
   const { data: emb } = useEmbeddingStatus()
   const { data: conversations = [] } = useConversations()
   const conv = conversations.find((c) => c.id === conversationId)
-  const [choice, setChoice] = useState<ModelChoice>({ providerId: null, model: null })
-  const [effort, setEffort] = useState<Effort>('high')
+  const { choice, setChoice, effort, setEffort, provider } = useModelChoice()
   const [scope, setScope] = useState<ChatScope>({ type: 'all' })
-  const [msgs, setMsgs] = useState<ChatMessage[]>([])
+  const { msgs, setMsgs, streaming } = useChatThread(conversationId)
   // 无痕只能在新对话开始前选择；已有对话沿用其设置
   const [incognitoNew, setIncognitoNew] = useState(false)
   const incognito = conv ? conv.incognito : incognitoNew
   const scroller = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
 
-  // 默认模型与思考强度来自设置
-  useEffect(() => {
-    if (!settings) return
-    setChoice((c) => (c.providerId ? c : settings.ai.chat))
-    setEffort(settings.ai.effort)
-  }, [settings])
   useEffect(() => setScope(conv?.scope ?? { type: 'all' }), [conv?.id]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  const { data: loaded } = useQuery({
-    queryKey: ['messages', conversationId],
-    queryFn: () => api.chat.messages(conversationId!),
-    enabled: !!conversationId
-  })
-  useEffect(() => setMsgs(conversationId ? (loaded ?? []) : []), [loaded, conversationId])
-
-  // 流式增量与完成事件
-  useEffect(() => {
-    const offDelta = window.jiweiEvents.on('chat:delta', (d) => {
-      setMsgs((list) =>
-        list.map((m) =>
-          m.id === d.messageId
-            ? { ...m, content: m.content + (d.text ?? ''), reasoning: d.reasoning ? (m.reasoning ?? '') + d.reasoning : m.reasoning }
-            : m
-        )
-      )
-    })
-    const offStep = window.jiweiEvents.on('chat:step', ({ messageId, step }) => {
-      setMsgs((list) =>
-        list.map((m) => {
-          if (m.id !== messageId) return m
-          const i = m.steps.findIndex((x) => x.id === step.id)
-          const steps = i >= 0 ? m.steps.map((x, j) => (j === i ? step : x)) : [...m.steps, step]
-          // 新一步开始时，之前流出的文字与新文字之间留出段落
-          return { ...m, steps, content: i < 0 && m.content && !m.content.endsWith('\n') ? m.content + '\n\n' : m.content }
-        })
-      )
-    })
-    const offDone = window.jiweiEvents.on('chat:done', ({ message }) => {
-      setMsgs((list) => list.map((m) => (m.id === message.id ? message : m)))
-      void qc.invalidateQueries({ queryKey: ['conversations'] })
-      void qc.invalidateQueries({ queryKey: ['messages', message.conversationId] })
-    })
-    return () => {
-      offDelta()
-      offStep()
-      offDone()
-    }
-  }, [qc])
 
   useEffect(() => {
     const el = scroller.current
     if (el && stick.current) el.scrollTop = el.scrollHeight
   }, [msgs])
-
-  const streaming = msgs.find((m) => m.status === 'streaming')
-  const provider = providers.find((p) => p.id === choice.providerId)
 
   const send = async (text: string): Promise<void> => {
     if (!choice.providerId || !choice.model) {
@@ -243,7 +188,7 @@ function ChatPanel() {
     }
     stick.current = true
     try {
-      const r = await api.chat.send({
+      const { conversation, userMessage, assistant } = await sendChat({
         conversationId,
         text,
         providerId: choice.providerId,
@@ -253,23 +198,7 @@ function ChatPanel() {
         context: packetFromWorkspace(getWorkspaceContext()),
         ...(conversationId ? {} : { incognito: incognitoNew })
       })
-      const assistant: ChatMessage = {
-        id: r.assistantMessageId,
-        conversationId: r.conversation.id,
-        role: 'assistant',
-        content: '',
-        reasoning: null,
-        citations: [],
-        providerId: choice.providerId,
-        model: choice.model,
-        effort,
-        usage: null,
-        status: 'streaming',
-        error: null,
-        skill: null,
-        steps: [],
-        createdAt: Date.now()
-      }
+      const r = { conversation, userMessage }
       setMsgs((list) => [...list, r.userMessage, assistant])
       if (!conversationId) {
         qc.setQueryData(['messages', r.conversation.id], [r.userMessage, assistant])

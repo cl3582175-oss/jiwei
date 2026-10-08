@@ -972,13 +972,6 @@
   list-style: decimal;
   padding-left: 1.3em;
 }
-.chat-md h1,
-.chat-md h2,
-.chat-md h3 {
-  font-family: var(--font-display);
-  font-weight: 600;
-  margin-top: 1.1em;
-}
 .chat-md code:not(pre code) {
   font-family: var(--font-mono);
   font-size: 0.88em;
@@ -1026,4 +1019,108 @@
 .is-flash {
   animation: flash 2.2s ease-out;
   border-radius: 6px;
+}
+
+/* ——— 阅读辅助：原文边缘的就地提问标记 ——— */
+.source-text > [data-segment] {
+  position: relative;
+}
+.thread-marks {
+  position: absolute;
+  left: -22px;
+  top: 0.55em;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  user-select: none;
+}
+.thread-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 18%, transparent);
+  transition: transform 120ms ease;
+}
+.thread-dot:hover {
+  transform: scale(1.35);
+}
+
+/* ——— PDF 阅读器 ——— */
+.pdf-container {
+  background: var(--sunken);
+}
+.pdf-container .pdfViewer .page {
+  margin: 12px auto;
+  box-shadow: var(--shadow-1);
+  border-radius: 4px;
+  transition: box-shadow 300ms ease;
+}
+.pdf-container .page.is-flash {
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 55%, transparent);
+}
+.pdf-container .textLayer ::selection {
+  background: color-mix(in oklab, #f5c84b 55%, transparent);
+}
+.pdf-thread-dot {
+  position: absolute;
+  left: -16px;
+  z-index: 3;
+}
+
+/* ——— 转写稿 ——— */
+.transcript {
+  padding-top: 20px;
+  font-size: var(--text-base, 15px);
+}
+.transcript-line {
+  border-radius: 8px;
+  padding: 4px 8px;
+  margin-left: -8px;
+  transition: background-color 200ms ease;
+}
+.transcript-line.is-current {
+  background: color-mix(in oklab, var(--accent) 10%, transparent);
+}
+.transcript-time {
+  margin-right: 10px;
+  font-family: var(--font-mono);
+  font-size: 0.75em;
+  color: var(--subtle);
+  user-select: none;
+  font-variant-numeric: tabular-nums;
+}
+.transcript-time:hover {
+  color: var(--accent);
+}
+.transcript-edit {
+  margin-left: 6px;
+  color: var(--subtle);
+  opacity: 0;
+  vertical-align: middle;
+  user-select: none;
+}
+.transcript-line:hover .transcript-edit,
+.transcript-edit:focus-visible {
+  opacity: 1;
+}
+.transcript-edit:hover {
+  color: var(--accent);
+}
+
+/* 回答中的标题：模型偶尔使用一级标题，统一收敛为与正文协调的大小 */
+.chat-md :is(h1, h2, h3, h4) {
+  font-family: var(--font-serif);
+  font-weight: 600;
+  line-height: 1.5;
+  margin: 1em 0 0.4em;
+}
+.chat-md h1 {
+  font-size: 1.2em;
+}
+.chat-md h2 {
+  font-size: 1.12em;
+}
+.chat-md :is(h3, h4) {
+  font-size: 1.04em;
 }

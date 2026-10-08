@@ -3,6 +3,7 @@ import * as S from './schemas'
 import type {
   AppInfo,
   AssetRef,
+  AsrStatus,
   BackupInfo,
   BlockInfo,
   Category,
@@ -197,6 +198,10 @@ export const capabilities = {
     trash: cap<void>()({ description: '删除资料（进入最近删除）', params: [id()] })
   },
   segments: {
+    update: cap<Segment | null>()({
+      description: '修改片段文字（如纠正转写错误）',
+      params: [id(), ['text', z.string().min(1).max(20000)]]
+    }),
     list: cap<Segment[]>()({ description: '读取资料的分段内容', params: [id('sourceId')], ai: { effect: 'read' } }),
     search: cap<Segment[]>()({
       description: '在资料正文中全文检索',
@@ -233,6 +238,11 @@ export const capabilities = {
       params: [['input', S.ChatSendSchema]]
     }),
     stop: cap<void>()({ description: '停止生成', params: [id('messageId')] }),
+    threads: cap<Conversation[]>()({ description: '某份资料 / 笔记上的就地提问', params: [id('parentId')] }),
+    saveAnswer: cap<{ noteId: string; created: boolean }>()({
+      description: '把回答存入笔记（新增一行：线索为问题，笔记为答案与出处）',
+      params: [['input', S.SaveAnswerSchema]]
+    }),
     update: cap<void>()({
       description: '修改对话标题、检索范围或置顶',
       params: [
@@ -264,6 +274,12 @@ export const capabilities = {
     importPath: cap<SkillInfo>()({ description: '从路径导入技能', params: [['path', z.string().min(1).max(4096)]] }),
     openDir: cap<void>()({ description: '打开用户技能文件夹', params: none }),
     reload: cap<SkillInfo[]>()({ description: '重新扫描技能', params: none })
+  },
+  asr: {
+    status: cap<AsrStatus>()({ description: '语音转写引擎状态', params: none }),
+    install: cap<void>()({ description: '下载并安装语音转写引擎（sherpa-onnx + SenseVoice）', params: none }),
+    transcribe: cap<void>()({ description: '为视频 / 音频生成转写稿（后台任务）', params: [id('sourceId')] }),
+    importSubtitles: cap<number | null>()({ description: '为视频 / 音频导入字幕文件', params: [id('sourceId')] })
   },
   embedding: {
     status: cap<EmbeddingStatus>()({ description: '向量模型与索引状态', params: none }),

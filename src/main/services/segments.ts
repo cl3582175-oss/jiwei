@@ -115,3 +115,18 @@ export function replaceSegments(sourceId: string, input: SegmentInput[]): number
 export function deleteSegments(sourceId: string): void {
   getDb().delete(sourceSegments).where(eq(sourceSegments.sourceId, sourceId)).run()
 }
+
+/** 修改单个片段的文字（如纠正转写错误）；位置不变，ID 不变（引用与就地提问不受影响） */
+export function updateSegmentText(id: string, text: string): Segment | null {
+  const db = getDb()
+  const row = db.select().from(sourceSegments).where(eq(sourceSegments.id, id)).get()
+  if (!row) return null
+  const clean = text.replace(/\s+/g, ' ').trim()
+  if (!clean) throw new Error('内容不能为空')
+  db.update(sourceSegments)
+    .set({ text: clean, hash: hashText(row.kind, clean), updatedAt: Date.now() })
+    .where(eq(sourceSegments.id, id))
+    .run()
+  emit('segments:changed', { sourceId: row.sourceId })
+  return listSegments(row.sourceId).find((s) => s.id === id) ?? null
+}

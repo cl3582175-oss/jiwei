@@ -251,7 +251,7 @@ function EditorBody({ note: initial }: { note: NoteSummary }) {
   }
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="@container flex h-full flex-col">
       {/* 顶栏 */}
       <header className="drag flex h-[52px] shrink-0 items-center justify-between gap-4 border-b border-border/70 pr-[calc(var(--tb-right)+12px)] pl-4">
         <div className="no-drag flex min-w-0 items-center gap-0.5">
@@ -281,7 +281,7 @@ function EditorBody({ note: initial }: { note: NoteSummary }) {
         </div>
         <div className="no-drag flex items-center gap-1">
           <Tip label={`${t('notes.createdAt')} ${formatDateTime(note.createdAt, i18n.language)}`} side="bottom">
-            <span className="mr-2 cursor-default text-2xs text-subtle tabular-nums">
+            <span className="mr-2 hidden cursor-default text-2xs whitespace-nowrap text-subtle tabular-nums @[560px]:inline">
               {saving
                 ? t('common.saving')
                 : `${t('common.words', { count: note.wordCount })} · ${t('notes.editedAgo', { time: formatRelative(note.editedAt, i18n.language) })}`}
@@ -298,7 +298,7 @@ function EditorBody({ note: initial }: { note: NoteSummary }) {
           )}
           {note.aiWordCount > 0 && (
             <Tip label={t('origin.aiWordsHint')} side="bottom">
-              <span className="mr-1 inline-flex h-6 cursor-default items-center gap-1 rounded-full bg-accent-soft px-2 text-2xs text-accent">
+              <span className="mr-1 hidden h-6 cursor-default items-center gap-1 rounded-full bg-accent-soft px-2 text-2xs whitespace-nowrap text-accent @[480px]:inline-flex">
                 <Sparkles className="size-3" />
                 {t('origin.aiWords', { count: note.aiWordCount })}
               </span>

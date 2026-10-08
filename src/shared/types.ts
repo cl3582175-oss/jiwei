@@ -1,6 +1,6 @@
 // 主进程与渲染进程共享的数据类型（输出类型）。
 // 输入类型由 zod 模式推导（schemas.ts），API 由能力注册表推导（capabilities.ts）。
-
+import type { Anchor } from './context'
 import type {
   AiSettings,
   ChatScope,
@@ -237,6 +237,8 @@ export interface Proposal {
   status: 'pending' | 'resolved'
   model: string | null
   sources: Origin['sources'] | null
+  /** 用户主动操作产生：打开笔记时直接应用 */
+  auto: boolean
   createdAt: number
 }
 
@@ -248,6 +250,8 @@ export interface Job {
   attempts: number
   error: string | null
   title: string
+  /** 去重键（如 transcribe:<资料 ID>），界面据此找到某份资料的任务 */
+  key: string | null
   createdAt: number
   updatedAt: number
 }
@@ -316,6 +320,9 @@ export interface Conversation {
   pinned: boolean
   /** 无痕：不使用、不形成记忆 */
   incognito: boolean
+  kind: 'chat' | 'workspace' | 'inline'
+  /** 就地提问的锚点 */
+  anchor: Anchor | null
   createdAt: number
   updatedAt: number
 }
@@ -445,6 +452,15 @@ export interface SearchHit {
   origin: 'user' | 'ai' | 'ai_reviewed' | null
 }
 
+/** 语音转写引擎状态 */
+export interface AsrStatus {
+  state: 'missing' | 'downloading' | 'ready' | 'error'
+  progress: number
+  mirror: string | null
+  speed: number | null
+  message: string | null
+}
+
 /** 主进程 → 渲染进程的事件 */
 export interface JiweiEvents {
   /** 应用即将退出 / 重载：请立即保存未写入的内容，然后调用 app.flushDone() */
@@ -465,6 +481,8 @@ export interface JiweiEvents {
   'chat:step': { messageId: string; conversationId: string; step: AgentStep }
   /** 向量模型与索引状态 */
   'embedding:status': EmbeddingStatus
+  /** 语音转写引擎状态 */
+  'asr:status': AsrStatus
   /** 记忆变化；added 为 AI 新记住的内容（界面提示，可撤销 / 确认） */
   'memory:changed': { added?: Memory }
   /** 深层链接：jiwei://note/<id> 或 jiwei://source/<id> */

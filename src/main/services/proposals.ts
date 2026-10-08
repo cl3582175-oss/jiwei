@@ -12,7 +12,7 @@ import type { Proposal, ProposalOpStatus } from '@shared/types'
 type Row = typeof proposals.$inferSelect
 
 function toProposal(r: Row): Proposal {
-  const payload = JSON.parse(r.ops) as { ops: Proposal['ops']; embeds?: Proposal['embeds'] }
+  const payload = JSON.parse(r.ops) as { ops: Proposal['ops']; embeds?: Proposal['embeds']; auto?: boolean }
   return {
     id: r.id,
     noteId: r.noteId,
@@ -23,6 +23,7 @@ function toProposal(r: Row): Proposal {
     status: r.status,
     model: r.model,
     sources: r.sources ? (JSON.parse(r.sources) as Proposal['sources']) : null,
+    auto: !!payload.auto,
     createdAt: r.createdAt
   }
 }
@@ -41,7 +42,7 @@ export function createProposal(input: ProposalInput): Proposal {
     id: newId(),
     noteId: input.noteId,
     title: input.title,
-    ops: JSON.stringify({ ops: input.ops, embeds: input.embeds ?? {} }),
+    ops: JSON.stringify({ ops: input.ops, embeds: input.embeds ?? {}, ...(input.auto ? { auto: true } : {}) }),
     opStatus: JSON.stringify(input.ops.map(() => 'pending')),
     status: 'pending',
     model: input.model ?? null,

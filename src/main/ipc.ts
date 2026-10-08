@@ -24,6 +24,8 @@ import * as embedding from './services/ai/embedding'
 import { clearIndex, indexStats, requestIndex } from './services/ai/indexer'
 import { retrieve } from './services/ai/retrieve'
 import * as memory from './services/memory'
+import * as asr from './services/asr'
+import { saveAnswer } from './services/saveAnswer'
 import * as skills from './services/ai/skills'
 
 /** 会影响知识库内容（或隐私范围）的操作完成后，更新索引 */
@@ -115,6 +117,7 @@ const handlers: Handlers = {
     resolve: (_, id, opIndex, decision) => proposals.resolveOp(id, opIndex, decision)
   },
   segments: {
+    update: (_, id, text) => reindexAfter(segments.updateSegmentText(id, text)),
     list: (_, sourceId) => segments.listSegments(sourceId),
     search: (_, query, sourceId) => segments.searchSegments(query, sourceId)
   },
@@ -155,6 +158,8 @@ const handlers: Handlers = {
     messages: (_, id) => chat.listMessages(id),
     send: (_, input) => chat.send(input),
     stop: (_, id) => chat.stop(id),
+    threads: (_, parentId) => chat.listThreads(parentId),
+    saveAnswer: (_, input) => saveAnswer(input),
     update: (_, id, patch) => chat.updateConversation(id, patch),
     remove: (_, id) => chat.deleteConversation(id)
   },
@@ -177,6 +182,14 @@ const handlers: Handlers = {
       skills.reloadSkills()
       return skills.listSkills()
     }
+  },
+  asr: {
+    status: () => asr.asrStatus(),
+    install: () => {
+      void asr.installAsr().catch(() => {})
+    },
+    transcribe: (_, id) => asr.enqueueTranscribe(id),
+    importSubtitles: ({ win }, id) => sources.importSubtitlesDialog(win, id)
   },
   embedding: {
     status: async () => {

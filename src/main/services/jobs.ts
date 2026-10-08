@@ -94,6 +94,7 @@ function toJob(r: Row): Job {
     attempts: r.attempts,
     error: r.error,
     title,
+    key: r.dedupeKey,
     createdAt: r.createdAt,
     updatedAt: r.updatedAt
   }

@@ -51,6 +51,16 @@ const toNodes = (schema: Schema, json: Json[]): PMNode[] => json.map((j) => sche
 
 export class ProposalTargetMissing extends Error {}
 
+/** 是否含有图片、富内容块等无文字的内容 */
+function hasLeaf(node: PMNode): boolean {
+  let found = false
+  node.descendants((n) => {
+    if (n.type.name === 'image' || n.type.name === 'embed' || n.type.name === 'horizontalRule') found = true
+    return !found
+  })
+  return found
+}
+
 export function applyOp(editor: Editor, ydoc: Y.Doc, proposal: Proposal, op: ProposalOp): void {
   const { state, view } = editor
   const schema = state.schema
@@ -76,6 +86,10 @@ export function applyOp(editor: Editor, ydoc: Y.Doc, proposal: Proposal, op: Pro
     }
     case 'insert_row': {
       let at = summaryPos
+      // 空白笔记（只有一行且为空）：直接替换这一行，不留空行
+      const only = doc.childCount === 2 ? doc.firstChild! : null
+      const blank = !!only && only.type.name === CORNELL.row && only.textContent === '' && !hasLeaf(only)
+      const replaceBlank = blank && !op.afterRowId
       if (op.afterRowId) {
         const t = findById(doc, op.afterRowId)
         if (!t) throw new ProposalTargetMissing(op.afterRowId)
@@ -92,7 +106,9 @@ export function applyOp(editor: Editor, ydoc: Y.Doc, proposal: Proposal, op: Pro
           { type: CORNELL.body, content: body }
         ]
       })
-      tr.insert(at, row)
+      // 一步替换（先删除会让文档暂时没有行，ProseMirror 会自动补一个空行）
+      if (replaceBlank) tr.replaceWith(0, only!.nodeSize, row)
+      else tr.insert(at, row)
       break
     }
     case 'append_summary': {

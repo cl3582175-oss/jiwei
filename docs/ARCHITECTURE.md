@@ -229,3 +229,30 @@ AI 不直接修改笔记，而是创建提案（`proposals` 表）。提案里�
 - 用户卡片限制在约 600 token 以内，排序固定（钉住 → 使用次数 → 创建时间），便于命中缓存。
 - 无痕对话不提供记忆工具，也不携带用户卡片。
 
+## 31. 阅读辅助（v0.3.1）
+
+- 界面状态集中在 `features/assist/store.ts`，包括选区浮条、就地卡片和 AI 面板。浮条与卡片在 `App` 中各挂载一份。各资料视图只需生成锚点（`Anchor`）并调用 `showToolbar` 或 `openCard`。
+- 就地提问保存为 `kind = 'inline'` 的对话，同时记录锚点和锚点所在的资料（`anchor_parent_id`），用于在原文旁显示标记；对话页不列出这类对话。
+- 快捷操作直接预加载对应技能，省去技能路由；解释和翻译关闭思考以求快，讲明白和自由提问使用设置中的思考强度。
+- 「存入笔记」由主进程生成 `auto` 提案（问题作为线索，答案转换为 Markdown 节点，并附出处链接）。编辑器等到 y-prosemirror 把 Yjs 内容同步进来后再自动应用：过早应用会写到占位文档上。
+- 替换笔记中唯一的空行时必须一步完成（`replaceWith`）：先删除会让文档暂时违反 `cornellRow+`，ProseMirror 会自动补一个空行。
+- 出处链接格式为 `jiwei://source/<id>?seg=&page=&t=`。Tiptap Link 需要把 `jiwei` 加入允许的协议，否则链接会被清空。
+
+## 32. PDF 阅读器
+
+- 使用 pdfjs-dist 自带的 `PDFViewer`（文字层、缩放、跳页）。文档一次性读入后用 `data` 打开：自定义协议的跨源 Range 请求需要预检，处理起来复杂且收益不大。
+- 素材协议加了 `corsEnabled` 和 `Access-Control-Allow-Origin`。CSP 新增 `connect-src jiwei:`、`worker-src 'self' blob:`，以及 pdf.js 解码需要的 `'wasm-unsafe-eval'`。
+- 锚点记录页码和页内相对位置（0–1），缩放后标记仍然准确。框选会裁剪页面画布得到图像，同时收集与区域相交的文字层片段。
+- 图像只发给能看图的模型（`supportsVision()`）。其他模型只收到区域内的文字，并被要求提示用户换用能看图的模型。
+
+## 33. 语音转写
+
+- 引擎和模型都按需下载到共享模型目录，并做 sha256 校验：
+  - 引擎：`sherpa-onnx-node` 加平台原生包（N-API，Electron 与 Node 通用），以及 `@ffmpeg-installer` 提供的 ffmpeg，都从 npm 镜像（npmmirror 优先）下载。
+  - 模型：Silero VAD 和 SenseVoice-Small int8，从 ModelScope 下载。
+  - 这些都不打进安装包。
+- 转写在工作进程中流式进行：ffmpeg 解码为 16 kHz f32 → VAD 切出语音段 → SenseVoice 识别。识别结果（Cue）按停顿或段长合并为片段，片段的 locator 为 `t=开始,结束`。
+- **Electron 的 V8 内存沙箱不允许外部 ArrayBuffer**，因此 `vad.front(false)` 必须让原生模块复制数据，否则工作进程会直接崩溃。
+- 字幕（SRT / VTT）与识别结果共用同一套片段格式。导入时如果有同名字幕，就优先使用字幕。片段可以单独修改文字，ID 和位置保持不变，已有的引用和就地提问因此不会失效。
+- 媒体播放中、没有标出时间段时，上下文取当前时刻之前 30 秒的转写稿（“他刚才说的……”）。
+

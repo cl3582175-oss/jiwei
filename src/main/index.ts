@@ -13,6 +13,7 @@ import { flushAll, pruneRevisions } from './services/docs'
 import { requestRendererFlush } from './lifecycle'
 import { ensureIdentity } from './services/device'
 import { registerJobKinds } from './services/jobKinds'
+import { registerAsrJob } from './services/asr'
 import { pruneJobs, startJobs, stopJobs } from './services/jobs'
 import { emit } from './events'
 import { registerIndexJob, requestIndex } from './services/ai/indexer'
@@ -133,6 +134,7 @@ app.whenReady().then(async () => {
   registerProtocol()
   registerIpc()
   registerJobKinds()
+  registerAsrJob()
   registerIndexJob()
   startJobs()
   // 向量模型已安装则补齐索引（例如上次退出时未完成的部分）

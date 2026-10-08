@@ -172,7 +172,8 @@ function CitationCard({ c }: { c: Citation }) {
   )
 }
 
-export function MessageItem({ m }: { m: ChatMessage }) {
+/** compact：就地卡片中使用，隐藏用量信息 */
+export function MessageItem({ m, compact }: { m: ChatMessage; compact?: boolean }) {
   const { t } = useTranslation()
   const [copied, setCopied] = useState(false)
   const byN = useMemo(() => new Map(m.citations.map((c) => [c.n, c])), [m.citations])
@@ -247,7 +248,7 @@ export function MessageItem({ m }: { m: ChatMessage }) {
       )}
       {m.status === 'done' && m.citations.length === 0 && m.content && <p className="mt-2 text-2xs text-subtle">{t('chat.generalOnly')}</p>}
 
-      {!streaming && m.content && (
+      {!streaming && m.content && !compact && (
         <div className="mt-2 flex items-center gap-2 text-2xs text-subtle opacity-0 transition-opacity group-hover/msg:opacity-100">
           <button onClick={copy} className="inline-flex items-center gap-1 rounded px-1 hover:text-fg" aria-label={t('chat.copy')}>
             {copied ? <Check className="size-3" /> : <Copy className="size-3" />}

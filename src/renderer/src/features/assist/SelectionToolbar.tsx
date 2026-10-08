@@ -1,0 +1,75 @@
+import { useEffect, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
+import { Lightbulb, BookOpenText, Languages, MessageCircleQuestion } from 'lucide-react'
+import { useAssist, type AskAction } from './store'
+import { askInline } from './actions'
+
+// 选区浮条：选中资料中的文字后出现在选区上方——解释 / 讲明白 / 翻译 / 问 AI。
+
+const ACTIONS: { id: AskAction; icon: React.ReactNode }[] = [
+  { id: 'explain', icon: <Lightbulb /> },
+  { id: 'clarify', icon: <BookOpenText /> },
+  { id: 'translate', icon: <Languages /> },
+  { id: 'ask', icon: <MessageCircleQuestion /> }
+]
+
+export function SelectionToolbar() {
+  const { t } = useTranslation()
+  const toolbar = useAssist((s) => s.toolbar)
+  const ref = useRef<HTMLDivElement>(null)
+
+  // 点在别处、滚动、Esc：收起
+  useEffect(() => {
+    if (!toolbar) return
+    const hide = (): void => useAssist.getState().showToolbar(null)
+    const onDown = (e: MouseEvent): void => {
+      if (!ref.current?.contains(e.target as Node)) hide()
+    }
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') hide()
+    }
+    document.addEventListener('mousedown', onDown, true)
+    document.addEventListener('scroll', hide, true)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown, true)
+      document.removeEventListener('scroll', hide, true)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [toolbar])
+
+  if (!toolbar) return null
+  const { rect, anchor } = toolbar
+  const W = 300
+  const left = Math.min(Math.max(12, rect.x + rect.w / 2 - W / 2), window.innerWidth - W - 12)
+  const above = rect.y > 56
+  const top = above ? rect.y - 44 : rect.y + rect.h + 8
+
+  const run = (a: AskAction): void => {
+    if (a === 'ask') useAssist.getState().openCard({ anchor, rect, action: 'ask', conversationId: null, question: '' })
+    else void askInline(a, anchor, rect)
+    window.getSelection()?.removeAllRanges()
+  }
+
+  return (
+    <div
+      ref={ref}
+      role="toolbar"
+      aria-label={t('assist.toolbar')}
+      style={{ left, top, width: W }}
+      className="glass fixed z-50 flex items-center justify-center gap-0.5 rounded-xl border border-border p-1 shadow-float animate-[fade-in_120ms_ease-out]"
+    >
+      {ACTIONS.map((a) => (
+        <button
+          key={a.id}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => run(a.id)}
+          className="inline-flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg text-xs text-fg transition-colors hover:bg-surface-hover [&_svg]:size-3.5 [&_svg]:text-accent"
+        >
+          {a.icon}
+          {t(`assist.actions.${a.id}`)}
+        </button>
+      ))}
+    </div>
+  )
+}
