@@ -61,7 +61,8 @@ function hasLeaf(node: PMNode): boolean {
   return found
 }
 
-export function applyOp(editor: Editor, ydoc: Y.Doc, proposal: Proposal, op: ProposalOp): void {
+/** 应用一条提案操作；返回新写入的块 ID（用于之后判断用户有没有改写它，学习技能偏好） */
+export function applyOp(editor: Editor, ydoc: Y.Doc, proposal: Proposal, op: ProposalOp): string[] {
   const { state, view } = editor
   const schema = state.schema
   const origin: Origin = { by: 'ai', model: proposal.model ?? undefined, at: Date.now(), sources: proposal.sources ?? undefined }
@@ -143,4 +144,11 @@ export function applyOp(editor: Editor, ydoc: Y.Doc, proposal: Proposal, op: Pro
     }
   }
   view.dispatch(tr.scrollIntoView())
+  // 编辑器在同一次分发中为新节点分配 ID；本次写入的顶层节点带有同一个来源字符串
+  const ids: string[] = []
+  editor.state.doc.descendants((n) => {
+    if (n.attrs.origin === originStr && typeof n.attrs.id === 'string') ids.push(n.attrs.id)
+    return true
+  })
+  return ids
 }

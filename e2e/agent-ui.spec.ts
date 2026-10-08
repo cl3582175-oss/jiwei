@@ -61,13 +61,15 @@ test('skills: built-in list, view, disable', async () => {
 
 test('about me: profile and memories', async () => {
   await page.getByRole('dialog').getByRole('button', { name: '关于我', exact: true }).click()
-  await expect(page.getByText('积微记住的')).toBeVisible()
-  await expect(page.getByText(/还没有记忆/)).toBeVisible()
   // 个人档案：失焦即保存
   const role = page.getByRole('textbox', { name: '我是' })
   await role.fill('大三计算机专业学生，准备考研')
   await page.getByRole('textbox', { name: '回答偏好' }).click()
   await expect.poll(async () => (await page.evaluate(() => window.jiwei.memory.profile())).role).toBe('大三计算机专业学生，准备考研')
+
+  await page.getByRole('tab', { name: '记忆' }).click()
+  await expect(page.getByText('积微记住的')).toBeVisible()
+  await expect(page.getByText(/还没有记忆/)).toBeVisible()
 
   // 手动添加一条记忆
   await page.getByRole('button', { name: '添加', exact: true }).click()
@@ -93,6 +95,37 @@ test('about me: profile and memories', async () => {
   await row.getByRole('button', { name: '删除' }).click()
   await page.getByRole('alertdialog').getByRole('button', { name: '删除' }).click()
   await expect(page.getByText('正在接受焦虑症治疗')).toHaveCount(0)
+  await page.keyboard.press('Escape')
+})
+
+test('about me v2: learning switches, faded memories, progress and study log', async () => {
+  await openSettings('关于我')
+  await page.getByRole('tab', { name: '记忆' }).click()
+  // 学习开关（存于个人数据库）
+  const sw = page.getByRole('switch', { name: '从你的修改中学习' })
+  await expect(sw).toHaveAttribute('aria-checked', 'true')
+  await sw.click()
+  await expect.poll(async () => (await page.evaluate(() => window.jiwei.memory.settings())).learnSkills).toBe(false)
+  await sw.click()
+  await expect.poll(async () => (await page.evaluate(() => window.jiwei.memory.settings())).learnSkills).toBe(true)
+
+  // 已淡出的记忆可以恢复
+  await page.evaluate(() => window.jiwei.memory.save({ kind: 'preference', content: '喜欢用表格对比', status: 'archived' }))
+  await expect(page.getByText('喜欢用表格对比')).toHaveCount(0)
+  await page.getByRole('button', { name: '已淡出' }).click()
+  const row = page.getByRole('listitem').filter({ hasText: '喜欢用表格对比' })
+  await row.getByRole('button', { name: '恢复' }).click()
+  await expect(row).toHaveCount(0)
+  await page.getByRole('button', { name: '全部' }).click()
+  await expect(page.getByText('喜欢用表格对比')).toBeVisible()
+
+  // 学习情况与学习经历：空状态
+  await page.getByRole('tab', { name: '学习情况' }).click()
+  await expect(page.getByText(/还没有记录/)).toBeVisible()
+  await page.getByRole('tab', { name: '学习经历' }).click()
+  await expect(page.getByText('还没有学习经历。')).toBeVisible()
+  await page.evaluate(() => window.jiwei.memory.save({ kind: 'episode', key: 'conv:test', content: '学习了间隔重复，卡在间隔怎么定' }))
+  await expect(page.getByText('学习了间隔重复，卡在间隔怎么定')).toBeVisible()
   await page.keyboard.press('Escape')
 })
 

@@ -1,11 +1,13 @@
 import { profileDb } from '../db/profile'
 import { newId } from '../lib/ids'
 import { emit } from '../events'
-import { PROFILE_KEYS, type Memory, type MemoryKind, type ProfileKey } from '@shared/types'
+import { shouldFade } from '../lib/learner'
+import { PROFILE_KEYS, type Memory, type MemoryKind, type MemorySettings, type ProfileKey } from '@shared/types'
 import type { MemoryInput, MemoryQuery } from '@shared/schemas'
 
 // 记忆：让积微“越用越懂你”。设计见 docs/design/v0.3-agent.md §5。
 // v1：个人档案（用户预设）+ 用户或 AI 记下的偏好、事实、术语、技能偏好；常驻“用户卡片”+ 按需检索。
+// v2：对话后自动整理（memoryLearn.ts）、学习者模型（learner.ts）、学习经历、技能偏好学习、淡出。
 
 type Row = {
   id: string
@@ -76,7 +78,12 @@ export function getMemory(id: string): Memory | null {
  * - AI 记下的内容与已有记忆实质相同时不重复新增，只刷新时间；
  * - 敏感内容由 AI 记下时进入“待确认”。
  */
-export function saveMemory(input: MemoryInput, origin: Memory['origin'], evidence?: Memory['evidence']): Memory {
+export function saveMemory(
+  input: MemoryInput,
+  origin: Memory['origin'],
+  evidence?: Memory['evidence'],
+  opts: { silent?: boolean } = {}
+): Memory {
   const db = profileDb()
   const now = Date.now()
   const content = input.content.trim()
@@ -99,7 +106,7 @@ export function saveMemory(input: MemoryInput, origin: Memory['origin'], evidenc
     db.prepare(
       'UPDATE memories SET content = ?, skill = ?, sensitive = ?, status = ?, pinned = ?, updated_at = ?, invalid_at = NULL WHERE id = ?'
     ).run(content, input.skill ?? existing.skill, sensitive ? 1 : 0, status, (input.pinned ?? !!existing.pinned) ? 1 : 0, now, existing.id)
-    emit('memory:changed', {})
+    if (!opts.silent) emit('memory:changed', {})
     return getMemory(existing.id)!
   }
   const id = newId()
@@ -122,7 +129,7 @@ export function saveMemory(input: MemoryInput, origin: Memory['origin'], evidenc
     now
   )
   const m = getMemory(id)!
-  emit('memory:changed', origin === 'ai' ? { added: m } : {})
+  if (!opts.silent) emit('memory:changed', origin === 'ai' ? { added: m } : {})
   return m
 }
 
@@ -202,7 +209,7 @@ export function skillPreferences(skill: string): string[] {
   ).map((r) => r.content)
 }
 
-function markUsed(ids: string[]): void {
+export function markUsed(ids: string[]): void {
   if (!ids.length) return
   const stmt = profileDb().prepare('UPDATE memories SET last_used_at = ?, use_count = use_count + 1 WHERE id = ?')
   const now = Date.now()
@@ -249,5 +256,49 @@ export function userCard(zh: boolean): string | null {
     groups.set(r.kind, [...(groups.get(r.kind) ?? []), line])
   }
   for (const [kind, ls] of groups) lines.push(`- ${KIND_LABEL[kind]![zh ? 0 : 1]}：`, ...ls)
+  // 最近的学习经历（每条截短），帮助接上“上次学到哪”
+  const episodes = db
+    .prepare("SELECT content FROM memories WHERE status = 'active' AND kind = 'episode' ORDER BY updated_at DESC LIMIT 3")
+    .all() as { content: string }[]
+  if (episodes.length && used < CARD_BUDGET)
+    lines.push(`- ${zh ? '最近在学' : 'Recently studied'}：`, ...episodes.map((e) => `  - ${e.content.slice(0, 80)}`))
   return lines.length ? lines.join('\n') : null
+}
+
+/* ——— 个人设置（存于个人数据库，随人不随知识库） ——— */
+
+export function getMemorySettings(): MemorySettings {
+  const rows = profileDb().prepare('SELECT key, value FROM meta').all() as { key: string; value: string }[]
+  const m = Object.fromEntries(rows.map((r) => [r.key, r.value]))
+  return { autoLearn: m.autoLearn !== '0', learnSkills: m.learnSkills !== '0' }
+}
+
+export function setMemorySettings(patch: Partial<MemorySettings>): MemorySettings {
+  const stmt = profileDb().prepare('INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
+  for (const [k, v] of Object.entries(patch)) if (typeof v === 'boolean') stmt.run(k, v ? '1' : '0')
+  return getMemorySettings()
+}
+
+export function getMeta(key: string): string | null {
+  return (profileDb().prepare('SELECT value FROM meta WHERE key = ?').get(key) as { value: string } | undefined)?.value ?? null
+}
+export function setMeta(key: string, value: string): void {
+  profileDb().prepare('INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, value)
+}
+
+/* ——— 淡出：长期没用到的 AI 记忆归档（可在「关于我」中恢复） ——— */
+
+export function fadeMemories(now = Date.now()): number {
+  const db = profileDb()
+  const rows = db.prepare("SELECT * FROM memories WHERE status = 'active' AND origin = 'ai' AND pinned = 0").all() as Row[]
+  const fade = rows.filter((r) =>
+    shouldFade(
+      { kind: r.kind, origin: r.origin, pinned: !!r.pinned, status: r.status, updatedAt: r.updated_at, lastUsedAt: r.last_used_at },
+      now
+    )
+  )
+  const stmt = db.prepare("UPDATE memories SET status = 'archived', invalid_at = ? WHERE id = ?")
+  db.transaction(() => fade.forEach((r) => stmt.run(now, r.id)))()
+  if (fade.length) emit('memory:changed', {})
+  return fade.length
 }

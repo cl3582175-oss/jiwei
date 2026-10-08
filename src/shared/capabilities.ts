@@ -14,6 +14,8 @@ import type {
   ImportResult,
   Job,
   Memory,
+  Concept,
+  MemorySettings,
   Note,
   NoteSummary,
   Profile,
@@ -180,7 +182,13 @@ export const capabilities = {
     list: cap<Proposal[]>()({ description: '列出笔记中待处理的提案', params: [id('noteId')] }),
     resolve: cap<Proposal>()({
       description: '接受或拒绝提案中的一条操作',
-      params: [id(), ['opIndex', z.number().int().min(0)], ['decision', z.enum(['accepted', 'rejected'])]]
+      params: [
+        id(),
+        ['opIndex', z.number().int().min(0)],
+        ['decision', z.enum(['accepted', 'rejected'])],
+        /** 接受时编辑器写入的块 ID（用于学习技能偏好） */
+        ['blockIds', z.array(S.Id).max(500).optional()]
+      ]
     })
   },
   sandbox: {
@@ -281,7 +289,23 @@ export const capabilities = {
     remove: cap<void>()({ description: '删除记忆', params: [id()] }),
     confirm: cap<Memory | null>()({ description: '确认待确认的记忆', params: [id()] }),
     profile: cap<UserProfile>()({ description: '读取个人档案', params: none }),
-    setProfile: cap<UserProfile>()({ description: '修改个人档案', params: [['patch', S.UserProfileSchema]] })
+    setProfile: cap<UserProfile>()({ description: '修改个人档案', params: [['patch', S.UserProfileSchema]] }),
+    settings: cap<MemorySettings>()({ description: '读取记忆设置', params: none }),
+    setSettings: cap<MemorySettings>()({ description: '修改记忆设置', params: [['patch', S.MemorySettingsSchema]] }),
+    concepts: cap<Concept[]>()({ description: '学习者模型：各概念的掌握情况', params: none }),
+    removeConcept: cap<void>()({ description: '删除一个概念的学习记录', params: [id()] }),
+    setConceptLevel: cap<void>()({
+      description: '校正某个概念的掌握程度',
+      params: [id(), ['level', z.enum(['weak', 'learning', 'solid'])]]
+    }),
+    learnNow: cap<{ added: number; concepts: number; episode: boolean }>()({
+      description: '立即整理某个对话中的记忆、学习情况与学习经历',
+      params: [id()]
+    }),
+    maintain: cap<{ reviewed: number; skills: number; faded: number }>()({
+      description: '立即执行记忆维护：检查 AI 内容是否被修改、归纳技能偏好、淡出久未使用的记忆',
+      params: [['opts', z.object({ force: z.boolean().optional() })]]
+    })
   },
   skills: {
     list: cap<SkillInfo[]>()({ description: '列出技能', params: none }),

@@ -19,6 +19,7 @@ import { emit } from './events'
 import { registerIndexJob, requestIndex } from './services/ai/indexer'
 import { refreshStatus, shutdown as shutdownEmbedding } from './services/ai/embedding'
 import { stopAll as stopChats } from './services/ai/chat'
+import { startMemoryLearning, stopMemoryLearning } from './services/memoryLearn'
 import { importProvidersForTest } from './services/ai/providers'
 
 const HOUR = 3_600_000
@@ -137,6 +138,7 @@ app.whenReady().then(async () => {
   registerAsrJob()
   registerIndexJob()
   startJobs()
+  startMemoryLearning()
   // 向量模型已安装则补齐索引（例如上次退出时未完成的部分）
   void refreshStatus().then((s) => s.state === 'ready' && requestIndex())
   handleDeepLink(process.argv.find((a) => a.startsWith('jiwei://')))
@@ -174,6 +176,7 @@ app.on('before-quit', (e) => {
     .catch(() => undefined)
     .finally(() => {
       stopChats()
+      stopMemoryLearning()
       shutdownEmbedding()
       stopJobs()
       flushAll()

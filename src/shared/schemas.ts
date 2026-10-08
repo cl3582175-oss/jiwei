@@ -133,7 +133,9 @@ export const ProposalInputSchema = z.object({
   model: z.string().max(120).optional(),
   sources: OriginSchema.shape.sources,
   /** 用户主动操作产生的写入（如“存入笔记”）：笔记打开时直接应用，无需逐条确认 */
-  auto: z.boolean().optional()
+  auto: z.boolean().optional(),
+  /** 生成时使用的技能（用于学习技能偏好） */
+  skill: z.string().max(64).optional()
 })
 export type ProposalInput = z.infer<typeof ProposalInputSchema>
 
@@ -221,6 +223,8 @@ export const MemoryQuerySchema = z.object({
   search: z.string().max(200).optional()
 })
 export type MemoryQuery = z.infer<typeof MemoryQuerySchema>
+
+export const MemorySettingsSchema = z.object({ autoLearn: z.boolean().optional(), learnSkills: z.boolean().optional() })
 
 export const UserProfileSchema = z.object({
   role: z.string().max(500).optional(),

@@ -88,16 +88,17 @@ export function ProposalPanel({ noteId, editor, ydoc }: { noteId: string; editor
   }
 
   const decide = async (p: Proposal, i: number, decision: 'accepted' | 'rejected'): Promise<void> => {
+    let blockIds: string[] | undefined
     if (decision === 'accepted') {
       if (!editor || !ydoc) return
       try {
-        applyOp(editor, ydoc, p, p.ops[i])
+        blockIds = applyOp(editor, ydoc, p, p.ops[i])
       } catch (e) {
         toast.error(e instanceof ProposalTargetMissing ? t('proposals.targetMissing') : String(e))
         return
       }
     }
-    await api.proposals.resolve(p.id, i, decision)
+    await api.proposals.resolve(p.id, i, decision, blockIds)
     void qc.invalidateQueries({ queryKey: key })
   }
 

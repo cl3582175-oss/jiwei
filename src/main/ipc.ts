@@ -24,6 +24,8 @@ import * as embedding from './services/ai/embedding'
 import { clearIndex, indexStats, requestIndex } from './services/ai/indexer'
 import { retrieve } from './services/ai/retrieve'
 import * as memory from './services/memory'
+import * as learner from './services/learner'
+import * as memoryLearn from './services/memoryLearn'
 import * as asr from './services/asr'
 import { saveAnswer } from './services/saveAnswer'
 import { exportNote } from './services/exportNote'
@@ -118,7 +120,7 @@ const handlers: Handlers = {
   proposals: {
     create: (_, input) => proposals.createProposal(input),
     list: (_, noteId) => proposals.listProposals(noteId),
-    resolve: (_, id, opIndex, decision) => proposals.resolveOp(id, opIndex, decision)
+    resolve: (_, id, opIndex, decision, blockIds) => proposals.resolveOp(id, opIndex, decision, blockIds)
   },
   segments: {
     update: (_, id, text) => reindexAfter(segments.updateSegmentText(id, text)),
@@ -176,7 +178,14 @@ const handlers: Handlers = {
     remove: (_, id) => memory.removeMemory(id),
     confirm: (_, id) => memory.confirmMemory(id),
     profile: () => memory.getUserProfile(),
-    setProfile: (_, patch) => memory.setUserProfile(patch)
+    setProfile: (_, patch) => memory.setUserProfile(patch),
+    settings: () => memory.getMemorySettings(),
+    setSettings: (_, patch) => memory.setMemorySettings(patch),
+    concepts: () => learner.listConcepts(),
+    removeConcept: (_, id) => learner.removeConcept(id),
+    setConceptLevel: (_, id, level) => learner.setConceptLevel(id, level),
+    learnNow: (_, id) => memoryLearn.learnFromConversation(id),
+    maintain: (_, opts) => memoryLearn.maintain(opts)
   },
   skills: {
     list: () => skills.listSkills(),

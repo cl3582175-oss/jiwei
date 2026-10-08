@@ -1,17 +1,36 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Pin, PinOff, Pencil, Trash2, Plus, Sparkles, UserRound, ShieldAlert, Check, X } from 'lucide-react'
-import { PROFILE_KEYS, type Memory, type MemoryKind, type ProfileKey } from '@shared/types'
+import {
+  Pin,
+  PinOff,
+  Pencil,
+  Trash2,
+  Plus,
+  Sparkles,
+  UserRound,
+  ShieldAlert,
+  Check,
+  X,
+  RotateCcw,
+  MessageSquare,
+  Quote
+} from 'lucide-react'
+import { PROFILE_KEYS, type Concept, type Memory, type MemoryKind, type MemorySettings, type ProfileKey } from '@shared/types'
 import { useMemories, useUserProfile } from '@/lib/queries'
-import { api, cn, formatRelative } from '@/lib/utils'
+import { api, cn, formatDate, formatRelative } from '@/lib/utils'
+import { useApp } from '@/store/app'
 import { Button } from '@/components/ui/button'
+import { Switch } from '@/components/ui/switch'
 import { Tip } from '@/components/ui/primitives'
 import { confirm, prompt } from '@/components/ui/confirm'
 
-// 「关于我」：个人档案（用户预设）+ 积微记住的内容（可查看、编辑、钉住、删除）。
+// 「关于我」：积微对你的了解，全部可查看、可修改、可删除。
+//   档案（你预设的）· 记忆（偏好、事实、术语、技能偏好；已淡出的可恢复）· 学习情况（概念掌握度）· 学习经历
 
+type Section = 'profile' | 'memories' | 'concepts' | 'episodes'
+const SECTIONS: Section[] = ['profile', 'memories', 'concepts', 'episodes']
 const LIST_KINDS: MemoryKind[] = ['preference', 'fact', 'glossary', 'skill']
 
 function ProfileField({ k, value }: { k: ProfileKey; value: string }) {
@@ -54,6 +73,7 @@ function MemoryRow({ m }: { m: Memory }) {
     await api.memory.remove(m.id)
     refresh()
   }
+  const archived = m.status === 'archived'
   return (
     <li
       className={cn(
@@ -65,9 +85,15 @@ function MemoryRow({ m }: { m: Memory }) {
         {m.status === 'pending' ? <ShieldAlert className="text-[#b8862b]" /> : m.origin === 'ai' ? <Sparkles /> : <UserRound />}
       </span>
       <div className="min-w-0 flex-1">
-        <p className="text-sm leading-relaxed text-fg">{m.content}</p>
+        <p className={cn('text-sm leading-relaxed', archived ? 'text-muted' : 'text-fg')}>{m.content}</p>
+        {m.evidence?.quote && (
+          <p className="mt-0.5 line-clamp-1 text-2xs text-subtle" title={m.evidence.quote}>
+            <Quote className="mr-1 inline size-2.5 -translate-y-px" />
+            {m.evidence.quote}
+          </p>
+        )}
         <p className="mt-0.5 text-2xs text-subtle">
-          {m.status === 'pending' ? t('memory.pending') : m.origin === 'ai' ? t('memory.byAi') : t('memory.byYou')}
+          {m.status === 'pending' ? t('memory.pending') : archived ? t('memory.faded') : m.origin === 'ai' ? t('memory.byAi') : t('memory.byYou')}
           {m.skill && ` · ${m.skill}`} · {formatRelative(m.updatedAt, i18n.language)}
           {m.useCount > 0 && ` · ${t('memory.used', { count: m.useCount })}`}
         </p>
@@ -82,6 +108,22 @@ function MemoryRow({ m }: { m: Memory }) {
             <X />
             {t('memory.dismiss')}
           </Button>
+        </div>
+      ) : archived ? (
+        <div className="flex shrink-0 gap-0.5">
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => void api.memory.save({ id: m.id, kind: m.kind, content: m.content, status: 'active' }).then(refresh)}
+          >
+            <RotateCcw />
+            {t('memory.restore')}
+          </Button>
+          <Tip label={t('common.delete')}>
+            <Button size="icon-sm" variant="ghost" aria-label={t('common.delete')} onClick={() => void remove()}>
+              <Trash2 />
+            </Button>
+          </Tip>
         </div>
       ) : (
         <div className="flex shrink-0 gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
@@ -107,81 +149,273 @@ function MemoryRow({ m }: { m: Memory }) {
           </Tip>
         </div>
       )}
-      {m.pinned && m.status !== 'pending' && <Pin className="mt-1 size-3 shrink-0 text-accent group-hover:hidden" />}
+      {m.pinned && m.status === 'active' && <Pin className="mt-1 size-3 shrink-0 text-accent group-hover:hidden" />}
     </li>
+  )
+}
+
+function LearnSwitches() {
+  const { t } = useTranslation()
+  const qc = useQueryClient()
+  const { data } = useQuery({ queryKey: ['memorySettings'], queryFn: () => api.memory.settings() })
+  if (!data) return null
+  const set = (patch: Partial<MemorySettings>): void =>
+    void api.memory.setSettings(patch).then((s) => qc.setQueryData(['memorySettings'], s))
+  const row = (k: keyof MemorySettings) => (
+    <label key={k} className="flex items-start justify-between gap-4 py-2">
+      <span>
+        <span className="block text-sm text-fg">{t(`memory.learn.${k}`)}</span>
+        <span className="mt-0.5 block text-xs leading-relaxed text-muted">{t(`memory.learn.${k}Desc`)}</span>
+      </span>
+      <Switch checked={data[k]} onCheckedChange={(v) => set({ [k]: v })} aria-label={t(`memory.learn.${k}`)} className="mt-0.5" />
+    </label>
+  )
+  return <div className="rounded-xl border border-border px-4 py-1.5">{(['autoLearn', 'learnSkills'] as const).map(row)}</div>
+}
+
+function MemoriesSection() {
+  const { t } = useTranslation()
+  const qc = useQueryClient()
+  const { data: list = [] } = useMemories()
+  const [kind, setKind] = useState<MemoryKind | 'all' | 'archived'>('all')
+  const { data: archived = [] } = useQuery({
+    queryKey: ['memories', 'archived'],
+    queryFn: () => api.memory.list({ status: 'archived' }),
+    enabled: kind === 'archived'
+  })
+  const shown =
+    kind === 'archived'
+      ? archived.filter((m) => m.kind !== 'episode' && m.kind !== 'profile')
+      : list.filter((m) => LIST_KINDS.includes(m.kind) && (kind === 'all' || m.kind === kind))
+  const ordered = [...shown.filter((m) => m.status === 'pending'), ...shown.filter((m) => m.status !== 'pending')]
+
+  const add = async (): Promise<void> => {
+    const v = await prompt({ title: t('memory.addTitle'), placeholder: t('memory.addPh'), confirmText: t('common.save') })
+    if (!v?.trim()) return
+    await api.memory.save({ kind: kind === 'all' || kind === 'archived' ? 'preference' : kind, content: v.trim() })
+    void qc.invalidateQueries({ queryKey: ['memories'] })
+  }
+
+  return (
+    <section>
+      <LearnSwitches />
+      <div className="mt-6 flex items-center justify-between gap-4">
+        <div>
+          <h3 className="font-serif text-md font-semibold text-fg">{t('memory.listTitle')}</h3>
+          <p className="mt-1 text-xs leading-relaxed text-muted">{t('memory.listDesc')}</p>
+        </div>
+        <Button size="sm" variant="outline" onClick={() => void add()}>
+          <Plus />
+          {t('memory.add')}
+        </Button>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-1.5">
+        {(['all', ...LIST_KINDS, 'archived'] as const).map((k) => (
+          <button
+            key={k}
+            onClick={() => setKind(k)}
+            className={cn(
+              'rounded-full px-2.5 py-1 text-xs transition-colors',
+              kind === k ? 'bg-accent text-accent-fg' : 'bg-sunken text-muted hover:text-fg'
+            )}
+          >
+            {t(`memory.kinds.${k}`)}
+          </button>
+        ))}
+      </div>
+      {ordered.length === 0 ? (
+        <p className="mt-6 rounded-xl border border-dashed border-border px-4 py-8 text-center text-xs leading-relaxed text-muted">
+          {kind === 'archived' ? t('memory.emptyArchived') : t('memory.empty')}
+        </p>
+      ) : (
+        <ul className="mt-3 space-y-0.5">
+          {ordered.map((m) => (
+            <MemoryRow key={m.id} m={m} />
+          ))}
+        </ul>
+      )}
+    </section>
+  )
+}
+
+const LEVEL_BAR: Record<Concept['level'], string> = { weak: 'bg-danger', learning: 'bg-[#b8862b]', solid: 'bg-accent' }
+
+function ConceptRow({ c }: { c: Concept }) {
+  const { t, i18n } = useTranslation()
+  const qc = useQueryClient()
+  const refresh = (): void => void qc.invalidateQueries({ queryKey: ['concepts'] })
+  const counts = [
+    c.asked && t('memory.concept.asked', { count: c.asked }),
+    c.confused && t('memory.concept.confused', { count: c.confused }),
+    c.understood && t('memory.concept.understood', { count: c.understood })
+  ].filter(Boolean)
+  return (
+    <li className="group rounded-lg px-3 py-2.5 hover:bg-surface-hover" data-concept={c.name}>
+      <div className="flex items-center gap-3">
+        <span className="min-w-0 flex-1 truncate text-sm font-medium text-fg">{c.name}</span>
+        <div className="flex shrink-0 gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+          {(['weak', 'learning', 'solid'] as const).map((l) => (
+            <button
+              key={l}
+              onClick={() => void api.memory.setConceptLevel(c.id, l).then(refresh)}
+              className={cn(
+                'rounded-md px-1.5 py-0.5 text-2xs transition-colors',
+                c.level === l ? 'bg-accent-soft text-accent' : 'text-muted hover:bg-sunken hover:text-fg'
+              )}
+            >
+              {t(`memory.concept.${l}`)}
+            </button>
+          ))}
+          <Tip label={t('common.delete')}>
+            <Button size="icon-sm" variant="ghost" aria-label={t('common.delete')} onClick={() => void api.memory.removeConcept(c.id).then(refresh)}>
+              <Trash2 />
+            </Button>
+          </Tip>
+        </div>
+        <span className="w-12 shrink-0 text-right text-2xs text-muted group-hover:hidden">{t(`memory.concept.${c.level}`)}</span>
+      </div>
+      <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-sunken">
+        <div className={cn('h-full rounded-full transition-[width]', LEVEL_BAR[c.level])} style={{ width: `${Math.max(4, c.mastery * 100)}%` }} />
+      </div>
+      <p className="mt-1 text-2xs text-subtle">
+        {[...counts, formatRelative(c.lastSeen, i18n.language)].join(' · ')}
+        {c.note && c.level !== 'solid' && <span className="text-muted"> · {t('memory.concept.stuck', { note: c.note })}</span>}
+      </p>
+    </li>
+  )
+}
+
+function ConceptsSection() {
+  const { t } = useTranslation()
+  const { data: list = [] } = useQuery({ queryKey: ['concepts'], queryFn: () => api.memory.concepts() })
+  const [level, setLevel] = useState<Concept['level'] | 'all'>('all')
+  const shown = list.filter((c) => level === 'all' || c.level === level)
+  return (
+    <section>
+      <h3 className="font-serif text-md font-semibold text-fg">{t('memory.conceptsTitle')}</h3>
+      <p className="mt-1 text-xs leading-relaxed text-muted">{t('memory.conceptsDesc')}</p>
+      <div className="mt-3 flex flex-wrap gap-1.5">
+        {(['all', 'weak', 'learning', 'solid'] as const).map((l) => (
+          <button
+            key={l}
+            onClick={() => setLevel(l)}
+            className={cn(
+              'rounded-full px-2.5 py-1 text-xs transition-colors',
+              level === l ? 'bg-accent text-accent-fg' : 'bg-sunken text-muted hover:text-fg'
+            )}
+          >
+            {l === 'all' ? t('memory.kinds.all') : t(`memory.concept.${l}`)}
+            <span className="ml-1 opacity-60">{l === 'all' ? list.length : list.filter((c) => c.level === l).length}</span>
+          </button>
+        ))}
+      </div>
+      {shown.length === 0 ? (
+        <p className="mt-6 rounded-xl border border-dashed border-border px-4 py-8 text-center text-xs leading-relaxed text-muted">
+          {t('memory.conceptsEmpty')}
+        </p>
+      ) : (
+        <ul className="mt-3 space-y-0.5">
+          {shown.map((c) => (
+            <ConceptRow key={c.id} c={c} />
+          ))}
+        </ul>
+      )}
+    </section>
+  )
+}
+
+function EpisodesSection() {
+  const { t, i18n } = useTranslation()
+  const qc = useQueryClient()
+  const { data: list = [] } = useMemories()
+  const episodes = list.filter((m) => m.kind === 'episode')
+  const open = (id: string): void => {
+    useApp.getState().setSettingsOpen(false)
+    useApp.getState().openConversation(id)
+  }
+  return (
+    <section>
+      <h3 className="font-serif text-md font-semibold text-fg">{t('memory.episodesTitle')}</h3>
+      <p className="mt-1 text-xs leading-relaxed text-muted">{t('memory.episodesDesc')}</p>
+      {episodes.length === 0 ? (
+        <p className="mt-6 rounded-xl border border-dashed border-border px-4 py-8 text-center text-xs leading-relaxed text-muted">
+          {t('memory.episodesEmpty')}
+        </p>
+      ) : (
+        <ol className="relative mt-4 space-y-1 border-l border-border pl-4">
+          {episodes.map((m) => (
+            <li key={m.id} className="group relative rounded-lg px-3 py-2 hover:bg-surface-hover">
+              <span className="absolute top-3.5 -left-[21px] size-2 rounded-full border-2 border-surface bg-accent" />
+              <p className="text-2xs text-subtle">{formatDate(m.updatedAt, i18n.language)}</p>
+              <p className="mt-0.5 text-sm leading-relaxed text-fg">{m.content}</p>
+              <div className="absolute top-1.5 right-1.5 flex gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                {m.evidence?.conversationId && (
+                  <Tip label={t('memory.openChat')}>
+                    <Button size="icon-sm" variant="ghost" aria-label={t('memory.openChat')} onClick={() => open(m.evidence!.conversationId!)}>
+                      <MessageSquare />
+                    </Button>
+                  </Tip>
+                )}
+                <Tip label={t('common.delete')}>
+                  <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    aria-label={t('common.delete')}
+                    onClick={() => void api.memory.remove(m.id).then(() => qc.invalidateQueries({ queryKey: ['memories'] }))}
+                  >
+                    <Trash2 />
+                  </Button>
+                </Tip>
+              </div>
+            </li>
+          ))}
+        </ol>
+      )}
+    </section>
   )
 }
 
 export function MemorySettingsTab() {
   const { t } = useTranslation()
-  const qc = useQueryClient()
   const { data: profile } = useUserProfile()
-  const { data: list = [] } = useMemories()
-  const [kind, setKind] = useState<MemoryKind | 'all'>('all')
-  const shown = list.filter((m) => m.kind !== 'profile' && (kind === 'all' || m.kind === kind))
-  const pending = shown.filter((m) => m.status === 'pending')
-  const active = shown.filter((m) => m.status !== 'pending')
-
-  const add = async (): Promise<void> => {
-    const v = await prompt({ title: t('memory.addTitle'), placeholder: t('memory.addPh'), confirmText: t('common.save') })
-    if (!v?.trim()) return
-    await api.memory.save({ kind: kind === 'all' ? 'preference' : kind, content: v.trim() })
-    void qc.invalidateQueries({ queryKey: ['memories'] })
-  }
-
+  const [section, setSection] = useState<Section>('profile')
   return (
     <div className="py-4">
-      <section>
-        <h3 className="font-serif text-md font-semibold text-fg">{t('memory.profileTitle')}</h3>
-        <p className="mt-1 text-xs leading-relaxed text-muted">{t('memory.profileDesc')}</p>
-        {profile && (
-          <div className="mt-4 grid grid-cols-2 gap-x-5 gap-y-4">
-            {PROFILE_KEYS.map((k) => (
-              <div key={k} className={cn(k === 'role' || k === 'avoid' ? 'col-span-2' : '')}>
-                <ProfileField k={k} value={profile[k] ?? ''} />
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
+      <div role="tablist" className="mb-6 inline-flex rounded-lg bg-sunken p-0.5">
+        {SECTIONS.map((s) => (
+          <button
+            key={s}
+            role="tab"
+            aria-selected={section === s}
+            onClick={() => setSection(s)}
+            className={cn(
+              'rounded-md px-3 py-1 text-xs transition-colors',
+              section === s ? 'bg-surface text-fg shadow-card' : 'text-muted hover:text-fg'
+            )}
+          >
+            {t(`memory.sections.${s}`)}
+          </button>
+        ))}
+      </div>
 
-      <section className="mt-8">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <h3 className="font-serif text-md font-semibold text-fg">{t('memory.listTitle')}</h3>
-            <p className="mt-1 text-xs leading-relaxed text-muted">{t('memory.listDesc')}</p>
-          </div>
-          <Button size="sm" variant="outline" onClick={() => void add()}>
-            <Plus />
-            {t('memory.add')}
-          </Button>
-        </div>
-        <div className="mt-3 flex flex-wrap gap-1.5">
-          {(['all', ...LIST_KINDS] as const).map((k) => (
-            <button
-              key={k}
-              onClick={() => setKind(k)}
-              className={cn(
-                'rounded-full px-2.5 py-1 text-xs transition-colors',
-                kind === k ? 'bg-accent text-accent-fg' : 'bg-sunken text-muted hover:text-fg'
-              )}
-            >
-              {t(`memory.kinds.${k}`)}
-            </button>
-          ))}
-        </div>
-        {pending.length + active.length === 0 ? (
-          <p className="mt-6 rounded-xl border border-dashed border-border px-4 py-8 text-center text-xs leading-relaxed text-muted">
-            {t('memory.empty')}
-          </p>
-        ) : (
-          <ul className="mt-3 space-y-0.5">
-            {[...pending, ...active].map((m) => (
-              <MemoryRow key={m.id} m={m} />
-            ))}
-          </ul>
-        )}
-      </section>
+      {section === 'profile' && (
+        <section>
+          <h3 className="font-serif text-md font-semibold text-fg">{t('memory.profileTitle')}</h3>
+          <p className="mt-1 text-xs leading-relaxed text-muted">{t('memory.profileDesc')}</p>
+          {profile && (
+            <div className="mt-4 grid grid-cols-2 gap-x-5 gap-y-4">
+              {PROFILE_KEYS.map((k) => (
+                <div key={k} className={cn(k === 'role' || k === 'avoid' ? 'col-span-2' : '')}>
+                  <ProfileField k={k} value={profile[k] ?? ''} />
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+      {section === 'memories' && <MemoriesSection />}
+      {section === 'concepts' && <ConceptsSection />}
+      {section === 'episodes' && <EpisodesSection />}
     </div>
   )
 }

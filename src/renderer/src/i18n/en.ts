@@ -562,7 +562,8 @@ const en: Messages = {
       skill: 'Skill preferences',
       profile: 'Profile',
       episode: 'Episodes',
-      concept: 'Concepts'
+      concept: 'Concepts',
+      archived: 'Faded'
     },
     add: 'Add',
     addTitle: 'Ask Jiwei to remember',
@@ -581,6 +582,34 @@ const en: Messages = {
     dismiss: 'No',
     undo: 'Undo',
     rememberedTitle: 'Jiwei remembered',
+    sections: { profile: 'Profile', memories: 'Memories', concepts: 'Progress', episodes: 'Study log' },
+    learn: {
+      autoLearn: 'Learn from conversations',
+      autoLearnDesc: 'After a conversation, Jiwei quietly notes your preferences and background, how well you know each concept, and a short study log. Incognito chats are never used.',
+      learnSkills: 'Learn from your edits',
+      learnSkillsDesc: 'When you reject or rewrite AI output, Jiwei takes note; repeated patterns become preferences for that skill.'
+    },
+    concept: {
+      weak: 'Weak',
+      learning: 'Learning',
+      solid: 'Solid',
+      asked: 'asked {{count}}×',
+      confused: 'confused {{count}}×',
+      understood: 'understood {{count}}×',
+      stuck: 'stuck on: {{note}}'
+    },
+    conceptsTitle: 'Progress',
+    conceptsDesc: 'Jiwei estimates how well you know each concept from your questions and adjusts its explanations. Correct it if it is off.',
+    conceptsEmpty: 'Nothing yet. Ask the AI to explain a term and it will show up here.',
+    episodesTitle: 'Study log',
+    episodesDesc: 'After each study conversation, Jiwei notes what you studied, where you got stuck and what you concluded.',
+    episodesEmpty: 'No entries yet.',
+    openChat: 'Open conversation',
+    restore: 'Restore',
+    faded: 'Faded',
+    emptyArchived: 'No faded memories. AI memories unused for 120 days fade here.',
+    learnedTitle: 'Jiwei remembered {{count}} thing(s) from that conversation',
+    view: 'View',
     askTitle: 'This looks personal — remember it?'
   },
   skills: {

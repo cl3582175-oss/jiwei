@@ -536,7 +536,7 @@ const zhCN = {
       avoidPh: '例如：不要直接给作业答案，先引导我思考'
     },
     listTitle: '积微记住的',
-    listDesc: '对话中积微记下的偏好、背景和你的术语。只保存在本机，属于你个人，不随知识库共享。',
+    listDesc: '积微记下的偏好、背景、术语和技能偏好。只保存在本机，属于你个人，不随知识库共享。',
     kinds: {
       all: '全部',
       preference: '偏好',
@@ -545,8 +545,37 @@ const zhCN = {
       skill: '技能偏好',
       profile: '档案',
       episode: '经历',
-      concept: '概念'
+      concept: '概念',
+      archived: '已淡出'
     },
+    sections: { profile: '档案', memories: '记忆', concepts: '学习情况', episodes: '学习经历' },
+    learn: {
+      autoLearn: '从对话中学习',
+      autoLearnDesc: '对话结束后，积微在后台整理：记住你的偏好和背景，记录你对概念的掌握情况，写一条学习经历。无痕对话不会被整理。',
+      learnSkills: '从你的修改中学习',
+      learnSkillsDesc: '你拒绝或改写 AI 生成的内容时，积微会留意；同一类修改出现多次后，归纳成这个技能的偏好，下次照做。'
+    },
+    concept: {
+      weak: '薄弱',
+      learning: '学习中',
+      solid: '牢固',
+      asked: '请求解释 {{count}} 次',
+      confused: '没弄懂 {{count}} 次',
+      understood: '理解 {{count}} 次',
+      stuck: '卡点：{{note}}'
+    },
+    conceptsTitle: '学习情况',
+    conceptsDesc: '积微根据你的提问和对话，估计你对每个概念的掌握程度，回答时据此调整讲解的深浅。估计不准时，可以直接改。',
+    conceptsEmpty: '还没有记录。选中一个词让 AI 解释，或在对话中请教某个概念后，这里会出现它。',
+    episodesTitle: '学习经历',
+    episodesDesc: '每次学习对话结束后，积微记下学了什么、卡在哪、得出什么结论。下次可以接着上次继续，也是复盘的素材。',
+    episodesEmpty: '还没有学习经历。',
+    openChat: '打开对话',
+    restore: '恢复',
+    faded: '已淡出',
+    emptyArchived: '没有淡出的记忆。AI 记下的内容超过 120 天没有用到，会自动淡出到这里。',
+    learnedTitle: '积微从刚才的对话中记住了 {{count}} 条',
+    view: '查看',
     add: '添加',
     addTitle: '让积微记住',
     addPh: '例如：我喜欢先看结论，再看推导过程',

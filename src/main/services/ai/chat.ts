@@ -17,6 +17,8 @@ import { resolveContext } from './context'
 import { buildTools, numberHits, stepLabel, type AgentSession } from './tools'
 import { loadSkill, skillCatalog } from './skills'
 import { userCard } from '../memory'
+import { learnerNote } from '../learner'
+import { noteExplainRequest, scheduleExtract } from '../memoryLearn'
 
 // AI 对话：检索知识库 → 组织带时间与状态的上下文 → 流式生成 → 记录引用与用量。
 
@@ -27,6 +29,18 @@ const HISTORY_TURNS = 10
 /** 一次回答最多的工具调用轮数 */
 const MAX_STEPS = 10
 const running = new Map<string, AbortController>()
+/**
+ * 用户卡片按对话固定：对话开始时取一次，之后不变（后台整理记忆不会打断前缀缓存）。
+ * 下一次对话再取最新的。
+ */
+const cards = new Map<string, string | null>()
+function cardFor(conversationId: string, zh: boolean): string | null {
+  if (!cards.has(conversationId)) {
+    if (cards.size > 200) cards.delete(cards.keys().next().value!)
+    cards.set(conversationId, userCard(zh))
+  }
+  return cards.get(conversationId)!
+}
 
 const toConversation = (r: ConvRow): Conversation => ({
   id: r.id,
@@ -122,7 +136,7 @@ const fmtDate = (ts: number | null): string => (ts ? new Date(ts).toISOString().
  * 系统提示：只放稳定内容（规则 + 技能目录 + 用户卡片 + 日期），每轮字节相同，便于命中前缀缓存。
  * 每轮变化的上下文、检索片段放在最后一条用户消息里。
  */
-function systemPrompt(zh: boolean, model: string, incognito: boolean): string {
+function systemPrompt(zh: boolean, model: string, incognito: boolean, conversationId: string): string {
   const rules = zh
     ? `你是「积微」的学习助手，帮助用户理解、整理和内化自己学到的知识。用户的知识库 = 用户写的笔记 + 用户上传的原始资料。
 规则：
@@ -152,7 +166,7 @@ Rules:
     : zh
       ? '用户明确要求记住，或表达了稳定的偏好、目标、背景时，用 memory_remember 记下；不要记一次性的请求。'
       : 'Use memory_remember when the user explicitly asks to remember, or states stable preferences, goals or background; not for one-off requests.'
-  const card = incognito ? null : userCard(zh)
+  const card = incognito ? null : cardFor(conversationId, zh)
   return [
     rules.replace('{{MEMORY_RULE}}', memoryRule),
     skillCatalog(model, zh),
@@ -246,6 +260,15 @@ export function send(input: ChatSend): SendResult {
     })
     .run()
   void generate(convId, assistantId, input)
+  // 选区“解释这个词”：直接记一次学习信号（学习者模型）
+  const conv = db.select({ incognito: conversations.incognito }).from(conversations).where(eq(conversations.id, convId)).get()
+  if (input.skill === 'explain-concept' && !conv?.incognito) {
+    try {
+      noteExplainRequest(convId, input.anchor?.quote ?? input.context?.targets[0]?.quote)
+    } catch (e) {
+      log.warn('[chat] record concept failed', e)
+    }
+  }
   return {
     conversation: toConversation(db.select().from(conversations).where(eq(conversations.id, convId)).get()!),
     userMessage: toMessage(userMsg),
@@ -339,7 +362,8 @@ async function generate(conversationId: string, messageId: string, input: ChatSe
             ? '（用户框选了一块图像区域，但当前模型看不到图像；请依据区域中的文字和上下文回答，并在开头提示用户：换用能看图的模型可以得到更准确的解释。）'
             : '(The user selected an image region, but this model cannot see images; answer from the region text and context, and mention that a vision model would do better.)'
           : ''
-      const text = turnMessage(zh, input.text, [ctx.text, imageNote].filter(Boolean).join('\n\n'), kb, skillBody)
+      const learner = session.incognito ? null : learnerNote(query, zh)
+      const text = turnMessage(zh, input.text, [ctx.text, learner, imageNote].filter(Boolean).join('\n\n'), kb, skillBody)
       if (input.images?.length && vision)
         msgs[msgs.length - 1] = {
           role: 'user',
@@ -352,7 +376,7 @@ async function generate(conversationId: string, messageId: string, input: ChatSe
     const run = (withTools: boolean) =>
       streamText({
         model: built.model,
-        system: systemPrompt(zh, input.model, session.incognito),
+        system: systemPrompt(zh, input.model, session.incognito, conversationId),
         messages: msgs,
         ...(withTools ? { tools: buildTools(session), stopWhen: stepCountIs(MAX_STEPS) } : {}),
         providerOptions: built.providerOptions as never,
@@ -425,6 +449,7 @@ async function generate(conversationId: string, messageId: string, input: ChatSe
     usage.reasoningTokens = u.outputTokenDetails?.reasoningTokens ?? 0
     usage.cachedInputTokens = u.inputTokenDetails?.cacheReadTokens ?? 0
     finish('done', null, { ...usage, cost: estimateCost(input.model, usage), durationMs: Date.now() - t0 })
+    if (!session.incognito) scheduleExtract(conversationId)
   } catch (e) {
     if (ctrl.signal.aborted) return finish('stopped', null, null)
     const msg = e instanceof Error ? e.message : String(e)

@@ -239,6 +239,8 @@ export interface Proposal {
   sources: Origin['sources'] | null
   /** 用户主动操作产生：打开笔记时直接应用 */
   auto: boolean
+  /** 生成这份提案时使用的技能（用于学习技能偏好） */
+  skill: string | null
   createdAt: number
 }
 
@@ -400,11 +402,38 @@ export interface Memory {
   status: 'active' | 'pending' | 'archived'
   pinned: boolean
   origin: 'user' | 'ai'
-  evidence: { conversationId?: string; messageId?: string; quote?: string } | null
+  evidence: { conversationId?: string; messageId?: string; quote?: string; previous?: string } | null
   createdAt: number
   updatedAt: number
   lastUsedAt: number | null
   useCount: number
+}
+
+/** 学习者模型：某个概念的掌握情况（由行为信号累积，见 docs/design/v0.3-agent.md §5） */
+export interface Concept {
+  id: string
+  name: string
+  /** 0～1：<0.35 薄弱，<0.7 学习中，≥0.7 牢固 */
+  mastery: number
+  level: 'weak' | 'learning' | 'solid'
+  /** 请求解释的次数、没听懂的次数、表现出理解的次数 */
+  asked: number
+  confused: number
+  understood: number
+  /** 卡点说明（最近一次信号的证据） */
+  note: string | null
+  firstSeen: number
+  lastSeen: number
+}
+
+export type ConceptSignal = 'asked' | 'confused' | 'understood'
+
+/** 记忆的个人设置（存于个人数据库，随人不随知识库） */
+export interface MemorySettings {
+  /** 对话结束后自动整理记忆、学习情况与学习经历 */
+  autoLearn: boolean
+  /** 从你对 AI 提案的修改与拒绝中学习技能偏好 */
+  learnSkills: boolean
 }
 
 /** 技能（Agent Skills 标准 SKILL.md） */
@@ -484,7 +513,7 @@ export interface JiweiEvents {
   /** 语音转写引擎状态 */
   'asr:status': AsrStatus
   /** 记忆变化；added 为 AI 新记住的内容（界面提示，可撤销 / 确认） */
-  'memory:changed': { added?: Memory }
+  'memory:changed': { added?: Memory; learned?: Memory[] }
   /** 深层链接：jiwei://note/<id> 或 jiwei://source/<id> */
   'nav:open': { type: 'note' | 'source'; id: string }
 }

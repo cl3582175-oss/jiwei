@@ -17,6 +17,7 @@ import { newId } from '../../lib/ids'
 import { loadSkill, readSkillFile } from './skills'
 import { retrieve } from './retrieve'
 import { saveMemory, searchMemories } from '../memory'
+import { conceptsIn, describeConcept } from '../learner'
 import type { ChatScope, ProposalOp } from '@shared/schemas'
 import type { AgentStep, DocNode, SearchHit } from '@shared/types'
 
@@ -161,6 +162,7 @@ export function buildTools(s: AgentSession): ToolSet {
       title,
       ops,
       model: s.model,
+      skill: s.skills.at(-1),
       embeds: extra?.embeds,
       sources: extra?.segs?.length ? [...new Set(extra.segs)].map((id) => ({ type: 'segment' as const, id })) : undefined
     })
@@ -567,12 +569,13 @@ export function buildTools(s: AgentSession): ToolSet {
       }),
       memory_search: tool({
         description: zh
-          ? '回忆关于用户的更多信息（偏好、背景、术语）。用户卡片里没有、但回答需要时使用。'
-          : 'Recall more about the user when needed.',
+          ? '回忆关于用户的更多信息（偏好、背景、术语、学习经历、对某个概念的掌握情况）。用户卡片里没有、但回答需要时使用。'
+          : 'Recall more about the user (preferences, background, terms, past study, grasp of a concept) when needed.',
         inputSchema: z.object({ query: z.string().min(1).max(200) }),
         execute: async ({ query }) => {
-          const list = searchMemories(query, 8)
-          return list.length ? list.map((m) => `- ${m.content}`).join('\n') : zh ? '没有相关记忆。' : 'Nothing.'
+          const lines = searchMemories(query, 8).map((m) => `- ${m.kind === 'episode' ? (zh ? '学习经历：' : 'Studied: ') : ''}${m.content}`)
+          lines.push(...conceptsIn(query, 5).map((c) => `- ${zh ? '掌握情况：' : 'Grasp: '}${describeConcept(c, zh)}`))
+          return lines.length ? lines.join('\n') : zh ? '没有相关记忆。' : 'Nothing.'
         }
       })
     })

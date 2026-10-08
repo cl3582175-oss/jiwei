@@ -43,7 +43,46 @@ const MIGRATIONS: string[] = [
    CREATE TRIGGER memories_au AFTER UPDATE OF content ON memories BEGIN
      INSERT INTO memories_fts(memories_fts, rowid, content) VALUES ('delete', old.rowid, old.content);
      INSERT INTO memories_fts(rowid, content) VALUES (new.rowid, new.content);
-   END;`
+   END;`,
+  // 2：记忆 v2——学习者模型（概念掌握度与信号）、技能反馈样本、对话整理进度、个人设置
+  `CREATE TABLE concepts (
+     id TEXT PRIMARY KEY,
+     name TEXT NOT NULL,
+     norm TEXT NOT NULL UNIQUE,
+     mastery REAL NOT NULL,
+     asked INTEGER NOT NULL DEFAULT 0,
+     confused INTEGER NOT NULL DEFAULT 0,
+     understood INTEGER NOT NULL DEFAULT 0,
+     note TEXT,
+     first_seen INTEGER NOT NULL,
+     last_seen INTEGER NOT NULL
+   );
+   CREATE TABLE concept_events (
+     id TEXT PRIMARY KEY,
+     concept_id TEXT NOT NULL,
+     type TEXT NOT NULL,
+     at INTEGER NOT NULL,
+     evidence TEXT
+   );
+   CREATE INDEX concept_events_concept ON concept_events(concept_id, at);
+   CREATE TABLE skill_feedback (
+     id TEXT PRIMARY KEY,
+     skill TEXT NOT NULL,
+     kind TEXT NOT NULL,
+     note_id TEXT,
+     block_ids TEXT,
+     before TEXT NOT NULL,
+     after TEXT,
+     created_at INTEGER NOT NULL,
+     checked_at INTEGER,
+     consumed_at INTEGER
+   );
+   CREATE INDEX skill_feedback_kind ON skill_feedback(kind, skill);
+   CREATE TABLE extract_state (
+     conversation_id TEXT PRIMARY KEY,
+     last_message_at INTEGER NOT NULL
+   );
+   CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);`
 ]
 
 export const profileDbPath = (): string => join(app.getPath('userData'), 'profile', 'memory.db')

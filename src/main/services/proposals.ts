@@ -5,6 +5,7 @@ import { newId } from '../lib/ids'
 import { emit } from '../events'
 import type { ProposalInput } from '@shared/schemas'
 import type { Proposal, ProposalOpStatus } from '@shared/types'
+import { recordProposalDecision } from './memoryLearn'
 
 // AI 修改提案：主进程只负责记录与状态流转；
 // 真正把操作应用到文档由渲染进程的编辑器完成（保证走正常的撤销、协同、ID 与来源标记流程）。
@@ -12,7 +13,7 @@ import type { Proposal, ProposalOpStatus } from '@shared/types'
 type Row = typeof proposals.$inferSelect
 
 function toProposal(r: Row): Proposal {
-  const payload = JSON.parse(r.ops) as { ops: Proposal['ops']; embeds?: Proposal['embeds']; auto?: boolean }
+  const payload = JSON.parse(r.ops) as { ops: Proposal['ops']; embeds?: Proposal['embeds']; auto?: boolean; skill?: string }
   return {
     id: r.id,
     noteId: r.noteId,
@@ -24,6 +25,7 @@ function toProposal(r: Row): Proposal {
     model: r.model,
     sources: r.sources ? (JSON.parse(r.sources) as Proposal['sources']) : null,
     auto: !!payload.auto,
+    skill: payload.skill ?? null,
     createdAt: r.createdAt
   }
 }
@@ -42,7 +44,7 @@ export function createProposal(input: ProposalInput): Proposal {
     id: newId(),
     noteId: input.noteId,
     title: input.title,
-    ops: JSON.stringify({ ops: input.ops, embeds: input.embeds ?? {}, ...(input.auto ? { auto: true } : {}) }),
+    ops: JSON.stringify({ ops: input.ops, embeds: input.embeds ?? {}, ...(input.auto ? { auto: true } : {}), ...(input.skill ? { skill: input.skill } : {}) }),
     opStatus: JSON.stringify(input.ops.map(() => 'pending')),
     status: 'pending',
     model: input.model ?? null,
@@ -65,7 +67,7 @@ export function listProposals(noteId: string): Proposal[] {
     .map(toProposal)
 }
 
-export function resolveOp(id: string, opIndex: number, decision: 'accepted' | 'rejected'): Proposal {
+export function resolveOp(id: string, opIndex: number, decision: 'accepted' | 'rejected', blockIds?: string[]): Proposal {
   const db = getDb()
   const r = db.select().from(proposals).where(eq(proposals.id, id)).get()
   if (!r) throw new Error('Proposal not found')
@@ -78,7 +80,13 @@ export function resolveOp(id: string, opIndex: number, decision: 'accepted' | 'r
     .where(eq(proposals.id, id))
     .run()
   emit('proposals:changed', { noteId: r.noteId })
-  return toProposal(db.select().from(proposals).where(eq(proposals.id, id)).get()!)
+  const p = toProposal(db.select().from(proposals).where(eq(proposals.id, id)).get()!)
+  try {
+    recordProposalDecision(p, opIndex, decision, blockIds)
+  } catch {
+    /* 学习偏好失败不影响提案 */
+  }
+  return p
 }
 
 export function deleteProposalsForNote(noteId: string): void {
