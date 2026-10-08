@@ -132,3 +132,68 @@ export function markdownToNodes(md: string): (DocNode & { type: string })[] {
   const nodes = blocks(new Lexer({ gfm: true }).lex(md.replace(/\r\n/g, '\n')))
   return (nodes.length ? nodes : [para([])]) as (DocNode & { type: string })[]
 }
+
+/* ——— 编辑器节点 → Markdown（给模型看原文，修改时保留格式） ——— */
+
+function inlineMd(nodes: DocNode[] | undefined): string {
+  return (nodes ?? [])
+    .map((n) => {
+      if (n.type === 'hardBreak') return '  \n'
+      if (n.type !== 'text') return ''
+      let t = n.text ?? ''
+      for (const m of n.marks ?? []) {
+        if (m.type === 'bold') t = `**${t}**`
+        else if (m.type === 'italic') t = `*${t}*`
+        else if (m.type === 'strike') t = `~~${t}~~`
+        else if (m.type === 'code') t = `\`${t}\``
+        else if (m.type === 'link' && typeof m.attrs?.href === 'string') t = `[${t}](${m.attrs.href})`
+      }
+      return t
+    })
+    .join('')
+}
+
+export function nodesToMarkdown(nodes: DocNode[], indent = ''): string {
+  const out: string[] = []
+  for (const n of nodes) {
+    switch (n.type) {
+      case 'paragraph':
+        out.push(indent + inlineMd(n.content))
+        break
+      case 'heading':
+        out.push(`${'#'.repeat(Number(n.attrs?.level ?? 2))} ${inlineMd(n.content)}`)
+        break
+      case 'bulletList':
+      case 'orderedList':
+        out.push(
+          (n.content ?? [])
+            .map((li, i) => {
+              const mark = n.type === 'orderedList' ? `${Number(n.attrs?.start ?? 1) + i}.` : '-'
+              const [first, ...rest] = li.content ?? []
+              const head = `${indent}${mark} ${first ? nodesToMarkdown([first]).trim() : ''}`
+              return rest.length ? `${head}\n${nodesToMarkdown(rest, indent + '  ').replace(/\n\n/g, '\n')}` : head
+            })
+            .join('\n')
+        )
+        break
+      case 'blockquote':
+        out.push(
+          nodesToMarkdown(n.content ?? [])
+            .split('\n')
+            .map((l) => `> ${l}`)
+            .join('\n')
+        )
+        break
+      case 'codeBlock':
+        out.push('```' + String(n.attrs?.language ?? '') + '\n' + (n.content ?? []).map((c) => c.text ?? '').join('') + '\n```')
+        break
+      case 'horizontalRule':
+        out.push('---')
+        break
+      default:
+        if (n.content) out.push(nodesToMarkdown(n.content, indent))
+    }
+  }
+  // 块之间空一行，避免相邻段落被合并
+  return out.join('\n\n')
+}

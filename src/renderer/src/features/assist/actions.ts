@@ -16,7 +16,14 @@ export const ACTION_SKILL: Record<AskAction, string | undefined> = {
   explain: 'explain-concept',
   clarify: 'clarify-passage',
   translate: 'translate-passage',
-  ask: undefined
+  ask: undefined,
+  shorten: 'revise-text',
+  expand: 'revise-text',
+  simplify: 'revise-text',
+  fix: 'revise-text',
+  list: 'revise-text',
+  revise: 'revise-text',
+  remap: 'mindmap'
 }
 
 /** 快捷操作默认的提问文字 */
@@ -36,7 +43,14 @@ function effortFor(action: AskAction, s: Settings, p: ProviderInfo): Effort {
   return levels.includes(want) ? want : levels[0]
 }
 
-export async function askInline(action: AskAction, anchor: Anchor, rect: Rect, question?: string, image?: string): Promise<void> {
+export async function askInline(
+  action: AskAction,
+  anchor: Anchor,
+  rect: Rect,
+  question?: string,
+  image?: string,
+  extra: Anchor[] = []
+): Promise<void> {
   const settings = await api.settings.get()
   const providers = await api.providers.list()
   const p = providers.find((x) => x.id === settings.ai.chat.providerId)
@@ -48,7 +62,15 @@ export async function askInline(action: AskAction, anchor: Anchor, rect: Rect, q
     })
     return
   }
-  st.openCard({ anchor, rect, action, conversationId: null, question: text, ...(image ? { image } : {}) })
+  st.openCard({
+    anchor,
+    rect,
+    action,
+    conversationId: null,
+    question: text,
+    ...(image ? { image } : {}),
+    ...(extra.length ? { extra } : {})
+  })
   const key = useAssist.getState().card!.key
   const ws = useApp.getState().context
   try {
@@ -63,7 +85,7 @@ export async function askInline(action: AskAction, anchor: Anchor, rect: Rect, q
       kind: 'inline',
       anchor,
       ...(image ? { images: [image] } : {}),
-      context: { targets: [anchor], noteId: ws.noteId, sourceId: ws.sourceId, cursorRowId: ws.cursorRowId }
+      context: { targets: [anchor, ...extra].slice(0, 8), noteId: ws.noteId, sourceId: ws.sourceId, cursorRowId: ws.cursorRowId }
     })
     queryClient.setQueryData<ChatMessage[]>(['messages', conversation.id], [userMessage, assistant])
     if (useAssist.getState().card?.key === key) useAssist.getState().updateCard({ conversationId: conversation.id })
@@ -97,7 +119,7 @@ export async function saveToNote(input: { cue: string; answer: string; anchor: A
 }
 
 /** 就地对话中的追问 */
-export async function followUp(conversationId: string, text: string, anchor: Anchor): Promise<void> {
+export async function followUp(conversationId: string, text: string, anchor: Anchor, extra: Anchor[] = []): Promise<void> {
   const settings = await api.settings.get()
   const providers = await api.providers.list()
   const p = providers.find((x) => x.id === settings.ai.chat.providerId)
@@ -111,7 +133,7 @@ export async function followUp(conversationId: string, text: string, anchor: Anc
       model: settings.ai.chat.model,
       effort: effortFor('ask', settings, p),
       scope: { type: 'all' },
-      context: { targets: [anchor], noteId: ws.noteId, sourceId: ws.sourceId }
+      context: { targets: [anchor, ...extra].slice(0, 8), noteId: ws.noteId, sourceId: ws.sourceId }
     })
     queryClient.setQueryData<ChatMessage[]>(['messages', conversationId], (list) => [...(list ?? []), userMessage, assistant])
   } catch (e) {

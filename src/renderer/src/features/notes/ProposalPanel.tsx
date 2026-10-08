@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { generateHTML } from '@tiptap/core'
@@ -11,9 +11,25 @@ import { embedText } from '@shared/embeds'
 import { api, cn, formatRelative } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { applyOp, ProposalTargetMissing } from './editor/applyProposal'
+import { diffKey, DIFF_DECISION, type DiffDecision, type DiffItem } from './editor/proposalDiff'
 import { previewExtensions } from './editor/preview'
 
 /** AI 修改提案面板：逐条预览、接受或拒绝；接受的内容以 AI 来源写入，可撤销 */
+/** 文档 JSON 的纯文本（块之间换行） */
+function jsonText(nodes: unknown[]): string {
+  const out: string[] = []
+  const walk = (n: { type?: string; text?: string; content?: unknown[] }, block: boolean): string => {
+    if (n.type === 'text') return n.text ?? ''
+    const inner = (n.content ?? [])
+      .map((c) => walk(c as never, false))
+      .join(n.type === 'bulletList' || n.type === 'orderedList' || n.type === 'listItem' || n.type === 'blockquote' ? '\n' : '')
+    if (block) out.push(inner)
+    return inner
+  }
+  for (const n of nodes) walk(n as never, true)
+  return out.join('\n')
+}
+
 export function ProposalPanel({ noteId, editor, ydoc }: { noteId: string; editor: Editor | null; ydoc: Y.Doc | null }) {
   const { t, i18n } = useTranslation()
   const qc = useQueryClient()
@@ -99,7 +115,62 @@ export function ProposalPanel({ noteId, editor, ydoc }: { noteId: string; editor
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [list, editor, ydoc])
 
-  const visible = list.filter((p) => !p.auto)
+  // 文档版本：接受一条修改后重新计算其余差异的位置（只在有待定修改时监听）
+  const [docVersion, setDocVersion] = useState(0)
+  const hasPending = list.some((p) => !p.auto && p.status === 'pending')
+  useEffect(() => {
+    if (!editor || !hasPending) return
+    const bump = (): void => setDocVersion((v) => v + 1)
+    editor.on('update', bump)
+    return () => {
+      editor.off('update', bump)
+    }
+  }, [editor, hasPending])
+
+  // 行内差异：替换 / 删除段落直接显示在笔记原文处（新内容不含富内容块、目标仍在文档中）
+  const inline = useMemo(() => {
+    const items: DiffItem[] = []
+    const doc = editor?.state.doc
+    if (!doc) return items
+    const ids = new Set<string>()
+    doc.descendants((n) => {
+      if (typeof n.attrs.id === 'string') ids.add(n.attrs.id)
+    })
+    for (const p of list) {
+      if (p.auto) continue
+      p.ops.forEach((op, i) => {
+        if (p.opStatus[i] !== 'pending') return
+        if (op.op === 'replace_block' && ids.has(op.blockId) && !JSON.stringify(op.nodes).includes('"embed"'))
+          items.push({ proposalId: p.id, opIndex: i, blockId: op.blockId, kind: 'replace', title: p.title, newText: jsonText(op.nodes) })
+        else if (op.op === 'delete_block' && ids.has(op.blockId))
+          items.push({ proposalId: p.id, opIndex: i, blockId: op.blockId, kind: 'delete', title: p.title })
+      })
+    }
+    return items
+    // 文档变化（如接受了其中一条）后重新计算
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [list, editor, docVersion])
+
+  useEffect(() => {
+    if (!editor || editor.isDestroyed) return
+    editor.view.dispatch(editor.state.tr.setMeta(diffKey, inline).setMeta('addToHistory', false))
+  }, [editor, inline])
+
+  // 差异卡片上的接受 / 拒绝
+  useEffect(() => {
+    const on = (e: Event): void => {
+      const d = (e as CustomEvent<DiffDecision>).detail
+      const p = list.find((x) => x.id === d.proposalId)
+      if (p) void decide(p, d.opIndex, d.decision)
+    }
+    window.addEventListener(DIFF_DECISION, on)
+    return () => window.removeEventListener(DIFF_DECISION, on)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [list, editor, ydoc])
+
+  const inlineKeys = new Set(inline.map((x) => `${x.proposalId}:${x.opIndex}`))
+  // 所有待定操作都已在原文处显示的提案，不再出现在面板中
+  const visible = list.filter((p) => !p.auto && p.ops.some((_, i) => p.opStatus[i] === 'pending' && !inlineKeys.has(`${p.id}:${i}`)))
   if (visible.length === 0) return null
 
   const opLabel = (op: ProposalOp): string => t(`proposals.op.${op.op}`)

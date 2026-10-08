@@ -1,7 +1,25 @@
+import { useState } from 'react'
 import { useEditorState, type Editor } from '@tiptap/react'
 import { useTranslation } from 'react-i18next'
-import { Bold, Italic, Strikethrough, Code, Heading1, Heading2, List, ListOrdered, Quote } from 'lucide-react'
+import {
+  Bold,
+  Italic,
+  Strikethrough,
+  Code,
+  Heading1,
+  Heading2,
+  List,
+  ListOrdered,
+  Quote,
+  Sparkles,
+  ChevronDown,
+  Lightbulb,
+  PenLine
+} from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { askInline } from '@/features/assist/actions'
+import { useAssist, REVISE_ACTIONS, type AskAction } from '@/features/assist/store'
+import { noteSelectionTargets } from './aiSelection'
 
 function FormatButton({
   active,
@@ -30,7 +48,66 @@ function FormatButton({
   )
 }
 
-export function FormatBar({ editor }: { editor: Editor }) {
+/** 选区 AI：修改（以行内差异提交，逐条确认）、解释、自定义指令。
+ * 菜单渲染在浮条内部（不用弹出层），点击时编辑器不失焦，选区保持不变。 */
+function AiMenu({ editor, noteId }: { editor: Editor; noteId: string }) {
+  const { t } = useTranslation()
+  const [open, setOpen] = useState(false)
+  const run = (action: AskAction | 'custom'): void => {
+    setOpen(false)
+    const sel = noteSelectionTargets(editor, noteId)
+    if (!sel?.anchors.length) return
+    const [first, ...rest] = sel.anchors
+    const primary = { ...first, quote: sel.quote.slice(0, 8000) }
+    if (action === 'custom') {
+      useAssist.getState().openCard({ anchor: primary, rect: sel.rect, action: 'revise', conversationId: null, question: '', extra: rest })
+      return
+    }
+    void askInline(action, primary, sel.rect, undefined, undefined, rest)
+  }
+  const item =
+    'flex h-8 w-full items-center gap-2 rounded-md px-2.5 text-left text-xs text-fg hover:bg-surface-hover [&_svg]:size-3.5 [&_svg]:text-accent'
+  return (
+    <div className="relative">
+      <button
+        aria-label={t('assist.aiMenu')}
+        aria-expanded={open}
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => setOpen(!open)}
+        className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium text-accent transition-colors hover:bg-accent-soft [&_svg]:size-3.5"
+      >
+        <Sparkles />
+        AI
+        <ChevronDown className={cn('!size-3 opacity-60 transition-transform', open && 'rotate-180')} />
+      </button>
+      {open && (
+        <div
+          role="menu"
+          aria-label={t('assist.aiMenu')}
+          className="absolute top-full left-0 z-10 mt-2 w-44 rounded-lg border border-border bg-surface p-1 shadow-float"
+        >
+          {REVISE_ACTIONS.map((a) => (
+            <button key={a} role="menuitem" className={item} onMouseDown={(e) => e.preventDefault()} onClick={() => run(a)}>
+              <PenLine />
+              {t(`assist.actions.${a}`)}
+            </button>
+          ))}
+          <button role="menuitem" className={item} onMouseDown={(e) => e.preventDefault()} onClick={() => run('custom')}>
+            <Sparkles />
+            {t('assist.actions.revise')}
+          </button>
+          <div className="my-1 h-px bg-border" />
+          <button role="menuitem" className={item} onMouseDown={(e) => e.preventDefault()} onClick={() => run('explain')}>
+            <Lightbulb />
+            {t('assist.actions.explain')}
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+export function FormatBar({ editor, noteId }: { editor: Editor; noteId?: string }) {
   const { t } = useTranslation()
   const c = (): ReturnType<Editor['chain']> => editor.chain().focus()
   const on = useEditorState({
@@ -61,6 +138,12 @@ export function FormatBar({ editor }: { editor: Editor }) {
   ]
   return (
     <div className="flex items-center gap-0.5 rounded-lg border border-border bg-surface p-1 shadow-float">
+      {noteId && editor.isEditable && (
+        <>
+          <AiMenu editor={editor} noteId={noteId} />
+          <span className="mx-0.5 h-4 w-px bg-border" />
+        </>
+      )}
       {items.map((it, i) =>
         it ? (
           <FormatButton key={it.k} active={it.active} label={t(`editor.${it.k}`)} onClick={it.run}>

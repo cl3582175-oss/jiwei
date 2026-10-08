@@ -3,7 +3,11 @@ import type { Anchor } from '@shared/context'
 
 // 阅读辅助的界面状态：选区浮条、就地答复卡片、工作区 AI 面板。
 
-export type AskAction = 'explain' | 'clarify' | 'translate' | 'ask'
+export type AskAction = 'explain' | 'clarify' | 'translate' | 'ask' | ReviseAction
+/** 修改笔记的快捷操作 */
+export type ReviseAction = 'shorten' | 'expand' | 'simplify' | 'fix' | 'list' | 'revise' | 'remap'
+export const REVISE_ACTIONS: ReviseAction[] = ['shorten', 'expand', 'simplify', 'fix', 'list']
+export const isRevise = (a: AskAction): a is ReviseAction => a === 'revise' || a === 'remap' || (REVISE_ACTIONS as string[]).includes(a)
 
 export interface Rect {
   x: number
@@ -24,6 +28,8 @@ export interface CardState {
   question: string
   /** 框选区域 / 视频画面的截图（PNG data URL） */
   image?: string
+  /** 同时指向的其他块（笔记中跨段落选区） */
+  extra?: Anchor[]
 }
 
 interface AssistState {

@@ -1124,3 +1124,72 @@
 .chat-md :is(h3, h4) {
   font-size: 1.04em;
 }
+
+/* ——— AI 修改的行内差异 ——— */
+.cornell-doc .diff-old {
+  opacity: 0.45;
+}
+.cornell-doc .diff-old.is-delete {
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in oklab, var(--danger) 70%, transparent);
+}
+.diff-card {
+  margin: 6px 0 10px;
+  border: 1px solid color-mix(in oklab, var(--accent) 35%, var(--border));
+  border-radius: 10px;
+  background: color-mix(in oklab, var(--accent) 5%, var(--surface));
+  padding: 8px 12px 10px;
+  font-size: 0.95em;
+  line-height: 1.75;
+  user-select: text;
+}
+.diff-head {
+  font-size: 11px;
+  color: var(--accent);
+  margin-bottom: 4px;
+  user-select: none;
+}
+.diff-body {
+  white-space: pre-wrap;
+  color: var(--fg);
+}
+.diff-body del {
+  color: var(--danger);
+  background: color-mix(in oklab, var(--danger) 10%, transparent);
+  text-decoration: line-through;
+  border-radius: 3px;
+}
+.diff-body ins {
+  color: color-mix(in oklab, #2f8a4f 85%, var(--fg));
+  background: color-mix(in oklab, #3fa766 16%, transparent);
+  text-decoration: none;
+  border-radius: 3px;
+}
+.diff-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 6px;
+  user-select: none;
+}
+.diff-actions button {
+  height: 26px;
+  padding: 0 12px;
+  border-radius: 7px;
+  font-size: 12px;
+}
+.diff-accept {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+.diff-reject {
+  color: var(--muted);
+}
+.diff-reject:hover {
+  background: var(--surface-hover);
+  color: var(--fg);
+}
+.diff-note {
+  color: var(--muted);
+  font-size: 0.9em;
+}

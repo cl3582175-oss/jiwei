@@ -38,3 +38,25 @@ describe('segmentText', () => {
     for (const s of segs) expect(md.slice(s.locator.start, s.locator.end).trim()).toBe(s.text)
   })
 })
+
+describe('mind-elixir conversion', () => {
+  it('round-trips structure, anchors and notes', async () => {
+    const { toElixir, fromElixir } = await import('@shared/embeds/mindElixir')
+    const { toTree } = await import('@shared/embeds/mindmap')
+    const data = {
+      root: 'r',
+      nodes: {
+        r: { text: '根', parent: null, order: 0 },
+        a: { text: '甲', parent: 'r', order: 0, anchor: { type: 'segment' as const, id: 's1' }, note: '备注' },
+        b: { text: '乙', parent: 'r', order: 1 }
+      }
+    }
+    const el = toElixir(toTree(data)!)
+    // 模拟编辑：给“乙”添加子节点
+    el.nodeData.children![1].children = [{ id: 'new', topic: '丙' }]
+    const back = fromElixir(el)
+    expect(back.root).toBe('r')
+    expect(back.nodes.a).toEqual({ text: '甲', parent: 'r', order: 0, anchor: { type: 'segment', id: 's1' }, note: '备注' })
+    expect(back.nodes.new).toEqual({ text: '丙', parent: 'b', order: 0 })
+  })
+})

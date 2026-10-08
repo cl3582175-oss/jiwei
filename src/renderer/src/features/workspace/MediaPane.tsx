@@ -202,15 +202,13 @@ export function MediaPane({ source }: { source: Source }) {
     const b = Math.max(range.a, time)
     setRange({ a, b })
     if (b - a < 1) return
-    useAssist
-      .getState()
-      .openCard({
-        anchor: anchorFor('media-range', a, b),
-        rect: elementRect(e.currentTarget),
-        action: 'ask',
-        conversationId: null,
-        question: ''
-      })
+    useAssist.getState().openCard({
+      anchor: anchorFor('media-range', a, b),
+      rect: elementRect(e.currentTarget),
+      action: 'ask',
+      conversationId: null,
+      question: ''
+    })
   }
 
   /** 「问这个画面」：截取当前帧 + 前后 15 秒转写稿 */

@@ -4,6 +4,9 @@ import { notes, sources } from '../../db/schema'
 import { listSegments } from '../segments'
 import { loadDoc, stateToContent } from '../docs'
 import { nodeText } from '../../lib/derive'
+import { nodesToMarkdown } from '../../lib/markdown'
+import { embedText } from '@shared/embeds'
+import { MindmapDataSchema, toTree, type MindmapTree } from '@shared/embeds/mindmap'
 import { fmtTime, type Anchor, type ContextPacket } from '@shared/context'
 import type { DocNode, Segment } from '@shared/types'
 
@@ -126,6 +129,28 @@ function rowText(row: DocNode, zh: boolean): string {
   return `${zh ? '线索' : 'Cue'}：${cue ? nodeText(cue).trim() || '（空）' : ''}\n${zh ? '笔记' : 'Notes'}：${body ? nodeText(body).trim() : ''}`
 }
 
+/** 富内容块（如思维导图）的文字大纲 */
+function embedOutline(noteId: string, id: string): string {
+  const { embeds } = stateToContent(loadDoc(noteId))
+  const e = embeds[id]
+  if (!e?.kind) return ''
+  if (e.kind === 'mindmap') {
+    // 导图：缩进大纲，带原文片段 ID（修改时保留）
+    const parsed = MindmapDataSchema.safeParse(e.data)
+    const tree = parsed.success ? toTree(parsed.data) : null
+    if (tree) {
+      const lines: string[] = []
+      const walk = (n: MindmapTree, depth: number): void => {
+        lines.push(`${'  '.repeat(depth)}- ${n.text}${n.anchor?.type === 'segment' ? ` {segmentId: ${n.anchor.id}}` : ''}`)
+        n.children.forEach((c) => walk(c, depth + 1))
+      }
+      walk(tree, 0)
+      return `[mindmap]\n${lines.join('\n')}`
+    }
+  }
+  return `[${e.kind}]\n${embedText(e.kind, e.data)}`
+}
+
 function noteAnchor(a: Anchor, zh: boolean): string | null {
   const n = noteRow(a.parentId)
   if (!n) return null
@@ -138,6 +163,9 @@ function noteAnchor(a: Anchor, zh: boolean): string | null {
     const f = findInDoc(doc, a.ownerId)
     if (f) {
       lines.push(`${zh ? '所在段落 ID（修改时用于 note_replace_block）' : 'Block ID (for note_replace_block)'}：${a.ownerId}`)
+      // 段落完整原文（Markdown）：只选中了一部分时，模型据此保留未选中的部分
+      const md = f.node.type === 'embed' ? embedOutline(a.parentId, String(f.node.attrs?.id ?? '')) : nodesToMarkdown([f.node])
+      lines.push(`${zh ? '该段落完整原文' : 'Full block'}：\n${clip(md, 4000)}`)
       if (f.row) lines.push(`${zh ? '所在行' : 'Row'}（${f.row.attrs?.id}）：\n${clip(rowText(f.row, zh), MAX_SURROUND)}`)
     }
   }

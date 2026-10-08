@@ -280,3 +280,64 @@ test('video: "didn\'t get it" explains the last 30 s, saves a time link; ask abo
   await shot('89-video-frame')
   await page.keyboard.press('Escape')
 })
+
+test('note revision: select → AI 精简 → inline diff → accept; AI edits a mind map', async () => {
+  test.setTimeout(300_000)
+  await page.reload()
+  await page.waitForSelector('nav')
+  await page.keyboard.press('ControlOrMeta+n')
+  await page.getByPlaceholder('笔记标题').fill('修订实测')
+  await page.keyboard.press('Enter')
+  const long =
+    '间隔重复其实就是一种非常非常有用的、被很多很多人广泛使用的记忆方法，它的核心思想说到底就是要在我们快要忘记某个知识点的那个时候再去进行一次复习，这样记忆就会保持得更久更牢固。'
+  await page.keyboard.type(long)
+  await expect.poll(() => page.evaluate(() => window.jiwei.notes.list({ search: '修订实测' }).then((n) => n.length))).toBeGreaterThan(0)
+  await page.locator('.cornell-doc p', { hasText: '间隔重复其实' }).click({ clickCount: 3 })
+  await page.getByRole('button', { name: 'AI 修改' }).click()
+  await page.getByRole('menuitem', { name: '精简' }).click()
+  const diff = page.getByRole('group', { name: /AI 建议/ })
+  await expect(diff).toBeVisible({ timeout: 150_000 })
+  await expect(diff.locator('del').first()).toBeVisible()
+  await shot('96-live-inline-diff')
+  await page.keyboard.press('Escape')
+  await diff.getByRole('button', { name: '接受' }).click()
+  await expect(diff).toHaveCount(0)
+  const after = await page.locator('.cornell-doc p', { hasText: '间隔重复' }).first().textContent()
+  expect(after!.length).toBeLessThan(long.length)
+
+  // AI 修改导图
+  const noteId = await page.evaluate(() => window.jiwei.notes.list({ search: '修订实测' }).then((n) => n[0].id))
+  await page.evaluate(
+    (noteId) =>
+      window.jiwei.proposals.create({
+        noteId,
+        title: '导图',
+        ops: [{ op: 'insert_row', afterRowId: null, cue: [], body: [{ type: 'embed', attrs: { id: 'mm', kind: 'mindmap' } }] }],
+        embeds: {
+          mm: {
+            kind: 'mindmap',
+            data: {
+              root: 'r',
+              nodes: {
+                r: { text: '学习方法', parent: null, order: 0 },
+                a: { text: '间隔重复', parent: 'r', order: 0 },
+                b: { text: '提取练习', parent: 'r', order: 1 }
+              }
+            }
+          }
+        }
+      }),
+    noteId
+  )
+  await page.getByRole('button', { name: '全部接受' }).click()
+  const block = page.locator('.embed-block[data-kind="mindmap"]')
+  await block.hover()
+  await block.getByRole('button', { name: 'AI 修改导图' }).click()
+  await page.getByRole('dialog', { name: '就地答复' }).getByRole('textbox').fill('增加一个分支“交错练习”，下面写两个要点')
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('button', { name: '全部接受' })).toBeVisible({ timeout: 150_000 })
+  await shot('97-live-mindmap-proposal')
+  await page.keyboard.press('Escape')
+  await page.getByRole('button', { name: '全部接受' }).click()
+  await expect(page.locator('.embed-block[data-kind="mindmap"] svg.mindmap-svg')).toContainText('交错练习')
+})

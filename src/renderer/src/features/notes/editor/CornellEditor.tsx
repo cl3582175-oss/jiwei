@@ -12,47 +12,14 @@ import { api, modKey } from '@/lib/utils'
 import { idExtension, schemaExtensions } from './extensions'
 import { CornellAddRowWidget, CornellKeymap, CornellRowTimes, CornellShortcuts, CORNELL, rowTimesKey } from './cornell'
 import { FormatBar } from './FormatBar'
-import { OriginAttribute, PROPOSAL_META } from './origin'
+import { OriginAttribute } from './origin'
+import { ProposalDiff } from './proposalDiff'
 import { Embed } from './embeds/EmbedNode'
 import './embeds/MindmapView'
-import { MindmapDataSchema, toCornellRows } from '@shared/embeds/mindmap'
 import { useApp, openSourceAt } from '@/store/app'
-import { Tip } from '@/components/ui/primitives'
-import { Rows3 } from 'lucide-react'
+import { MindmapActions } from './embeds/MindmapActions'
 
 const INTERNAL_LINK = /^jiwei:\/\/(note|source)\/([0-9a-f-]{36})(?:\?(.*))?/i
-
-/** 思维导图 → 康奈尔行：插入到导图所在行之后，沿用导图的来源标记 */
-function mindmapToRows(editor: Editor, entry: Y.Map<unknown>, getPos: () => number | undefined, originAttr: string | null): void {
-  const data = MindmapDataSchema.safeParse((entry.get('data') as { toJSON(): unknown }).toJSON())
-  const pos = getPos()
-  if (!data.success || pos === undefined) return
-  const { state, view } = editor
-  const $pos = state.doc.resolve(pos)
-  let after = state.doc.content.size - state.doc.lastChild!.nodeSize
-  for (let d = $pos.depth; d > 0; d--) {
-    if ($pos.node(d).type.name === CORNELL.row) {
-      after = $pos.after(d)
-      break
-    }
-  }
-  // 子块继承来源：AI 生成的导图展开后仍是 AI 内容（直到用户修改）
-  const withOrigin = (nodes: unknown[]): unknown[] =>
-    originAttr ? nodes.map((n) => ({ ...(n as object), attrs: { ...((n as { attrs?: object }).attrs ?? {}), origin: originAttr } })) : nodes
-  const rows = toCornellRows(data.data).map((r) =>
-    state.schema.nodeFromJSON({
-      type: CORNELL.row,
-      attrs: { origin: originAttr },
-      content: [
-        { type: CORNELL.cue, content: withOrigin(r.cue) },
-        { type: CORNELL.body, content: withOrigin(r.body) }
-      ]
-    })
-  )
-  const tr = state.tr.insert(after, rows)
-  if (originAttr) tr.setMeta(PROPOSAL_META, true)
-  view.dispatch(tr.scrollIntoView())
-}
 
 const IMAGE_MAX = 25 * 1024 * 1024
 
@@ -100,20 +67,18 @@ export function CornellEditor({ noteId, ydoc, onReady }: Props) {
       CornellAddRowWidget.configure({ label: t('notes.addRow'), hint: `${modKey}↵` }),
       CornellRowTimes,
       OriginAttribute,
+      ProposalDiff.configure({
+        labels: {
+          suggestion: t('proposals.suggestion'),
+          accept: t('proposals.accept'),
+          reject: t('proposals.reject'),
+          deleteHint: t('proposals.deleteHint')
+        }
+      }),
       Embed.configure({
         ydoc,
         renderActions: ({ kind, entry, props }) =>
-          kind === 'mindmap' && props.editor.isEditable ? (
-            <Tip label={t('embeds.toRows')} side="top">
-              <button
-                className="embed-action"
-                aria-label={t('embeds.toRows')}
-                onClick={() => mindmapToRows(props.editor, entry, props.getPos, (props.node.attrs.origin as string | null) ?? null)}
-              >
-                <Rows3 className="size-3.5" />
-              </button>
-            </Tip>
-          ) : null
+          kind === 'mindmap' && props.editor.isEditable ? <MindmapActions entry={entry} props={props} noteId={noteId} /> : null
       })
     ],
     // 语言切换时重建编辑器以更新提示文字
@@ -222,7 +187,7 @@ export function CornellEditor({ noteId, ydoc, onReady }: Props) {
   return (
     <>
       <BubbleMenu editor={editor} options={{ placement: 'top', offset: 8 }}>
-        <FormatBar editor={editor} />
+        <FormatBar editor={editor} noteId={noteId} />
       </BubbleMenu>
       <EditorContent editor={editor} />
     </>

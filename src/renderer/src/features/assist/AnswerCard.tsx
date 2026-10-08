@@ -11,14 +11,15 @@ import {
   Lightbulb,
   BookOpenText,
   Languages,
-  MessageCircleQuestion
+  MessageCircleQuestion,
+  PenLine
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Tip } from '@/components/ui/primitives'
 import { MessageItem } from '../chat/MessageItem'
 import { useChatThread } from '../chat/useChat'
-import { useAssist, type AskAction } from './store'
+import { useAssist, isRevise, type AskAction } from './store'
 import { askInline, followUp, saveToNote, stripCites } from './actions'
 
 // 就地答复卡片：浮在选区旁，流式显示回答；可追问、存入笔记、转到 AI 面板继续。
@@ -27,7 +28,14 @@ const ICON: Record<AskAction, React.ReactNode> = {
   explain: <Lightbulb />,
   clarify: <BookOpenText />,
   translate: <Languages />,
-  ask: <MessageCircleQuestion />
+  ask: <MessageCircleQuestion />,
+  shorten: <PenLine />,
+  expand: <PenLine />,
+  simplify: <PenLine />,
+  fix: <PenLine />,
+  list: <PenLine />,
+  revise: <PenLine />,
+  remap: <PenLine />
 }
 const W = 420
 
@@ -94,9 +102,17 @@ export function AnswerCard() {
     if (!card || !ref.current) return setPos(null)
     const h = ref.current.offsetHeight
     const { rect } = card
-    const left = Math.min(Math.max(12, rect.x + rect.w / 2 - W / 2), window.innerWidth - W - 12)
+    let left = Math.min(Math.max(12, rect.x + rect.w / 2 - W / 2), window.innerWidth - W - 12)
     const below = rect.y + rect.h + 10
-    const top = below + h < window.innerHeight - 12 ? below : Math.max(12, rect.y - 10 - h)
+    let top = below + h < window.innerHeight - 12 ? below : Math.max(12, rect.y - 10 - h)
+    // 修改笔记：差异会出现在原文下方，卡片让开——优先放在选区左侧（线索栏上方），其次放在上方
+    if (card.anchor.parentType === 'note' && isRevise(card.action)) {
+      const clampTop = Math.min(Math.max(12, rect.y), window.innerHeight - h - 12)
+      if (rect.x - W - 16 >= 12) {
+        left = rect.x - W - 16
+        top = clampTop
+      } else if (rect.y - h - 10 >= 12) top = rect.y - h - 10
+    }
     setPos((p) => (p && Math.abs(p.top - top) < 2 && p.left === left ? p : { left, top }))
   }, [card, msgs])
 
@@ -112,6 +128,8 @@ export function AnswerCard() {
   if (!card) return null
   const quote = card.anchor.quote ?? ''
   const composing = !card.conversationId && !card.question
+  // 来自笔记的提问：不再“存入笔记”；修改以行内差异显示在笔记中，逐条确认
+  const fromNote = card.anchor.parentType === 'note'
   // 第一条用户消息就是卡片标题，不重复显示
   const shown = msgs.filter((m, i) => !(i === 0 && m.role === 'user'))
   const answer = [...msgs].reverse().find((m) => m.role === 'assistant' && m.status === 'done' && m.content)
@@ -178,8 +196,12 @@ export function AnswerCard() {
             )}
             <Composer
               autoFocus
-              placeholder={t('assist.askPh')}
-              onSend={(text) => void askInline('ask', card.anchor, card.rect, text, card.image)}
+              placeholder={
+                card.action === 'remap' ? t('embeds.aiEditPh') : card.action === 'revise' ? t('assist.revisePh') : t('assist.askPh')
+              }
+              onSend={(text) =>
+                void askInline(isRevise(card.action) ? card.action : 'ask', card.anchor, card.rect, text, card.image, card.extra)
+              }
             />
           </div>
         ) : shown.length === 0 ? (
@@ -195,9 +217,15 @@ export function AnswerCard() {
       {card.conversationId && (
         <footer className={cn('space-y-2 border-t border-border/70 px-4 py-3', busy && 'opacity-60')}>
           <div className="flex items-center gap-1.5">
+            {fromNote && isRevise(card.action) && (
+              <span className="mr-auto text-2xs leading-relaxed text-muted">
+                {t(card.action === 'remap' ? 'assist.remapHint' : 'assist.reviseHint')}
+              </span>
+            )}
             <Button
               size="sm"
               variant="primary"
+              className={cn(fromNote && 'hidden')}
               disabled={!answer}
               onClick={() =>
                 answer &&
@@ -218,7 +246,10 @@ export function AnswerCard() {
             </Button>
           </div>
           {!busy && (
-            <Composer placeholder={t('assist.followUp')} onSend={(text) => void followUp(card.conversationId!, text, card.anchor)} />
+            <Composer
+              placeholder={t('assist.followUp')}
+              onSend={(text) => void followUp(card.conversationId!, text, card.anchor, card.extra)}
+            />
           )}
         </footer>
       )}

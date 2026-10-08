@@ -131,6 +131,20 @@ const NestedSchema: z.ZodType<NestedNode & { segmentId?: string }> = z.lazy(() =
   })
 ) as never
 
+/** 模型给出的嵌套树 → 导图数据（segmentId → 原文锚点） */
+function buildMindmap(tree: NestedNode & { segmentId?: string }): { data: ReturnType<typeof fromNested>; segs: string[] } {
+  const segs: string[] = []
+  const conv = (n: NestedNode & { segmentId?: string; children?: (NestedNode & { segmentId?: string })[] }): NestedNode => {
+    if (n.segmentId) segs.push(n.segmentId)
+    return {
+      text: n.text,
+      ...(n.segmentId ? { anchor: { type: 'segment' as const, id: n.segmentId } } : {}),
+      ...(n.children?.length ? { children: n.children.map(conv) } : {})
+    }
+  }
+  return { data: fromNested(conv(tree), () => newId().slice(-12)), segs }
+}
+
 export function buildTools(s: AgentSession): ToolSet {
   const zh = s.zh
   const proposal = (
@@ -304,6 +318,41 @@ export function buildTools(s: AgentSession): ToolSet {
         return proposal(noteId, title, [{ op: 'replace_block', blockId, nodes: markdownToNodes(markdown) }])
       }
     }),
+    note_update_mindmap: tool({
+      description: zh
+        ? '修改笔记中已有的思维导图（提案）：提交修改后的完整导图。blockId 为导图块的 ID。未改动的节点原样保留（包括 segmentId）。'
+        : 'Revise an existing mind map (proposal): submit the full revised tree. Keep unchanged nodes and their segmentId.',
+      inputSchema: z.object({
+        noteId: z.string().max(64),
+        blockId: z.string().max(64),
+        title: z.string().min(1).max(100),
+        tree: NestedSchema
+      }),
+      execute: async ({ noteId, blockId, title, tree }) => {
+        mustNote(noteId, zh)
+        const { data, segs } = buildMindmap(tree)
+        if (Object.keys(data.nodes).length < 3) throw new Error(zh ? '导图太简单（少于 3 个节点）' : 'Mind map too small')
+        return proposal(
+          noteId,
+          title,
+          [{ op: 'replace_block', blockId, nodes: [{ type: 'embed', attrs: { id: 'mm', kind: 'mindmap' } }] }],
+          {
+            embeds: { mm: { kind: 'mindmap', data } },
+            segs
+          }
+        )
+      }
+    }),
+    note_delete_block: tool({
+      description: zh
+        ? '删除笔记中的一个段落（提案）。用于把多段合并为一段后删除多余的段落。'
+        : 'Delete one block (proposal), e.g. after merging blocks.',
+      inputSchema: z.object({ noteId: z.string().max(64), blockId: z.string().max(64), title: z.string().min(1).max(100) }),
+      execute: async ({ noteId, blockId, title }) => {
+        mustNote(noteId, zh)
+        return proposal(noteId, title, [{ op: 'delete_block', blockId }])
+      }
+    }),
     note_add_mindmap: tool({
       description: zh
         ? '在笔记中插入一行思维导图（提案）。tree 为嵌套结构 {text, segmentId?, children?}。'
@@ -320,16 +369,7 @@ export function buildTools(s: AgentSession): ToolSet {
       }),
       execute: async ({ noteId, cue, afterRowId, tree }) => {
         mustNote(noteId, zh)
-        const segs: string[] = []
-        const conv = (n: NestedNode & { segmentId?: string; children?: (NestedNode & { segmentId?: string })[] }): NestedNode => {
-          if (n.segmentId) segs.push(n.segmentId)
-          return {
-            text: n.text,
-            ...(n.segmentId ? { anchor: { type: 'segment' as const, id: n.segmentId } } : {}),
-            ...(n.children?.length ? { children: n.children.map(conv) } : {})
-          }
-        }
-        const data = fromNested(conv(tree), () => newId().slice(-12))
+        const { data, segs } = buildMindmap(tree)
         const count = Object.keys(data.nodes).length
         if (count < 3) throw new Error(zh ? '导图太简单（少于 3 个节点）' : 'Mind map too small')
         const embedKey = 'mm'
@@ -416,6 +456,8 @@ export function stepLabel(name: string, input: unknown, zh: boolean): Pick<Agent
     note_set_cues: ['提案：生成线索问题', 'Proposal: cue questions'],
     note_set_summary: ['提案：补充总结', 'Proposal: summary'],
     note_replace_block: [`提案：${q('title')}`, `Proposal: ${q('title')}`],
+    note_delete_block: [`提案：${q('title')}`, `Proposal: ${q('title')}`],
+    note_update_mindmap: [`提案：${q('title')}`, `Proposal: ${q('title')}`],
     note_add_mindmap: ['提案：思维导图', 'Proposal: mind map'],
     memory_remember: [`记住：${q('content')}`, `Remembering: ${q('content')}`],
     memory_search: [`回忆：${q('query')}`, `Recalling: ${q('query')}`]

@@ -1,6 +1,6 @@
 ---
 name: mindmap
-description: 根据资料章节、笔记或对话内容生成思维导图，插入到笔记中。用户要求“画思维导图 / 做个导图 / 梳理结构”时使用。
+description: 根据资料章节、笔记或对话内容生成思维导图并插入笔记，或按用户要求修改笔记中已有的导图。用户要求“画思维导图 / 做个导图 / 梳理结构 / 改一下这张导图”时使用。
 metadata:
   title: 思维导图
   surfaces: workspace,chat
@@ -27,6 +27,15 @@ metadata:
    - `cue` 写一个问题，概括这张图回答了什么（如“学习科学有哪些关键方法？”）；
    - `tree` 为嵌套结构：`{ "text": "根", "children": [{ "text": "分支", "segmentId": "…", "children": [...] }] }`。
 5. 回复用户一句话：导图已作为提案插入，请在笔记中确认。
+
+## 修改已有导图
+
+上下文中「用户指向的段落」是一张导图时（带 `[mindmap]` 大纲和段落 ID）：
+
+1. 只按用户的要求改，其余分支、节点文字和 `{segmentId: …}` 原样保留（提交时写到节点的 `segmentId` 字段）。
+2. 新增的节点来自资料时，用 `source_read` 或 `knowledge_search` 找到原文片段，并填上 `segmentId`。
+3. 用 `note_update_mindmap` 提交**完整的**新树（blockId = 导图的段落 ID，title 一句话说明改了什么）。
+4. 回复 1～2 句话说明改动。
 
 ## 自检（提交前）
 

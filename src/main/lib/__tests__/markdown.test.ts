@@ -36,3 +36,14 @@ describe('markdownToNodes', () => {
     expect(nodes).toHaveLength(2)
   })
 })
+
+describe('nodesToMarkdown', () => {
+  it('round-trips common blocks', async () => {
+    const { nodesToMarkdown } = await import('../markdown')
+    expect(nodesToMarkdown(markdownToNodes('甲段\n\n乙段'))).toBe('甲段\n\n乙段')
+    const md = '### 标题\n\n一段 **加粗** 和 [链接](https://a.b)\n\n- 甲\n- 乙\n\n1. 一\n2. 二\n\n> 引用'
+    const back = nodesToMarkdown(markdownToNodes(md))
+    expect(back).toBe('### 标题\n\n一段 **加粗** 和 [链接](https://a.b)\n\n- 甲\n- 乙\n\n1. 一\n2. 二\n\n> 引用')
+    expect(markdownToNodes(back).map((n) => n.type)).toEqual(['heading', 'paragraph', 'bulletList', 'orderedList', 'blockquote'])
+  })
+})
