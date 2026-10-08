@@ -12,6 +12,7 @@ import type {
   HeatmapDay,
   ImportResult,
   Job,
+  Memory,
   Note,
   NoteSummary,
   Profile,
@@ -23,9 +24,11 @@ import type {
   SearchHit,
   Segment,
   Settings,
+  SkillInfo,
   Source,
   Tag,
   TrashItem,
+  UserProfile,
   Vault
 } from './types'
 
@@ -238,6 +241,29 @@ export const capabilities = {
       ]
     }),
     remove: cap<void>()({ description: '删除对话', params: [id()] })
+  },
+  memory: {
+    list: cap<Memory[]>()({ description: '列出记忆', params: [['query', S.MemoryQuerySchema]] }),
+    save: cap<Memory>()({ description: '新增或修改记忆（用户操作）', params: [['input', S.MemoryInputSchema]] }),
+    remove: cap<void>()({ description: '删除记忆', params: [id()] }),
+    confirm: cap<Memory | null>()({ description: '确认待确认的记忆', params: [id()] }),
+    profile: cap<UserProfile>()({ description: '读取个人档案', params: none }),
+    setProfile: cap<UserProfile>()({ description: '修改个人档案', params: [['patch', S.UserProfileSchema]] })
+  },
+  skills: {
+    list: cap<SkillInfo[]>()({ description: '列出技能', params: none }),
+    read: cap<string>()({ description: '读取技能正文（SKILL.md）', params: [['name', z.string().max(64)]] }),
+    setEnabled: cap<SkillInfo[]>()({
+      description: '启用或停用技能',
+      params: [
+        ['name', z.string().max(64)],
+        ['enabled', z.boolean()]
+      ]
+    }),
+    import: cap<SkillInfo | null>()({ description: '导入技能（选择包含 SKILL.md 的文件夹）', params: none }),
+    importPath: cap<SkillInfo>()({ description: '从路径导入技能', params: [['path', z.string().min(1).max(4096)]] }),
+    openDir: cap<void>()({ description: '打开用户技能文件夹', params: none }),
+    reload: cap<SkillInfo[]>()({ description: '重新扫描技能', params: none })
   },
   embedding: {
     status: cap<EmbeddingStatus>()({ description: '向量模型与索引状态', params: none }),

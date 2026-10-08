@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { ContextPacketSchema } from './context'
 
 // 所有跨进程输入的 zod 模式。类型由模式推导，保证“声明一次、处处一致”。
 
@@ -160,17 +161,6 @@ export const ChatScopeSchema = z.discriminatedUnion('type', [
 ])
 export type ChatScope = z.infer<typeof ChatScopeSchema>
 
-export const WorkspaceContextSchema = z.object({
-  noteId: Id.nullable(),
-  cursorBlockId: Id.nullable(),
-  cursorRowId: Id.nullable(),
-  noteSelection: z.string().max(8000).nullable(),
-  sourceId: Id.nullable(),
-  sourceLocator: z.string().max(200).nullable(),
-  sourceSelection: z.string().max(8000).nullable(),
-  sourceSegmentId: Id.nullable()
-})
-
 export const ChatSendSchema = z.object({
   conversationId: Id.nullable(),
   text: z.string().min(1).max(20000),
@@ -178,7 +168,11 @@ export const ChatSendSchema = z.object({
   model: z.string().min(1).max(200),
   effort: EffortSchema,
   scope: ChatScopeSchema,
-  context: WorkspaceContextSchema.optional()
+  context: ContextPacketSchema.optional(),
+  /** 由快捷操作直接指定的技能（省去路由） */
+  skill: z.string().max(64).optional(),
+  /** 无痕：不读取、不形成记忆（仅新建对话时生效） */
+  incognito: z.boolean().optional()
 })
 export type ChatSend = z.infer<typeof ChatSendSchema>
 
@@ -189,6 +183,39 @@ export const AiSettingsSchema = z.object({
     mode: z.enum(['local', 'cloud']),
     providerId: Id.nullable(),
     model: z.string().max(200).nullable()
-  })
+  }),
+  /** 停用的技能名称 */
+  disabledSkills: z.array(z.string().max(64)).max(200).optional()
 })
 export type AiSettings = z.infer<typeof AiSettingsSchema>
+
+/* ——— 记忆 ——— */
+
+export const MemoryKindSchema = z.enum(['profile', 'preference', 'fact', 'glossary', 'skill', 'episode', 'concept'])
+
+export const MemoryInputSchema = z.object({
+  id: Id.optional(),
+  kind: MemoryKindSchema,
+  key: z.string().max(64).optional(),
+  skill: z.string().max(64).optional(),
+  content: z.string().min(1).max(2000),
+  sensitive: z.boolean().optional(),
+  pinned: z.boolean().optional(),
+  status: z.enum(['active', 'pending', 'archived']).optional()
+})
+export type MemoryInput = z.infer<typeof MemoryInputSchema>
+
+export const MemoryQuerySchema = z.object({
+  kind: MemoryKindSchema.optional(),
+  status: z.enum(['active', 'pending', 'archived']).optional(),
+  search: z.string().max(200).optional()
+})
+export type MemoryQuery = z.infer<typeof MemoryQuerySchema>
+
+export const UserProfileSchema = z.object({
+  role: z.string().max(500).optional(),
+  goals: z.string().max(1000).optional(),
+  background: z.string().max(1000).optional(),
+  style: z.string().max(1000).optional(),
+  avoid: z.string().max(1000).optional()
+})

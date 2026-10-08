@@ -43,6 +43,13 @@
       "when": 1791452530523,
       "tag": "0005_vectors",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1791465656041,
+      "tag": "0006_agent",
+      "breakpoints": true
     }
   ]
 }

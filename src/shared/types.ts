@@ -314,8 +314,23 @@ export interface Conversation {
   title: string
   scope: ChatScope
   pinned: boolean
+  /** 无痕：不使用、不形成记忆 */
+  incognito: boolean
   createdAt: number
   updatedAt: number
+}
+
+/** AI 执行过程中的一步（调用工具、加载技能） */
+export interface AgentStep {
+  id: string
+  tool: string
+  /** 给用户看的简短说明，如“检索知识库：遗忘曲线” */
+  label: string
+  status: 'running' | 'done' | 'error'
+  /** 结果摘要或错误 */
+  detail?: string
+  /** 可跳转的目标（如生成的提案所在笔记） */
+  link?: { type: 'note' | 'source'; id: string }
 }
 
 /** 回答引用的知识库片段 */
@@ -350,7 +365,55 @@ export interface ChatMessage {
   usage: (Usage & { cost: number | null; durationMs: number }) | null
   status: 'streaming' | 'done' | 'error' | 'stopped'
   error: string | null
+  /** 本次回答使用的技能 */
+  skill: string | null
+  steps: AgentStep[]
   createdAt: number
+}
+
+/* ——— 记忆 ——— */
+
+/**
+ * profile：用户预设的个人档案（按 key）；preference：偏好；fact：关于用户的事实；
+ * glossary：术语 / 简称；skill：某个技能的输出偏好；episode：学习经历；concept：概念掌握情况
+ */
+export type MemoryKind = 'profile' | 'preference' | 'fact' | 'glossary' | 'skill' | 'episode' | 'concept'
+export const PROFILE_KEYS = ['role', 'goals', 'background', 'style', 'avoid'] as const
+export type ProfileKey = (typeof PROFILE_KEYS)[number]
+export type UserProfile = Partial<Record<ProfileKey, string>>
+
+export interface Memory {
+  id: string
+  kind: MemoryKind
+  key: string | null
+  skill: string | null
+  content: string
+  sensitive: boolean
+  /** pending：等待用户确认（敏感内容） */
+  status: 'active' | 'pending' | 'archived'
+  pinned: boolean
+  origin: 'user' | 'ai'
+  evidence: { conversationId?: string; messageId?: string; quote?: string } | null
+  createdAt: number
+  updatedAt: number
+  lastUsedAt: number | null
+  useCount: number
+}
+
+/** 技能（Agent Skills 标准 SKILL.md） */
+export interface SkillInfo {
+  name: string
+  description: string
+  /** 中文显示名（metadata.title） */
+  title: string
+  source: 'builtin' | 'user'
+  enabled: boolean
+  /** 最低模型能力：basic 任何模型；strong 仅强模型 */
+  minModel: 'basic' | 'strong'
+  /** 适用位置：chat / workspace / selection 等 */
+  surfaces: string[]
+  path: string
+  license: string | null
 }
 
 export interface EmbeddingStatus {
@@ -398,8 +461,12 @@ export interface JiweiEvents {
   'chat:delta': { messageId: string; conversationId: string; text?: string; reasoning?: string }
   /** AI 回答完成 / 出错 / 停止（携带完整消息） */
   'chat:done': { message: ChatMessage }
+  /** AI 执行步骤更新 */
+  'chat:step': { messageId: string; conversationId: string; step: AgentStep }
   /** 向量模型与索引状态 */
   'embedding:status': EmbeddingStatus
+  /** 记忆变化；added 为 AI 新记住的内容（界面提示，可撤销 / 确认） */
+  'memory:changed': { added?: Memory }
   /** 深层链接：jiwei://note/<id> 或 jiwei://source/<id> */
   'nav:open': { type: 'note' | 'source'; id: string }
 }

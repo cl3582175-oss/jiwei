@@ -1,17 +1,21 @@
-import { streamText, type ModelMessage } from 'ai'
+import { stepCountIs, streamText, type ModelMessage } from 'ai'
 import { and, asc, desc, eq, isNull } from 'drizzle-orm'
 import log from 'electron-log/main'
 import { getDb } from '../../db'
-import { conversations, messages, notes, sources } from '../../db/schema'
+import { conversations, messages } from '../../db/schema'
 import { newId } from '../../lib/ids'
 import { deviceId } from '../device'
 import { emit } from '../../events'
 import { getSettings } from '../settings'
 import { estimateCost, type Effort, type Usage } from '@shared/ai'
 import type { ChatScope, ChatSend } from '@shared/schemas'
-import type { ChatMessage, Citation, Conversation, SearchHit } from '@shared/types'
+import type { AgentStep, ChatMessage, Citation, Conversation } from '@shared/types'
 import { buildModel } from './model'
 import { retrieve } from './retrieve'
+import { resolveContext } from './context'
+import { buildTools, numberHits, stepLabel, type AgentSession } from './tools'
+import { loadSkill, skillCatalog } from './skills'
+import { userCard } from '../memory'
 
 // AI 对话：检索知识库 → 组织带时间与状态的上下文 → 流式生成 → 记录引用与用量。
 
@@ -19,6 +23,8 @@ type MsgRow = typeof messages.$inferSelect
 type ConvRow = typeof conversations.$inferSelect
 
 const HISTORY_TURNS = 10
+/** 一次回答最多的工具调用轮数 */
+const MAX_STEPS = 10
 const running = new Map<string, AbortController>()
 
 const toConversation = (r: ConvRow): Conversation => ({
@@ -26,6 +32,7 @@ const toConversation = (r: ConvRow): Conversation => ({
   title: r.title,
   scope: JSON.parse(r.scope) as ChatScope,
   pinned: r.pinned,
+  incognito: r.incognito,
   createdAt: r.createdAt,
   updatedAt: r.updatedAt
 })
@@ -43,6 +50,8 @@ const toMessage = (r: MsgRow): ChatMessage => ({
   usage: r.usage ? (JSON.parse(r.usage) as ChatMessage['usage']) : null,
   status: r.status,
   error: r.error,
+  skill: r.skill,
+  steps: r.steps ? (JSON.parse(r.steps) as AgentStep[]) : [],
   createdAt: r.createdAt
 })
 
@@ -93,71 +102,57 @@ export function deleteConversation(id: string): void {
 }
 
 const fmtDate = (ts: number | null): string => (ts ? new Date(ts).toISOString().slice(0, 10) : '未知')
-const STATUS_ZH: Record<string, string> = { active: '有效', outdated: '已过时', disputed: '存疑' }
-const ORIGIN_ZH: Record<string, string> = { user: '用户亲手写', ai: 'AI 生成未审阅', ai_reviewed: 'AI 生成经用户审阅' }
 
-function describeHit(h: SearchHit, n: number): string {
-  if (h.parentType === 'note') {
-    const meta = [
-      `学习于 ${fmtDate(h.learnedAt)}`,
-      `本段修改于 ${fmtDate(h.updatedAt)}`,
-      `状态：${STATUS_ZH[h.status ?? 'active']}`,
-      ORIGIN_ZH[h.origin ?? 'user']
-    ]
-    return `[${n}] 笔记《${h.title || '无标题'}》（${meta.join(' · ')}）\n${h.text}`
-  }
-  const meta = [`获取于 ${fmtDate(h.updatedAt)}`, ...(h.locator ? [`位置：${h.locator}`] : [])]
-  return `[${n}] 资料《${h.title}》（${meta.join(' · ')}）\n${h.text}`
-}
-
-function systemPrompt(lang: string, hits: SearchHit[], ctx: string | null): string {
-  const zh = lang.startsWith('zh')
+/**
+ * 系统提示：只放稳定内容（规则 + 技能目录 + 用户卡片 + 日期），每轮字节相同，便于命中前缀缓存。
+ * 每轮变化的上下文、检索片段放在最后一条用户消息里。
+ */
+function systemPrompt(zh: boolean, model: string, incognito: boolean): string {
   const rules = zh
-    ? `你是「积微」的学习助手，帮助用户理解、整理和内化自己学到的知识。
+    ? `你是「积微」的学习助手，帮助用户理解、整理和内化自己学到的知识。用户的知识库 = 用户写的笔记 + 用户上传的原始资料。
 规则：
-1. 优先依据下面的「知识库片段」回答。用到某个片段时，在相应句子末尾标注编号，如 [1] 或 [2][3]。只能使用列出的编号。
-2. 片段带有时间与状态：同一主题的新旧说法不一致时，以较新的为准，并明确指出“你在某日记录为……，某日更新为……”。“已过时”的内容只作为历史参考；“存疑”的内容需提醒用户核实。
-3. 用户亲手写的内容最能代表用户自己的理解；AI 生成未审阅的内容可信度较低。
-4. 知识库中没有的内容可以用你的通用知识补充，但这部分不要标注编号；若整段都来自通用知识，请在段首注明“（以下来自通用知识）”。
-5. 知识库中找不到相关内容时，直接说明，并给出你的通用回答。
-6. 使用简洁的中文 Markdown。`
-    : `You are Jiwei's learning assistant, helping the user understand, organize and internalize what they have learned.
+1. 优先依据「知识库片段」回答。用到某个片段时，在句末标注编号，如 [1] 或 [2][3]。只能使用已出现的编号（包括工具返回的编号）。
+2. 片段带有时间与状态：新旧说法不一致时以较新的为准，并明确指出变化；“已过时”只作历史参考；“存疑”需提醒核实。用户亲手写的内容最能代表用户自己的理解。
+3. 知识库中没有的内容可以用通用知识补充，但不要标注编号；整段来自通用知识时，在段首注明“（以下来自通用知识）”。
+4. 「上下文」是用户此刻指着的内容（选中的文字、所在段落、视频时间段等）。用户说“这个 / 这里 / 刚才 / 这段”时，指的就是它。
+5. 需要时使用工具：片段不够就 knowledge_search；修改笔记只能通过 note_* 工具提交提案（用户确认后才生效），不要声称已经改好了。
+6. 任务与某个技能相符时，先 skills_load 再照做。
+7. 用户明确要求记住，或表达了稳定的偏好、目标、背景时，用 memory_remember 记下；不要记一次性的请求。
+8. 使用简洁的 Markdown。始终用简体中文回答（工具结果或资料是其他语言时也一样），除非用户明确用其他语言提问。`
+    : `You are Jiwei's learning assistant. The knowledge base = the user's notes + the source materials they uploaded.
 Rules:
-1. Prefer the "knowledge base excerpts" below. When you use one, cite it at the end of the sentence like [1] or [2][3]. Only use the listed numbers.
-2. Excerpts carry dates and status. When old and new statements on the same topic conflict, prefer the newer one and say so explicitly ("you noted X on …, updated to Y on …"). Treat "outdated" as historical only; ask the user to verify "disputed" items.
-3. Content the user wrote themselves best reflects their own understanding; unreviewed AI-generated content is less reliable.
-4. You may add general knowledge not in the knowledge base, but do not cite it; if a whole paragraph comes from general knowledge, start it with "(From general knowledge)".
-5. If nothing relevant is in the knowledge base, say so and give your general answer.
-6. Use concise Markdown.`
-  const kb = hits.length
-    ? `${zh ? '知识库片段' : 'Knowledge base excerpts'}：\n\n${hits.map((h, i) => describeHit(h, i + 1)).join('\n\n')}`
-    : zh
-      ? '知识库片段：（本次没有检索到相关内容）'
-      : 'Knowledge base excerpts: (none found)'
-  return [rules, ctx, kb, `${zh ? '今天是' : 'Today is'} ${fmtDate(Date.now())}。`].filter(Boolean).join('\n\n')
+1. Prefer the "knowledge base excerpts". Cite used excerpts at sentence end like [1] or [2][3]; only use numbers that appeared (including tool results).
+2. Excerpts carry dates and status: prefer newer statements and point out changes; "outdated" is historical; ask to verify "disputed". User-written content best reflects their own understanding.
+3. General knowledge may supplement but is not cited; prefix whole general-knowledge paragraphs with "(From general knowledge)".
+4. "Context" is what the user is pointing at now (selection, paragraph, media time range). "this / here / just now" refers to it.
+5. Use tools when needed: knowledge_search for more excerpts; change notes only via note_* proposal tools (applied after the user confirms) — never claim edits are done.
+6. When a task matches a skill, call skills_load first and follow it.
+7. Use memory_remember when the user explicitly asks to remember, or states stable preferences, goals or background; not for one-off requests.
+8. Use concise Markdown. Always answer in English (even if tools or sources are in another language) unless the user writes in another language.`
+  const card = incognito ? null : userCard(zh)
+  return [
+    rules,
+    skillCatalog(model, zh),
+    card
+      ? `${zh ? '用户卡片（关于这位用户，回答时自然地参考，不要复述）' : 'About the user (use naturally, do not recite)'}：\n${card}`
+      : null,
+    `${zh ? '今天是' : 'Today is'} ${fmtDate(Date.now())}。`
+  ]
+    .filter(Boolean)
+    .join('\n\n')
 }
 
-/** 用户正在看的内容（工作区上下文）→ 提示词片段 */
-function contextPrompt(input: ChatSend, zh: boolean): string | null {
-  const c = input.context
-  if (!c) return null
-  const db = getDb()
+/** 本轮用户消息：上下文 + 检索片段 + 预加载的技能 + 问题 */
+function turnMessage(zh: boolean, text: string, ctx: string, kb: string | null, skill: string | null): string {
   const parts: string[] = []
-  if (c.noteId) {
-    const n = db.select({ title: notes.title, aiExcluded: notes.aiExcluded }).from(notes).where(eq(notes.id, c.noteId)).get()
-    if (n && !n.aiExcluded) {
-      parts.push(`${zh ? '用户正在编辑笔记' : 'Current note'}《${n.title || (zh ? '无标题' : 'Untitled')}》`)
-      if (c.noteSelection) parts.push(`${zh ? '笔记中选中的文字' : 'Selected in note'}：\n${c.noteSelection}`)
-    }
-  }
-  if (c.sourceId) {
-    const s = db.select({ title: sources.title, aiExcluded: sources.aiExcluded }).from(sources).where(eq(sources.id, c.sourceId)).get()
-    if (s && !s.aiExcluded) {
-      parts.push(`${zh ? '用户正在阅读资料' : 'Current source'}《${s.title}》${c.sourceLocator ? `（${c.sourceLocator}）` : ''}`)
-      if (c.sourceSelection) parts.push(`${zh ? '资料中选中的文字' : 'Selected in source'}：\n${c.sourceSelection}`)
-    }
-  }
-  return parts.length ? `${zh ? '当前工作区' : 'Workspace'}：\n${parts.join('\n')}` : null
+  if (ctx) parts.push(`<${zh ? '上下文' : 'context'}>\n${ctx}\n</${zh ? '上下文' : 'context'}>`)
+  if (kb !== null)
+    parts.push(
+      `<${zh ? '知识库片段' : 'excerpts'}>\n${kb || (zh ? '（没有检索到相关内容）' : '(none found)')}\n</${zh ? '知识库片段' : 'excerpts'}>`
+    )
+  if (skill) parts.push(`<${zh ? '技能' : 'skill'}>\n${skill}\n</${zh ? '技能' : 'skill'}>`)
+  parts.push(parts.length ? `${zh ? '用户' : 'User'}：${text}` : text)
+  return parts.join('\n\n')
 }
 
 export interface SendResult {
@@ -177,6 +172,7 @@ export function send(input: ChatSend): SendResult {
         id: convId,
         title: input.text.replace(/\s+/g, ' ').slice(0, 40),
         scope: JSON.stringify(input.scope),
+        incognito: !!input.incognito,
         createdAt: now,
         updatedAt: now,
         updatedBy: deviceId()
@@ -196,6 +192,8 @@ export function send(input: ChatSend): SendResult {
     reasoning: null,
     citations: null,
     context: input.context ? JSON.stringify(input.context) : null,
+    skill: input.skill ?? null,
+    steps: null,
     providerId: null,
     model: null,
     effort: null,
@@ -237,12 +235,25 @@ async function generate(conversationId: string, messageId: string, input: ChatSe
   let content = ''
   let reasoning = ''
   let citations: Citation[] = []
+  const steps: AgentStep[] = []
+  const conv = db.select().from(conversations).where(eq(conversations.id, conversationId)).get()!
+  const zh = getSettings().language.startsWith('zh')
+  const session: AgentSession = {
+    zh,
+    model: input.model,
+    scope: input.scope,
+    incognito: conv.incognito,
+    conversationId,
+    messageId,
+    hits: [],
+    skills: input.skill ? [input.skill] : []
+  }
   let lastFlush = 0
   const flush = (force = false): void => {
     if (!force && Date.now() - lastFlush < 400) return
     lastFlush = Date.now()
     db.update(messages)
-      .set({ content, reasoning: reasoning || null, updatedAt: Date.now() })
+      .set({ content, reasoning: reasoning || null, steps: steps.length ? JSON.stringify(steps) : null, updatedAt: Date.now() })
       .where(eq(messages.id, messageId))
       .run()
   }
@@ -252,6 +263,8 @@ async function generate(conversationId: string, messageId: string, input: ChatSe
         content,
         reasoning: reasoning || null,
         citations: JSON.stringify(citations),
+        skill: session.skills[0] ?? null,
+        steps: steps.length ? JSON.stringify(steps) : null,
         usage: usage ? JSON.stringify(usage) : null,
         status,
         error,
@@ -263,13 +276,23 @@ async function generate(conversationId: string, messageId: string, input: ChatSe
     running.delete(messageId)
     emit('chat:done', { message: toMessage(db.select().from(messages).where(eq(messages.id, messageId)).get()!) })
   }
+  const pushStep = (step: AgentStep): void => {
+    const i = steps.findIndex((x) => x.id === step.id)
+    if (i >= 0) steps[i] = step
+    else steps.push(step)
+    emit('chat:step', { messageId, conversationId, step })
+    flush(true)
+  }
 
   try {
-    const lang = getSettings().language
-    const zh = lang.startsWith('zh')
-    // 检索：用问题本身 + 工作区选中文字
-    const query = [input.text, input.context?.sourceSelection, input.context?.noteSelection].filter(Boolean).join('\n').slice(0, 2000)
-    const hits = await retrieve(query, input.scope, 8)
+    const ctx = resolveContext(input.context, zh)
+    // 检索：问题本身 + 用户指着的文字
+    const query = [input.text, ctx.query].filter(Boolean).join('\n').slice(0, 2000)
+    const hits = input.scope.type === 'none' ? [] : await retrieve(query, input.scope, 8)
+    const kb = input.scope.type === 'none' ? null : numberHits(session, hits)
+    const skillBody = input.skill ? loadSkill(input.skill, zh) : null
+
+    // 历史只带原话（不重复带旧的上下文与片段，省 token）
     const history = db
       .select()
       .from(messages)
@@ -280,31 +303,67 @@ async function generate(conversationId: string, messageId: string, input: ChatSe
       .reverse()
       .filter((m) => m.id !== messageId && (m.role === 'user' || m.status === 'done') && m.content)
     const msgs: ModelMessage[] = history.map((m) => ({ role: m.role, content: m.content }))
+    // 最后一条（本轮）用户消息附上上下文、片段与技能
+    const last = msgs.at(-1)
+    if (last?.role === 'user') last.content = turnMessage(zh, input.text, ctx.text, kb, skillBody)
 
     const built = buildModel({ providerId: input.providerId, model: input.model, effort: input.effort })
-    const result = streamText({
-      model: built.model,
-      system: systemPrompt(lang, hits, contextPrompt(input, zh)),
-      messages: msgs,
-      providerOptions: built.providerOptions as never,
-      maxOutputTokens: built.maxOutputTokens,
-      abortSignal: ctrl.signal
-    })
-    for await (const part of result.fullStream) {
-      if (part.type === 'text-delta') {
-        content += part.text
-        emit('chat:delta', { messageId, conversationId, text: part.text })
-      } else if (part.type === 'reasoning-delta') {
-        reasoning += part.text
-        emit('chat:delta', { messageId, conversationId, reasoning: part.text })
-      } else if (part.type === 'error') {
-        throw part.error
+    const run = (withTools: boolean) =>
+      streamText({
+        model: built.model,
+        system: systemPrompt(zh, input.model, session.incognito),
+        messages: msgs,
+        ...(withTools ? { tools: buildTools(session), stopWhen: stepCountIs(MAX_STEPS) } : {}),
+        providerOptions: built.providerOptions as never,
+        maxOutputTokens: built.maxOutputTokens,
+        abortSignal: ctrl.signal
+      })
+    let result = run(true)
+    let retried = false
+    const usage: Usage = { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, cachedInputTokens: 0 }
+    for (;;) {
+      try {
+        for await (const part of result.fullStream) {
+          if (part.type === 'text-delta') {
+            content += part.text
+            emit('chat:delta', { messageId, conversationId, text: part.text })
+          } else if (part.type === 'reasoning-delta') {
+            reasoning += part.text
+            emit('chat:delta', { messageId, conversationId, reasoning: part.text })
+          } else if (part.type === 'tool-call') {
+            pushStep({ id: part.toolCallId, tool: part.toolName, status: 'running', ...stepLabel(part.toolName, part.input, zh) })
+          } else if (part.type === 'tool-result') {
+            const prev = steps.find((x) => x.id === part.toolCallId)
+            if (prev) pushStep({ ...prev, status: 'done' })
+          } else if (part.type === 'tool-error') {
+            const prev = steps.find((x) => x.id === part.toolCallId)
+            const err = part.error instanceof Error ? part.error.message : String(part.error)
+            if (prev) pushStep({ ...prev, status: 'error', detail: err.slice(0, 300) })
+          } else if (part.type === 'finish-step') {
+            // 多步之间补一个段落分隔，避免两步的文字粘在一起
+            if (content && !content.endsWith('\n')) content += '\n\n'
+          } else if (part.type === 'error') {
+            throw part.error
+          }
+          flush()
+        }
+        break
+      } catch (e) {
+        // 少数模型 / 接口不支持工具调用：去掉工具重试一次
+        const msg = e instanceof Error ? e.message : String(e)
+        if (!retried && !content && !ctrl.signal.aborted && /tool|function/i.test(msg)) {
+          log.warn('[chat] tools unsupported, retrying without tools:', msg)
+          retried = true
+          result = run(false)
+          continue
+        }
+        throw e
       }
-      flush()
     }
+    content = content.trimEnd()
     // 只保留回答中实际引用到的片段（保持原编号）
     const used = new Set([...content.matchAll(/\[(\d+)\]/g)].map((m) => Number(m[1])))
-    citations = hits
+    citations = session.hits
       .map((h, i) => ({
         n: i + 1,
         parentType: h.parentType,
@@ -319,13 +378,11 @@ async function generate(conversationId: string, messageId: string, input: ChatSe
         origin: h.origin
       }))
       .filter((c) => used.has(c.n))
-    const u = await result.usage
-    const usage: Usage = {
-      inputTokens: u.inputTokens ?? 0,
-      outputTokens: u.outputTokens ?? 0,
-      reasoningTokens: u.outputTokenDetails?.reasoningTokens ?? 0,
-      cachedInputTokens: u.inputTokenDetails?.cacheReadTokens ?? 0
-    }
+    const u = await result.totalUsage
+    usage.inputTokens = u.inputTokens ?? 0
+    usage.outputTokens = u.outputTokens ?? 0
+    usage.reasoningTokens = u.outputTokenDetails?.reasoningTokens ?? 0
+    usage.cachedInputTokens = u.inputTokenDetails?.cacheReadTokens ?? 0
     finish('done', null, { ...usage, cost: estimateCost(input.model, usage), durationMs: Date.now() - t0 })
   } catch (e) {
     if (ctrl.signal.aborted) return finish('stopped', null, null)

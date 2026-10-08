@@ -167,6 +167,24 @@ export function estimateCost(model: string, u: Usage): number | null {
 /* ——— 向量模型 ——— */
 
 /** 内置向量模型：EmbeddingGemma 2（llama.cpp 本地运行），MRL 截断为 512 维 */
+/**
+ * 模型能力分级：决定可用的技能（如自由 HTML 交互只对强模型开放）。
+ * 按名称识别常见旗舰模型；无法识别的视为 basic（宁可降级为模板，也不产出低质量结果）。
+ */
+const STRONG_MODELS = [
+  /deepseek-v4-pro/i,
+  /deepseek-reasoner/i,
+  /claude-(opus|sonnet)/i,
+  /gpt-5(?!.*(nano|mini))/i,
+  /gemini-[\d.]+-pro/i,
+  /qwen[\d.]*-max/i,
+  /kimi-k2/i,
+  /glm-[45]/i
+]
+export function modelTier(model: string): 'basic' | 'strong' {
+  return STRONG_MODELS.some((r) => r.test(model)) ? 'strong' : 'basic'
+}
+
 export const LOCAL_EMBEDDING = {
   id: 'local:embeddinggemma-2',
   name: 'EmbeddingGemma 2（本地）',

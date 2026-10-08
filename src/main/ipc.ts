@@ -23,6 +23,8 @@ import * as chat from './services/ai/chat'
 import * as embedding from './services/ai/embedding'
 import { clearIndex, indexStats, requestIndex } from './services/ai/indexer'
 import { retrieve } from './services/ai/retrieve'
+import * as memory from './services/memory'
+import * as skills from './services/ai/skills'
 
 /** 会影响知识库内容（或隐私范围）的操作完成后，更新索引 */
 const reindexAfter = <T>(v: T): T => {
@@ -155,6 +157,26 @@ const handlers: Handlers = {
     stop: (_, id) => chat.stop(id),
     update: (_, id, patch) => chat.updateConversation(id, patch),
     remove: (_, id) => chat.deleteConversation(id)
+  },
+  memory: {
+    list: (_, q) => memory.listMemories(q),
+    save: (_, input) => memory.saveMemory(input, 'user'),
+    remove: (_, id) => memory.removeMemory(id),
+    confirm: (_, id) => memory.confirmMemory(id),
+    profile: () => memory.getUserProfile(),
+    setProfile: (_, patch) => memory.setUserProfile(patch)
+  },
+  skills: {
+    list: () => skills.listSkills(),
+    read: (_, name) => skills.readSkillFile(name, 'SKILL.md'),
+    setEnabled: (_, name, enabled) => skills.setSkillEnabled(name, enabled),
+    import: ({ win }) => skills.importSkill(win),
+    importPath: (_, path) => skills.importSkillFrom(path),
+    openDir: () => skills.openUserSkillsDir(),
+    reload: () => {
+      skills.reloadSkills()
+      return skills.listSkills()
+    }
   },
   embedding: {
     status: async () => {

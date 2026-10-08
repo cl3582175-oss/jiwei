@@ -1,8 +1,22 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Streamdown } from 'streamdown'
-import { Brain, ChevronRight, NotebookText, FileText, CircleAlert, Archive, Sparkles, Copy, Check } from 'lucide-react'
-import type { ChatMessage, Citation } from '@shared/types'
+import {
+  Brain,
+  ChevronRight,
+  NotebookText,
+  FileText,
+  CircleAlert,
+  Archive,
+  Sparkles,
+  Copy,
+  Check,
+  LoaderCircle,
+  CircleX,
+  ListChecks,
+  ArrowUpRight
+} from 'lucide-react'
+import type { AgentStep, ChatMessage, Citation } from '@shared/types'
 import { cn, formatDate } from '@/lib/utils'
 import { useApp } from '@/store/app'
 import { Tip } from '@/components/ui/primitives'
@@ -44,6 +58,77 @@ function Reasoning({ text, streaming, seconds }: { text: string; streaming: bool
         <ChevronRight className={cn('size-3 transition-transform', open && 'rotate-90')} />
       </button>
       {open && <div className="mt-2 border-l-2 border-border pl-3 text-xs leading-relaxed whitespace-pre-wrap text-muted">{text}</div>}
+    </div>
+  )
+}
+
+/** 提案类步骤：需要用户到笔记里确认，始终显示 */
+const isProposal = (s: AgentStep): boolean => s.tool.startsWith('note_') && !['note_read', 'note_find'].includes(s.tool)
+
+function StepRow({ s }: { s: AgentStep }) {
+  const { t } = useTranslation()
+  const open = (): void => {
+    if (!s.link) return
+    if (s.link.type === 'note') useApp.getState().openNote(s.link.id)
+    else useApp.getState().openSource(s.link.id)
+  }
+  return (
+    <li className="flex items-start gap-2 text-xs">
+      {s.status === 'running' ? (
+        <LoaderCircle className="mt-px size-3.5 shrink-0 animate-spin text-accent" />
+      ) : s.status === 'error' ? (
+        <CircleX className="mt-px size-3.5 shrink-0 text-danger" />
+      ) : (
+        <Check className="mt-px size-3.5 shrink-0 text-accent" />
+      )}
+      <span className="min-w-0 flex-1">
+        <span className={cn('text-muted', s.status === 'error' && 'text-danger')}>{s.label}</span>
+        {s.detail && <span className="block text-2xs break-all text-subtle">{s.detail}</span>}
+      </span>
+      {s.link && isProposal(s) && s.status === 'done' && (
+        <button onClick={open} className="inline-flex shrink-0 items-center gap-0.5 text-2xs text-accent hover:underline">
+          {t('chat.reviewProposal')}
+          <ArrowUpRight className="size-3" />
+        </button>
+      )}
+    </li>
+  )
+}
+
+function Steps({ steps, streaming }: { steps: AgentStep[]; streaming: boolean }) {
+  const { t } = useTranslation()
+  const [open, setOpen] = useState(false)
+  const proposals = steps.filter(isProposal)
+  const others = steps.filter((s) => !isProposal(s))
+  const expanded = open || streaming
+  return (
+    <div className="mb-3 space-y-1.5">
+      {others.length > 0 && (
+        <div>
+          <button
+            onClick={() => setOpen(!open)}
+            className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs text-subtle transition-colors hover:bg-surface-hover hover:text-fg"
+          >
+            <ListChecks className="size-3.5" />
+            {t('chat.steps', { count: others.length })}
+            <ChevronRight className={cn('size-3 transition-transform', expanded && 'rotate-90')} />
+          </button>
+          {expanded && (
+            <ul className="mt-1.5 space-y-1 border-l-2 border-border pl-3">
+              {others.map((s) => (
+                <StepRow key={s.id} s={s} />
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+      {proposals.length > 0 && (
+        <ul className="space-y-1 rounded-lg border border-accent/25 bg-accent-soft/40 px-3 py-2">
+          {proposals.map((s) => (
+            <StepRow key={s.id} s={s} />
+          ))}
+        </ul>
+      )}
     </div>
   )
 }
@@ -129,6 +214,7 @@ export function MessageItem({ m }: { m: ChatMessage }) {
   return (
     <div className="group/msg">
       {m.reasoning && <Reasoning text={m.reasoning} streaming={streaming && !m.content} seconds={seconds} />}
+      {m.steps.length > 0 && <Steps steps={m.steps} streaming={streaming} />}
       {m.content ? (
         <div className="chat-md">
           <Streamdown
@@ -141,7 +227,7 @@ export function MessageItem({ m }: { m: ChatMessage }) {
           </Streamdown>
         </div>
       ) : (
-        streaming && !m.reasoning && <div className="h-5 w-16 animate-pulse rounded bg-sunken" />
+        streaming && !m.reasoning && !m.steps.length && <div className="h-5 w-16 animate-pulse rounded bg-sunken" />
       )}
       {m.status === 'error' && (
         <div className="mt-2 flex items-start gap-2 rounded-lg bg-danger-soft px-3 py-2 text-xs text-danger">

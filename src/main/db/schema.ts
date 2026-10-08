@@ -508,6 +508,8 @@ export const conversations = sqliteTable(
     /** 检索范围（JSON）：全部知识库 / 指定笔记与资料 / 不使用知识库 */
     scope: text('scope').notNull().default('{"type":"all"}'),
     pinned: integer('pinned', { mode: 'boolean' }).notNull().default(false),
+    /** 无痕：不使用、不形成记忆 */
+    incognito: integer('incognito', { mode: 'boolean' }).notNull().default(false),
     ...syncCols
   },
   (t) => [index('conversations_updated_idx').on(t.updatedAt)]
@@ -524,6 +526,9 @@ export const messages = sqliteTable(
     reasoning: text('reasoning'),
     /** 引用的知识库片段（JSON） */
     citations: text('citations'),
+    /** 使用的技能与执行步骤（JSON AgentStep[]） */
+    skill: text('skill'),
+    steps: text('steps'),
     /** 发送时的工作区上下文（JSON） */
     context: text('context'),
     providerId: text('provider_id'),

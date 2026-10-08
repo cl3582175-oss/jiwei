@@ -204,3 +204,28 @@ AI 不直接修改笔记，而是创建提案（`proposals` 表）。提案里�
 
 - `e2e/chat-live.spec.ts` 仅在设置 `JIWEI_IMPORT_PROVIDERS_FROM=<用户数据库>` 时运行。它把加密后的服务商配置复制到临时数据目录，测试代码不解密 Key，也不输出 Key。
 - Playwright 默认注入 `--use-mock-keychain`，会导致无法解密 Key。开发构建在设置上述变量时会移除这个开关，安装版不受影响。
+
+## 28. 智能体内核（v0.3.0）
+
+- 一个内核服务三个入口（就地卡片、工作区面板、对话页）：`services/ai/chat.ts` 负责组装提示和多步工具循环（AI SDK 的 `stopWhen`），`tools.ts` 定义精选工具，`context.ts` 解析上下文包。
+- 工具参数刻意保持简单：内容用 Markdown 或嵌套结构表示，由 `lib/markdown.ts` 和 `fromNested` 转换为合法的文档节点。写入一律调用 `createProposal`。
+- 能力注册表中带 `ai` 标记的能力保留给将来的 MCP 导出；对话使用 `tools.ts` 中的精选工具，以减少工具描述占用的 token、降低模型出错率。
+- 读取工具会跳过已删除和“不让 AI 读取”的笔记与资料。检索范围为“不使用知识库”时，不提供读取工具。
+- 提示结构：系统提示只放规则、技能目录、用户卡片和日期，内容不变时每轮字节相同，可以命中前缀缓存。上下文、检索片段和预加载的技能放在本轮用户消息里。历史消息只带原话。
+- 模型或接口不支持工具调用时，自动去掉工具重试一次。
+
+## 29. 技能
+
+- 采用 Agent Skills 开放标准。内置技能位于 `resources/skills/<name>/SKILL.md`，用户技能位于 `<userData>/skills`，同名时用户版本优先。积微扩展字段放在 `metadata` 中：`title`、`min-model`、`surfaces`。
+- 渐进加载：系统提示里只有名称和简介；`skills_load` 加载正文，并附带用户对该技能的偏好（记忆中 kind 为 skill 的条目）；快捷操作可以通过 `ChatSend.skill` 预加载，省去一次路由。
+- `modelTier()` 根据模型名判断模型能力是 basic 还是 strong。要求 strong 的技能不会出现在弱模型的技能目录中。
+- `knowledge-synthesis` 改编自 anthropics/knowledge-work-plugins（Apache-2.0），许可证随技能目录一同分发。
+
+## 30. 记忆
+
+- 记忆存储在个人数据库 `<userData>/profile/memory.db` 中，独立于知识库：切换、迁移或共享知识库都不影响记忆，记忆也不会同步给协作者。迁移由 `user_version` 管理。
+- 每条记忆包含：类别、可选的 key（个人档案）或 skill、敏感标记、状态（active / pending / archived）、钉住、来源与证据、生效与失效时间、使用次数。
+- 由 AI 写入的敏感记忆先进入 pending 状态，经用户确认后才生效。普通记忆直接生效，界面提示并可以撤销。
+- 用户卡片限制在约 600 token 以内，排序固定（钉住 → 使用次数 → 创建时间），便于命中缓存。
+- 无痕对话不提供记忆工具，也不携带用户卡片。
+

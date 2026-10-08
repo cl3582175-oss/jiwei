@@ -5,6 +5,8 @@ import {
   Settings2,
   Palette,
   Database,
+  UserRound,
+  Wand2,
   Info,
   X,
   Monitor,
@@ -22,6 +24,8 @@ import { Input, Tip } from '@/components/ui/primitives'
 import { prompt } from '@/components/ui/confirm'
 import { Library, Plus, Sparkles } from 'lucide-react'
 import { AiSettingsTab } from '../ai/AiSettings'
+import { SkillsSettingsTab } from '../ai/SkillsSettings'
+import { MemorySettingsTab } from '../memory/MemorySettings'
 import type { Language, Palette as PaletteId, ThemeMode } from '@shared/types'
 import { useAppInfo, useSettings, useUpdateSettings } from '@/lib/queries'
 import { useApp } from '@/store/app'
@@ -29,7 +33,7 @@ import { api, cn, formatDateTime } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Logo } from '@/components/Logo'
 
-type Tab = 'general' | 'ai' | 'appearance' | 'data' | 'about'
+type Tab = 'general' | 'me' | 'ai' | 'skills' | 'appearance' | 'data' | 'about'
 
 const PALETTES: PaletteId[] = ['qinglu', 'celadon', 'dunhuang']
 
@@ -282,7 +286,9 @@ export function SettingsDialog() {
 
   const tabs: { id: Tab; icon: ReactNode }[] = [
     { id: 'general', icon: <Settings2 /> },
+    { id: 'me', icon: <UserRound /> },
     { id: 'ai', icon: <Sparkles /> },
+    { id: 'skills', icon: <Wand2 /> },
     { id: 'appearance', icon: <Palette /> },
     { id: 'data', icon: <Database /> },
     { id: 'about', icon: <Info /> }
@@ -372,6 +378,8 @@ export function SettingsDialog() {
               </>
             )}
             {tab === 'ai' && <AiSettingsTab />}
+            {tab === 'me' && <MemorySettingsTab />}
+            {tab === 'skills' && <SkillsSettingsTab />}
             {tab === 'data' && info && <DataTab />}
             {tab === 'about' && info && (
               <div className="flex h-full flex-col items-center justify-center pb-6 text-center">

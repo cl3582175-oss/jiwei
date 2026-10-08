@@ -3,6 +3,7 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import log from 'electron-log/main'
 import { openDatabase, closeDatabase } from './db'
+import { closeProfileDb } from './db/profile'
 import { registerIpc } from './ipc'
 import { purgeExpired } from './services/trash'
 import { applyNativeTheme, getSettings } from './services/settings'
@@ -175,6 +176,7 @@ app.on('before-quit', (e) => {
       stopJobs()
       flushAll()
       closeDatabase()
+      closeProfileDb()
       app.quit()
     })
 })

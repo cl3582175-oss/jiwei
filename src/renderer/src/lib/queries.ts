@@ -90,3 +90,15 @@ export function invalidate(
 ): void {
   for (const g of groups) void qc.invalidateQueries({ queryKey: [g] })
 }
+
+export function useMemories() {
+  return useQuery({ queryKey: ['memories'], queryFn: () => api.memory.list({}) })
+}
+
+export function useUserProfile() {
+  return useQuery({ queryKey: ['userProfile'], queryFn: () => api.memory.profile() })
+}
+
+export function useSkills() {
+  return useQuery({ queryKey: ['skills'], queryFn: () => api.skills.list() })
+}

@@ -16,6 +16,7 @@ import { CommandPalette } from './features/palette/CommandPalette'
 import { Onboarding } from './features/onboarding/Onboarding'
 import { useGlobalShortcuts } from './lib/shortcuts'
 import { useCelebrations } from './lib/celebrate'
+import { useMemoryToasts } from './features/memory/useMemoryToasts'
 
 function useThemeSync(): 'light' | 'dark' {
   const { data: s } = useSettings()
@@ -85,6 +86,7 @@ export function App() {
   const { isSuccess } = useSettings()
   useGlobalShortcuts()
   useCelebrations()
+  useMemoryToasts()
 
   // 设置加载完成前不渲染，避免语言/主题闪烁
   if (!isSuccess) return null
