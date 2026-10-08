@@ -10,8 +10,49 @@ import { toast } from 'sonner'
 import { DOC_FIELD } from '@shared/types'
 import { api, modKey } from '@/lib/utils'
 import { idExtension, schemaExtensions } from './extensions'
-import { CornellAddRowWidget, CornellKeymap, CornellRowTimes, CornellShortcuts, rowTimesKey } from './cornell'
+import { CornellAddRowWidget, CornellKeymap, CornellRowTimes, CornellShortcuts, CORNELL, rowTimesKey } from './cornell'
 import { FormatBar } from './FormatBar'
+import { OriginAttribute, PROPOSAL_META } from './origin'
+import { Embed } from './embeds/EmbedNode'
+import './embeds/MindmapView'
+import { MindmapDataSchema, toCornellRows } from '@shared/embeds/mindmap'
+import { useApp } from '@/store/app'
+import { Tip } from '@/components/ui/primitives'
+import { Rows3 } from 'lucide-react'
+
+const INTERNAL_LINK = /^jiwei:\/\/(note|source)\/([0-9a-f-]{36})/i
+
+/** 思维导图 → 康奈尔行：插入到导图所在行之后，沿用导图的来源标记 */
+function mindmapToRows(editor: Editor, entry: Y.Map<unknown>, getPos: () => number | undefined, originAttr: string | null): void {
+  const data = MindmapDataSchema.safeParse((entry.get('data') as { toJSON(): unknown }).toJSON())
+  const pos = getPos()
+  if (!data.success || pos === undefined) return
+  const { state, view } = editor
+  const $pos = state.doc.resolve(pos)
+  let after = state.doc.content.size - state.doc.lastChild!.nodeSize
+  for (let d = $pos.depth; d > 0; d--) {
+    if ($pos.node(d).type.name === CORNELL.row) {
+      after = $pos.after(d)
+      break
+    }
+  }
+  // 子块继承来源：AI 生成的导图展开后仍是 AI 内容（直到用户修改）
+  const withOrigin = (nodes: unknown[]): unknown[] =>
+    originAttr ? nodes.map((n) => ({ ...(n as object), attrs: { ...((n as { attrs?: object }).attrs ?? {}), origin: originAttr } })) : nodes
+  const rows = toCornellRows(data.data).map((r) =>
+    state.schema.nodeFromJSON({
+      type: CORNELL.row,
+      attrs: { origin: originAttr },
+      content: [
+        { type: CORNELL.cue, content: withOrigin(r.cue) },
+        { type: CORNELL.body, content: withOrigin(r.body) }
+      ]
+    })
+  )
+  const tr = state.tr.insert(after, rows)
+  if (originAttr) tr.setMeta(PROPOSAL_META, true)
+  view.dispatch(tr.scrollIntoView())
+}
 
 const IMAGE_MAX = 25 * 1024 * 1024
 
@@ -57,7 +98,23 @@ export function CornellEditor({ noteId, ydoc, onReady }: Props) {
       CornellKeymap,
       CornellShortcuts,
       CornellAddRowWidget.configure({ label: t('notes.addRow'), hint: `${modKey}↵` }),
-      CornellRowTimes
+      CornellRowTimes,
+      OriginAttribute,
+      Embed.configure({
+        ydoc,
+        renderActions: ({ kind, entry, props }) =>
+          kind === 'mindmap' && props.editor.isEditable ? (
+            <Tip label={t('embeds.toRows')} side="top">
+              <button
+                className="embed-action"
+                aria-label={t('embeds.toRows')}
+                onClick={() => mindmapToRows(props.editor, entry, props.getPos, (props.node.attrs.origin as string | null) ?? null)}
+              >
+                <Rows3 className="size-3.5" />
+              </button>
+            </Tip>
+          ) : null
+      })
     ],
     // 语言切换时重建编辑器以更新提示文字
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -73,6 +130,16 @@ export function CornellEditor({ noteId, ydoc, onReady }: Props) {
           const files = imageFiles(event.clipboardData?.files)
           if (files.length === 0) return false
           void insertImages(view, files)
+          return true
+        },
+        // 内部链接：jiwei://note/<id> 在应用内打开
+        handleClick: (_view, _pos, event) => {
+          const a = (event.target as HTMLElement).closest('a')
+          const m = a?.getAttribute('href') ? INTERNAL_LINK.exec(a.getAttribute('href')!) : null
+          if (!m) return false
+          event.preventDefault()
+          if (m[1] === 'note') useApp.getState().openNote(m[2])
+          else useApp.getState().openSource(m[2])
           return true
         },
         handleDrop: (view, event) => {
@@ -92,11 +159,43 @@ export function CornellEditor({ noteId, ydoc, onReady }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor])
 
+  // 工作区上下文：光标所在块 / 行、选中文字（AI 请求时随附）
+  useEffect(() => {
+    if (!editor) return
+    const update = (): void => {
+      const { $from, from, to, empty } = editor.state.selection
+      let blockId: string | null = null
+      let rowId: string | null = null
+      for (let d = $from.depth; d > 0; d--) {
+        const n = $from.node(d)
+        if (!blockId && typeof n.attrs.id === 'string' && n.type.name !== CORNELL.row) blockId = n.attrs.id
+        if (n.type.name === CORNELL.row) rowId = (n.attrs.id as string) ?? null
+      }
+      useApp
+        .getState()
+        .setContext({
+          cursorBlockId: blockId,
+          cursorRowId: rowId,
+          noteSelection: empty ? null : editor.state.doc.textBetween(from, to, '\n').slice(0, 4000)
+        })
+    }
+    editor.on('selectionUpdate', update)
+    return () => {
+      editor.off('selectionUpdate', update)
+    }
+  }, [editor])
+
   // 段落级时间戳：悬停每一行时显示最后修改时间
   const { data: blocks } = useQuery({ queryKey: ['blocks', noteId], queryFn: () => api.notes.blocks(noteId) })
   useEffect(() => {
     if (!editor || !blocks) return
-    const fmt = new Intl.DateTimeFormat(i18n.language, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+    const fmt = new Intl.DateTimeFormat(i18n.language, {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
     const times = new Map(blocks.filter((b) => b.section === 'row').map((b) => [b.id, fmt.format(b.updatedAt)]))
     editor.view.dispatch(editor.state.tr.setMeta(rowTimesKey, times).setMeta('addToHistory', false))
   }, [editor, blocks, i18n.language])

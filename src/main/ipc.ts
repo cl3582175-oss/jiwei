@@ -25,7 +25,10 @@ type Ctx = { win: BrowserWindow | null }
 /** 每个注册的能力都必须有实现；参数类型为 zod 解析后的类型 */
 type Handlers = {
   [NS in keyof Capabilities]: {
-    [M in keyof Capabilities[NS]]: (ctx: Ctx, ...args: ParsedArgs<Capabilities[NS][M]>) => ResultOf<Capabilities[NS][M]> | Promise<ResultOf<Capabilities[NS][M]>>
+    [M in keyof Capabilities[NS]]: (
+      ctx: Ctx,
+      ...args: ParsedArgs<Capabilities[NS][M]>
+    ) => ResultOf<Capabilities[NS][M]> | Promise<ResultOf<Capabilities[NS][M]>>
   }
 }
 

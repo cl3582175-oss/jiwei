@@ -55,10 +55,18 @@ describe('deriveDoc', () => {
     const noteId = '0190e2c4-7b3a-7c3e-9a1b-2b3c4d5e6f70'
     const r = deriveDoc(
       doc(
-        row('r', [p('c', '')], [
-          { type: 'image', attrs: { id: 'i', src: `jiwei://asset/${sha}.png` } },
-          { type: 'paragraph', attrs: { id: 'l' }, content: [{ type: 'text', text: '见', marks: [{ type: 'link', attrs: { href: `jiwei://note/${noteId}` } }] }] }
-        ]),
+        row(
+          'r',
+          [p('c', '')],
+          [
+            { type: 'image', attrs: { id: 'i', src: `jiwei://asset/${sha}.png` } },
+            {
+              type: 'paragraph',
+              attrs: { id: 'l' },
+              content: [{ type: 'text', text: '见', marks: [{ type: 'link', attrs: { href: `jiwei://note/${noteId}` } }] }]
+            }
+          ]
+        ),
         summary('s', p('sp', ''))
       )
     )
@@ -69,7 +77,8 @@ describe('deriveDoc', () => {
 
 describe('diffBlocks', () => {
   const next = deriveDoc(doc(row('r1', [p('c1', 'Q')], [p('b1', 'A2')]), summary('s', p('sp', '')))).blocks
-  const prevHash = (id: string): string => deriveDoc(doc(row('r1', [p('c1', 'Q')], [p('b1', 'A1')]), summary('s', p('sp', '')))).blocks.find((b) => b.id === id)!.hash
+  const prevHash = (id: string): string =>
+    deriveDoc(doc(row('r1', [p('c1', 'Q')], [p('b1', 'A1')]), summary('s', p('sp', '')))).blocks.find((b) => b.id === id)!.hash
 
   it('detects changed, unchanged, new, removed and revived blocks', () => {
     const diff = diffBlocks(
@@ -111,11 +120,15 @@ describe('embeds and origin', () => {
   }
   const d = deriveDoc(
     doc(
-      row('r1', [p('c1', '问题')], [
-        { type: 'embed', attrs: { id: 'e1', kind: 'mindmap', origin: ai } },
-        { type: 'paragraph', attrs: { id: 'b1', origin: aiReviewed }, content: [{ type: 'text', text: '审阅过' }] },
-        p('b2', '我写的')
-      ]),
+      row(
+        'r1',
+        [p('c1', '问题')],
+        [
+          { type: 'embed', attrs: { id: 'e1', kind: 'mindmap', origin: ai } },
+          { type: 'paragraph', attrs: { id: 'b1', origin: aiReviewed }, content: [{ type: 'text', text: '审阅过' }] },
+          p('b2', '我写的')
+        ]
+      ),
       summary('s', p('sp', ''))
     ),
     { e1: mindmap }

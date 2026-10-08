@@ -4,8 +4,27 @@ import { useQueryClient } from '@tanstack/react-query'
 import type { Editor } from '@tiptap/react'
 import { toast } from 'sonner'
 import {
-  Pin, MoreHorizontal, Trash2, Folder, Check, Inbox, ChevronDown, History, ShieldOff, Shield, CircleCheck, CircleAlert,
-  Archive, Replace, ArrowLeft, CalendarDays, Bookmark
+  Pin,
+  MoreHorizontal,
+  Trash2,
+  Folder,
+  Check,
+  Inbox,
+  ChevronDown,
+  History,
+  ShieldOff,
+  Shield,
+  CircleCheck,
+  CircleAlert,
+  Archive,
+  Replace,
+  Home,
+  CalendarDays,
+  Bookmark,
+  ChevronLeft,
+  ChevronRight,
+  PanelLeftOpen,
+  Sparkles
 } from 'lucide-react'
 import type { KnowledgeStatus, NoteMetaUpdate, NoteSummary } from '@shared/types'
 import { useCategories, useNote, invalidate } from '@/lib/queries'
@@ -20,6 +39,9 @@ import { TagEditor } from './TagEditor'
 import { NotePicker } from './NotePicker'
 import { HistoryDialog } from './HistoryDialog'
 import { categoryPaths } from './CategoryTree'
+import { ProposalPanel } from './ProposalPanel'
+import { SourcePicker } from '../workspace/SourcePicker'
+import { modKey } from '@/lib/utils'
 
 const TITLE_DELAY = 500
 
@@ -29,7 +51,18 @@ export const STATUS_META: Record<KnowledgeStatus, { icon: ReactNode; cls: string
   outdated: { icon: <Archive />, cls: 'text-subtle' }
 }
 
-function TitleInput({ initial, onChange, onEnter }: { initial: string; onChange: (v: string) => void; onEnter: () => void }) {
+function TitleInput({
+  initial,
+  onChange,
+  onEnter,
+  captureRef
+}: {
+  initial: string
+  onChange: (v: string) => void
+  onEnter: () => void
+  /** 不为 null 时：输入不进入标题，而是按顺序缓冲（编辑器就绪后在正文中重放） */
+  captureRef: React.RefObject<QueuedInput[] | null>
+}) {
   const { t } = useTranslation()
   const ref = useRef<HTMLTextAreaElement>(null)
   const resize = (): void => {
@@ -50,7 +83,23 @@ function TitleInput({ initial, onChange, onEnter }: { initial: string; onChange:
         resize()
         onChange(e.target.value.replace(/\n/g, ' '))
       }}
+      onBeforeInput={(e) => {
+        if (captureRef.current === null) return
+        e.preventDefault()
+        const data = (e.nativeEvent as InputEvent).data
+        if (data) captureRef.current.push({ text: data })
+      }}
       onKeyDown={(e) => {
+        const q = captureRef.current
+        if (q !== null && !e.nativeEvent.isComposing) {
+          // 可打印字符交给 beforeinput 记录；功能键（Tab、Enter、退格、方向键）与组合键在这里记录
+          const printable = e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey
+          if (!printable) {
+            e.preventDefault()
+            q.push({ key: e.key, shiftKey: e.shiftKey, ctrlKey: e.ctrlKey, metaKey: e.metaKey, altKey: e.altKey })
+          }
+          return
+        }
         if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
           e.preventDefault()
           onEnter()
@@ -81,12 +130,14 @@ function CategoryPicker({ value, onChange }: { value: string | null; onChange: (
           {t('common.uncategorized')}
         </MenuItem>
         {cats.length > 0 && <MenuSeparator />}
-        {[...paths].sort((a, b) => a[1].localeCompare(b[1])).map(([id, path]) => (
-          <MenuItem key={id} onSelect={() => onChange(id)}>
-            <Check className={cn(value !== id && 'invisible')} />
-            {path}
-          </MenuItem>
-        ))}
+        {[...paths]
+          .sort((a, b) => a[1].localeCompare(b[1]))
+          .map(([id, path]) => (
+            <MenuItem key={id} onSelect={() => onChange(id)}>
+              <Check className={cn(value !== id && 'invisible')} />
+              {path}
+            </MenuItem>
+          ))}
       </MenuContent>
     </Menu>
   )
@@ -112,13 +163,41 @@ function LearnedDate({ value, onChange }: { value: number; onChange: (ts: number
   )
 }
 
+/** 编辑器加载期间缓冲的输入 */
+type QueuedInput = { text: string } | { key: string; shiftKey: boolean; ctrlKey: boolean; metaKey: boolean; altKey: boolean }
+
+/** 在编辑器中按顺序重放缓冲的输入：文字直接插入，按键交给编辑器的快捷键处理 */
+function replayInput(ed: Editor, queue: QueuedInput[]): void {
+  for (const item of queue) {
+    if ('text' in item) {
+      ed.commands.insertContent(item.text)
+      continue
+    }
+    const event = new KeyboardEvent('keydown', { ...item, bubbles: true, cancelable: true })
+    const handled = ed.view.someProp('handleKeyDown', (f) => f(ed.view, event))
+    if (!handled && item.key === 'Backspace')
+      ed.commands.deleteRange({ from: Math.max(1, ed.state.selection.from - 1), to: ed.state.selection.from })
+  }
+}
+
+/** 聚焦到第一行的笔记栏：行(0) → 线索 → 笔记 → 段落内。同步聚焦（Tiptap 的 focus 命令是异步的） */
+function focusFirstBody(ed: Editor): void {
+  const row = ed.state.doc.firstChild
+  ed.view.focus()
+  ed.commands.setTextSelection(row ? 3 + row.child(0).nodeSize : 1)
+}
+
 function EditorBody({ note: initial }: { note: NoteSummary }) {
   const { t, i18n } = useTranslation()
   const qc = useQueryClient()
-  const openNote = useApp((s) => s.openNote)
+  const { openNote, openSource, sourceId, back, forward, historyIndex, history } = useApp()
   const { ydoc, saving } = useNoteDoc(initial.id)
   const [note, setNote] = useState(initial)
   const editorRef = useRef<Editor | null>(null)
+  const [editor, setEditor] = useState<Editor | null>(null)
+  const [sourcePickerOpen, setSourcePickerOpen] = useState(false)
+  /** 标题回车时编辑器仍在加载：缓冲随后的输入，就绪后转入正文 */
+  const pendingInput = useRef<QueuedInput[] | null>(null)
   const titleTimer = useRef<number | undefined>(undefined)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [pickerOpen, setPickerOpen] = useState(false)
@@ -126,17 +205,14 @@ function EditorBody({ note: initial }: { note: NoteSummary }) {
 
   // 派生数据（字数、编辑时间）更新后刷新
   useEffect(() => {
-    if (initial.wordCount !== note.wordCount || initial.editedAt !== note.editedAt) {
-      setNote((n) => ({ ...n, wordCount: initial.wordCount, editedAt: initial.editedAt }))
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initial.wordCount, initial.editedAt])
+    setNote((n) => ({ ...n, wordCount: initial.wordCount, aiWordCount: initial.aiWordCount, editedAt: initial.editedAt }))
+  }, [initial.wordCount, initial.aiWordCount, initial.editedAt])
 
   const update = async (patch: NoteMetaUpdate): Promise<void> => {
     setNote((n) => ({ ...n, ...patch }) as NoteSummary)
     const next = await api.notes.update(note.id, patch)
     setNote((n) => ({ ...n, ...next, tagIds: n.tagIds }))
-    invalidate(qc, 'notes')
+    invalidate(qc, 'notes', 'note')
   }
 
   // 标题：防抖保存；离开时立即保存
@@ -146,13 +222,18 @@ function EditorBody({ note: initial }: { note: NoteSummary }) {
     if (pendingTitle.current !== null) {
       const title = pendingTitle.current
       pendingTitle.current = null
-      void api.notes.update(note.id, { title }).then(() => invalidate(qc, 'notes'))
+      void api.notes.update(note.id, { title }).then(() => invalidate(qc, 'notes', 'note'))
     }
   }
   useEffect(() => flushTitle, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const remove = async (): Promise<void> => {
-    const ok = await confirm({ title: t('notes.deleteTitle'), description: t('notes.deleteDesc'), confirmText: t('common.delete'), danger: true })
+    const ok = await confirm({
+      title: t('notes.deleteTitle'),
+      description: t('notes.deleteDesc'),
+      confirmText: t('common.delete'),
+      danger: true
+    })
     if (!ok) return
     flushTitle()
     await api.notes.trash(note.id)
@@ -171,12 +252,29 @@ function EditorBody({ note: initial }: { note: NoteSummary }) {
     <div className="flex h-full flex-col">
       {/* 顶栏 */}
       <header className="drag flex h-[52px] shrink-0 items-center justify-between gap-4 border-b border-border/70 pr-[calc(var(--tb-right)+12px)] pl-4">
-        <div className="no-drag flex min-w-0 items-center gap-1">
-          <Tip label={t('nav.home')} side="bottom">
-            <Button variant="ghost" size="icon-sm" onClick={() => openNote(null)} aria-label={t('nav.home')}>
-              <ArrowLeft />
+        <div className="no-drag flex min-w-0 items-center gap-0.5">
+          <Tip label={`${t('nav.back')}  ${modKey}[`} side="bottom">
+            <Button variant="ghost" size="icon-sm" disabled={historyIndex <= 0} onClick={back} aria-label={t('nav.back')}>
+              <ChevronLeft />
             </Button>
           </Tip>
+          <Tip label={`${t('nav.forward')}  ${modKey}]`} side="bottom">
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              disabled={historyIndex >= history.length - 1}
+              onClick={forward}
+              aria-label={t('nav.forward')}
+            >
+              <ChevronRight />
+            </Button>
+          </Tip>
+          <Tip label={t('nav.home')} side="bottom">
+            <Button variant="ghost" size="icon-sm" onClick={() => openNote(null)} aria-label={t('nav.home')}>
+              <Home />
+            </Button>
+          </Tip>
+          <span className="mx-1 h-4 w-px bg-border" />
           <CategoryPicker value={note.categoryId} onChange={(categoryId) => void update({ categoryId })} />
         </div>
         <div className="no-drag flex items-center gap-1">
@@ -193,6 +291,21 @@ function EditorBody({ note: initial }: { note: NoteSummary }) {
                 <ShieldOff className="size-3" />
                 {t('notes.aiExcluded')}
               </span>
+            </Tip>
+          )}
+          {note.aiWordCount > 0 && (
+            <Tip label={t('origin.aiWordsHint')} side="bottom">
+              <span className="mr-1 inline-flex h-6 cursor-default items-center gap-1 rounded-full bg-accent-soft px-2 text-2xs text-accent">
+                <Sparkles className="size-3" />
+                {t('origin.aiWords', { count: note.aiWordCount })}
+              </span>
+            </Tip>
+          )}
+          {!sourceId && (
+            <Tip label={t('workspace.openSource')} side="bottom">
+              <Button variant="ghost" size="icon-sm" onClick={() => setSourcePickerOpen(true)} aria-label={t('workspace.openSource')}>
+                <PanelLeftOpen />
+              </Button>
             </Tip>
           )}
           <Tip label={t('history.title')} side="bottom">
@@ -260,7 +373,10 @@ function EditorBody({ note: initial }: { note: NoteSummary }) {
                   <>
                     {' '}
                     {t('notes.supersededBy')}
-                    <button onClick={() => openNote(superseder.id)} className="mx-1 font-medium text-accent underline-offset-2 hover:underline">
+                    <button
+                      onClick={() => openNote(superseder.id)}
+                      className="mx-1 font-medium text-accent underline-offset-2 hover:underline"
+                    >
                       《{superseder.title || t('common.untitled')}》
                     </button>
                   </>
@@ -272,6 +388,8 @@ function EditorBody({ note: initial }: { note: NoteSummary }) {
             </div>
           )}
 
+          <ProposalPanel noteId={note.id} editor={editor} ydoc={ydoc} />
+
           <TitleInput
             initial={note.title}
             onChange={(title) => {
@@ -279,14 +397,11 @@ function EditorBody({ note: initial }: { note: NoteSummary }) {
               window.clearTimeout(titleTimer.current)
               titleTimer.current = window.setTimeout(flushTitle, TITLE_DELAY)
             }}
+            captureRef={pendingInput}
             onEnter={() => {
-              // 同步聚焦（Tiptap 的 focus 命令是异步的，快速输入会落到标题里）
               const ed = editorRef.current
-              if (!ed) return
-              // 跳到第一行的笔记栏：行(0) → 线索 → 笔记 → 段落内
-              const row = ed.state.doc.firstChild
-              ed.view.focus()
-              ed.commands.setTextSelection(row ? 3 + row.child(0).nodeSize : 1)
+              if (ed) focusFirstBody(ed)
+              else pendingInput.current = []
             }}
           />
 
@@ -304,7 +419,20 @@ function EditorBody({ note: initial }: { note: NoteSummary }) {
               <span>{t('notes.content')}</span>
             </div>
             {ydoc ? (
-              <CornellEditor noteId={note.id} ydoc={ydoc} onReady={(ed) => (editorRef.current = ed)} />
+              <CornellEditor
+                noteId={note.id}
+                ydoc={ydoc}
+                onReady={(ed) => {
+                  editorRef.current = ed
+                  setEditor(ed)
+                  if (pendingInput.current !== null) {
+                    const queue = pendingInput.current
+                    pendingInput.current = null
+                    focusFirstBody(ed)
+                    replayInput(ed, queue)
+                  }
+                }}
+              />
             ) : (
               <div className="h-[360px]" />
             )}
@@ -319,6 +447,7 @@ function EditorBody({ note: initial }: { note: NoteSummary }) {
         onOpenChange={setHistoryOpen}
         onRestore={(doc) => editorRef.current?.commands.setContent(doc)}
       />
+      <SourcePicker open={sourcePickerOpen} onOpenChange={setSourcePickerOpen} onPick={(id) => openSource(id)} />
       <NotePicker
         open={pickerOpen}
         onOpenChange={setPickerOpen}

@@ -1,0 +1,5 @@
+out
+release
+resources/migrations
+package-lock.json
+*.md

@@ -53,7 +53,10 @@ export async function pruneBackups(): Promise<void> {
   bucketKeep(DAY, 7)
   bucketKeep(7 * DAY, 4)
   bucketKeep(30 * DAY, 12)
-  all.filter((b) => b.kind === 'pre-migrate').slice(0, 3).forEach((b) => keep.add(b.name))
+  all
+    .filter((b) => b.kind === 'pre-migrate')
+    .slice(0, 3)
+    .forEach((b) => keep.add(b.name))
   for (const b of all) if (!keep.has(b.name)) await rm(join(backupsDir(), b.name), { force: true })
 }
 

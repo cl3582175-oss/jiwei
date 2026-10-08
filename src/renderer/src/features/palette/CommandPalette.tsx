@@ -47,7 +47,10 @@ export function CommandPalette() {
             <Command.List className="max-h-[min(420px,50vh)] overflow-y-auto p-2">
               <Command.Empty className="py-10 text-center text-sm text-subtle">{t('palette.empty')}</Command.Empty>
               {!q && (
-                <Command.Group heading={t('palette.actions')} className="[&_[cmdk-group-heading]]:px-3 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-2xs [&_[cmdk-group-heading]]:text-subtle">
+                <Command.Group
+                  heading={t('palette.actions')}
+                  className="[&_[cmdk-group-heading]]:px-3 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-2xs [&_[cmdk-group-heading]]:text-subtle"
+                >
                   <Command.Item className={itemCls} onSelect={run(() => void createNote())}>
                     <PenLine />
                     <span className="flex-1">{t('notes.new')}</span>
@@ -75,7 +78,10 @@ export function CommandPalette() {
                 </Command.Group>
               )}
               {notes.length > 0 && (
-                <Command.Group heading={t('palette.notes')} className="[&_[cmdk-group-heading]]:px-3 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-2xs [&_[cmdk-group-heading]]:text-subtle">
+                <Command.Group
+                  heading={t('palette.notes')}
+                  className="[&_[cmdk-group-heading]]:px-3 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-2xs [&_[cmdk-group-heading]]:text-subtle"
+                >
                   {notes.slice(0, 30).map((n) => (
                     <Command.Item key={n.id} value={n.id} className={itemCls} onSelect={run(() => openNote(n.id))}>
                       <NotebookText />

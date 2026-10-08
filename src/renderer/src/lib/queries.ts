@@ -67,6 +67,9 @@ export function useHeatmap(days: number) {
 }
 
 /** 数据变更后刷新相关列表 */
-export function invalidate(qc: QueryClient, ...groups: ('notes' | 'note' | 'sources' | 'trash' | 'categories' | 'heatmap' | 'tags' | 'blocks')[]): void {
+export function invalidate(
+  qc: QueryClient,
+  ...groups: ('notes' | 'note' | 'sources' | 'trash' | 'categories' | 'heatmap' | 'tags' | 'blocks')[]
+): void {
   for (const g of groups) void qc.invalidateQueries({ queryKey: [g] })
 }

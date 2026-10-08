@@ -1,7 +1,7 @@
 {
   "name": "jiwei",
   "productName": "积微",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "积微 · Jiwei — AI 驱动的学习笔记与个人知识库",
   "main": "./out/main/index.js",
   "author": "cl3582175-oss",
@@ -20,7 +20,10 @@
     "dist:win": "npm run build && electron-builder --win",
     "dist:linux": "npm run build && electron-builder --linux",
     "test:e2e": "npm run build && playwright test",
-    "test": "vitest run"
+    "test": "vitest run",
+    "lint": "eslint .",
+    "format": "prettier --write \"src/**/*.{ts,tsx,css}\" \"e2e/**/*.ts\" \"*.{ts,mjs,json}\"",
+    "check": "npm run typecheck && npm run lint && npm test"
   },
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.2",
@@ -30,6 +33,7 @@
     "electron-log": "^5.4.4"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@floating-ui/dom": "^1.8.0",
     "@playwright/test": "^1.64.0",
     "@tailwindcss/vite": "^4.3.3",
@@ -53,17 +57,24 @@
     "electron": "^44.7.0",
     "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0",
+    "eslint": "^10.12.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.13.0",
     "i18next": "^26.4.2",
     "lucide-react": "^1.53.0",
+    "markmap-view": "^0.18.12",
     "motion": "^14.0.0",
+    "prettier": "^3.9.9",
     "radix-ui": "^1.7.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-i18next": "^17.0.16",
+    "react-resizable-panels": "^4.14.3",
     "sonner": "^2.0.8",
     "tailwind-merge": "^3.4.0",
     "tailwindcss": "^4.3.3",
     "typescript": "^5.9.3",
+    "typescript-eslint": "^8.71.1",
     "uuid": "^14.0.2",
     "vite": "^7.3.7",
     "vitest": "^5.0.3",

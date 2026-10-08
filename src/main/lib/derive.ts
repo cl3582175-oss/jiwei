@@ -106,7 +106,16 @@ export function deriveDoc(doc: DocJSON, embeds: EmbedsData = {}): Derived {
       const origin = parseOrigin(child.attrs?.origin)
       if (origin === 'ai' && text) aiTexts.push(text)
       if (typeof id === 'string' && id && text) {
-        blocks.push({ id, kind: child.type ?? 'unknown', origin, section, rowId, position: position++, text, hash: hashText(child.type ?? '', text) })
+        blocks.push({
+          id,
+          kind: child.type ?? 'unknown',
+          origin,
+          section,
+          rowId,
+          position: position++,
+          text,
+          hash: hashText(child.type ?? '', text)
+        })
       }
       walk(child, (n) => {
         if (n.type === 'image' && typeof n.attrs?.src === 'string') {
@@ -136,7 +145,16 @@ export function deriveDoc(doc: DocJSON, embeds: EmbedsData = {}): Derived {
       if (rowText) texts.push(rowText)
       // 行块：线索 + 笔记，作为 RAG 的天然检索单元
       if (rowId && rowText) {
-        blocks.push({ id: rowId, kind: NODE.row, origin: parseOrigin(top.attrs?.origin), section: 'row', rowId: null, position: rowPos, text: rowText, hash: hashText(NODE.row, rowText) })
+        blocks.push({
+          id: rowId,
+          kind: NODE.row,
+          origin: parseOrigin(top.attrs?.origin),
+          section: 'row',
+          rowId: null,
+          position: rowPos,
+          text: rowText,
+          hash: hashText(NODE.row, rowText)
+        })
       }
     } else if (top.type === NODE.summary) {
       const text = pushChildren(top, 'summary', null)

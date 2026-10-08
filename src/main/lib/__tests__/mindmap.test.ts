@@ -23,7 +23,10 @@ describe('mindmap', () => {
     expect(JSON.stringify(rows[0].body)).toContain('bulletList')
   })
   it('survives cycles in malformed data', () => {
-    expect(toTree({ root: 'a', nodes: { a: { text: 'a', parent: 'b', order: 0 }, b: { text: 'b', parent: 'a', order: 0 } } })!.children[0].children).toEqual([])
+    expect(
+      toTree({ root: 'a', nodes: { a: { text: 'a', parent: 'b', order: 0 }, b: { text: 'b', parent: 'a', order: 0 } } })!.children[0]
+        .children
+    ).toEqual([])
   })
 })
 

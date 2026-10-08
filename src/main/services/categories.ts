@@ -29,7 +29,11 @@ export function listCategories(kind: CategoryKind): Category[] {
 
 /** 某分类及其所有后代分类的 ID（仅未删除） */
 export function descendantIds(id: string): string[] {
-  const all = getDb().select({ id: categories.id, parentId: categories.parentId }).from(categories).where(isNull(categories.deletedAt)).all()
+  const all = getDb()
+    .select({ id: categories.id, parentId: categories.parentId })
+    .from(categories)
+    .where(isNull(categories.deletedAt))
+    .all()
   const out = [id]
   for (let i = 0; i < out.length; i++) for (const c of all) if (c.parentId === out[i]) out.push(c.id)
   return out
@@ -37,12 +41,21 @@ export function descendantIds(id: string): string[] {
 
 /** 已删除分类的 ID：其中的内容在列表中视为“未分类” */
 export function deletedCategoryIds(): string[] {
-  return getDb().select({ id: categories.id }).from(categories).where(isNotNull(categories.deletedAt)).all().map((r) => r.id)
+  return getDb()
+    .select({ id: categories.id })
+    .from(categories)
+    .where(isNotNull(categories.deletedAt))
+    .all()
+    .map((r) => r.id)
 }
 
 export function createCategory(kind: CategoryKind, name: string, parentId?: string | null): Category {
   const db = getDb()
-  const top = db.select({ m: max(categories.sortOrder) }).from(categories).where(eq(categories.kind, kind)).get()
+  const top = db
+    .select({ m: max(categories.sortOrder) })
+    .from(categories)
+    .where(eq(categories.kind, kind))
+    .get()
   const now = Date.now()
   const row = {
     id: newId(),
@@ -75,7 +88,8 @@ export function removeCategory(id: string): void {
   const now = Date.now()
   const db = getDb()
   db.transaction((tx) => {
-    for (const cid of ids) tx.update(categories).set({ deletedAt: now, updatedAt: now, updatedBy: deviceId() }).where(eq(categories.id, cid)).run()
+    for (const cid of ids)
+      tx.update(categories).set({ deletedAt: now, updatedAt: now, updatedBy: deviceId() }).where(eq(categories.id, cid)).run()
   })
 }
 
@@ -89,7 +103,8 @@ export function restoreCategory(id: string): void {
   const ids = [id]
   for (let i = 0; i < ids.length; i++) for (const c of all) if (c.parentId === ids[i] && c.deletedAt === at) ids.push(c.id)
   db.transaction((tx) => {
-    for (const cid of ids) tx.update(categories).set({ deletedAt: null, updatedAt: Date.now(), updatedBy: deviceId() }).where(eq(categories.id, cid)).run()
+    for (const cid of ids)
+      tx.update(categories).set({ deletedAt: null, updatedAt: Date.now(), updatedBy: deviceId() }).where(eq(categories.id, cid)).run()
     // 父分类仍在回收站时，挂到根级
     if (row.parentId && all.find((c) => c.id === row.parentId)?.deletedAt) {
       tx.update(categories).set({ parentId: null }).where(eq(categories.id, id)).run()

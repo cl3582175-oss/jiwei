@@ -61,7 +61,9 @@ function createWindow(): void {
       sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
-      webSecurity: true
+      webSecurity: true,
+      // 内置 PDF 查看器（v0.2 改用 PDF.js 以支持页码定位与批注）
+      plugins: true
     }
   })
 

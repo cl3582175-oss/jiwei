@@ -33,7 +33,12 @@ export function NotePicker({
           <Command shouldFilter={false} loop>
             <div className="mt-2 flex items-center gap-3 border-b border-border px-5">
               <Search className="size-4 text-subtle" />
-              <Command.Input value={q} onValueChange={setQ} placeholder={t('notes.searchPlaceholder')} className="h-11 flex-1 bg-transparent text-sm text-fg outline-none placeholder:text-subtle" />
+              <Command.Input
+                value={q}
+                onValueChange={setQ}
+                placeholder={t('notes.searchPlaceholder')}
+                className="h-11 flex-1 bg-transparent text-sm text-fg outline-none placeholder:text-subtle"
+              />
             </div>
             <Command.List className="max-h-[360px] overflow-y-auto p-2">
               <Command.Empty className="py-8 text-center text-sm text-subtle">{t('palette.empty')}</Command.Empty>

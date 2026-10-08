@@ -3,7 +3,17 @@ import { useTranslation } from 'react-i18next'
 import { Bold, Italic, Strikethrough, Code, Heading1, Heading2, List, ListOrdered, Quote } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-function FormatButton({ active, label, onClick, children }: { active: boolean; label: string; onClick: () => void; children: React.ReactNode }) {
+function FormatButton({
+  active,
+  label,
+  onClick,
+  children
+}: {
+  active: boolean
+  label: string
+  onClick: () => void
+  children: React.ReactNode
+}) {
   return (
     <button
       title={label}

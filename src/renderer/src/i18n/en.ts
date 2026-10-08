@@ -2,7 +2,16 @@ import type { Messages } from './zh-CN'
 
 const en: Messages = {
   app: { name: 'Jiwei', slogan: 'Small steps, great knowledge' },
-  nav: { home: 'Back to home', notes: 'Notes', library: 'Library', trash: 'Recently Deleted', settings: 'Settings', search: 'Search' },
+  nav: {
+    back: 'Back',
+    forward: 'Forward',
+    home: 'Back to home',
+    notes: 'Notes',
+    library: 'Library',
+    trash: 'Recently Deleted',
+    settings: 'Settings',
+    search: 'Search'
+  },
   common: {
     cancel: 'Cancel',
     confirm: 'Confirm',
@@ -69,6 +78,64 @@ const en: Messages = {
     deleted: 'Moved to Recently Deleted',
     deleteCategoryTitle: 'Delete category “{{name}}”?',
     deleteCategoryDesc: 'Items inside will not be deleted; they become uncategorized.'
+  },
+  origin: {
+    ai: 'AI generated',
+    aiReviewed: 'AI generated · reviewed',
+    aiWords: 'AI {{count}} words',
+    aiWordsHint: 'AI-generated content you have not edited is excluded from learning stats. Editing it marks it as reviewed.'
+  },
+  embeds: {
+    mindmap: 'Mind map',
+    missing: 'Content missing',
+    toRows: 'Expand into Cornell rows'
+  },
+  proposals: {
+    accept: 'Accept',
+    reject: 'Reject',
+    acceptAll: 'Accept all',
+    rejectAll: 'Reject all',
+    accepted: 'Accepted',
+    rejected: 'Rejected',
+    sources: 'Based on {{count}} source passage(s)',
+    targetMissing: 'The target paragraph no longer exists — please reject this change',
+    deleteHint: 'Delete this paragraph',
+    op: {
+      insert_after: 'Insert',
+      insert_row: 'New row',
+      append_summary: 'Add to summary',
+      replace_block: 'Replace',
+      delete_block: 'Delete'
+    }
+  },
+  workspace: {
+    openSource: 'Open a source on the left',
+    pickSource: 'Choose a source to open',
+    openInWorkspace: 'Open in workspace',
+    openExternal: 'Open with system app',
+    closeSource: 'Close source',
+    parsing: 'Parsing the source…',
+    unsupported: 'This type can only be opened with a system app for now. Built-in reading for PDF, e-books and web pages arrives in v0.2.',
+    webHint: 'Built-in reading and text extraction for web pages arrives in v0.2. Open it in your browser for now.'
+  },
+  jobs: {
+    title: 'Background tasks',
+    running: '{{count}} task(s) running',
+    failed: '{{count}} task(s) failed',
+    retry: 'Retry'
+  },
+  vaults: {
+    title: 'Knowledge bases',
+    desc: 'Each knowledge base is a data folder. Keep personal and shared ones separate; switching restarts the app.',
+    current: 'Current',
+    switch: 'Switch',
+    new: 'New knowledge base',
+    open: 'Open existing',
+    namePlaceholder: 'Knowledge base name'
+  },
+  profile: {
+    name: 'Your name',
+    desc: 'Shown next to your edits when collaborating. This device: {{device}}'
   },
   tags: {
     title: 'Tags',
@@ -169,7 +236,8 @@ const en: Messages = {
     changeDataDirDesc: 'Your data is copied to a new empty folder and the app restarts. The old folder is left untouched.',
     cloudWarning: 'Your data folder is inside a cloud-sync drive, which can corrupt the database. Move it to a local folder.',
     backups: 'Automatic backups',
-    backupsDesc: 'The database is backed up daily, keeping the last 7 days, 4 weeks and 12 months. A backup is also made before every upgrade.',
+    backupsDesc:
+      'The database is backed up daily, keeping the last 7 days, 4 weeks and 12 months. A backup is also made before every upgrade.',
     backupNow: 'Back up now',
     backupDone: 'Backup complete',
     openBackups: 'Open backups folder',

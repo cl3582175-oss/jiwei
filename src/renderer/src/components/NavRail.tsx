@@ -5,18 +5,9 @@ import { useApp, type View } from '@/store/app'
 import { cn, isMac, modKey } from '@/lib/utils'
 import { Tip } from './ui/primitives'
 import { Logo } from './Logo'
+import { JobsIndicator } from './JobsIndicator'
 
-function RailButton({
-  active,
-  label,
-  onClick,
-  children
-}: {
-  active?: boolean
-  label: string
-  onClick: () => void
-  children: ReactNode
-}) {
+function RailButton({ active, label, onClick, children }: { active?: boolean; label: string; onClick: () => void; children: ReactNode }) {
   return (
     <Tip label={label}>
       <button
@@ -44,7 +35,12 @@ export function NavRail() {
   ]
 
   return (
-    <nav className={cn('drag flex w-[72px] shrink-0 flex-col items-center gap-1.5 border-r border-border bg-sunken pb-4', isMac ? 'pt-12' : 'pt-3')}>
+    <nav
+      className={cn(
+        'drag flex w-[72px] shrink-0 flex-col items-center gap-1.5 border-r border-border bg-sunken pb-4',
+        isMac ? 'pt-12' : 'pt-3'
+      )}
+    >
       <div className="mb-4">
         <Logo />
       </div>
@@ -53,11 +49,17 @@ export function NavRail() {
       </RailButton>
       <div className="my-1.5 h-px w-6 bg-border" />
       {items.map((it) => (
-        <RailButton key={it.id} active={view === it.id} label={it.label} onClick={() => (it.id === 'notes' && view === 'notes' ? openNote(null) : setView(it.id))}>
+        <RailButton
+          key={it.id}
+          active={view === it.id}
+          label={it.label}
+          onClick={() => (it.id === 'notes' && view === 'notes' ? openNote(null) : setView(it.id))}
+        >
           {it.icon}
         </RailButton>
       ))}
       <div className="flex-1" />
+      <JobsIndicator />
       <RailButton active={view === 'trash'} label={t('nav.trash')} onClick={() => setView('trash')}>
         <Trash2 />
       </RailButton>

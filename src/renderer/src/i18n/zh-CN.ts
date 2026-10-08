@@ -1,6 +1,15 @@
 const zhCN = {
   app: { name: '积微', slogan: '积微成著，日进有功' },
-  nav: { home: '返回首页', notes: '笔记', library: '资料库', trash: '最近删除', settings: '设置', search: '搜索' },
+  nav: {
+    back: '后退',
+    forward: '前进',
+    home: '返回首页',
+    notes: '笔记',
+    library: '资料库',
+    trash: '最近删除',
+    settings: '设置',
+    search: '搜索'
+  },
   common: {
     cancel: '取消',
     confirm: '确认',
@@ -67,6 +76,58 @@ const zhCN = {
     deleted: '已移入最近删除',
     deleteCategoryTitle: '删除分类“{{name}}”？',
     deleteCategoryDesc: '分类中的内容不会被删除，将回到“未分类”。'
+  },
+  origin: {
+    ai: 'AI 生成',
+    aiReviewed: 'AI 生成 · 已审阅',
+    aiWords: 'AI {{count}} 字',
+    aiWordsHint: 'AI 生成且尚未经你修改的内容不计入学习统计。修改后会自动标记为“已审阅”。'
+  },
+  embeds: {
+    mindmap: '思维导图',
+    missing: '内容缺失',
+    toRows: '展开为康奈尔行'
+  },
+  proposals: {
+    accept: '接受',
+    reject: '拒绝',
+    acceptAll: '全部接受',
+    rejectAll: '全部拒绝',
+    accepted: '已接受',
+    rejected: '已拒绝',
+    sources: '依据 {{count}} 处资料',
+    targetMissing: '要修改的段落已不存在，请拒绝这条修改',
+    deleteHint: '删除这个段落',
+    op: { insert_after: '插入', insert_row: '新增一行', append_summary: '补充总结', replace_block: '替换', delete_block: '删除' }
+  },
+  workspace: {
+    openSource: '在左侧打开资料',
+    pickSource: '选择要打开的资料',
+    openInWorkspace: '在工作区打开',
+    openExternal: '用系统应用打开',
+    closeSource: '关闭资料',
+    parsing: '正在解析资料内容…',
+    unsupported: '这种资料暂时只能用系统应用打开。PDF、电子书、网页的内置阅读将在 v0.2 支持。',
+    webHint: '网页资料将在 v0.2 支持内置阅读与正文提取，现在可以用浏览器打开。'
+  },
+  jobs: {
+    title: '后台任务',
+    running: '{{count}} 个任务进行中',
+    failed: '{{count}} 个任务失败',
+    retry: '重试'
+  },
+  vaults: {
+    title: '知识库',
+    desc: '一个知识库就是一个数据文件夹。可以分别管理个人与共享的知识库，切换时应用会重启。',
+    current: '当前',
+    switch: '切换',
+    new: '新建知识库',
+    open: '打开已有',
+    namePlaceholder: '知识库名称'
+  },
+  profile: {
+    name: '你的名字',
+    desc: '协作时显示在你修改的内容旁。当前设备：{{device}}'
   },
   tags: {
     title: '标签',

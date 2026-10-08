@@ -16,12 +16,41 @@ import type { ImportResult, Source, SourceKind, SourceQuery, SourceUpdate } from
 
 const EXT_KIND: Record<string, SourceKind> = {
   pdf: 'pdf',
-  epub: 'book', mobi: 'book', azw3: 'book',
-  mp4: 'video', mov: 'video', mkv: 'video', webm: 'video', avi: 'video', m4v: 'video',
-  mp3: 'audio', wav: 'audio', m4a: 'audio', flac: 'audio', ogg: 'audio', aac: 'audio',
-  png: 'image', jpg: 'image', jpeg: 'image', gif: 'image', webp: 'image', svg: 'image', bmp: 'image', heic: 'image', avif: 'image',
-  doc: 'document', docx: 'document', txt: 'document', md: 'document', ppt: 'document', pptx: 'document',
-  xls: 'document', xlsx: 'document', csv: 'document', html: 'document', htm: 'document'
+  epub: 'book',
+  mobi: 'book',
+  azw3: 'book',
+  mp4: 'video',
+  mov: 'video',
+  mkv: 'video',
+  webm: 'video',
+  avi: 'video',
+  m4v: 'video',
+  mp3: 'audio',
+  wav: 'audio',
+  m4a: 'audio',
+  flac: 'audio',
+  ogg: 'audio',
+  aac: 'audio',
+  png: 'image',
+  jpg: 'image',
+  jpeg: 'image',
+  gif: 'image',
+  webp: 'image',
+  svg: 'image',
+  bmp: 'image',
+  heic: 'image',
+  avif: 'image',
+  doc: 'document',
+  docx: 'document',
+  txt: 'document',
+  md: 'document',
+  ppt: 'document',
+  pptx: 'document',
+  xls: 'document',
+  xlsx: 'document',
+  csv: 'document',
+  html: 'document',
+  htm: 'document'
 }
 
 function query(conds: SQL[]): Source[] {
@@ -32,7 +61,10 @@ function query(conds: SQL[]): Source[] {
     .where(and(...conds))
     .orderBy(desc(sources.createdAt))
     .all()
-  const tagMap = tagIdsFor('source', rows.map((r) => r.s.id))
+  const tagMap = tagIdsFor(
+    'source',
+    rows.map((r) => r.s.id)
+  )
   return rows.map(({ s, a }) => ({
     id: s.id,
     title: s.title,
@@ -82,7 +114,11 @@ export async function importPaths(paths: string[], categoryId?: string | null): 
   for (const p of paths) {
     if (!(await stat(p)).isFile()) continue
     const { row } = await importFile(p)
-    const dup = db.select({ id: sources.id }).from(sources).where(and(eq(sources.assetId, row.id), isNull(sources.deletedAt))).get()
+    const dup = db
+      .select({ id: sources.id })
+      .from(sources)
+      .where(and(eq(sources.assetId, row.id), isNull(sources.deletedAt)))
+      .get()
     if (dup) {
       out.duplicates++
       continue
@@ -150,7 +186,12 @@ export function updateSource(id: string, patch: SourceUpdate): void {
 }
 
 function row(id: string) {
-  const r = getDb().select({ s: sources, a: assets }).from(sources).leftJoin(assets, eq(sources.assetId, assets.id)).where(eq(sources.id, id)).get()
+  const r = getDb()
+    .select({ s: sources, a: assets })
+    .from(sources)
+    .leftJoin(assets, eq(sources.assetId, assets.id))
+    .where(eq(sources.id, id))
+    .get()
   if (!r) throw new Error(`Source not found: ${id}`)
   return r
 }
@@ -176,7 +217,9 @@ export function trashSource(id: string): void {
 /** 永久删除：移除记录；素材文件仅在无其他引用时删除 */
 export async function purgeSource(id: string): Promise<void> {
   const db = getDb()
-  db.delete(taggings).where(and(eq(taggings.entityType, 'source'), eq(taggings.entityId, id))).run()
+  db.delete(taggings)
+    .where(and(eq(taggings.entityType, 'source'), eq(taggings.entityId, id)))
+    .run()
   db.delete(sources).where(eq(sources.id, id)).run()
   deleteSegments(id)
   await collectGarbage()

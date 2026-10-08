@@ -57,7 +57,9 @@ export function NotesHome() {
         <div className="flex items-end justify-between gap-6">
           <div>
             <p className="text-sm text-subtle">{today}</p>
-            <h1 className="mt-1 font-serif text-2xl leading-tight font-semibold tracking-wide text-fg">{t(`home.greeting.${greetingKey()}`)}</h1>
+            <h1 className="mt-1 font-serif text-2xl leading-tight font-semibold tracking-wide text-fg">
+              {t(`home.greeting.${greetingKey()}`)}
+            </h1>
             <p className="mt-2 text-sm text-muted">{t('app.slogan')}</p>
           </div>
           <Button variant="primary" onClick={() => void createNote()}>

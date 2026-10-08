@@ -29,7 +29,11 @@ function toProposal(r: Row): Proposal {
 
 export function createProposal(input: ProposalInput): Proposal {
   const db = getDb()
-  const note = db.select({ id: notes.id, aiExcluded: notes.aiExcluded, deletedAt: notes.deletedAt }).from(notes).where(eq(notes.id, input.noteId)).get()
+  const note = db
+    .select({ id: notes.id, aiExcluded: notes.aiExcluded, deletedAt: notes.deletedAt })
+    .from(notes)
+    .where(eq(notes.id, input.noteId))
+    .get()
   if (!note || note.deletedAt) throw new Error('Note not found')
   // 隐私：用户设为“不发送给 AI”的笔记，AI 也不能修改
   if (note.aiExcluded) throw new Error('This note is excluded from AI')

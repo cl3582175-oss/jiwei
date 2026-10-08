@@ -17,7 +17,8 @@ export const ID_TYPES = [
   'orderedList',
   'listItem',
   'horizontalRule',
-  'image'
+  'image',
+  'embed'
 ]
 
 export interface SchemaLabels {

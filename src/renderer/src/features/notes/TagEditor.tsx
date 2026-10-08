@@ -41,7 +41,11 @@ export function TagEditor({ entityType, entityId, tagIds }: { entityType: 'note'
           <span key={id} className="group inline-flex h-6 items-center gap-1 rounded-full bg-sunken pr-1.5 pl-2 text-xs text-muted">
             <Hash className="size-3 text-subtle" />
             {tag.name}
-            <button onClick={() => toggle(id)} className="rounded-full text-subtle opacity-0 group-hover:opacity-100 hover:text-fg" aria-label={t('common.delete')}>
+            <button
+              onClick={() => toggle(id)}
+              className="rounded-full text-subtle opacity-0 group-hover:opacity-100 hover:text-fg"
+              aria-label={t('common.delete')}
+            >
               <X className="size-3" />
             </button>
           </span>
@@ -55,7 +59,11 @@ export function TagEditor({ entityType, entityId, tagIds }: { entityType: 'note'
           </button>
         </Popover.Trigger>
         <Popover.Portal>
-          <Popover.Content align="start" sideOffset={6} className="z-50 w-60 overflow-hidden rounded-lg border border-border bg-surface shadow-float data-[state=open]:animate-[pop-in_140ms_ease-out]">
+          <Popover.Content
+            align="start"
+            sideOffset={6}
+            className="z-50 w-60 overflow-hidden rounded-lg border border-border bg-surface shadow-float data-[state=open]:animate-[pop-in_140ms_ease-out]"
+          >
             <Command loop>
               <Command.Input
                 value={q}

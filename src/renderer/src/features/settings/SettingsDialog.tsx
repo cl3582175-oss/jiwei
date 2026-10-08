@@ -1,10 +1,26 @@
 import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Dialog as D } from 'radix-ui'
-import { Settings2, Palette, Database, Info, X, Monitor, Sun, Moon, Check, FolderOpen, FolderInput, DatabaseBackup, TriangleAlert } from 'lucide-react'
+import {
+  Settings2,
+  Palette,
+  Database,
+  Info,
+  X,
+  Monitor,
+  Sun,
+  Moon,
+  Check,
+  FolderOpen,
+  FolderInput,
+  DatabaseBackup,
+  TriangleAlert
+} from 'lucide-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Tip } from '@/components/ui/primitives'
+import { Input, Tip } from '@/components/ui/primitives'
+import { prompt } from '@/components/ui/confirm'
+import { Library, Plus } from 'lucide-react'
 import type { Language, ThemeMode } from '@shared/types'
 import { useAppInfo, useSettings, useUpdateSettings } from '@/lib/queries'
 import { useApp } from '@/store/app'
@@ -34,7 +50,15 @@ function Row({ label, desc, children }: { label: ReactNode; desc?: ReactNode; ch
   )
 }
 
-function Segmented<T extends string>({ value, options, onChange }: { value: T; options: { value: T; label: ReactNode }[]; onChange: (v: T) => void }) {
+function Segmented<T extends string>({
+  value,
+  options,
+  onChange
+}: {
+  value: T
+  options: { value: T; label: ReactNode }[]
+  onChange: (v: T) => void
+}) {
   return (
     <div className="inline-flex rounded-lg border border-border bg-sunken p-0.5">
       {options.map((o) => (
@@ -50,6 +74,76 @@ function Segmented<T extends string>({ value, options, onChange }: { value: T; o
         </button>
       ))}
     </div>
+  )
+}
+
+function VaultsRow() {
+  const { t } = useTranslation()
+  const { data: vaults = [] } = useQuery({ queryKey: ['vaults'], queryFn: () => api.vaults.list() })
+  const run = (p: Promise<unknown>): void =>
+    void p.catch((e: unknown) =>
+      toast.error(String(e instanceof Error ? e.message : e).replace(/^Error invoking remote method '[^']+': (Error: )?/, ''))
+    )
+  const create = async (): Promise<void> => {
+    const name = await prompt({ title: t('vaults.new'), placeholder: t('vaults.namePlaceholder'), confirmText: t('common.create') })
+    if (name) run(api.vaults.create(name))
+  }
+  return (
+    <Row label={t('vaults.title')} desc={t('vaults.desc')}>
+      <div className="flex w-[260px] flex-col gap-1.5">
+        {vaults.map((v) => (
+          <div
+            key={v.id}
+            className={cn(
+              'flex items-center gap-2 rounded-lg border px-3 py-2',
+              v.active ? 'border-accent/40 bg-accent-soft' : 'border-border'
+            )}
+          >
+            <Library className={cn('size-4 shrink-0', v.active ? 'text-accent' : 'text-subtle')} />
+            <span className="min-w-0 flex-1 truncate text-sm text-fg" title={v.path}>
+              {v.name}
+            </span>
+            {v.active ? (
+              <span className="text-2xs text-accent">{t('vaults.current')}</span>
+            ) : (
+              <Button size="sm" variant="ghost" className="h-6 px-2" onClick={() => run(api.vaults.switch(v.id))}>
+                {t('vaults.switch')}
+              </Button>
+            )}
+          </div>
+        ))}
+        <div className="flex gap-1.5 pt-1">
+          <Button size="sm" variant="outline" className="flex-1" onClick={() => void create()}>
+            <Plus />
+            {t('vaults.new')}
+          </Button>
+          <Button size="sm" variant="ghost" className="flex-1" onClick={() => run(api.vaults.open())}>
+            <FolderOpen />
+            {t('vaults.open')}
+          </Button>
+        </div>
+      </div>
+    </Row>
+  )
+}
+
+function ProfileRow() {
+  const { t } = useTranslation()
+  const qc = useQueryClient()
+  const { data: profile } = useQuery({ queryKey: ['profile'], queryFn: () => api.profile.get() })
+  if (!profile) return null
+  return (
+    <Row label={t('profile.name')} desc={t('profile.desc', { device: profile.deviceName })}>
+      <Input
+        key={profile.name}
+        defaultValue={profile.name}
+        className="w-[200px]"
+        onBlur={(e) => {
+          const name = e.target.value.trim()
+          if (name && name !== profile.name) void api.profile.setName(name).then(() => qc.invalidateQueries({ queryKey: ['profile'] }))
+        }}
+      />
+    </Row>
   )
 }
 
@@ -74,6 +168,7 @@ function DataTab() {
   }
   return (
     <>
+      <VaultsRow />
       <Row
         label={t('settings.dataDir')}
         desc={
@@ -169,6 +264,7 @@ export function SettingsDialog() {
             ))}
           </nav>
           <div className="min-w-0 flex-1 overflow-y-auto px-8 py-4">
+            {tab === 'general' && <ProfileRow />}
             {tab === 'general' && (
               <Row label={t('settings.language')}>
                 <Segmented<Language>
@@ -188,9 +284,33 @@ export function SettingsDialog() {
                     value={s.theme}
                     onChange={(theme) => update.mutate({ theme })}
                     options={[
-                      { value: 'system', label: <><Monitor />{t('settings.themes.system')}</> },
-                      { value: 'light', label: <><Sun />{t('settings.themes.light')}</> },
-                      { value: 'dark', label: <><Moon />{t('settings.themes.dark')}</> }
+                      {
+                        value: 'system',
+                        label: (
+                          <>
+                            <Monitor />
+                            {t('settings.themes.system')}
+                          </>
+                        )
+                      },
+                      {
+                        value: 'light',
+                        label: (
+                          <>
+                            <Sun />
+                            {t('settings.themes.light')}
+                          </>
+                        )
+                      },
+                      {
+                        value: 'dark',
+                        label: (
+                          <>
+                            <Moon />
+                            {t('settings.themes.dark')}
+                          </>
+                        )
+                      }
                     ]}
                   />
                 </Row>

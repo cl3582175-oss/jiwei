@@ -70,7 +70,10 @@ export function TrashView() {
           ) : (
             <div className="mt-8 divide-y divide-border overflow-hidden rounded-xl border border-border bg-surface shadow-card">
               {items.map((it) => (
-                <div key={`${it.type}:${it.id}`} className="group flex items-center gap-4 px-5 py-3.5 transition-colors hover:bg-surface-hover/60">
+                <div
+                  key={`${it.type}:${it.id}`}
+                  className="group flex items-center gap-4 px-5 py-3.5 transition-colors hover:bg-surface-hover/60"
+                >
                   <div className="grid size-9 shrink-0 place-items-center rounded-lg bg-sunken text-muted [&_svg]:size-4">
                     {it.type === 'note' ? <NotebookText /> : it.type === 'category' ? <Folder /> : <FileStack />}
                   </div>
@@ -90,7 +93,13 @@ export function TrashView() {
                       {t('common.restore')}
                     </Button>
                     <Tip label={t('trash.purge')} side="top">
-                      <Button variant="ghost" size="icon-sm" className="hover:bg-danger-soft hover:text-danger" onClick={() => void purge(it)} aria-label={t('trash.purge')}>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        className="hover:bg-danger-soft hover:text-danger"
+                        onClick={() => void purge(it)}
+                        aria-label={t('trash.purge')}
+                      >
                         <Trash2 />
                       </Button>
                     </Tip>

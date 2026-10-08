@@ -54,7 +54,9 @@ export function FilterRow({
       style={{ paddingLeft: 10 + depth * 16 }}
       className={cn(
         'group flex h-8 cursor-default items-center gap-2 rounded-md pr-2 text-sm transition-colors [&>svg]:size-4 [&>svg]:shrink-0',
-        active ? 'bg-surface text-fg shadow-card [&>svg]:text-accent' : 'text-muted hover:bg-surface-hover hover:text-fg [&>svg]:text-subtle'
+        active
+          ? 'bg-surface text-fg shadow-card [&>svg]:text-accent'
+          : 'text-muted hover:bg-surface-hover hover:text-fg [&>svg]:text-subtle'
       )}
     >
       {leading}
@@ -83,7 +85,11 @@ export function CategoryTree({ kind, activeId, onSelect, onRemoved }: TreeProps)
     cats.filter((c) => (c.parentId ?? null) === parentId || (parentId === null && c.parentId && !cats.some((p) => p.id === c.parentId)))
 
   const add = async (parentId: string | null): Promise<void> => {
-    const name = await prompt({ title: parentId ? t('categories.newSub') : t('notes.newCategory'), placeholder: t('notes.categoryName'), confirmText: t('common.create') })
+    const name = await prompt({
+      title: parentId ? t('categories.newSub') : t('notes.newCategory'),
+      placeholder: t('notes.categoryName'),
+      confirmText: t('common.create')
+    })
     if (!name) return
     const c = await api.categories.create(kind, name, parentId)
     invalidate(qc, 'categories')
@@ -134,7 +140,10 @@ export function CategoryTree({ kind, activeId, onSelect, onRemoved }: TreeProps)
           trailing={
             <Menu>
               <MenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                <button className="rounded p-0.5 text-subtle opacity-0 group-hover:opacity-100 hover:text-fg data-[state=open]:opacity-100" aria-label={t('common.more')}>
+                <button
+                  className="rounded p-0.5 text-subtle opacity-0 group-hover:opacity-100 hover:text-fg data-[state=open]:opacity-100"
+                  aria-label={t('common.more')}
+                >
                   <MoreHorizontal className="size-4" />
                 </button>
               </MenuTrigger>

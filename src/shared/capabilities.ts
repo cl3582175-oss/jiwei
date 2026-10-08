@@ -1,8 +1,26 @@
 import { z } from 'zod'
 import * as S from './schemas'
 import type {
-  AppInfo, AssetRef, BackupInfo, BlockInfo, Category, HeatmapDay, ImportResult, Job, Note, NoteSummary, Profile, Proposal,
-  Revision, RevisionInfo, Segment, Settings, Source, Tag, TrashItem, Vault
+  AppInfo,
+  AssetRef,
+  BackupInfo,
+  BlockInfo,
+  Category,
+  HeatmapDay,
+  ImportResult,
+  Job,
+  Note,
+  NoteSummary,
+  Profile,
+  Proposal,
+  Revision,
+  RevisionInfo,
+  Segment,
+  Settings,
+  Source,
+  Tag,
+  TrashItem,
+  Vault
 } from './types'
 
 // 能力注册表：每个能力声明一次（名称、有序参数、说明、AI 可见性），由此自动生成：
@@ -35,13 +53,16 @@ function cap<R>() {
 
 /* ——— 类型推导 ——— */
 
-type ArgsOf<P extends ParamList> = { -readonly [K in keyof P]: P[K] extends readonly [string, infer Sc extends z.ZodType] ? z.input<Sc> : never }
+type ArgsOf<P extends ParamList> = {
+  -readonly [K in keyof P]: P[K] extends readonly [string, infer Sc extends z.ZodType] ? z.input<Sc> : never
+}
 /** 末尾可为 undefined 的参数变为可选参数 */
 type OptionalTail<T extends unknown[]> = T extends [...infer H, infer L] ? (undefined extends L ? [...OptionalTail<H>, L?] : T) : T
 export type CapFn<C> = C extends Capability<infer P, infer R> ? (...args: OptionalTail<ArgsOf<P>>) => Promise<R> : never
-export type ParsedArgs<C> = C extends Capability<infer P, unknown>
-  ? { -readonly [K in keyof P]: P[K] extends readonly [string, infer Sc extends z.ZodType] ? z.output<Sc> : never }
-  : never
+export type ParsedArgs<C> =
+  C extends Capability<infer P, unknown>
+    ? { -readonly [K in keyof P]: P[K] extends readonly [string, infer Sc extends z.ZodType] ? z.output<Sc> : never }
+    : never
 export type ResultOf<C> = C extends Capability<ParamList, infer R> ? R : never
 
 const none = [] as const
@@ -78,7 +99,11 @@ export const capabilities = {
     list: cap<Category[]>()({ description: '列出分类（含层级关系）', params: [['kind', S.CategoryKindSchema]], ai: { effect: 'read' } }),
     create: cap<Category>()({
       description: '新建分类',
-      params: [['kind', S.CategoryKindSchema], ['name', z.string().min(1).max(200)], ['parentId', S.Id.nullable().optional()]]
+      params: [
+        ['kind', S.CategoryKindSchema],
+        ['name', z.string().min(1).max(200)],
+        ['parentId', S.Id.nullable().optional()]
+      ]
     }),
     update: cap<void>()({ description: '修改分类名称、父分类或颜色', params: [id(), ['patch', S.CategoryPatchSchema]] }),
     remove: cap<void>()({ description: '删除分类（进入最近删除）', params: [id()] })
@@ -90,7 +115,11 @@ export const capabilities = {
     remove: cap<void>()({ description: '删除标签', params: [id()] }),
     set: cap<void>()({
       description: '设置笔记或资料的标签',
-      params: [['entityType', S.EntityTypeSchema], ['entityId', S.Id], ['tagIds', z.array(S.Id).max(100)]]
+      params: [
+        ['entityType', S.EntityTypeSchema],
+        ['entityId', S.Id],
+        ['tagIds', z.array(S.Id).max(100)]
+      ]
     })
   },
   notes: {
@@ -106,7 +135,10 @@ export const capabilities = {
   revisions: {
     list: cap<RevisionInfo[]>()({ description: '列出笔记的历史版本', params: [id('noteId')] }),
     get: cap<Revision | null>()({ description: '读取一个历史版本', params: [id()] }),
-    create: cap<RevisionInfo>()({ description: '保存一个版本', params: [id('noteId'), ['reason', z.enum(['manual', 'restore']).optional()]] })
+    create: cap<RevisionInfo>()({
+      description: '保存一个版本',
+      params: [id('noteId'), ['reason', z.enum(['manual', 'restore']).optional()]]
+    })
   },
   proposals: {
     create: cap<Proposal>()({
@@ -123,7 +155,11 @@ export const capabilities = {
   assets: {
     importBytes: cap<AssetRef>()({
       description: '把字节存入素材库',
-      params: [['name', z.string().max(260)], ['mime', z.string().max(120)], ['bytes', S.Bytes]]
+      params: [
+        ['name', z.string().max(260)],
+        ['mime', z.string().max(120)],
+        ['bytes', S.Bytes]
+      ]
     })
   },
   sources: {
@@ -132,11 +168,18 @@ export const capabilities = {
     importDialog: cap<ImportResult>()({ description: '通过对话框导入文件', params: [['categoryId', S.Id.nullable().optional()]] }),
     importPaths: cap<ImportResult>()({
       description: '按路径导入文件（拖拽）',
-      params: [['paths', z.array(z.string().min(1).max(4096)).max(500)], ['categoryId', S.Id.nullable().optional()]]
+      params: [
+        ['paths', z.array(z.string().min(1).max(4096)).max(500)],
+        ['categoryId', S.Id.nullable().optional()]
+      ]
     }),
     addUrl: cap<Source>()({
       description: '添加网址资料',
-      params: [['url', z.url({ protocol: /^https?$/ })], ['title', z.string().max(500).optional()], ['categoryId', S.Id.nullable().optional()]]
+      params: [
+        ['url', z.url({ protocol: /^https?$/ })],
+        ['title', z.string().max(500).optional()],
+        ['categoryId', S.Id.nullable().optional()]
+      ]
     }),
     update: cap<void>()({ description: '修改资料信息', params: [id(), ['patch', S.SourceUpdateSchema]] }),
     open: cap<void>()({ description: '用系统应用打开资料', params: [id()] }),
@@ -147,7 +190,10 @@ export const capabilities = {
     list: cap<Segment[]>()({ description: '读取资料的分段内容', params: [id('sourceId')], ai: { effect: 'read' } }),
     search: cap<Segment[]>()({
       description: '在资料正文中全文检索',
-      params: [['query', z.string().min(1).max(500)], ['sourceId', S.Id.optional()]],
+      params: [
+        ['query', z.string().min(1).max(500)],
+        ['sourceId', S.Id.optional()]
+      ],
       ai: { effect: 'read' }
     })
   },
@@ -183,7 +229,8 @@ export function eachCapability(): [string, string, Capability][] {
 export function parseArgs(def: Capability, args: unknown[]): unknown[] {
   return def.params.map(([name, schema], i) => {
     const r = schema.safeParse(args[i])
-    if (!r.success) throw new Error(`Invalid argument "${name}": ${r.error.issues.map((x) => `${x.path.join('.') || name} ${x.message}`).join('; ')}`)
+    if (!r.success)
+      throw new Error(`Invalid argument "${name}": ${r.error.issues.map((x) => `${x.path.join('.') || name} ${x.message}`).join('; ')}`)
     return r.data
   })
 }

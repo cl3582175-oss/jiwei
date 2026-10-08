@@ -238,6 +238,25 @@ export interface BackupInfo {
 
 export const TRASH_RETENTION_DAYS = 30
 
+/**
+ * 工作区上下文：AI 请求时随附，让 AI 知道“你正在看什么”。
+ * 由渲染进程实时维护（笔记光标、资料位置与选区）。
+ */
+export interface WorkspaceContext {
+  noteId: string | null
+  /** 光标所在块（段落 ID）与所在行 */
+  cursorBlockId: string | null
+  cursorRowId: string | null
+  /** 笔记中选中的文字 */
+  noteSelection: string | null
+  sourceId: string | null
+  /** 资料中的当前位置（W3C 选择器值，如 t=95 或 page=12） */
+  sourceLocator: string | null
+  /** 资料中选中的文字与所在片段 */
+  sourceSelection: string | null
+  sourceSegmentId: string | null
+}
+
 /** 主进程 → 渲染进程的事件 */
 export interface JiweiEvents {
   /** 应用即将退出 / 重载：请立即保存未写入的内容，然后调用 app.flushDone() */

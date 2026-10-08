@@ -25,7 +25,12 @@ const timers = new Map<string, NodeJS.Timeout>()
 function readState(noteId: string): Uint8Array {
   const db = getDb()
   const base = db.select({ state: noteDocs.state }).from(noteDocs).where(eq(noteDocs.noteId, noteId)).get()
-  const ups = db.select({ u: noteUpdates.update }).from(noteUpdates).where(eq(noteUpdates.noteId, noteId)).orderBy(asc(noteUpdates.seq)).all()
+  const ups = db
+    .select({ u: noteUpdates.update })
+    .from(noteUpdates)
+    .where(eq(noteUpdates.noteId, noteId))
+    .orderBy(asc(noteUpdates.seq))
+    .all()
   const parts = [...(base ? [new Uint8Array(base.state)] : []), ...ups.map((r) => new Uint8Array(r.u))]
   if (parts.length === 0) return Y.encodeStateAsUpdate(new Y.Doc())
   return parts.length === 1 ? parts[0] : Y.mergeUpdates(parts)
@@ -46,7 +51,10 @@ export function initDoc(noteId: string): void {
   frag.insert(0, [row, el('cornellSummary', [para()])])
   const state = Y.encodeStateAsUpdate(doc)
   doc.destroy()
-  getDb().insert(noteDocs).values({ noteId, state: Buffer.from(state), updatedAt: Date.now() }).run()
+  getDb()
+    .insert(noteDocs)
+    .values({ noteId, state: Buffer.from(state), updatedAt: Date.now() })
+    .run()
 }
 
 export function loadDoc(noteId: string): Uint8Array {
@@ -69,7 +77,9 @@ export function stateToContent(state: Uint8Array): { doc: DocJSON; embeds: Embed
 
 export function pushUpdate(noteId: string, update: Uint8Array): void {
   const db = getDb()
-  db.insert(noteUpdates).values({ noteId, update: Buffer.from(update), createdAt: Date.now() }).run()
+  db.insert(noteUpdates)
+    .values({ noteId, update: Buffer.from(update), createdAt: Date.now() })
+    .run()
   const t = timers.get(noteId)
   if (t) clearTimeout(t)
   timers.set(
@@ -112,7 +122,10 @@ function compact(noteId: string, state: Uint8Array): void {
       .values({ noteId, state: Buffer.from(state), updatedAt: Date.now() })
       .onConflictDoUpdate({ target: noteDocs.noteId, set: { state: Buffer.from(state), updatedAt: Date.now() } })
       .run()
-    if (maxSeq) tx.delete(noteUpdates).where(and(eq(noteUpdates.noteId, noteId), lt(noteUpdates.seq, maxSeq.seq + 1))).run()
+    if (maxSeq)
+      tx.delete(noteUpdates)
+        .where(and(eq(noteUpdates.noteId, noteId), lt(noteUpdates.seq, maxSeq.seq + 1)))
+        .run()
   })
 }
 
@@ -128,7 +141,11 @@ export function derive(noteId: string): void {
   const pending = db.select({ seq: noteUpdates.seq }).from(noteUpdates).where(eq(noteUpdates.noteId, noteId)).all().length
   if (pending >= COMPACT_THRESHOLD) compact(noteId, state)
 
-  const prev = db.select({ id: blocks.id, hash: blocks.hash, deletedAt: blocks.deletedAt }).from(blocks).where(eq(blocks.noteId, noteId)).all()
+  const prev = db
+    .select({ id: blocks.id, hash: blocks.hash, deletedAt: blocks.deletedAt })
+    .from(blocks)
+    .where(eq(blocks.noteId, noteId))
+    .all()
   const diff = diffBlocks(prev, d.blocks)
   const aiWords = countWords(d.aiText)
   const textChanged = d.plainText !== note.plainText || aiWords !== note.aiWordCount
@@ -136,13 +153,35 @@ export function derive(noteId: string): void {
   db.transaction((tx) => {
     for (const b of diff.inserted) {
       tx.insert(blocks)
-        .values({ id: b.id, noteId, kind: b.kind, origin: b.origin, section: b.section, rowId: b.rowId, position: b.position, text: b.text, hash: b.hash, createdAt: now, updatedAt: now })
+        .values({
+          id: b.id,
+          noteId,
+          kind: b.kind,
+          origin: b.origin,
+          section: b.section,
+          rowId: b.rowId,
+          position: b.position,
+          text: b.text,
+          hash: b.hash,
+          createdAt: now,
+          updatedAt: now
+        })
         .onConflictDoNothing()
         .run()
     }
     for (const b of [...diff.changed, ...diff.revived]) {
       tx.update(blocks)
-        .set({ kind: b.kind, origin: b.origin, section: b.section, rowId: b.rowId, position: b.position, text: b.text, hash: b.hash, updatedAt: now, deletedAt: null })
+        .set({
+          kind: b.kind,
+          origin: b.origin,
+          section: b.section,
+          rowId: b.rowId,
+          position: b.position,
+          text: b.text,
+          hash: b.hash,
+          updatedAt: now,
+          deletedAt: null
+        })
         .where(eq(blocks.id, b.id))
         .run()
     }
@@ -154,16 +193,36 @@ export function derive(noteId: string): void {
     for (const assetId of d.assetIds) tx.insert(noteAssets).values({ noteId, assetId, createdAt: now }).onConflictDoNothing().run()
 
     // 正文链接：整体替换由正文派生的链接
-    tx.delete(links).where(and(eq(links.fromType, 'note'), eq(links.fromId, noteId), eq(links.origin, 'doc'))).run()
+    tx.delete(links)
+      .where(and(eq(links.fromType, 'note'), eq(links.fromId, noteId), eq(links.origin, 'doc')))
+      .run()
     for (const l of d.links) {
       tx.insert(links)
-        .values({ id: newId(), fromType: 'note', fromId: noteId, fromBlockId: l.fromBlockId, toType: l.toType, toId: l.toId, origin: 'doc', createdAt: now, updatedAt: now, updatedBy: deviceId() })
+        .values({
+          id: newId(),
+          fromType: 'note',
+          fromId: noteId,
+          fromBlockId: l.fromBlockId,
+          toType: l.toType,
+          toId: l.toId,
+          origin: 'doc',
+          createdAt: now,
+          updatedAt: now,
+          updatedBy: deviceId()
+        })
         .run()
     }
 
     if (textChanged) {
       tx.update(notes)
-        .set({ plainText: d.plainText, wordCount: countWords(d.plainText), aiWordCount: aiWords, editedAt: now, updatedAt: now, updatedBy: deviceId() })
+        .set({
+          plainText: d.plainText,
+          wordCount: countWords(d.plainText),
+          aiWordCount: aiWords,
+          editedAt: now,
+          updatedAt: now,
+          updatedBy: deviceId()
+        })
         .where(eq(notes.id, noteId))
         .run()
     }
@@ -190,7 +249,13 @@ function maybeAutoRevision(noteId: string, state: Uint8Array, title: string, wor
   if (!last || Date.now() - last.createdAt >= REVISION_INTERVAL) saveRevision(noteId, 'auto', state, title, wordCount)
 }
 
-export function saveRevision(noteId: string, reason: RevisionInfo['reason'], state?: Uint8Array, title?: string, wordCount?: number): RevisionInfo {
+export function saveRevision(
+  noteId: string,
+  reason: RevisionInfo['reason'],
+  state?: Uint8Array,
+  title?: string,
+  wordCount?: number
+): RevisionInfo {
   const db = getDb()
   const note = db.select().from(notes).where(eq(notes.id, noteId)).get()
   if (!note) throw new Error(`Note not found: ${noteId}`)
@@ -255,7 +320,10 @@ export function pruneRevisions(): void {
     if (seen.has(key)) drop.push(r.id)
     else seen.add(key)
   }
-  for (let i = 0; i < drop.length; i += 500) db.delete(noteRevisions).where(inArray(noteRevisions.id, drop.slice(i, i + 500))).run()
+  for (let i = 0; i < drop.length; i += 500)
+    db.delete(noteRevisions)
+      .where(inArray(noteRevisions.id, drop.slice(i, i + 500)))
+      .run()
 }
 
 export function listBlocks(noteId: string) {
@@ -286,4 +354,3 @@ export function purgeDocData(noteId: string): void {
   db.delete(blocks).where(eq(blocks.noteId, noteId)).run()
   db.delete(noteAssets).where(eq(noteAssets.noteId, noteId)).run()
 }
-

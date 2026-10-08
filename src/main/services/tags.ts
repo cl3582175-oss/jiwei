@@ -44,7 +44,9 @@ export function removeTag(id: string): void {
 export function setTags(entityType: 'note' | 'source', entityId: string, tagIds: string[]): void {
   const db = getDb()
   db.transaction((tx) => {
-    tx.delete(taggings).where(and(eq(taggings.entityType, entityType), eq(taggings.entityId, entityId))).run()
+    tx.delete(taggings)
+      .where(and(eq(taggings.entityType, entityType), eq(taggings.entityId, entityId)))
+      .run()
     for (const tagId of new Set(tagIds)) tx.insert(taggings).values({ tagId, entityType, entityId, createdAt: Date.now() }).run()
   })
 }

@@ -8,7 +8,10 @@ const GAP = 3
 
 /** 0–4 级强度，按非零值的分位数切分，避免个别高峰把其他日子压成浅色 */
 function levels(days: HeatmapDay[]): (d: number) => number {
-  const vals = days.map((d) => d.count).filter((c) => c > 0).sort((a, b) => a - b)
+  const vals = days
+    .map((d) => d.count)
+    .filter((c) => c > 0)
+    .sort((a, b) => a - b)
   if (vals.length === 0) return () => 0
   const q = (p: number): number => vals[Math.min(vals.length - 1, Math.floor(p * vals.length))]
   const [a, b, c] = [q(0.25), q(0.5), q(0.75)]
@@ -65,7 +68,11 @@ export function Heatmap({ days }: { days: HeatmapDay[] }) {
               <div key={i} className="flex flex-col" style={{ gap: GAP }}>
                 {w.map((d, j) =>
                   d ? (
-                    <Tip key={d.date} side="top" label={t('home.heatTip', { date: dateFmt.format(new Date(d.date + 'T00:00:00')), count: d.count })}>
+                    <Tip
+                      key={d.date}
+                      side="top"
+                      label={t('home.heatTip', { date: dateFmt.format(new Date(d.date + 'T00:00:00')), count: d.count })}
+                    >
                       <div
                         className="rounded-[3px] transition-transform hover:scale-125"
                         style={{ width: CELL, height: CELL, background: LEVEL_BG[level(d.count)] }}

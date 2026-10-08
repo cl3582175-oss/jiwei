@@ -26,7 +26,12 @@ export function registerJobKinds(): void {
       return `解析资料：${s?.title ?? sourceId}`
     },
     async run({ sourceId }, ctx) {
-      const row = getDb().select({ s: sources, a: assets }).from(sources).leftJoin(assets, eq(sources.assetId, assets.id)).where(eq(sources.id, sourceId)).get()
+      const row = getDb()
+        .select({ s: sources, a: assets })
+        .from(sources)
+        .leftJoin(assets, eq(sources.assetId, assets.id))
+        .where(eq(sources.id, sourceId))
+        .get()
       if (!row?.a) return { skipped: 'no file' }
       if (!canSegment(row.a.ext)) return { skipped: `unsupported: ${row.a.ext}` }
       const segs = await ctx.worker<TextSegment[]>('segmentTextFile', { path: assetPath(row.a.id, row.a.ext), ext: row.a.ext })

@@ -20,6 +20,7 @@ const shot = async (name: string): Promise<void> => {
 }
 const sidebar = (): ReturnType<Page['locator']> => page.locator('aside').first()
 
+test.describe.configure({ mode: 'serial' })
 test.beforeAll(launch)
 test.afterAll(async () => {
   await app?.close()

@@ -14,5 +14,13 @@
     "baseUrl": ".",
     "paths": { "@shared/*": ["src/shared/*"] }
   },
-  "include": ["electron.vite.config.ts", "drizzle.config.ts", "vitest.config.ts", "src/main/**/*", "src/worker/**/*", "src/preload/**/*", "src/shared/**/*"]
+  "include": [
+    "electron.vite.config.ts",
+    "drizzle.config.ts",
+    "vitest.config.ts",
+    "src/main/**/*",
+    "src/worker/**/*",
+    "src/preload/**/*",
+    "src/shared/**/*"
+  ]
 }

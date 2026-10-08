@@ -66,13 +66,17 @@ export const notes = sqliteTable(
     id: text('id').primaryKey(),
     title: text('title').notNull().default(''),
     /** 笔记类型：每种类型有自己的文档结构 */
-    kind: text('kind', { enum: ['cornell', 'review', 'reading', 'free'] }).notNull().default('cornell'),
+    kind: text('kind', { enum: ['cornell', 'review', 'reading', 'free'] })
+      .notNull()
+      .default('cornell'),
     categoryId: text('category_id'),
     pinned: integer('pinned', { mode: 'boolean' }).notNull().default(false),
     /** 学习日期：知识是什么时候学到的（可手动修改，默认等于创建时间） */
     learnedAt: integer('learned_at').notNull(),
     /** 知识状态：有效 / 已过时 / 存疑 */
-    status: text('status', { enum: ['active', 'outdated', 'disputed'] }).notNull().default('active'),
+    status: text('status', { enum: ['active', 'outdated', 'disputed'] })
+      .notNull()
+      .default('active'),
     /** 被哪篇笔记取代 */
     supersededBy: text('superseded_by'),
     /** 隐私：为 true 时永不发送给 AI */
@@ -146,7 +150,9 @@ export const blocks = sqliteTable(
     text: text('text').notNull(),
     hash: text('hash').notNull(),
     /** 内容来源：用户亲手写 / AI 生成 / AI 生成后经用户审阅 */
-    origin: text('origin', { enum: ['user', 'ai', 'ai_reviewed'] }).notNull().default('user'),
+    origin: text('origin', { enum: ['user', 'ai', 'ai_reviewed'] })
+      .notNull()
+      .default('user'),
     createdAt: integer('created_at').notNull(),
     updatedAt: integer('updated_at').notNull(),
     deletedAt: integer('deleted_at')
@@ -192,7 +198,11 @@ export const sources = sqliteTable(
     aiExcluded: integer('ai_excluded', { mode: 'boolean' }).notNull().default(false),
     ...syncCols
   },
-  (t) => [index('sources_category_idx').on(t.categoryId), index('sources_deleted_idx').on(t.deletedAt), index('sources_asset_idx').on(t.assetId)]
+  (t) => [
+    index('sources_category_idx').on(t.categoryId),
+    index('sources_deleted_idx').on(t.deletedAt),
+    index('sources_asset_idx').on(t.assetId)
+  ]
 )
 
 /**
@@ -303,7 +313,9 @@ export const goals = sqliteTable('goals', {
   id: text('id').primaryKey(),
   title: text('title').notNull(),
   description: text('description'),
-  status: text('status', { enum: ['active', 'achieved', 'paused', 'dropped'] }).notNull().default('active'),
+  status: text('status', { enum: ['active', 'achieved', 'paused', 'dropped'] })
+    .notNull()
+    .default('active'),
   targetAt: integer('target_at'),
   categoryId: text('category_id'),
   ...syncCols
@@ -321,7 +333,9 @@ export const reviews = sqliteTable(
     /** 复盘范围：分类 / 标签 / 目标 / 笔记集合（JSON） */
     scope: text('scope'),
     template: text('template').notNull().default('grai'),
-    status: text('status', { enum: ['draft', 'done'] }).notNull().default('draft'),
+    status: text('status', { enum: ['draft', 'done'] })
+      .notNull()
+      .default('draft'),
     completedAt: integer('completed_at'),
     ...syncCols
   },
@@ -332,8 +346,12 @@ export const reviews = sqliteTable(
 export const insights = sqliteTable('insights', {
   id: text('id').primaryKey(),
   statement: text('statement').notNull(),
-  confidence: text('confidence', { enum: ['hypothesis', 'believed', 'verified'] }).notNull().default('hypothesis'),
-  status: text('status', { enum: ['active', 'revised', 'refuted'] }).notNull().default('active'),
+  confidence: text('confidence', { enum: ['hypothesis', 'believed', 'verified'] })
+    .notNull()
+    .default('hypothesis'),
+  status: text('status', { enum: ['active', 'revised', 'refuted'] })
+    .notNull()
+    .default('active'),
   version: integer('version').notNull().default(1),
   reviewId: text('review_id'),
   ...syncCols
@@ -357,7 +375,9 @@ export const insightVersions = sqliteTable(
 export const actions = sqliteTable('actions', {
   id: text('id').primaryKey(),
   title: text('title').notNull(),
-  status: text('status', { enum: ['open', 'done', 'dropped'] }).notNull().default('open'),
+  status: text('status', { enum: ['open', 'done', 'dropped'] })
+    .notNull()
+    .default('open'),
   dueAt: integer('due_at'),
   doneAt: integer('done_at'),
   reviewId: text('review_id'),
@@ -428,7 +448,9 @@ export const proposals = sqliteTable(
     ops: text('ops').notNull(),
     /** 每条操作的处理结果（JSON 数组：pending / accepted / rejected） */
     opStatus: text('op_status').notNull(),
-    status: text('status', { enum: ['pending', 'resolved'] }).notNull().default('pending'),
+    status: text('status', { enum: ['pending', 'resolved'] })
+      .notNull()
+      .default('pending'),
     model: text('model'),
     /** 依据的资料片段 / 笔记块（JSON） */
     sources: text('sources'),
@@ -445,7 +467,9 @@ export const jobs = sqliteTable(
     id: text('id').primaryKey(),
     kind: text('kind').notNull(),
     payload: text('payload').notNull(),
-    status: text('status', { enum: ['queued', 'running', 'done', 'failed', 'canceled'] }).notNull().default('queued'),
+    status: text('status', { enum: ['queued', 'running', 'done', 'failed', 'canceled'] })
+      .notNull()
+      .default('queued'),
     progress: real('progress').notNull().default(0),
     attempts: integer('attempts').notNull().default(0),
     error: text('error'),

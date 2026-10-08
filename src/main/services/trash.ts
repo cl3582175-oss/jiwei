@@ -17,15 +17,21 @@ function daysLeft(deletedAt: number): number {
 
 export function listTrash(): TrashItem[] {
   const db = getDb()
-  const item = (type: TrashType) => (r: { id: string; title: string; deletedAt: number | null }): TrashItem => ({
-    type,
-    id: r.id,
-    title: r.title,
-    deletedAt: r.deletedAt!,
-    daysLeft: daysLeft(r.deletedAt!)
-  })
+  const item =
+    (type: TrashType) =>
+    (r: { id: string; title: string; deletedAt: number | null }): TrashItem => ({
+      type,
+      id: r.id,
+      title: r.title,
+      deletedAt: r.deletedAt!,
+      daysLeft: daysLeft(r.deletedAt!)
+    })
   const n = db.select({ id: notes.id, title: notes.title, deletedAt: notes.deletedAt }).from(notes).where(isNotNull(notes.deletedAt)).all()
-  const s = db.select({ id: sources.id, title: sources.title, deletedAt: sources.deletedAt }).from(sources).where(isNotNull(sources.deletedAt)).all()
+  const s = db
+    .select({ id: sources.id, title: sources.title, deletedAt: sources.deletedAt })
+    .from(sources)
+    .where(isNotNull(sources.deletedAt))
+    .all()
   // 子分类随父分类一起删除时只显示父分类
   const c = db.select().from(categories).where(isNotNull(categories.deletedAt)).all()
   const cTop = c.filter((x) => !c.some((p) => p.id === x.parentId && p.deletedAt === x.deletedAt))
@@ -49,7 +55,9 @@ export async function purge(type: TrashType, id: string): Promise<void> {
   db.delete(links)
     .where(or(and(eq(links.fromType, type), eq(links.fromId, id)), and(eq(links.toType, type), eq(links.toId, id))))
     .run()
-  db.delete(annotations).where(and(eq(annotations.targetType, type), eq(annotations.targetId, id))).run()
+  db.delete(annotations)
+    .where(and(eq(annotations.targetType, type), eq(annotations.targetId, id)))
+    .run()
   if (type === 'note') {
     db.transaction(() => {
       purgeDocData(id)
@@ -73,4 +81,3 @@ export async function purgeExpired(): Promise<number> {
   for (const i of expired) await purge(i.type, i.id)
   return expired.length
 }
-

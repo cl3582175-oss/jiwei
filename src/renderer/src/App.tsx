@@ -47,6 +47,16 @@ function useThemeSync(): 'light' | 'dark' {
 /** 主进程派生数据更新后刷新列表与当前笔记 */
 function useMainEvents(): void {
   const qc = useQueryClient()
+  // 深层链接：jiwei://note/<id>、jiwei://source/<id>
+  useEffect(
+    () =>
+      window.jiweiEvents.on('nav:open', (p) => {
+        const s = useApp.getState()
+        if (p.type === 'note') s.openNote(p.id)
+        else s.openSource(p.id)
+      }),
+    []
+  )
   useEffect(() => {
     let timer: number | undefined
     const ids = new Set<string>()

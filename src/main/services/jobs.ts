@@ -84,7 +84,17 @@ function toJob(r: Row): Job {
   } catch {
     /* 保持默认标题 */
   }
-  return { id: r.id, kind: r.kind, status: r.status, progress: r.progress, attempts: r.attempts, error: r.error, title, createdAt: r.createdAt, updatedAt: r.updatedAt }
+  return {
+    id: r.id,
+    kind: r.kind,
+    status: r.status,
+    progress: r.progress,
+    attempts: r.attempts,
+    error: r.error,
+    title,
+    createdAt: r.createdAt,
+    updatedAt: r.updatedAt
+  }
 }
 
 export function enqueue(kind: string, payload: unknown, opts?: { dedupeKey?: string }): string {
@@ -99,14 +109,28 @@ export function enqueue(kind: string, payload: unknown, opts?: { dedupeKey?: str
   }
   const now = Date.now()
   const id = newId()
-  db.insert(jobs).values({ id, kind, payload: JSON.stringify(payload), runAfter: now, dedupeKey: opts?.dedupeKey ?? null, createdAt: now, updatedAt: now }).run()
+  db.insert(jobs)
+    .values({
+      id,
+      kind,
+      payload: JSON.stringify(payload),
+      runAfter: now,
+      dedupeKey: opts?.dedupeKey ?? null,
+      createdAt: now,
+      updatedAt: now
+    })
+    .run()
   emit('jobs:changed', { ids: [id] })
   setImmediate(tick)
   return id
 }
 
 function setStatus(id: string, set: Partial<Row>): void {
-  getDb().update(jobs).set({ ...set, updatedAt: Date.now() }).where(eq(jobs.id, id)).run()
+  getDb()
+    .update(jobs)
+    .set({ ...set, updatedAt: Date.now() })
+    .where(eq(jobs.id, id))
+    .run()
   emit('jobs:changed', { ids: [id] })
 }
 

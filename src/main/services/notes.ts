@@ -34,7 +34,10 @@ const summaryCols = {
 type Row = { [K in keyof typeof summaryCols]: (typeof notes.$inferSelect)[K] }
 
 function toSummaries(rows: Row[]): NoteSummary[] {
-  const tagMap = tagIdsFor('note', rows.map((r) => r.id))
+  const tagMap = tagIdsFor(
+    'note',
+    rows.map((r) => r.id)
+  )
   return rows.map(({ plainText, ...r }) => ({
     ...r,
     excerpt: plainText.slice(0, EXCERPT_LEN),
@@ -47,9 +50,9 @@ function searchIds(search: string): string[] | null {
   const q = search.trim()
   if ([...q].length < 3) return null
   const phrase = '"' + q.replace(/"/g, '""') + '"'
-  const rows = getSqlite()
-    .prepare('SELECT note_id FROM notes_fts WHERE notes_fts MATCH ? ORDER BY rank LIMIT 1000')
-    .all(phrase) as { note_id: string }[]
+  const rows = getSqlite().prepare('SELECT note_id FROM notes_fts WHERE notes_fts MATCH ? ORDER BY rank LIMIT 1000').all(phrase) as {
+    note_id: string
+  }[]
   return rows.map((r) => r.note_id)
 }
 
@@ -145,7 +148,9 @@ export function trashNote(id: string): void {
 
 export function deleteNoteRow(id: string): void {
   const db = getDb()
-  db.delete(taggings).where(and(eq(taggings.entityType, 'note'), eq(taggings.entityId, id))).run()
+  db.delete(taggings)
+    .where(and(eq(taggings.entityType, 'note'), eq(taggings.entityId, id)))
+    .run()
   // 解除其他笔记对它的“被取代”引用
   db.update(notes).set({ supersededBy: null }).where(eq(notes.supersededBy, id)).run()
   db.delete(notes).where(eq(notes.id, id)).run()

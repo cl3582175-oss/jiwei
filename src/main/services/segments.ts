@@ -18,13 +18,24 @@ const toSegment = (r: Row): Segment => ({
 })
 
 export function listSegments(sourceId: string): Segment[] {
-  return getDb().select().from(sourceSegments).where(eq(sourceSegments.sourceId, sourceId)).orderBy(asc(sourceSegments.ordinal)).all().map(toSegment)
+  return getDb()
+    .select()
+    .from(sourceSegments)
+    .where(eq(sourceSegments.sourceId, sourceId))
+    .orderBy(asc(sourceSegments.ordinal))
+    .all()
+    .map(toSegment)
 }
 
 /** 资料正文检索：≥3 字用 FTS5 trigram，否则回退 LIKE；排除已删除资料 */
 export function searchSegments(query: string, sourceId?: string): Segment[] {
   const q = query.trim()
-  const live = getDb().select({ id: sources.id }).from(sources).where(isNull(sources.deletedAt)).all().map((r) => r.id)
+  const live = getDb()
+    .select({ id: sources.id })
+    .from(sources)
+    .where(isNull(sources.deletedAt))
+    .all()
+    .map((r) => r.id)
   if (live.length === 0) return []
   let ids: string[]
   if ([...q].length >= 3) {
@@ -39,7 +50,13 @@ export function searchSegments(query: string, sourceId?: string): Segment[] {
   const conds = [inArray(sourceSegments.sourceId, sourceId ? [sourceId] : live)]
   if (ids.length) conds.push(inArray(sourceSegments.id, ids))
   else conds.push(like(sourceSegments.text, `%${q}%`))
-  return getDb().select().from(sourceSegments).where(and(...conds)).limit(200).all().map(toSegment)
+  return getDb()
+    .select()
+    .from(sourceSegments)
+    .where(and(...conds))
+    .limit(200)
+    .all()
+    .map(toSegment)
 }
 
 export interface SegmentInput {
@@ -65,15 +82,31 @@ export function replaceSegments(sourceId: string, input: SegmentInput[]): number
       const reuse = byHash.get(hash)?.shift()
       if (reuse) {
         kept.add(reuse.id)
-        tx.update(sourceSegments).set({ ordinal, locator: JSON.stringify(seg.locator), updatedAt: now }).where(eq(sourceSegments.id, reuse.id)).run()
+        tx.update(sourceSegments)
+          .set({ ordinal, locator: JSON.stringify(seg.locator), updatedAt: now })
+          .where(eq(sourceSegments.id, reuse.id))
+          .run()
       } else {
         tx.insert(sourceSegments)
-          .values({ id: newId(), sourceId, ordinal, kind: seg.kind, locator: JSON.stringify(seg.locator), text: seg.text, hash, createdAt: now, updatedAt: now })
+          .values({
+            id: newId(),
+            sourceId,
+            ordinal,
+            kind: seg.kind,
+            locator: JSON.stringify(seg.locator),
+            text: seg.text,
+            hash,
+            createdAt: now,
+            updatedAt: now
+          })
           .run()
       }
     })
     const drop = prev.filter((r) => !kept.has(r.id)).map((r) => r.id)
-    for (let i = 0; i < drop.length; i += 500) tx.delete(sourceSegments).where(inArray(sourceSegments.id, drop.slice(i, i + 500))).run()
+    for (let i = 0; i < drop.length; i += 500)
+      tx.delete(sourceSegments)
+        .where(inArray(sourceSegments.id, drop.slice(i, i + 500)))
+        .run()
   })
   emit('segments:changed', { sourceId })
   return input.length

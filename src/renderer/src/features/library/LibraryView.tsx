@@ -3,17 +3,50 @@ import { useTranslation } from 'react-i18next'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
-  BookOpen, FileText, Film, Music, Image, File, Globe, FileType2, Layers, Upload, Link2, Search, X,
-  MoreHorizontal, ExternalLink, FolderOpen, Pencil, Trash2, Folder, Inbox, Check
+  BookOpen,
+  FileText,
+  Film,
+  Music,
+  Image,
+  File,
+  Globe,
+  FileType2,
+  Layers,
+  Upload,
+  Link2,
+  Search,
+  X,
+  MoreHorizontal,
+  ExternalLink,
+  FolderOpen,
+  Pencil,
+  Trash2,
+  Folder,
+  Inbox,
+  Check
 } from 'lucide-react'
 import type { ImportResult, Source, SourceKind } from '@shared/types'
 import { useCategories, useSources, invalidate } from '@/lib/queries'
 import { api, cn, formatBytes, formatDate, formatRelative, fromDateInput, toDateInput } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import {
-  Dialog, DialogContent, Input, Menu, MenuContent, MenuItem, MenuSeparator, MenuSub, MenuSubContent, MenuSubTrigger, MenuTrigger, Tip, EmptyState
+  Dialog,
+  DialogContent,
+  Input,
+  Menu,
+  MenuContent,
+  MenuItem,
+  MenuSeparator,
+  MenuSub,
+  MenuSubContent,
+  MenuSubTrigger,
+  MenuTrigger,
+  Tip,
+  EmptyState
 } from '@/components/ui/primitives'
 import { confirm } from '@/components/ui/confirm'
+import { useApp } from '@/store/app'
+import { PanelLeftOpen } from 'lucide-react'
 import { CategoryTree, categoryPaths } from '../notes/CategoryTree'
 import { TagEditor } from '../notes/TagEditor'
 
@@ -32,7 +65,15 @@ const KINDS: SourceKind[] = ['book', 'pdf', 'video', 'audio', 'image', 'document
 
 type CatFilter = { type: 'all' } | { type: 'uncategorized' } | { type: 'category'; id: string }
 
-function AddLinkDialog({ open, onOpenChange, categoryId }: { open: boolean; onOpenChange: (o: boolean) => void; categoryId: string | null }) {
+function AddLinkDialog({
+  open,
+  onOpenChange,
+  categoryId
+}: {
+  open: boolean
+  onOpenChange: (o: boolean) => void
+  categoryId: string | null
+}) {
   const { t } = useTranslation()
   const qc = useQueryClient()
   const [url, setUrl] = useState('')
@@ -145,7 +186,12 @@ function SourceCard({ s }: { s: Source }) {
     invalidate(qc, 'sources')
   }
   const remove = async (): Promise<void> => {
-    const ok = await confirm({ title: t('library.deleteTitle'), description: t('library.deleteDesc'), confirmText: t('common.delete'), danger: true })
+    const ok = await confirm({
+      title: t('library.deleteTitle'),
+      description: t('library.deleteDesc'),
+      confirmText: t('common.delete'),
+      danger: true
+    })
     if (!ok) return
     await api.sources.trash(s.id)
     invalidate(qc, 'sources', 'trash')
@@ -154,21 +200,30 @@ function SourceCard({ s }: { s: Source }) {
 
   return (
     <div
-      onDoubleClick={() => run(api.sources.open(s.id))}
+      onDoubleClick={() => useApp.getState().openSource(s.id)}
       className="group relative flex flex-col rounded-xl border border-border bg-surface p-4 shadow-card transition-all duration-200 hover:-translate-y-0.5 hover:border-border-strong hover:shadow-float"
     >
       <div className="flex items-start justify-between">
         <div className="grid size-11 place-items-center rounded-lg bg-accent-soft text-accent [&_svg]:size-5">{KIND_ICON[s.kind]}</div>
         <Menu>
           <MenuTrigger asChild>
-            <Button variant="ghost" size="icon-sm" className="opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100" aria-label={t('common.more')}>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100"
+              aria-label={t('common.more')}
+            >
               <MoreHorizontal />
             </Button>
           </MenuTrigger>
           <MenuContent>
+            <MenuItem onSelect={() => useApp.getState().openSource(s.id)}>
+              <PanelLeftOpen />
+              {t('workspace.openInWorkspace')}
+            </MenuItem>
             <MenuItem onSelect={() => run(api.sources.open(s.id))}>
               <ExternalLink />
-              {t('common.open')}
+              {t('workspace.openExternal')}
             </MenuItem>
             {s.kind !== 'web' && (
               <MenuItem onSelect={() => run(api.sources.reveal(s.id))}>
@@ -190,12 +245,14 @@ function SourceCard({ s }: { s: Source }) {
                   <Check className={cn(s.categoryId !== null && 'invisible')} />
                   {t('common.uncategorized')}
                 </MenuItem>
-                {[...categoryPaths(cats)].sort((a, b) => a[1].localeCompare(b[1])).map(([id, path]) => (
-                  <MenuItem key={id} onSelect={() => void move(id)}>
-                    <Check className={cn(s.categoryId !== id && 'invisible')} />
-                    {path}
-                  </MenuItem>
-                ))}
+                {[...categoryPaths(cats)]
+                  .sort((a, b) => a[1].localeCompare(b[1]))
+                  .map(([id, path]) => (
+                    <MenuItem key={id} onSelect={() => void move(id)}>
+                      <Check className={cn(s.categoryId !== id && 'invisible')} />
+                      {path}
+                    </MenuItem>
+                  ))}
               </MenuSubContent>
             </MenuSub>
             <MenuSeparator />
@@ -210,7 +267,8 @@ function SourceCard({ s }: { s: Source }) {
         {s.title}
       </p>
       <p className="mt-auto truncate pt-2 text-2xs text-subtle">
-        {t(`library.kinds.${s.kind}`)} · {s.kind === 'web' ? new URL(s.url!).hostname : formatBytes(s.size)} · {formatRelative(s.createdAt, i18n.language)}
+        {t(`library.kinds.${s.kind}`)} · {s.kind === 'web' ? new URL(s.url!).hostname : formatBytes(s.size)} ·{' '}
+        {formatRelative(s.createdAt, i18n.language)}
       </p>
       <SourceInfoDialog source={s} open={infoOpen} onOpenChange={setInfoOpen} />
     </div>
@@ -248,7 +306,9 @@ export function LibraryView() {
       onClick={onClick}
       className={cn(
         'group flex h-8 cursor-default items-center gap-2.5 rounded-md px-2.5 text-sm transition-colors [&>svg]:size-4',
-        active ? 'bg-surface text-fg shadow-card [&>svg]:text-accent' : 'text-muted hover:bg-surface-hover hover:text-fg [&>svg]:text-subtle'
+        active
+          ? 'bg-surface text-fg shadow-card [&>svg]:text-accent'
+          : 'text-muted hover:bg-surface-hover hover:text-fg [&>svg]:text-subtle'
       )}
     >
       {icon}
@@ -299,15 +359,30 @@ export function LibraryView() {
         <header className="drag flex h-[52px] shrink-0 items-center justify-end gap-2 border-b border-border/70 pr-[calc(var(--tb-right)+16px)] pl-6">
           <div className="no-drag relative w-[260px]">
             <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-subtle" />
-            <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t('library.searchPlaceholder')} className="h-8 pl-8" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={t('library.searchPlaceholder')}
+              className="h-8 pl-8"
+            />
             {search && (
-              <button onClick={() => setSearch('')} className="absolute top-1/2 right-2 -translate-y-1/2 text-subtle hover:text-fg" aria-label="clear">
+              <button
+                onClick={() => setSearch('')}
+                className="absolute top-1/2 right-2 -translate-y-1/2 text-subtle hover:text-fg"
+                aria-label="clear"
+              >
                 <X className="size-3.5" />
               </button>
             )}
           </div>
           <Tip label={t('library.addLink')} side="bottom">
-            <Button variant="outline" size="icon" className="no-drag h-8 w-8" onClick={() => setLinkOpen(true)} aria-label={t('library.addLink')}>
+            <Button
+              variant="outline"
+              size="icon"
+              className="no-drag h-8 w-8"
+              onClick={() => setLinkOpen(true)}
+              aria-label={t('library.addLink')}
+            >
               <Link2 />
             </Button>
           </Tip>

@@ -14,18 +14,49 @@ import type { AssetRef } from '@shared/types'
 // 路径：assets/ab/cd/<sha256>.<ext>
 
 export const MIME: Record<string, string> = {
-  pdf: 'application/pdf', epub: 'application/epub+zip',
-  mp4: 'video/mp4', mov: 'video/quicktime', webm: 'video/webm', mkv: 'video/x-matroska', m4v: 'video/mp4', avi: 'video/x-msvideo',
-  mp3: 'audio/mpeg', wav: 'audio/wav', m4a: 'audio/mp4', flac: 'audio/flac', ogg: 'audio/ogg', aac: 'audio/aac',
-  png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml',
-  bmp: 'image/bmp', avif: 'image/avif', heic: 'image/heic',
-  md: 'text/markdown', txt: 'text/plain', html: 'text/html', htm: 'text/html', csv: 'text/csv', json: 'application/json',
-  doc: 'application/msword', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  ppt: 'application/vnd.ms-powerpoint', pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-  xls: 'application/vnd.ms-excel', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  pdf: 'application/pdf',
+  epub: 'application/epub+zip',
+  mp4: 'video/mp4',
+  mov: 'video/quicktime',
+  webm: 'video/webm',
+  mkv: 'video/x-matroska',
+  m4v: 'video/mp4',
+  avi: 'video/x-msvideo',
+  mp3: 'audio/mpeg',
+  wav: 'audio/wav',
+  m4a: 'audio/mp4',
+  flac: 'audio/flac',
+  ogg: 'audio/ogg',
+  aac: 'audio/aac',
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  svg: 'image/svg+xml',
+  bmp: 'image/bmp',
+  avif: 'image/avif',
+  heic: 'image/heic',
+  md: 'text/markdown',
+  txt: 'text/plain',
+  html: 'text/html',
+  htm: 'text/html',
+  csv: 'text/csv',
+  json: 'application/json',
+  doc: 'application/msword',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  ppt: 'application/vnd.ms-powerpoint',
+  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  xls: 'application/vnd.ms-excel',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 }
 
-const safeExt = (name: string): string => extname(name).slice(1).toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 10) || 'bin'
+const safeExt = (name: string): string =>
+  extname(name)
+    .slice(1)
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '')
+    .slice(0, 10) || 'bin'
 
 export function assetPath(id: string, ext: string): string {
   return join(assetsDir(), id.slice(0, 2), id.slice(2, 4), `${id}.${ext}`)
@@ -58,7 +89,10 @@ export async function importFile(path: string): Promise<{ row: typeof assets.$in
   const id = await sha256File(path)
   const dest = assetPath(id, ext)
   const s = await stat(path)
-  const exists = await stat(dest).then(() => true, () => false)
+  const exists = await stat(dest).then(
+    () => true,
+    () => false
+  )
   if (!exists) {
     await mkdir(join(dest, '..'), { recursive: true })
     const tmp = `${dest}.tmp-${process.pid}`
@@ -74,7 +108,12 @@ export async function importBytes(name: string, mime: string, bytes: Uint8Array)
   const ext = safeExt(name) !== 'bin' ? safeExt(name) : (extFromMime ?? 'bin')
   const id = createHash('sha256').update(bytes).digest('hex')
   const dest = assetPath(id, ext)
-  if (!(await stat(dest).then(() => true, () => false))) {
+  if (
+    !(await stat(dest).then(
+      () => true,
+      () => false
+    ))
+  ) {
     await mkdir(join(dest, '..'), { recursive: true })
     await writeFile(dest, bytes)
   }
@@ -86,14 +125,35 @@ export async function importBytes(name: string, mime: string, bytes: Uint8Array)
 export async function collectGarbage(): Promise<number> {
   const db = getDb()
   const used = new Set<string>([
-    ...db.select({ id: sources.assetId }).from(sources).all().map((r) => r.id).filter((x): x is string => !!x),
-    ...db.select({ id: noteAssets.assetId }).from(noteAssets).all().map((r) => r.id)
+    ...db
+      .select({ id: sources.assetId })
+      .from(sources)
+      .all()
+      .map((r) => r.id)
+      .filter((x): x is string => !!x),
+    ...db
+      .select({ id: noteAssets.assetId })
+      .from(noteAssets)
+      .all()
+      .map((r) => r.id)
   ])
   const orphans = used.size
-    ? db.select().from(assets).where(notInArray(assets.id, [...used])).all()
+    ? db
+        .select()
+        .from(assets)
+        .where(notInArray(assets.id, [...used]))
+        .all()
     : db.select().from(assets).all()
   for (const a of orphans) await rm(assetPath(a.id, a.ext), { force: true })
-  if (orphans.length) db.delete(assets).where(inArray(assets.id, orphans.map((a) => a.id))).run()
+  if (orphans.length)
+    db.delete(assets)
+      .where(
+        inArray(
+          assets.id,
+          orphans.map((a) => a.id)
+        )
+      )
+      .run()
   if (orphans.length) log.info('[assets] removed', orphans.length, 'orphan files')
   return orphans.length
 }

@@ -17,7 +17,15 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
 Input.displayName = 'Input'
 
 /* ——— Tooltip ——— */
-export function Tip({ label, side = 'right', children }: { label: ReactNode; side?: 'top' | 'right' | 'bottom' | 'left'; children: ReactNode }) {
+export function Tip({
+  label,
+  side = 'right',
+  children
+}: {
+  label: ReactNode
+  side?: 'top' | 'right' | 'bottom' | 'left'
+  children: ReactNode
+}) {
   return (
     <T.Root delayDuration={350}>
       <T.Trigger asChild>{children}</T.Trigger>
@@ -83,7 +91,15 @@ export function DialogContent({
 export const Menu = M.Root
 export const MenuTrigger = M.Trigger
 
-export function MenuContent({ children, align = 'end', className }: { children: ReactNode; align?: 'start' | 'end' | 'center'; className?: string }) {
+export function MenuContent({
+  children,
+  align = 'end',
+  className
+}: {
+  children: ReactNode
+  align?: 'start' | 'end' | 'center'
+  className?: string
+}) {
   return (
     <M.Portal>
       <M.Content

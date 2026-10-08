@@ -39,13 +39,24 @@ function NoteItem({ note, active, sort, onClick }: { note: NoteSummary; active: 
   return (
     <button
       onClick={onClick}
-      className={cn('group relative w-full rounded-lg px-3 py-2.5 text-left transition-colors', active ? 'bg-surface shadow-card' : 'hover:bg-surface-hover')}
+      className={cn(
+        'group relative w-full rounded-lg px-3 py-2.5 text-left transition-colors',
+        active ? 'bg-surface shadow-card' : 'hover:bg-surface-hover'
+      )}
     >
       {active && <span className="absolute top-3 bottom-3 left-0 w-[3px] rounded-r-full bg-accent" />}
       <div className="flex items-center gap-1.5">
         {note.pinned && <Pin className="size-3 shrink-0 fill-accent text-accent" />}
-        {note.status !== 'active' && <span className={cn('shrink-0 [&_svg]:size-3', STATUS_META[note.status].cls)}>{STATUS_META[note.status].icon}</span>}
-        <span className={cn('truncate text-sm font-medium', note.title ? 'text-fg' : 'text-subtle', note.status === 'outdated' && 'text-muted line-through decoration-subtle/60')}>
+        {note.status !== 'active' && (
+          <span className={cn('shrink-0 [&_svg]:size-3', STATUS_META[note.status].cls)}>{STATUS_META[note.status].icon}</span>
+        )}
+        <span
+          className={cn(
+            'truncate text-sm font-medium',
+            note.title ? 'text-fg' : 'text-subtle',
+            note.status === 'outdated' && 'text-muted line-through decoration-subtle/60'
+          )}
+        >
           {note.title || t('common.untitled')}
         </span>
         {note.aiExcluded && <ShieldOff className="ml-auto size-3 shrink-0 text-subtle" />}
@@ -59,7 +70,7 @@ function NoteItem({ note, active, sort, onClick }: { note: NoteSummary; active: 
 export function NotesSidebar() {
   const { t } = useTranslation()
   const qc = useQueryClient()
-  const { noteFilter, setNoteFilter, noteSort, setNoteSort, activeNoteId, openNote } = useApp()
+  const { noteFilter, setNoteFilter, noteSort, setNoteSort, noteId: activeNoteId, openNote } = useApp()
   const [search, setSearch] = useState('')
   const createNote = useCreateNote()
   const { data: tags = [] } = useTags()
@@ -68,7 +79,12 @@ export function NotesSidebar() {
   const is = (f: NoteFilter): boolean => f.type === noteFilter.type && (!('id' in f) || ('id' in noteFilter && noteFilter.id === f.id))
 
   const removeTag = async (id: string, name: string): Promise<void> => {
-    const ok = await confirm({ title: t('tags.deleteTitle', { name }), description: t('tags.deleteDesc'), confirmText: t('common.delete'), danger: true })
+    const ok = await confirm({
+      title: t('tags.deleteTitle', { name }),
+      description: t('tags.deleteDesc'),
+      confirmText: t('common.delete'),
+      danger: true
+    })
     if (!ok) return
     await api.tags.remove(id)
     if (noteFilter.type === 'tag' && noteFilter.id === id) setNoteFilter({ type: 'all' })
@@ -116,7 +132,11 @@ export function NotesSidebar() {
             className="h-8 w-full rounded-md border border-transparent bg-surface pr-7 pl-8 text-sm text-fg shadow-card outline-none placeholder:text-subtle focus:border-accent focus:ring-3 focus:ring-accent-soft"
           />
           {search && (
-            <button onClick={() => setSearch('')} className="absolute top-1/2 right-2 -translate-y-1/2 text-subtle hover:text-fg" aria-label={t('common.clear')}>
+            <button
+              onClick={() => setSearch('')}
+              className="absolute top-1/2 right-2 -translate-y-1/2 text-subtle hover:text-fg"
+              aria-label={t('common.clear')}
+            >
               <X className="size-3.5" />
             </button>
           )}
@@ -127,8 +147,18 @@ export function NotesSidebar() {
       <div className="max-h-[42%] shrink-0 overflow-y-auto px-3 pb-1">
         <div className="space-y-0.5">
           <FilterRow active={is({ type: 'all' })} icon={<Layers />} label={t('notes.all')} onClick={() => setNoteFilter({ type: 'all' })} />
-          <FilterRow active={is({ type: 'pinned' })} icon={<Pin />} label={t('notes.pinned')} onClick={() => setNoteFilter({ type: 'pinned' })} />
-          <FilterRow active={is({ type: 'uncategorized' })} icon={<Inbox />} label={t('common.uncategorized')} onClick={() => setNoteFilter({ type: 'uncategorized' })} />
+          <FilterRow
+            active={is({ type: 'pinned' })}
+            icon={<Pin />}
+            label={t('notes.pinned')}
+            onClick={() => setNoteFilter({ type: 'pinned' })}
+          />
+          <FilterRow
+            active={is({ type: 'uncategorized' })}
+            icon={<Inbox />}
+            label={t('common.uncategorized')}
+            onClick={() => setNoteFilter({ type: 'uncategorized' })}
+          />
         </div>
         <CategoryTree
           kind="note"

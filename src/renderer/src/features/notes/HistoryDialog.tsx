@@ -8,7 +8,7 @@ import type { DocJSON } from '@shared/types'
 import { api, cn, formatDateTime } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { confirm } from '@/components/ui/confirm'
-import { idExtension, schemaExtensions } from './editor/extensions'
+import { previewExtensions } from './editor/preview'
 
 /** 版本历史：左侧时间线，右侧只读预览，可恢复到任意版本 */
 export function HistoryDialog({
@@ -26,12 +26,13 @@ export function HistoryDialog({
   const { data: list = [] } = useQuery({ queryKey: ['revisions', noteId], queryFn: () => api.revisions.list(noteId), enabled: open })
   const [selected, setSelected] = useState<string | null>(null)
   const current = selected ?? list[0]?.id ?? null
-  const { data: rev } = useQuery({ queryKey: ['revision', current], queryFn: () => api.revisions.get(current!), enabled: open && !!current })
+  const { data: rev } = useQuery({
+    queryKey: ['revision', current],
+    queryFn: () => api.revisions.get(current!),
+    enabled: open && !!current
+  })
 
-  const extensions = useMemo(
-    () => [...schemaExtensions({ summary: t('notes.summary'), cueHint: '', bodyHint: '', summaryHint: '' }), idExtension()],
-    [t]
-  )
+  const extensions = useMemo(() => previewExtensions({ summary: t('notes.summary'), cueHint: '', bodyHint: '', summaryHint: '' }), [t])
   const html = useMemo(() => {
     if (!rev) return ''
     try {
