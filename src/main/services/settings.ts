@@ -2,13 +2,16 @@ import { app, nativeTheme } from 'electron'
 import { getDb } from '../db'
 import { settings } from '../db/schema'
 import type { Settings } from '@shared/types'
+import type { SettingsPatch } from '@shared/schemas'
 
 function defaults(): Settings {
   return {
     // JIWEI_LANG 便于测试固定界面语言
     language: (process.env.JIWEI_LANG as Settings['language']) || (app.getLocale().toLowerCase().startsWith('zh') ? 'zh-CN' : 'en'),
     theme: 'system',
-    accent: 'jade'
+    accent: 'jade',
+    // 默认节奏：每天 1 分钟微复盘 + 每周日晚完整复盘
+    reflection: { daily: true, weekly: true, weeklyDay: 0, time: '21:00' }
   }
 }
 
@@ -18,7 +21,7 @@ export function getSettings(): Settings {
   return { ...defaults(), ...stored }
 }
 
-export function setSettings(patch: Partial<Settings>): Settings {
+export function setSettings(patch: SettingsPatch): Settings {
   const db = getDb()
   db.transaction((tx) => {
     for (const [key, value] of Object.entries(patch)) {

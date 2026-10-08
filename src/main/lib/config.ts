@@ -5,8 +5,17 @@ import { existsSync, readFileSync, writeFileSync } from 'fs'
 // 引导配置：保存在系统应用目录，只记录“数据目录在哪里”。
 // 数据目录本身可由用户迁移到任意位置（设置 → 数据）。
 
+export interface VaultEntry {
+  id: string
+  name: string
+  path: string
+}
+
 interface BootConfig {
+  /** 当前打开的知识库目录 */
   dataDir?: string
+  /** 已知的知识库列表 */
+  vaults?: VaultEntry[]
 }
 
 const file = (): string => join(app.getPath('userData'), 'jiwei-config.json')

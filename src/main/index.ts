@@ -10,8 +10,34 @@ import { registerProtocol, registerSchemePrivileges, collectGarbage } from './se
 import { autoBackup } from './services/backup'
 import { flushAll, pruneRevisions } from './services/docs'
 import { requestRendererFlush } from './lifecycle'
+import { ensureIdentity } from './services/device'
+import { registerJobKinds } from './services/jobKinds'
+import { pruneJobs, startJobs, stopJobs } from './services/jobs'
+import { emit } from './events'
 
 const HOUR = 3_600_000
+const DEEP_LINK = /^jiwei:\/\/(note|source)\/([0-9a-f-]{36})/i
+
+// 深层链接：外部应用点击 jiwei://note/<id> 时打开对应笔记
+let pendingLink: string | null = null
+function handleDeepLink(url: string | undefined): void {
+  const m = url ? DEEP_LINK.exec(url) : null
+  if (!m) return
+  const win = BrowserWindow.getAllWindows()[0]
+  if (!win) {
+    pendingLink = url!
+    return
+  }
+  if (win.isMinimized()) win.restore()
+  win.focus()
+  emit('nav:open', { type: m[1].toLowerCase() as 'note' | 'source', id: m[2] })
+}
+// 只有安装版才向系统注册 jiwei:// 协议（开发与测试运行不修改系统设置）
+if (app.isPackaged) app.setAsDefaultProtocolClient('jiwei')
+app.on('open-url', (e, url) => {
+  e.preventDefault()
+  handleDeepLink(url)
+})
 
 log.initialize()
 log.errorHandler.startCatching()
@@ -40,6 +66,10 @@ function createWindow(): void {
   })
 
   win.on('ready-to-show', () => win.show())
+  win.webContents.once('did-finish-load', () => {
+    if (pendingLink) setTimeout(() => handleDeepLink(pendingLink!), 500)
+    pendingLink = null
+  })
 
   // 外部链接一律交给系统浏览器；应用内不允许跳转到其他页面
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -64,12 +94,13 @@ function createWindow(): void {
 const gotLock = app.requestSingleInstanceLock()
 if (!gotLock) app.quit()
 
-app.on('second-instance', () => {
+app.on('second-instance', (_, argv) => {
   const win = BrowserWindow.getAllWindows()[0]
   if (win) {
     if (win.isMinimized()) win.restore()
     win.focus()
   }
+  handleDeepLink(argv.find((a) => a.startsWith('jiwei://')))
 })
 
 app.whenReady().then(async () => {
@@ -77,14 +108,19 @@ app.whenReady().then(async () => {
   app.on('browser-window-created', (_, w) => optimizer.watchWindowShortcuts(w))
 
   await openDatabase()
+  ensureIdentity()
   applyNativeTheme(getSettings())
   registerProtocol()
   registerIpc()
+  registerJobKinds()
+  startJobs()
+  handleDeepLink(process.argv.find((a) => a.startsWith('jiwei://')))
 
   const maintenance = async (): Promise<void> => {
     try {
       await purgeExpired()
       pruneRevisions()
+      pruneJobs()
       await collectGarbage()
     } catch (e) {
       log.error('[maintenance] failed', e)
@@ -112,6 +148,7 @@ app.on('before-quit', (e) => {
   void requestRendererFlush()
     .catch(() => undefined)
     .finally(() => {
+      stopJobs()
       flushAll()
       closeDatabase()
       app.quit()

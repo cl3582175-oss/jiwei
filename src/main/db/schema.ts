@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, blob, index, primaryKey, uniqueIndex } from 'drizzle-orm/sqlite-core'
+import { sqliteTable, text, integer, real, blob, index, primaryKey, uniqueIndex } from 'drizzle-orm/sqlite-core'
 
 // 修改本文件后执行 `npm run db:generate` 生成迁移，应用启动时会自动迁移（迁移前自动备份）。
 //
@@ -14,7 +14,10 @@ const syncCols = {
   updatedBy: text('updated_by')
 }
 
-/** 本机元数据：设备 ID 等 */
+export const LINK_ENDPOINTS = ['note', 'source', 'segment', 'insight', 'goal', 'review', 'action'] as const
+export const LINK_RELATIONS = ['reference', 'related', 'supersedes', 'evidence', 'derived_from', 'contradicts', 'applied_in'] as const
+
+/** 本机元数据：设备 ID、知识库 ID 等 */
 export const meta = sqliteTable('meta', {
   key: text('key').primaryKey(),
   value: text('value').notNull()
@@ -62,6 +65,8 @@ export const notes = sqliteTable(
   {
     id: text('id').primaryKey(),
     title: text('title').notNull().default(''),
+    /** 笔记类型：每种类型有自己的文档结构 */
+    kind: text('kind', { enum: ['cornell', 'review', 'reading', 'free'] }).notNull().default('cornell'),
     categoryId: text('category_id'),
     pinned: integer('pinned', { mode: 'boolean' }).notNull().default(false),
     /** 学习日期：知识是什么时候学到的（可手动修改，默认等于创建时间） */
@@ -77,6 +82,8 @@ export const notes = sqliteTable(
     // 以下为从 Yjs 文档派生的字段（检索、列表、统计用）
     plainText: text('plain_text').notNull().default(''),
     wordCount: integer('word_count').notNull().default(0),
+    /** 其中 AI 生成且未经用户审阅的字数（不计入学习统计） */
+    aiWordCount: integer('ai_word_count').notNull().default(0),
     /** 正文最后修改时间（区别于 updated_at：后者包含置顶、分类等元数据变化） */
     editedAt: integer('edited_at').notNull(),
     ...syncCols
@@ -138,6 +145,8 @@ export const blocks = sqliteTable(
     position: integer('position').notNull(),
     text: text('text').notNull(),
     hash: text('hash').notNull(),
+    /** 内容来源：用户亲手写 / AI 生成 / AI 生成后经用户审阅 */
+    origin: text('origin', { enum: ['user', 'ai', 'ai_reviewed'] }).notNull().default('user'),
     createdAt: integer('created_at').notNull(),
     updatedAt: integer('updated_at').notNull(),
     deletedAt: integer('deleted_at')
@@ -195,13 +204,13 @@ export const links = sqliteTable(
   'links',
   {
     id: text('id').primaryKey(),
-    fromType: text('from_type', { enum: ['note', 'source'] }).notNull(),
+    fromType: text('from_type', { enum: LINK_ENDPOINTS }).notNull(),
     fromId: text('from_id').notNull(),
     fromBlockId: text('from_block_id'),
-    toType: text('to_type', { enum: ['note', 'source', 'url'] }).notNull(),
+    toType: text('to_type', { enum: [...LINK_ENDPOINTS, 'url'] }).notNull(),
     toId: text('to_id').notNull(),
     toSelector: text('to_selector'),
-    relation: text('relation', { enum: ['reference', 'related', 'supersedes'] }).notNull().default('reference'),
+    relation: text('relation', { enum: LINK_RELATIONS }).notNull().default('reference'),
     origin: text('origin', { enum: ['doc', 'manual'] }).notNull(),
     ...syncCols
   },
@@ -246,3 +255,206 @@ export const settings = sqliteTable('settings', {
   key: text('key').primaryKey(),
   value: text('value').notNull()
 })
+
+/* ————————————————— 身份 ————————————————— */
+
+export const users = sqliteTable('users', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  avatarAssetId: text('avatar_asset_id'),
+  ...syncCols
+})
+
+/** 设备：updated_by 记录设备 ID，通过本表对应到用户 */
+export const devices = sqliteTable('devices', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull(),
+  name: text('name').notNull(),
+  platform: text('platform').notNull(),
+  createdAt: integer('created_at').notNull(),
+  lastSeenAt: integer('last_seen_at').notNull()
+})
+
+/* ————————————————— 资料分段 ————————————————— */
+
+/**
+ * 资料片段：与笔记 blocks 对称，是批注、引用溯源、导图锚点、RAG 定位到资料内部的统一单位。
+ * locator 使用 W3C 选择器 JSON，如 { type: 'FragmentSelector', value: 'page=12' } 或 { value: 't=95,120' }。
+ */
+export const sourceSegments = sqliteTable(
+  'source_segments',
+  {
+    id: text('id').primaryKey(),
+    sourceId: text('source_id').notNull(),
+    ordinal: integer('ordinal').notNull(),
+    kind: text('kind').notNull(), // paragraph | page | transcript | heading | caption …
+    locator: text('locator').notNull(),
+    text: text('text').notNull(),
+    hash: text('hash').notNull(),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull()
+  },
+  (t) => [index('segments_source_idx').on(t.sourceId, t.ordinal)]
+)
+
+/* ————————————————— 学习闭环 ————————————————— */
+
+export const goals = sqliteTable('goals', {
+  id: text('id').primaryKey(),
+  title: text('title').notNull(),
+  description: text('description'),
+  status: text('status', { enum: ['active', 'achieved', 'paused', 'dropped'] }).notNull().default('active'),
+  targetAt: integer('target_at'),
+  categoryId: text('category_id'),
+  ...syncCols
+})
+
+/** 复盘会话；复盘正文是一篇 kind = review 的笔记 */
+export const reviews = sqliteTable(
+  'reviews',
+  {
+    id: text('id').primaryKey(),
+    noteId: text('note_id'),
+    kind: text('kind', { enum: ['daily', 'weekly', 'monthly', 'quarterly', 'topic', 'practice', 'belief'] }).notNull(),
+    periodStart: integer('period_start'),
+    periodEnd: integer('period_end'),
+    /** 复盘范围：分类 / 标签 / 目标 / 笔记集合（JSON） */
+    scope: text('scope'),
+    template: text('template').notNull().default('grai'),
+    status: text('status', { enum: ['draft', 'done'] }).notNull().default('draft'),
+    completedAt: integer('completed_at'),
+    ...syncCols
+  },
+  (t) => [index('reviews_period_idx').on(t.kind, t.periodStart)]
+)
+
+/** 洞见：认知的最小单位，会被修正、推翻、升级 */
+export const insights = sqliteTable('insights', {
+  id: text('id').primaryKey(),
+  statement: text('statement').notNull(),
+  confidence: text('confidence', { enum: ['hypothesis', 'believed', 'verified'] }).notNull().default('hypothesis'),
+  status: text('status', { enum: ['active', 'revised', 'refuted'] }).notNull().default('active'),
+  version: integer('version').notNull().default(1),
+  reviewId: text('review_id'),
+  ...syncCols
+})
+
+export const insightVersions = sqliteTable(
+  'insight_versions',
+  {
+    id: text('id').primaryKey(),
+    insightId: text('insight_id').notNull(),
+    version: integer('version').notNull(),
+    statement: text('statement').notNull(),
+    confidence: text('confidence').notNull(),
+    /** 为什么修改 */
+    reason: text('reason'),
+    createdAt: integer('created_at').notNull()
+  },
+  (t) => [index('insight_versions_idx').on(t.insightId, t.version)]
+)
+
+export const actions = sqliteTable('actions', {
+  id: text('id').primaryKey(),
+  title: text('title').notNull(),
+  status: text('status', { enum: ['open', 'done', 'dropped'] }).notNull().default('open'),
+  dueAt: integer('due_at'),
+  doneAt: integer('done_at'),
+  reviewId: text('review_id'),
+  goalId: text('goal_id'),
+  ...syncCols
+})
+
+/** 复习卡片（FSRS）：问题来自线索段落 */
+export const cards = sqliteTable(
+  'cards',
+  {
+    id: text('id').primaryKey(),
+    noteId: text('note_id').notNull(),
+    /** 问题所在的块（通常是线索栏段落或整行） */
+    blockId: text('block_id').notNull(),
+    due: integer('due').notNull(),
+    stability: real('stability').notNull().default(0),
+    difficulty: real('difficulty').notNull().default(0),
+    elapsedDays: integer('elapsed_days').notNull().default(0),
+    scheduledDays: integer('scheduled_days').notNull().default(0),
+    reps: integer('reps').notNull().default(0),
+    lapses: integer('lapses').notNull().default(0),
+    state: integer('state').notNull().default(0),
+    lastReview: integer('last_review'),
+    suspended: integer('suspended', { mode: 'boolean' }).notNull().default(false),
+    ...syncCols
+  },
+  (t) => [index('cards_due_idx').on(t.due), uniqueIndex('cards_block_idx').on(t.blockId)]
+)
+
+export const reviewLogs = sqliteTable(
+  'review_logs',
+  {
+    id: text('id').primaryKey(),
+    cardId: text('card_id').notNull(),
+    rating: integer('rating').notNull(),
+    state: integer('state').notNull(),
+    due: integer('due').notNull(),
+    stability: real('stability').notNull(),
+    difficulty: real('difficulty').notNull(),
+    elapsedDays: integer('elapsed_days').notNull(),
+    scheduledDays: integer('scheduled_days').notNull(),
+    durationMs: integer('duration_ms'),
+    reviewedAt: integer('reviewed_at').notNull()
+  },
+  (t) => [index('review_logs_card_idx').on(t.cardId, t.reviewedAt)]
+)
+
+/** 学习者画像：AI 了解“你”的依据，用户可查看、修改、清除 */
+export const learnerMemories = sqliteTable('learner_memories', {
+  id: text('id').primaryKey(),
+  kind: text('kind', { enum: ['goal', 'level', 'preference', 'strength', 'weakness', 'fact'] }).notNull(),
+  content: text('content').notNull(),
+  source: text('source', { enum: ['user', 'ai'] }).notNull(),
+  confidence: real('confidence'),
+  ...syncCols
+})
+
+/* ————————————————— AI 与任务 ————————————————— */
+
+/** AI 修改提案：一组以块 ID 定位的操作，用户逐条接受或拒绝 */
+export const proposals = sqliteTable(
+  'proposals',
+  {
+    id: text('id').primaryKey(),
+    noteId: text('note_id').notNull(),
+    title: text('title').notNull(),
+    ops: text('ops').notNull(),
+    /** 每条操作的处理结果（JSON 数组：pending / accepted / rejected） */
+    opStatus: text('op_status').notNull(),
+    status: text('status', { enum: ['pending', 'resolved'] }).notNull().default('pending'),
+    model: text('model'),
+    /** 依据的资料片段 / 笔记块（JSON） */
+    sources: text('sources'),
+    createdAt: integer('created_at').notNull(),
+    resolvedAt: integer('resolved_at')
+  },
+  (t) => [index('proposals_note_idx').on(t.noteId, t.status)]
+)
+
+/** 持久化后台任务：失败重试、重启续跑 */
+export const jobs = sqliteTable(
+  'jobs',
+  {
+    id: text('id').primaryKey(),
+    kind: text('kind').notNull(),
+    payload: text('payload').notNull(),
+    status: text('status', { enum: ['queued', 'running', 'done', 'failed', 'canceled'] }).notNull().default('queued'),
+    progress: real('progress').notNull().default(0),
+    attempts: integer('attempts').notNull().default(0),
+    error: text('error'),
+    result: text('result'),
+    runAfter: integer('run_after').notNull(),
+    /** 去重键：同一键只保留一个未完成任务 */
+    dedupeKey: text('dedupe_key'),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull()
+  },
+  (t) => [index('jobs_status_idx').on(t.status, t.runAfter), index('jobs_dedupe_idx').on(t.dedupeKey)]
+)

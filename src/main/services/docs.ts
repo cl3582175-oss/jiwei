@@ -5,11 +5,11 @@ import log from 'electron-log/main'
 import { getDb } from '../db'
 import { blocks, links, noteAssets, noteDocs, noteRevisions, noteUpdates, notes } from '../db/schema'
 import { newId } from '../lib/ids'
-import { countWords, deriveDoc, diffBlocks } from '../lib/derive'
+import { countWords, deriveDoc, diffBlocks, type EmbedsData } from '../lib/derive'
 import { deviceId } from './device'
 import { recordActivity } from './stats'
 import { emit } from '../events'
-import { DOC_FIELD, type DocJSON, type Revision, type RevisionInfo } from '@shared/types'
+import { DOC_FIELD, EMBEDS_FIELD, type DocJSON, type Revision, type RevisionInfo } from '@shared/types'
 
 // 笔记正文的持久化：
 //   写入：渲染进程推送 Yjs 增量 → 追加到 note_updates（崩溃安全）→ 定期压缩进 note_docs
@@ -54,11 +54,17 @@ export function loadDoc(noteId: string): Uint8Array {
 }
 
 export function stateToJSON(state: Uint8Array): DocJSON {
-  const doc = new Y.Doc()
-  Y.applyUpdate(doc, state)
-  const json = yDocToProsemirrorJSON(doc, DOC_FIELD) as DocJSON
-  doc.destroy()
-  return json
+  return stateToContent(state).doc
+}
+
+/** Yjs 状态 → 文档 JSON + 富内容块数据 */
+export function stateToContent(state: Uint8Array): { doc: DocJSON; embeds: EmbedsData } {
+  const ydoc = new Y.Doc()
+  Y.applyUpdate(ydoc, state)
+  const doc = yDocToProsemirrorJSON(ydoc, DOC_FIELD) as DocJSON
+  const embeds = ydoc.getMap(EMBEDS_FIELD).toJSON() as EmbedsData
+  ydoc.destroy()
+  return { doc, embeds }
 }
 
 export function pushUpdate(noteId: string, update: Uint8Array): void {
@@ -115,8 +121,8 @@ export function derive(noteId: string): void {
   const note = db.select().from(notes).where(eq(notes.id, noteId)).get()
   if (!note) return
   const state = readState(noteId)
-  const json = stateToJSON(state)
-  const d = deriveDoc(json)
+  const { doc: json, embeds } = stateToContent(state)
+  const d = deriveDoc(json, embeds)
   const now = Date.now()
 
   const pending = db.select({ seq: noteUpdates.seq }).from(noteUpdates).where(eq(noteUpdates.noteId, noteId)).all().length
@@ -124,23 +130,24 @@ export function derive(noteId: string): void {
 
   const prev = db.select({ id: blocks.id, hash: blocks.hash, deletedAt: blocks.deletedAt }).from(blocks).where(eq(blocks.noteId, noteId)).all()
   const diff = diffBlocks(prev, d.blocks)
-  const textChanged = d.plainText !== note.plainText
+  const aiWords = countWords(d.aiText)
+  const textChanged = d.plainText !== note.plainText || aiWords !== note.aiWordCount
 
   db.transaction((tx) => {
     for (const b of diff.inserted) {
       tx.insert(blocks)
-        .values({ id: b.id, noteId, kind: b.kind, section: b.section, rowId: b.rowId, position: b.position, text: b.text, hash: b.hash, createdAt: now, updatedAt: now })
+        .values({ id: b.id, noteId, kind: b.kind, origin: b.origin, section: b.section, rowId: b.rowId, position: b.position, text: b.text, hash: b.hash, createdAt: now, updatedAt: now })
         .onConflictDoNothing()
         .run()
     }
     for (const b of [...diff.changed, ...diff.revived]) {
       tx.update(blocks)
-        .set({ kind: b.kind, section: b.section, rowId: b.rowId, position: b.position, text: b.text, hash: b.hash, updatedAt: now, deletedAt: null })
+        .set({ kind: b.kind, origin: b.origin, section: b.section, rowId: b.rowId, position: b.position, text: b.text, hash: b.hash, updatedAt: now, deletedAt: null })
         .where(eq(blocks.id, b.id))
         .run()
     }
     for (const b of diff.moved) {
-      tx.update(blocks).set({ position: b.position, rowId: b.rowId, section: b.section }).where(eq(blocks.id, b.id)).run()
+      tx.update(blocks).set({ position: b.position, rowId: b.rowId, section: b.section, origin: b.origin }).where(eq(blocks.id, b.id)).run()
     }
     if (diff.removedIds.length) tx.update(blocks).set({ deletedAt: now }).where(inArray(blocks.id, diff.removedIds)).run()
 
@@ -156,7 +163,7 @@ export function derive(noteId: string): void {
 
     if (textChanged) {
       tx.update(notes)
-        .set({ plainText: d.plainText, wordCount: countWords(d.plainText), editedAt: now, updatedAt: now, updatedBy: deviceId() })
+        .set({ plainText: d.plainText, wordCount: countWords(d.plainText), aiWordCount: aiWords, editedAt: now, updatedAt: now, updatedBy: deviceId() })
         .where(eq(notes.id, noteId))
         .run()
     }
@@ -164,7 +171,8 @@ export function derive(noteId: string): void {
 
   if (textChanged) {
     recordActivity('note_edit')
-    const delta = countWords(d.plainText) - note.wordCount
+    // 学习统计只计算用户亲手写的（含审阅过的 AI 内容）
+    const delta = countWords(d.plainText) - aiWords - (note.wordCount - note.aiWordCount)
     if (delta > 0) recordActivity('words', delta)
     maybeAutoRevision(noteId, state, note.title, countWords(d.plainText))
   }
@@ -259,6 +267,7 @@ export function listBlocks(noteId: string) {
       section: blocks.section,
       rowId: blocks.rowId,
       text: blocks.text,
+      origin: blocks.origin,
       createdAt: blocks.createdAt,
       updatedAt: blocks.updatedAt
     })

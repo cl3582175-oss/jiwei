@@ -1,15 +1,12 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
-import { API_SHAPE, type JiweiAPI, type JiweiEvents } from '@shared/types'
+import { eachCapability, type JiweiAPI } from '@shared/capabilities'
+import type { JiweiEvents } from '@shared/types'
 
-// 根据 API_SHAPE 自动生成桥接对象：window.jiwei.notes.list(...) → ipc 'notes:list'
-const api = Object.fromEntries(
-  Object.entries(API_SHAPE).map(([ns, methods]) => [
-    ns,
-    Object.fromEntries(
-      (methods as string[]).map((m) => [m, (...args: unknown[]) => ipcRenderer.invoke(`${ns}:${m}`, ...args)])
-    )
-  ])
-) as unknown as JiweiAPI
+// 根据能力注册表自动生成桥接对象：window.jiwei.notes.list(...) → ipc 'notes:list'
+const api: Record<string, Record<string, (...args: unknown[]) => Promise<unknown>>> = {}
+for (const [ns, m] of eachCapability()) {
+  ;(api[ns] ??= {})[m] = (...args: unknown[]) => ipcRenderer.invoke(`${ns}:${m}`, ...args)
+}
 
 const events = {
   on<K extends keyof JiweiEvents>(event: K, cb: (payload: JiweiEvents[K]) => void): () => void {
@@ -25,6 +22,6 @@ const platform = {
   pathForFile: (file: File): string => webUtils.getPathForFile(file)
 }
 
-contextBridge.exposeInMainWorld('jiwei', api)
+contextBridge.exposeInMainWorld('jiwei', api as unknown as JiweiAPI)
 contextBridge.exposeInMainWorld('jiweiEvents', events)
 contextBridge.exposeInMainWorld('platform', platform)

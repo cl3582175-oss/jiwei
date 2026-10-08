@@ -94,3 +94,41 @@ describe('countWords', () => {
     expect(countWords('学习 Feynman technique 方法')).toBe(6)
   })
 })
+
+describe('embeds and origin', () => {
+  const ai = JSON.stringify({ by: 'ai', model: 'test', at: 1 })
+  const aiReviewed = JSON.stringify({ by: 'ai', at: 1, reviewed: true })
+  const mindmap = {
+    kind: 'mindmap',
+    data: {
+      root: 'm0',
+      nodes: {
+        m0: { text: '学习方法', parent: null, order: 0 },
+        m1: { text: '费曼', parent: 'm0', order: 0 },
+        m2: { text: '间隔重复', parent: 'm0', order: 1 }
+      }
+    }
+  }
+  const d = deriveDoc(
+    doc(
+      row('r1', [p('c1', '问题')], [
+        { type: 'embed', attrs: { id: 'e1', kind: 'mindmap', origin: ai } },
+        { type: 'paragraph', attrs: { id: 'b1', origin: aiReviewed }, content: [{ type: 'text', text: '审阅过' }] },
+        p('b2', '我写的')
+      ]),
+      summary('s', p('sp', ''))
+    ),
+    { e1: mindmap }
+  )
+
+  it('turns embed data into searchable outline text', () => {
+    expect(d.blocks.find((b) => b.id === 'e1')).toMatchObject({ kind: 'embed', origin: 'ai', text: '学习方法\n  费曼\n  间隔重复' })
+    expect(d.plainText).toContain('间隔重复')
+  })
+
+  it('tracks block origin and unreviewed AI text', () => {
+    expect(d.blocks.find((b) => b.id === 'b1')!.origin).toBe('ai_reviewed')
+    expect(d.blocks.find((b) => b.id === 'b2')!.origin).toBe('user')
+    expect(d.aiText).toBe('学习方法\n  费曼\n  间隔重复')
+  })
+})

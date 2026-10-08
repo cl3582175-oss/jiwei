@@ -15,6 +15,20 @@
       "when": 1791444869831,
       "tag": "0001_fts",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1791447675067,
+      "tag": "0002_learning_loop",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1791447675383,
+      "tag": "0003_segments_fts",
+      "breakpoints": true
     }
   ]
 }

@@ -10,6 +10,8 @@ import { recordActivity } from './stats'
 import { deletedCategoryIds, descendantIds } from './categories'
 import { entitiesWithTag, tagIdsFor } from './tags'
 import { assetPath, assetUrl, collectGarbage, importFile } from './assets'
+import { canSegment, enqueueSegment } from './jobKinds'
+import { deleteSegments } from './segments'
 import type { ImportResult, Source, SourceKind, SourceQuery, SourceUpdate } from '@shared/types'
 
 const EXT_KIND: Record<string, SourceKind> = {
@@ -71,7 +73,7 @@ export function listSources(q: SourceQuery): Source[] {
   return query(conds)
 }
 
-const getSource = (id: string): Source => query([eq(sources.id, id)])[0]
+export const getSource = (id: string): Source | null => query([eq(sources.id, id)])[0] ?? null
 
 /** 导入文件：内容相同的文件只存一份；已在资料库（未删除）中的相同文件跳过 */
 export async function importPaths(paths: string[], categoryId?: string | null): Promise<ImportResult> {
@@ -103,7 +105,8 @@ export async function importPaths(paths: string[], categoryId?: string | null): 
       })
       .run()
     recordActivity('source_add')
-    out.imported.push(getSource(id))
+    out.imported.push(getSource(id)!)
+    if (canSegment(row.ext)) enqueueSegment(id)
   }
   return out
 }
@@ -135,7 +138,7 @@ export function addUrl(url: string, title?: string, categoryId?: string | null):
     })
     .run()
   recordActivity('source_add')
-  return getSource(id)
+  return getSource(id)!
 }
 
 export function updateSource(id: string, patch: SourceUpdate): void {
@@ -175,5 +178,6 @@ export async function purgeSource(id: string): Promise<void> {
   const db = getDb()
   db.delete(taggings).where(and(eq(taggings.entityType, 'source'), eq(taggings.entityId, id))).run()
   db.delete(sources).where(eq(sources.id, id)).run()
+  deleteSegments(id)
   await collectGarbage()
 }

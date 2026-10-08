@@ -12,14 +12,20 @@ import * as backups from './services/backup'
 import * as assets from './services/assets'
 import * as appSvc from './services/app'
 import { getSettings, setSettings } from './services/settings'
+import * as proposals from './services/proposals'
+import * as segments from './services/segments'
+import * as jobs from './services/jobs'
+import * as vaults from './services/vaults'
+import { getProfile, setProfileName } from './services/device'
 import { resolveFlush } from './lifecycle'
-import type { JiweiAPI } from '@shared/types'
+import { capabilities, eachCapability, parseArgs, type Capabilities, type ParsedArgs, type ResultOf } from '@shared/capabilities'
 
+type Ctx = { win: BrowserWindow | null }
+
+/** 每个注册的能力都必须有实现；参数类型为 zod 解析后的类型 */
 type Handlers = {
-  [NS in keyof JiweiAPI]: {
-    [M in keyof JiweiAPI[NS]]: JiweiAPI[NS][M] extends (...a: infer A) => infer R
-      ? (ctx: { win: BrowserWindow | null }, ...a: A) => R | Awaited<R>
-      : never
+  [NS in keyof Capabilities]: {
+    [M in keyof Capabilities[NS]]: (ctx: Ctx, ...args: ParsedArgs<Capabilities[NS][M]>) => ResultOf<Capabilities[NS][M]> | Promise<ResultOf<Capabilities[NS][M]>>
   }
 }
 
@@ -29,6 +35,17 @@ const handlers: Handlers = {
     openDataDir: () => appSvc.openDataDir(),
     changeDataDir: ({ win }) => appSvc.changeDataDir(win),
     flushDone: () => resolveFlush()
+  },
+  vaults: {
+    list: () => vaults.listVaults(),
+    create: ({ win }, name) => vaults.createVault(win, name),
+    open: ({ win }) => vaults.openVault(win),
+    switch: (_, id) => vaults.switchVault(id),
+    rename: (_, id, name) => vaults.renameVault(id, name)
+  },
+  profile: {
+    get: () => getProfile(),
+    setName: (_, name) => setProfileName(name)
   },
   backups: {
     list: () => backups.listBackups(),
@@ -72,11 +89,26 @@ const handlers: Handlers = {
       return docs.saveRevision(noteId, reason ?? 'manual')
     }
   },
+  proposals: {
+    create: (_, input) => proposals.createProposal(input),
+    list: (_, noteId) => proposals.listProposals(noteId),
+    resolve: (_, id, opIndex, decision) => proposals.resolveOp(id, opIndex, decision)
+  },
+  segments: {
+    list: (_, sourceId) => segments.listSegments(sourceId),
+    search: (_, query, sourceId) => segments.searchSegments(query, sourceId)
+  },
+  jobs: {
+    list: () => jobs.listJobs(),
+    cancel: (_, id) => jobs.cancelJob(id),
+    retry: (_, id) => jobs.retryJob(id)
+  },
   assets: {
     importBytes: (_, name, mime, bytes) => assets.importBytes(name, mime, bytes)
   },
   sources: {
     list: (_, q) => sources.listSources(q),
+    get: (_, id) => sources.getSource(id),
     importDialog: ({ win }, categoryId) => sources.importDialog(win, categoryId),
     importPaths: (_, paths, categoryId) => sources.importPaths(paths, categoryId),
     addUrl: (_, url, title, categoryId) => sources.addUrl(url, title, categoryId),
@@ -97,16 +129,19 @@ const handlers: Handlers = {
 }
 
 export function registerIpc(): void {
-  for (const [ns, methods] of Object.entries(handlers)) {
-    for (const [name, fn] of Object.entries(methods as Record<string, (...a: unknown[]) => unknown>)) {
-      ipcMain.handle(`${ns}:${name}`, async (e, ...args) => {
-        try {
-          return await fn({ win: BrowserWindow.fromWebContents(e.sender) }, ...args)
-        } catch (err) {
-          log.error(`[ipc] ${ns}:${name} failed`, err)
-          throw err
-        }
-      })
-    }
+  for (const [ns, name, def] of eachCapability()) {
+    const fn = (handlers as unknown as Record<string, Record<string, (ctx: Ctx, ...a: unknown[]) => unknown>>)[ns][name]
+    if (!fn) throw new Error(`Capability ${ns}.${name} has no handler`)
+    ipcMain.handle(`${ns}:${name}`, async (e, ...raw) => {
+      try {
+        const args = parseArgs(def, raw)
+        return await fn({ win: BrowserWindow.fromWebContents(e.sender) }, ...args)
+      } catch (err) {
+        log.error(`[ipc] ${ns}:${name} failed`, err)
+        throw err
+      }
+    })
   }
 }
+
+export { capabilities }

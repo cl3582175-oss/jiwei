@@ -3,6 +3,7 @@ import { getDb } from '../db'
 import { annotations, categories, links, notes, sources } from '../db/schema'
 import { deleteNoteRow } from './notes'
 import { purgeDocData } from './docs'
+import { deleteProposalsForNote } from './proposals'
 import { purgeSource } from './sources'
 import { purgeCategory, restoreCategory } from './categories'
 import { collectGarbage } from './assets'
@@ -52,6 +53,7 @@ export async function purge(type: TrashType, id: string): Promise<void> {
   if (type === 'note') {
     db.transaction(() => {
       purgeDocData(id)
+      deleteProposalsForNote(id)
       deleteNoteRow(id)
     })
     await collectGarbage()

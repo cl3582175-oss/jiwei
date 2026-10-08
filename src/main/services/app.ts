@@ -45,7 +45,8 @@ export async function changeDataDir(win: BrowserWindow | null): Promise<boolean>
   closeDatabase()
   log.info('[app] copying data dir', from, '→', target)
   await cp(from, target, { recursive: true, errorOnExist: false })
-  writeBootConfig({ ...readBootConfig(), dataDir: target })
+  const cfg = readBootConfig()
+  writeBootConfig({ ...cfg, dataDir: target, vaults: (cfg.vaults ?? []).map((v) => (v.path === from ? { ...v, path: target } : v)) })
   app.relaunch()
   app.exit(0)
   return true

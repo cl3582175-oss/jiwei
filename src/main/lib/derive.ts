@@ -1,5 +1,6 @@
 import { createHash } from 'crypto'
 import type { DocJSON, DocNode } from '@shared/types'
+import { embedText } from '@shared/embeds'
 
 // 从康奈尔文档 JSON 派生检索与 RAG 所需的结构化数据。纯函数，无 Electron 依赖，便于单元测试。
 //
@@ -17,9 +18,25 @@ export const NODE = {
   summary: 'cornellSummary'
 } as const
 
+export type BlockOrigin = 'user' | 'ai' | 'ai_reviewed'
+
+/** 解析节点的来源属性（JSON 字符串） */
+export function parseOrigin(attr: unknown): BlockOrigin {
+  if (typeof attr !== 'string' || !attr) return 'user'
+  try {
+    const o = JSON.parse(attr) as { by?: string; reviewed?: boolean }
+    return o.by === 'ai' ? (o.reviewed ? 'ai_reviewed' : 'ai') : 'user'
+  } catch {
+    return 'user'
+  }
+}
+
+export type EmbedsData = Record<string, { kind?: string; data?: unknown }>
+
 export interface DerivedBlock {
   id: string
   kind: string
+  origin: BlockOrigin
   section: 'row' | 'cue' | 'body' | 'summary'
   rowId: string | null
   position: number
@@ -36,6 +53,8 @@ export interface DerivedLink {
 export interface Derived {
   blocks: DerivedBlock[]
   plainText: string
+  /** AI 生成且未经审阅的文字（不计入学习统计） */
+  aiText: string
   assetIds: string[]
   links: DerivedLink[]
 }
@@ -61,8 +80,18 @@ function walk(node: DocNode, visit: (n: DocNode) => void): void {
   node.content?.forEach((c) => walk(c, visit))
 }
 
-export function deriveDoc(doc: DocJSON): Derived {
+export function deriveDoc(doc: DocJSON, embeds: EmbedsData = {}): Derived {
   const blocks: DerivedBlock[] = []
+  const aiTexts: string[] = []
+  /** 节点文本：富内容块取其数据的文字表示 */
+  const textOf = (n: DocNode): string => {
+    if (n.type === 'embed') {
+      const id = typeof n.attrs?.id === 'string' ? n.attrs.id : ''
+      const e = embeds[id]
+      return e?.kind ? embedText(e.kind, e.data) : ''
+    }
+    return nodeText(n)
+  }
   const assetIds = new Set<string>()
   const links: DerivedLink[] = []
   const texts: string[] = []
@@ -71,11 +100,13 @@ export function deriveDoc(doc: DocJSON): Derived {
   const pushChildren = (container: DocNode | undefined, section: 'cue' | 'body' | 'summary', rowId: string | null): string => {
     const parts: string[] = []
     for (const child of container?.content ?? []) {
-      const text = nodeText(child).trim()
+      const text = textOf(child).trim()
       parts.push(text)
       const id = child.attrs?.id
+      const origin = parseOrigin(child.attrs?.origin)
+      if (origin === 'ai' && text) aiTexts.push(text)
       if (typeof id === 'string' && id && text) {
-        blocks.push({ id, kind: child.type ?? 'unknown', section, rowId, position: position++, text, hash: hashText(child.type ?? '', text) })
+        blocks.push({ id, kind: child.type ?? 'unknown', origin, section, rowId, position: position++, text, hash: hashText(child.type ?? '', text) })
       }
       walk(child, (n) => {
         if (n.type === 'image' && typeof n.attrs?.src === 'string') {
@@ -105,7 +136,7 @@ export function deriveDoc(doc: DocJSON): Derived {
       if (rowText) texts.push(rowText)
       // 行块：线索 + 笔记，作为 RAG 的天然检索单元
       if (rowId && rowText) {
-        blocks.push({ id: rowId, kind: NODE.row, section: 'row', rowId: null, position: rowPos, text: rowText, hash: hashText(NODE.row, rowText) })
+        blocks.push({ id: rowId, kind: NODE.row, origin: parseOrigin(top.attrs?.origin), section: 'row', rowId: null, position: rowPos, text: rowText, hash: hashText(NODE.row, rowText) })
       }
     } else if (top.type === NODE.summary) {
       const text = pushChildren(top, 'summary', null)
@@ -113,7 +144,13 @@ export function deriveDoc(doc: DocJSON): Derived {
     }
   }
 
-  return { blocks: blocks.sort((a, b) => a.position - b.position), plainText: texts.join('\n'), assetIds: [...assetIds], links }
+  return {
+    blocks: blocks.sort((a, b) => a.position - b.position),
+    plainText: texts.join('\n'),
+    aiText: aiTexts.join('\n'),
+    assetIds: [...assetIds],
+    links
+  }
 }
 
 /** 中英文混合字数：每个 CJK 字符计 1，每个拉丁单词计 1 */

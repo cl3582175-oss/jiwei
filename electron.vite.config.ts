@@ -8,7 +8,12 @@ const shared = { '@shared': resolve('src/shared') }
 export default defineConfig({
   main: {
     plugins: [externalizeDepsPlugin()],
-    resolve: { alias: shared }
+    resolve: { alias: shared },
+    build: {
+      rollupOptions: {
+        input: { index: resolve('src/main/index.ts'), worker: resolve('src/worker/index.ts') }
+      }
+    }
   },
   preload: {
     plugins: [externalizeDepsPlugin()],

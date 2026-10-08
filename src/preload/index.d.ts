@@ -1,4 +1,5 @@
-import type { JiweiAPI, JiweiEvents } from '../shared/types'
+import type { JiweiAPI } from '../shared/capabilities'
+import type { JiweiEvents } from '../shared/types'
 
 declare global {
   interface Window {

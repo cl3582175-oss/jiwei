@@ -18,6 +18,9 @@ asarUnpack:
 extraResources:
   - from: resources/migrations
     to: migrations
+protocols:
+  - name: Jiwei
+    schemes: [jiwei]
 mac:
   category: public.app-category.education
   target:

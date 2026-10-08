@@ -7,7 +7,7 @@ import { recordActivity } from './stats'
 import { initDoc } from './docs'
 import { deletedCategoryIds, descendantIds } from './categories'
 import { entitiesWithTag, tagIdsFor } from './tags'
-import { DOC_VERSION, type Note, type NoteMetaUpdate, type NoteQuery, type NoteSummary } from '@shared/types'
+import { DOC_VERSIONS, type Note, type NoteKind, type NoteMetaUpdate, type NoteQuery, type NoteSummary } from '@shared/types'
 
 const EXCERPT_LEN = 140
 
@@ -15,6 +15,7 @@ const EXCERPT_LEN = 140
 const summaryCols = {
   id: notes.id,
   title: notes.title,
+  kind: notes.kind,
   categoryId: notes.categoryId,
   pinned: notes.pinned,
   learnedAt: notes.learnedAt,
@@ -23,6 +24,7 @@ const summaryCols = {
   aiExcluded: notes.aiExcluded,
   plainText: notes.plainText,
   wordCount: notes.wordCount,
+  aiWordCount: notes.aiWordCount,
   createdAt: notes.createdAt,
   editedAt: notes.editedAt,
   updatedAt: notes.updatedAt,
@@ -64,6 +66,7 @@ export function listNotes(query: NoteQuery): NoteSummary[] {
   if (query.tagId) conds.push(inArray(notes.id, entitiesWithTag('note', query.tagId)))
   if (query.pinnedOnly) conds.push(eq(notes.pinned, true))
   if (query.status) conds.push(eq(notes.status, query.status))
+  if (query.kind) conds.push(eq(notes.kind, query.kind))
   if (query.search?.trim()) {
     const ids = searchIds(query.search)
     if (ids) {
@@ -95,7 +98,10 @@ export function getNote(id: string): Note | null {
   return r ? toSummaries([r])[0] : null
 }
 
-export function createNote(init?: { categoryId?: string | null; title?: string }): Note {
+export function createNote(init?: { categoryId?: string | null; title?: string; kind?: NoteKind }): Note {
+  const kind = init?.kind ?? 'cornell'
+  // 其他笔记类型的文档结构在对应版本实现（复盘：v0.4）
+  if (kind !== 'cornell') throw new Error(`Note kind "${kind}" is not available yet`)
   const now = Date.now()
   const id = newId()
   getDb()
@@ -103,9 +109,10 @@ export function createNote(init?: { categoryId?: string | null; title?: string }
     .values({
       id,
       title: init?.title ?? '',
+      kind,
       categoryId: init?.categoryId ?? null,
       learnedAt: now,
-      docVersion: DOC_VERSION,
+      docVersion: DOC_VERSIONS[kind],
       editedAt: now,
       createdAt: now,
       updatedAt: now,
