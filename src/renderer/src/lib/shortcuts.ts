@@ -58,6 +58,9 @@ export function useGlobalShortcuts(): void {
       } else if (k === '3') {
         e.preventDefault()
         s.setView('chat')
+      } else if (k === '4') {
+        e.preventDefault()
+        s.setView('review')
       } else if (k === 'j') {
         // 工作区 AI 面板
         e.preventDefault()

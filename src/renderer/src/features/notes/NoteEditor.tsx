@@ -25,7 +25,9 @@ import {
   ChevronRight,
   PanelLeftOpen,
   Sparkles,
-  Download
+  Download,
+  Layers,
+  Layers2 as LayersOff
 } from 'lucide-react'
 import type { KnowledgeStatus, NoteMetaUpdate, NoteSummary } from '@shared/types'
 import { useCategories, useNote, invalidate } from '@/lib/queries'
@@ -375,6 +377,12 @@ function EditorBody({ note: initial }: { note: NoteSummary }) {
                 {note.aiExcluded ? <Shield /> : <ShieldOff />}
                 {note.aiExcluded ? t('notes.aiInclude') : t('notes.aiExclude')}
               </MenuItem>
+              {note.kind === 'cornell' && (
+                <MenuItem onSelect={() => void update({ reviewExcluded: !note.reviewExcluded })}>
+                  {note.reviewExcluded ? <Layers /> : <LayersOff />}
+                  {note.reviewExcluded ? t('notes.reviewInclude') : t('notes.reviewExclude')}
+                </MenuItem>
+              )}
               <MenuSeparator />
               <MenuItem danger onSelect={() => void remove()}>
                 <Trash2 />

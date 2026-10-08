@@ -38,7 +38,9 @@ export const NoteMetaUpdateSchema = z.object({
   learnedAt: z.number().int().optional(),
   status: KnowledgeStatusSchema.optional(),
   supersededBy: Id.nullable().optional(),
-  aiExcluded: z.boolean().optional()
+  aiExcluded: z.boolean().optional(),
+  /** 不复习：线索不再成为复习卡片 */
+  reviewExcluded: z.boolean().optional()
 })
 export type NoteMetaUpdate = z.infer<typeof NoteMetaUpdateSchema>
 
@@ -82,7 +84,8 @@ export const SettingsPatchSchema = z.object({
       /** HH:mm */
       time: z.string().regex(/^\d{2}:\d{2}$/)
     })
-    .optional()
+    .optional(),
+  review: z.object({ newPerDay: z.number().int().min(0).max(500), retention: z.number().min(0.8).max(0.97) }).optional()
 })
 export type SettingsPatch = z.infer<typeof SettingsPatchSchema>
 

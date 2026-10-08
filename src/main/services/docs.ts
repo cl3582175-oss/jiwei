@@ -7,6 +7,7 @@ import { blocks, links, noteAssets, noteDocs, noteRevisions, noteUpdates, notes 
 import { newId } from '../lib/ids'
 import { jsonToYState } from '../lib/yjson'
 import { countWords, deriveDoc, diffBlocks, type EmbedsData } from '../lib/derive'
+import { syncCards } from './review'
 import { deviceId } from './device'
 import { recordActivity } from './stats'
 import { emit } from '../events'
@@ -253,6 +254,8 @@ export function derive(noteId: string): void {
   }
   emit('notes:changed', { ids: [noteId] })
   if (textChanged) requestIndex()
+  // 线索行 ↔ 复习卡片
+  if (diff.inserted.length || diff.changed.length || diff.revived.length || diff.moved.length || diff.removedIds.length) syncCards(noteId)
 }
 
 function maybeAutoRevision(noteId: string, state: Uint8Array, title: string, wordCount: number): void {

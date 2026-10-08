@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { PenLine, Flame, NotebookText, CalendarCheck, ArrowUpRight } from 'lucide-react'
+import { PenLine, Flame, NotebookText, CalendarCheck, ArrowUpRight, Layers } from 'lucide-react'
 import { useHeatmap, useNotes } from '@/lib/queries'
 import { useApp } from '@/store/app'
 import { useCreateNote } from '@/lib/shortcuts'
@@ -8,6 +8,7 @@ import { formatRelative, modKey } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Kbd } from '@/components/ui/primitives'
 import { Heatmap } from './Heatmap'
+import { useReviewStats } from '../review/ReviewView'
 import { InkNotes } from '@/components/Illustrations'
 import type { Tint } from '@/lib/tint'
 
@@ -42,6 +43,8 @@ export function NotesHome() {
   const openNote = useApp((s) => s.openNote)
   const createNote = useCreateNote()
   const { data: heat = [] } = useHeatmap(HEAT_DAYS)
+  const { data: review } = useReviewStats()
+  const setView = useApp((s) => s.setView)
   const { data: notes = [] } = useNotes({ sort: 'edited' })
 
   const { streak, active } = useMemo(() => {
@@ -93,6 +96,24 @@ export function NotesHome() {
           />
           <Stat icon={<CalendarCheck />} label={t('home.stats.activeDays')} value={t('home.stats.days', { count: active })} tint="sky" />
         </div>
+
+        {/* 今日复习 */}
+        {review && review.due > 0 && (
+          <button
+            onClick={() => setView('review')}
+            className="paper group mt-6 flex w-full items-center gap-4 rounded-2xl px-6 py-4 text-left shadow-[var(--shadow-1)] transition-shadow hover:shadow-[var(--shadow-2)]"
+            data-testid="home-review"
+          >
+            <span className="grid size-10 place-items-center rounded-xl bg-accent-soft text-accent">
+              <Layers className="size-5" />
+            </span>
+            <span className="flex-1">
+              <span className="block text-sm font-medium text-fg">{t('home.reviewDue', { count: review.due })}</span>
+              <span className="mt-0.5 block text-xs text-muted">{t('home.reviewHint')}</span>
+            </span>
+            <span className="text-sm text-accent group-hover:underline">{t('home.reviewStart')}</span>
+          </button>
+        )}
 
         {/* 热力图 */}
         <section className="paper mt-6 rounded-2xl px-6 py-5 shadow-[var(--shadow-1)]">

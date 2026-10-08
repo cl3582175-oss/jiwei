@@ -79,6 +79,8 @@ export interface NoteSummary {
   status: KnowledgeStatus
   supersededBy: string | null
   aiExcluded: boolean
+  /** 不复习：线索不再成为复习卡片 */
+  reviewExcluded: boolean
   tagIds: string[]
   excerpt: string
   wordCount: number
@@ -175,6 +177,14 @@ export interface HeatmapDay {
 export type ThemeMode = 'system' | 'light' | 'dark'
 export type Language = 'zh-CN' | 'en'
 
+/** 复习（FSRS） */
+export interface ReviewSettings {
+  /** 每天最多学习的新卡片数 */
+  newPerDay: number
+  /** 目标记忆保持率（0.8～0.97） */
+  retention: number
+}
+
 export interface ReflectionSettings {
   /** 每日 1 分钟微复盘 */
   daily: boolean
@@ -194,6 +204,7 @@ export interface Settings {
   theme: ThemeMode
   palette: Palette
   reflection: ReflectionSettings
+  review: ReviewSettings
   /** 是否已完成首次启动引导 */
   onboarded: boolean
   /** 侧栏（目录 / 资料分类）是否收起 */
@@ -409,6 +420,58 @@ export interface Memory {
   useCount: number
 }
 
+/* ——— 复习（FSRS） ——— */
+
+/** 1 忘了 · 2 困难 · 3 记得 · 4 轻松 */
+export type ReviewRating = 1 | 2 | 3 | 4
+
+export interface ReviewCard {
+  id: string
+  noteId: string
+  noteTitle: string
+  /** 卡片对应的笔记行 */
+  rowId: string
+  /** 线索栏（问题） */
+  question: string
+  /** 笔记栏（答案，Markdown；富内容块为文字形式） */
+  answer: string
+  state: 'new' | 'learning' | 'review' | 'relearning'
+  due: number
+  reps: number
+  lapses: number
+  lastReview: number | null
+  /** 各评分对应的下次复习时间（毫秒时间戳） */
+  next: Record<ReviewRating, number>
+}
+
+export interface ReviewStats {
+  /** 现在可以复习的卡片（到期 + 今天还能学的新卡） */
+  due: number
+  dueReview: number
+  newToday: number
+  reviewedToday: number
+  /** 连续复习天数 */
+  streak: number
+  /** 近 30 天复习卡片的记住比例（没有数据时为 null） */
+  retention: number | null
+  total: number
+  suspended: number
+  /** 明天到期 */
+  tomorrow: number
+  /** 稍后到期的学习中卡片（分钟内） */
+  laterToday: number
+}
+
+export interface AnswerCheck {
+  /** 一两句总体评价 */
+  verdict: string
+  /** 遗漏的要点 */
+  missing: string[]
+  /** 说错或不准确的地方 */
+  wrong: string[]
+  suggested: ReviewRating
+}
+
 /** 学习者模型：某个概念的掌握情况（由行为信号累积，见 docs/design/v0.3-agent.md §5） */
 export interface Concept {
   id: string
@@ -500,6 +563,8 @@ export interface JiweiEvents {
   'proposals:changed': { noteId: string }
   /** 后台任务状态变化 */
   'jobs:changed': { ids: string[] }
+  /** 复习卡片或到期数量变化 */
+  'review:changed': Record<string, never>
   /** 资料分段已更新 */
   'segments:changed': { sourceId: string }
   /** AI 回答的流式增量 */

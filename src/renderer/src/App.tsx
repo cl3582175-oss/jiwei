@@ -11,6 +11,7 @@ import { NotesView } from './features/notes/NotesView'
 import { LibraryView } from './features/library/LibraryView'
 import { TrashView } from './features/trash/TrashView'
 import { ChatView } from './features/chat/ChatView'
+import { ReviewView } from './features/review/ReviewView'
 import { SettingsDialog } from './features/settings/SettingsDialog'
 import { CommandPalette } from './features/palette/CommandPalette'
 import { Onboarding } from './features/onboarding/Onboarding'
@@ -101,6 +102,7 @@ export function App() {
           {view === 'notes' && <NotesView />}
           {view === 'library' && <LibraryView />}
           {view === 'chat' && <ChatView />}
+          {view === 'review' && <ReviewView />}
           {view === 'trash' && <TrashView />}
         </main>
       </div>

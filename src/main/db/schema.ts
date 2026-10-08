@@ -81,6 +81,8 @@ export const notes = sqliteTable(
     supersededBy: text('superseded_by'),
     /** 隐私：为 true 时永不发送给 AI */
     aiExcluded: integer('ai_excluded', { mode: 'boolean' }).notNull().default(false),
+    /** 不复习：线索不再自动成为复习卡片 */
+    reviewExcluded: integer('review_excluded', { mode: 'boolean' }).notNull().default(false),
     /** 文档格式版本，编辑器结构升级时用于迁移旧文档 */
     docVersion: integer('doc_version').notNull().default(1),
     // 以下为从 Yjs 文档派生的字段（检索、列表、统计用）
@@ -401,6 +403,8 @@ export const cards = sqliteTable(
     reps: integer('reps').notNull().default(0),
     lapses: integer('lapses').notNull().default(0),
     state: integer('state').notNull().default(0),
+    /** FSRS 学习 / 重学阶段的步数（ts-fsrs v5） */
+    learningSteps: integer('learning_steps').notNull().default(0),
     lastReview: integer('last_review'),
     suspended: integer('suspended', { mode: 'boolean' }).notNull().default(false),
     ...syncCols

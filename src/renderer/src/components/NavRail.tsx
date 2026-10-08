@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next'
-import { NotebookPen, Library, Trash2, Settings, Search, PanelLeftClose, PanelLeftOpen, Sparkles } from 'lucide-react'
+import { NotebookPen, Library, Trash2, Settings, Search, PanelLeftClose, PanelLeftOpen, Sparkles, Layers } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useApp, type View } from '@/store/app'
 import { cn, isMac, modKey } from '@/lib/utils'
@@ -7,18 +7,21 @@ import { Tip } from './ui/primitives'
 import { Logo } from './Logo'
 import { JobsIndicator } from './JobsIndicator'
 import { useSidebar } from './CollapsibleSidebar'
+import { useReviewStats } from '@/features/review/ReviewView'
 
 function RailButton({
   active,
   pressed,
   label,
   onClick,
+  badge,
   children
 }: {
   active?: boolean
   pressed?: boolean
   label: string
   onClick: () => void
+  badge?: number
   children: ReactNode
 }) {
   return (
@@ -34,6 +37,11 @@ function RailButton({
         )}
       >
         {children}
+        {!!badge && (
+          <span className="absolute -top-0.5 -right-0.5 min-w-4 rounded-full bg-accent px-1 text-center text-[10px] leading-4 font-medium text-accent-fg tabular-nums">
+            {badge > 99 ? '99+' : badge}
+          </span>
+        )}
         {active && <span className="absolute top-2.5 -left-[17px] h-5 w-[3px] rounded-r-full bg-accent" />}
       </button>
     </Tip>
@@ -44,10 +52,12 @@ export function NavRail() {
   const { t } = useTranslation()
   const { view, setView, openNote, setSettingsOpen, setPaletteOpen } = useApp()
   const sidebar = useSidebar()
+  const { data: stats } = useReviewStats()
   const items: { id: View; label: string; icon: ReactNode }[] = [
     { id: 'notes', label: `${t('nav.notes')}  ${modKey}1`, icon: <NotebookPen /> },
     { id: 'library', label: `${t('nav.library')}  ${modKey}2`, icon: <Library /> },
-    { id: 'chat', label: `${t('nav.chat')}  ${modKey}3`, icon: <Sparkles /> }
+    { id: 'chat', label: `${t('nav.chat')}  ${modKey}3`, icon: <Sparkles /> },
+    { id: 'review', label: `${t('nav.review')}  ${modKey}4`, icon: <Layers /> }
   ]
 
   return (
@@ -75,6 +85,7 @@ export function NavRail() {
           active={view === it.id}
           label={it.label}
           onClick={() => (it.id === 'notes' && view === 'notes' ? openNote(null) : setView(it.id))}
+          badge={it.id === 'review' ? stats?.due : undefined}
         >
           {it.icon}
         </RailButton>

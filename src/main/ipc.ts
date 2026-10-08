@@ -26,6 +26,7 @@ import { retrieve } from './services/ai/retrieve'
 import * as memory from './services/memory'
 import * as learner from './services/learner'
 import * as memoryLearn from './services/memoryLearn'
+import * as review from './services/review'
 import * as asr from './services/asr'
 import { saveAnswer } from './services/saveAnswer'
 import { exportNote } from './services/exportNote'
@@ -171,6 +172,16 @@ const handlers: Handlers = {
     saveAnswer: (_, input) => saveAnswer(input),
     update: (_, id, patch) => chat.updateConversation(id, patch),
     remove: (_, id) => chat.deleteConversation(id)
+  },
+  review: {
+    next: (_, exclude) => review.nextCard(exclude),
+    get: (_, id) => review.getCard(id),
+    stats: () => review.reviewStats(),
+    rate: (_, id, rating, durationMs) => review.rate(id, rating, durationMs),
+    undo: (_, id) => review.undoRating(id),
+    suspend: (_, id, suspended) => review.suspendCard(id, suspended),
+    forNote: (_, noteId) => review.cardsForNote(noteId),
+    check: (_, id, answer) => review.checkAnswer(id, answer)
   },
   memory: {
     list: (_, q) => memory.listMemories(q),

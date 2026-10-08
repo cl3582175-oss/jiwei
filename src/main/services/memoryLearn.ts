@@ -107,7 +107,7 @@ const RULES_ZH = `你负责整理「积微」学习助手对用户的长期记�
 3. 已有记忆被新信息修正：update（写完整的新内容）；明显不再成立：invalidate；与对话一致或在对话中被用到：把编号放进 reinforced。只能引用给出的编号。
 4. 健康、财务、人际关系、宗教、政治相关的标记 sensitive。
 5. content 用简短陈述，不带主语，如“喜欢先看例子再看定义”“正在备考 CPA，目标 2027 年通过”。
-6. concepts：用户请教过、没弄懂、或表现出已经理解的具体概念（名称用资料中的说法，2～12 个字）。asked：请求解释；confused：明确表示没懂或理解有误；understood：用自己的话正确复述或正确运用。助手顺带提到的概念不算。
+6. concepts：用户请教过、没弄懂、或表现出已经理解的具体概念（名称用资料中的说法，2～12 个字）。asked：只是请求解释；confused：表示没懂、看不明白、搞不清，或理解有误——即使同时在请求解释，也用 confused；understood：用自己的话正确复述或正确运用。助手顺带提到的概念不算。
 7. episode：如果这是一次学习，用一两句话写“学了什么、卡在哪、得出什么结论”（不带主语）；已有学习经历时合并更新；闲聊或操作性对话为 null。
 8. 没有值得记的就返回空数组。宁缺毋滥。`
 
@@ -118,7 +118,7 @@ Rules:
 3. Corrected memory → update (write the full new content); no longer true → invalidate; confirmed or used → put its ref in reinforced. Only use the given refs.
 4. Mark health, finance, relationships, religion and politics as sensitive.
 5. Write content as short statements without a subject, e.g. "Prefers examples before definitions".
-6. concepts: specific concepts the user asked about, was confused by, or showed understanding of (2–6 words). asked / confused / understood. Not concepts merely mentioned by the assistant.
+6. concepts: specific concepts the user asked about, was confused by, or showed understanding of (2–6 words). asked = just asking for an explanation; confused = says they don't get it or misunderstands (use confused even if they also ask for an explanation); understood = restates or applies it correctly. Not concepts merely mentioned by the assistant.
 7. episode: if this was learning, one or two sentences on what was studied, where they got stuck, what they concluded; merge with the existing episode; null for small talk.
 8. Return empty arrays when nothing is worth keeping.`
 

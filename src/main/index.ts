@@ -20,6 +20,7 @@ import { registerIndexJob, requestIndex } from './services/ai/indexer'
 import { refreshStatus, shutdown as shutdownEmbedding } from './services/ai/embedding'
 import { stopAll as stopChats } from './services/ai/chat'
 import { startMemoryLearning, stopMemoryLearning } from './services/memoryLearn'
+import { syncAllCards } from './services/review'
 import { importProvidersForTest } from './services/ai/providers'
 
 const HOUR = 3_600_000
@@ -139,6 +140,14 @@ app.whenReady().then(async () => {
   registerIndexJob()
   startJobs()
   startMemoryLearning()
+  // 复习卡片：补齐已有笔记的线索（升级到 v0.4 后第一次启动）
+  setTimeout(() => {
+    try {
+      syncAllCards()
+    } catch (e) {
+      log.warn('[review] sync failed', e)
+    }
+  }, 3000)
   // 向量模型已安装则补齐索引（例如上次退出时未完成的部分）
   void refreshStatus().then((s) => s.state === 'ready' && requestIndex())
   handleDeepLink(process.argv.find((a) => a.startsWith('jiwei://')))

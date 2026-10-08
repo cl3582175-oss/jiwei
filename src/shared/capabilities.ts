@@ -15,6 +15,9 @@ import type {
   Job,
   Memory,
   Concept,
+  ReviewCard,
+  ReviewStats,
+  AnswerCheck,
   MemorySettings,
   Note,
   NoteSummary,
@@ -306,6 +309,25 @@ export const capabilities = {
       description: '立即执行记忆维护：检查 AI 内容是否被修改、归纳技能偏好、淡出久未使用的记忆',
       params: [['opts', z.object({ force: z.boolean().optional() })]]
     })
+  },
+  review: {
+    next: cap<ReviewCard | null>()({
+      description: '下一张要复习的卡片（exclude：本轮刚复习过的）',
+      params: [['exclude', z.array(S.Id).max(500)]]
+    }),
+    get: cap<ReviewCard | null>()({ description: '读取一张卡片', params: [id()] }),
+    stats: cap<ReviewStats>()({ description: '复习统计：到期数量、今日已复习、连续天数、记住比例', params: none }),
+    rate: cap<ReviewCard | null>()({
+      description: '为卡片评分（1 忘了 2 困难 3 记得 4 轻松）',
+      params: [id(), ['rating', z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)])], ['durationMs', z.number().int().min(0).optional()]]
+    }),
+    undo: cap<ReviewCard | null>()({ description: '撤销这张卡片最近一次评分', params: [id()] }),
+    suspend: cap<void>()({ description: '暂停或恢复一张卡片', params: [id(), ['suspended', z.boolean()]] }),
+    forNote: cap<{ id: string; rowId: string; state: ReviewCard['state']; due: number; suspended: boolean }[]>()({
+      description: '某篇笔记的复习卡片',
+      params: [id('noteId')]
+    }),
+    check: cap<AnswerCheck>()({ description: 'AI 对照笔记检查用户的回答', params: [id(), ['answer', z.string().min(1).max(5000)]] })
   },
   skills: {
     list: cap<SkillInfo[]>()({ description: '列出技能', params: none }),

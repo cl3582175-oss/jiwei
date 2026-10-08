@@ -16,7 +16,8 @@ import {
   FolderOpen,
   FolderInput,
   DatabaseBackup,
-  TriangleAlert
+  TriangleAlert,
+  Layers
 } from 'lucide-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -33,7 +34,7 @@ import { api, cn, formatDateTime } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Logo } from '@/components/Logo'
 
-type Tab = 'general' | 'me' | 'ai' | 'skills' | 'appearance' | 'data' | 'about'
+type Tab = 'general' | 'me' | 'learning' | 'ai' | 'skills' | 'appearance' | 'data' | 'about'
 
 const PALETTES: PaletteId[] = ['qinglu', 'celadon', 'dunhuang']
 
@@ -287,6 +288,7 @@ export function SettingsDialog() {
   const tabs: { id: Tab; icon: ReactNode }[] = [
     { id: 'general', icon: <Settings2 /> },
     { id: 'me', icon: <UserRound /> },
+    { id: 'learning', icon: <Layers /> },
     { id: 'ai', icon: <Sparkles /> },
     { id: 'skills', icon: <Wand2 /> },
     { id: 'appearance', icon: <Palette /> },
@@ -374,6 +376,25 @@ export function SettingsDialog() {
                       <PaletteCard key={id} id={id} dark={dark} active={s.palette === id} onPick={() => update.mutate({ palette: id })} />
                     ))}
                   </div>
+                </Row>
+              </>
+            )}
+            {tab === 'learning' && (
+              <>
+                <h3 className="pt-4 font-serif text-md font-semibold text-fg">{t('review.settingsTitle')}</h3>
+                <Row label={t('review.newPerDay')} desc={t('review.newPerDayDesc')}>
+                  <Segmented<string>
+                    value={String(s.review.newPerDay)}
+                    onChange={(v) => update.mutate({ review: { ...s.review, newPerDay: Number(v) } })}
+                    options={['10', '20', '30', '50'].map((v) => ({ value: v, label: v }))}
+                  />
+                </Row>
+                <Row label={t('review.retention')} desc={t('review.retentionDesc')}>
+                  <Segmented<string>
+                    value={String(Math.round(s.review.retention * 100))}
+                    onChange={(v) => update.mutate({ review: { ...s.review, retention: Number(v) / 100 } })}
+                    options={['85', '90', '95'].map((v) => ({ value: v, label: `${v}%` }))}
+                  />
                 </Row>
               </>
             )}

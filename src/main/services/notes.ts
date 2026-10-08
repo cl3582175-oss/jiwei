@@ -5,6 +5,7 @@ import { newId } from '../lib/ids'
 import { deviceId } from './device'
 import { recordActivity } from './stats'
 import { initDoc, replaceDoc } from './docs'
+import { syncCards } from './review'
 import { sampleNote } from '../lib/sampleNote'
 import { deletedCategoryIds, descendantIds } from './categories'
 import { entitiesWithTag, tagIdsFor } from './tags'
@@ -23,6 +24,7 @@ const summaryCols = {
   status: notes.status,
   supersededBy: notes.supersededBy,
   aiExcluded: notes.aiExcluded,
+  reviewExcluded: notes.reviewExcluded,
   plainText: notes.plainText,
   wordCount: notes.wordCount,
   aiWordCount: notes.aiWordCount,
@@ -140,7 +142,7 @@ export function updateNote(id: string, patch: NoteMetaUpdate): NoteSummary {
   const db = getDb()
   const now = Date.now()
   const set: Partial<typeof notes.$inferSelect> = { updatedAt: now, updatedBy: deviceId() }
-  for (const k of ['title', 'categoryId', 'pinned', 'learnedAt', 'status', 'supersededBy', 'aiExcluded'] as const) {
+  for (const k of ['title', 'categoryId', 'pinned', 'learnedAt', 'status', 'supersededBy', 'aiExcluded', 'reviewExcluded'] as const) {
     if (patch[k] !== undefined) (set as Record<string, unknown>)[k] = patch[k]
   }
   if (patch.supersededBy === id) throw new Error('A note cannot supersede itself')
@@ -148,6 +150,7 @@ export function updateNote(id: string, patch: NoteMetaUpdate): NoteSummary {
   if (patch.supersededBy) set.status = 'outdated'
   if (patch.title !== undefined) set.editedAt = now
   db.update(notes).set(set).where(eq(notes.id, id)).run()
+  if (patch.reviewExcluded !== undefined) syncCards(id)
   return getNote(id)!
 }
 

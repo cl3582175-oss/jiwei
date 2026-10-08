@@ -1,3 +1,4 @@
+import { yUndoPluginKey } from '@tiptap/y-tiptap'
 import type { Editor } from '@tiptap/react'
 import type { Node as PMNode, Schema } from '@tiptap/pm/model'
 import type * as Y from 'yjs'
@@ -143,7 +144,11 @@ export function applyOp(editor: Editor, ydoc: Y.Doc, proposal: Proposal, op: Pro
       break
     }
   }
+  // AI 修改单独成为一个撤销步骤：不与之前、之后的输入合并（⌘Z 只撤销这次修改）
+  const undo = yUndoPluginKey.getState(editor.state)?.undoManager
+  undo?.stopCapturing()
   view.dispatch(tr.scrollIntoView())
+  undo?.stopCapturing()
   // 编辑器在同一次分发中为新节点分配 ID；本次写入的顶层节点带有同一个来源字符串
   const ids: string[] = []
   editor.state.doc.descendants((n) => {

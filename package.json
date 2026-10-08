@@ -1,7 +1,7 @@
 {
   "name": "jiwei",
   "productName": "积微",
-  "version": "0.3.4",
+  "version": "0.4.0",
   "description": "积微 · Jiwei — AI 驱动的学习笔记与个人知识库",
   "main": "./out/main/index.js",
   "author": "cl3582175-oss",
@@ -46,6 +46,7 @@
     "shiki": "^4.5.0",
     "sqlite-vec": "^0.1.9",
     "tar": "^7.5.22",
+    "ts-fsrs": "5.4.2",
     "yaml": "^2.9.1"
   },
   "devDependencies": {
