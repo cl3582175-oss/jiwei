@@ -32,3 +32,25 @@ export function formatRelative(ts: number, lang: string): string {
   if (abs < 86400 * 7) return rtf.format(Math.round(diff / 86400), 'day')
   return new Intl.DateTimeFormat(lang, { month: 'short', day: 'numeric', year: 'numeric' }).format(ts)
 }
+
+export function formatDate(ts: number, lang: string): string {
+  return new Intl.DateTimeFormat(lang, { year: 'numeric', month: 'short', day: 'numeric' }).format(ts)
+}
+
+export function formatDateTime(ts: number, lang: string): string {
+  return new Intl.DateTimeFormat(lang, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(ts)
+}
+
+/** 时间戳 → <input type="date"> 的本地日期值 */
+export function toDateInput(ts: number): string {
+  const d = new Date(ts)
+  const p = (n: number): string => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+}
+
+/** 日期输入值 → 时间戳，保留原时间戳的时分秒 */
+export function fromDateInput(value: string, keepTimeFrom: number): number {
+  const [y, m, d] = value.split('-').map(Number)
+  const t = new Date(keepTimeFrom)
+  return new Date(y, m - 1, d, t.getHours(), t.getMinutes(), t.getSeconds()).getTime()
+}

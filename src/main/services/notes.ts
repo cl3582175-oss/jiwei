@@ -1,52 +1,52 @@
-import { randomUUID } from 'crypto'
-import { and, asc, desc, eq, isNull, like, or, inArray, type SQL } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, isNull, like, or, type SQL } from 'drizzle-orm'
 import { getDb, getSqlite } from '../db'
-import { notes } from '../db/schema'
+import { notes, taggings } from '../db/schema'
+import { newId } from '../lib/ids'
+import { deviceId } from './device'
 import { recordActivity } from './stats'
-import type { DocJSON, Note, NoteQuery, NoteSummary, NoteUpdate } from '@shared/types'
+import { initDoc } from './docs'
+import { deletedCategoryIds, descendantIds } from './categories'
+import { entitiesWithTag, tagIdsFor } from './tags'
+import { DOC_VERSION, type Note, type NoteMetaUpdate, type NoteQuery, type NoteSummary } from '@shared/types'
 
-const EMPTY_DOC: DocJSON = { type: 'doc', content: [{ type: 'paragraph' }] }
-const EXCERPT_LEN = 120
+const EXCERPT_LEN = 140
 
-type Row = typeof notes.$inferSelect
-
-function toSummary(r: Row): NoteSummary {
-  return {
-    id: r.id,
-    title: r.title,
-    categoryId: r.categoryId,
-    pinned: r.pinned,
-    excerpt: r.plainText.slice(0, EXCERPT_LEN),
-    wordCount: r.wordCount,
-    createdAt: r.createdAt,
-    updatedAt: r.updatedAt,
-    deletedAt: r.deletedAt
-  }
+// 列表查询只取需要的列，绝不读取正文
+const summaryCols = {
+  id: notes.id,
+  title: notes.title,
+  categoryId: notes.categoryId,
+  pinned: notes.pinned,
+  learnedAt: notes.learnedAt,
+  status: notes.status,
+  supersededBy: notes.supersededBy,
+  aiExcluded: notes.aiExcluded,
+  plainText: notes.plainText,
+  wordCount: notes.wordCount,
+  createdAt: notes.createdAt,
+  editedAt: notes.editedAt,
+  updatedAt: notes.updatedAt,
+  deletedAt: notes.deletedAt
 }
 
-function parseDoc(s: string): DocJSON {
-  try {
-    return JSON.parse(s) as DocJSON
-  } catch {
-    return EMPTY_DOC
-  }
+type Row = { [K in keyof typeof summaryCols]: (typeof notes.$inferSelect)[K] }
+
+function toSummaries(rows: Row[]): NoteSummary[] {
+  const tagMap = tagIdsFor('note', rows.map((r) => r.id))
+  return rows.map(({ plainText, ...r }) => ({
+    ...r,
+    excerpt: plainText.slice(0, EXCERPT_LEN),
+    tagIds: tagMap.get(r.id) ?? []
+  }))
 }
 
-/** 中英文混合字数：每个 CJK 字符计 1，每个拉丁单词计 1 */
-export function countWords(text: string): number {
-  const cjk = text.match(/[㐀-鿿豈-﫿]/g)?.length ?? 0
-  const latin = text.replace(/[㐀-鿿豈-﫿]/g, ' ').match(/[A-Za-z0-9]+/g)?.length ?? 0
-  return cjk + latin
-}
-
-/** 用 FTS5 trigram 检索；查询少于 3 个字符时回退到 LIKE */
+/** FTS5 trigram 检索；查询少于 3 个字符时返回 null（回退到 LIKE） */
 function searchIds(search: string): string[] | null {
   const q = search.trim()
-  if (!q) return null
   if ([...q].length < 3) return null
   const phrase = '"' + q.replace(/"/g, '""') + '"'
   const rows = getSqlite()
-    .prepare('SELECT note_id FROM notes_fts WHERE notes_fts MATCH ? ORDER BY rank LIMIT 500')
+    .prepare('SELECT note_id FROM notes_fts WHERE notes_fts MATCH ? ORDER BY rank LIMIT 1000')
     .all(phrase) as { note_id: string }[]
   return rows.map((r) => r.note_id)
 }
@@ -54,9 +54,16 @@ function searchIds(search: string): string[] | null {
 export function listNotes(query: NoteQuery): NoteSummary[] {
   const conds: SQL[] = [isNull(notes.deletedAt)]
   if (query.categoryId !== undefined) {
-    conds.push(query.categoryId === null ? isNull(notes.categoryId) : eq(notes.categoryId, query.categoryId))
+    if (query.categoryId === null) {
+      const dead = deletedCategoryIds()
+      conds.push(dead.length ? or(isNull(notes.categoryId), inArray(notes.categoryId, dead))! : isNull(notes.categoryId))
+    } else {
+      conds.push(inArray(notes.categoryId, query.includeDescendants ? descendantIds(query.categoryId) : [query.categoryId]))
+    }
   }
+  if (query.tagId) conds.push(inArray(notes.id, entitiesWithTag('note', query.tagId)))
   if (query.pinnedOnly) conds.push(eq(notes.pinned, true))
+  if (query.status) conds.push(eq(notes.status, query.status))
   if (query.search?.trim()) {
     const ids = searchIds(query.search)
     if (ids) {
@@ -67,71 +74,72 @@ export function listNotes(query: NoteQuery): NoteSummary[] {
       conds.push(or(like(notes.title, pat), like(notes.plainText, pat))!)
     }
   }
-  const order =
-    query.sort === 'title' ? asc(notes.title) : query.sort === 'created' ? desc(notes.createdAt) : desc(notes.updatedAt)
-  return getDb()
-    .select()
+  const order = {
+    title: asc(notes.title),
+    created: desc(notes.createdAt),
+    learned: desc(notes.learnedAt),
+    edited: desc(notes.editedAt)
+  }[query.sort ?? 'edited']
+  let q = getDb()
+    .select(summaryCols)
     .from(notes)
     .where(and(...conds))
     .orderBy(desc(notes.pinned), order)
-    .all()
-    .map(toSummary)
+    .$dynamic()
+  if (query.limit) q = q.limit(query.limit)
+  return toSummaries(q.all())
 }
 
 export function getNote(id: string): Note | null {
-  const r = getDb().select().from(notes).where(eq(notes.id, id)).get()
-  if (!r) return null
-  return { ...toSummary(r), cue: parseDoc(r.cue), content: parseDoc(r.content), summary: parseDoc(r.summary) }
+  const r = getDb().select(summaryCols).from(notes).where(eq(notes.id, id)).get()
+  return r ? toSummaries([r])[0] : null
 }
 
 export function createNote(init?: { categoryId?: string | null; title?: string }): Note {
   const now = Date.now()
-  const empty = JSON.stringify(EMPTY_DOC)
-  const id = randomUUID()
+  const id = newId()
   getDb()
     .insert(notes)
     .values({
       id,
       title: init?.title ?? '',
       categoryId: init?.categoryId ?? null,
-      cue: empty,
-      content: empty,
-      summary: empty,
+      learnedAt: now,
+      docVersion: DOC_VERSION,
+      editedAt: now,
       createdAt: now,
-      updatedAt: now
+      updatedAt: now,
+      updatedBy: deviceId()
     })
     .run()
+  initDoc(id)
   recordActivity('note_create')
   return getNote(id)!
 }
 
-export function updateNote(id: string, patch: NoteUpdate): NoteSummary {
+export function updateNote(id: string, patch: NoteMetaUpdate): NoteSummary {
   const db = getDb()
-  const prev = db.select().from(notes).where(eq(notes.id, id)).get()
-  if (!prev) throw new Error(`Note not found: ${id}`)
-  const set: Partial<Row> = {}
-  if (patch.title !== undefined) set.title = patch.title
-  if (patch.categoryId !== undefined) set.categoryId = patch.categoryId
-  if (patch.pinned !== undefined) set.pinned = patch.pinned
-  if (patch.cue) set.cue = JSON.stringify(patch.cue)
-  if (patch.content) set.content = JSON.stringify(patch.content)
-  if (patch.summary) set.summary = JSON.stringify(patch.summary)
-  if (patch.plainText !== undefined) {
-    set.plainText = patch.plainText
-    set.wordCount = countWords(patch.plainText)
+  const now = Date.now()
+  const set: Partial<typeof notes.$inferSelect> = { updatedAt: now, updatedBy: deviceId() }
+  for (const k of ['title', 'categoryId', 'pinned', 'learnedAt', 'status', 'supersededBy', 'aiExcluded'] as const) {
+    if (patch[k] !== undefined) (set as Record<string, unknown>)[k] = patch[k]
   }
-  // 仅置顶/分类变化不视为内容编辑，不刷新更新时间
-  const isEdit = patch.title !== undefined || patch.cue || patch.content || patch.summary
-  if (isEdit) set.updatedAt = Date.now()
+  if (patch.supersededBy === id) throw new Error('A note cannot supersede itself')
+  // 被取代的知识自动标记为已过时
+  if (patch.supersededBy) set.status = 'outdated'
+  if (patch.title !== undefined) set.editedAt = now
   db.update(notes).set(set).where(eq(notes.id, id)).run()
-  if (isEdit) {
-    recordActivity('note_edit')
-    const delta = (set.wordCount ?? prev.wordCount) - prev.wordCount
-    if (delta > 0) recordActivity('words', delta)
-  }
-  return toSummary(db.select().from(notes).where(eq(notes.id, id)).get()!)
+  return getNote(id)!
 }
 
 export function trashNote(id: string): void {
-  getDb().update(notes).set({ deletedAt: Date.now() }).where(eq(notes.id, id)).run()
+  getDb().update(notes).set({ deletedAt: Date.now(), updatedAt: Date.now(), updatedBy: deviceId() }).where(eq(notes.id, id)).run()
+}
+
+export function deleteNoteRow(id: string): void {
+  const db = getDb()
+  db.delete(taggings).where(and(eq(taggings.entityType, 'note'), eq(taggings.entityId, id))).run()
+  // 解除其他笔记对它的“被取代”引用
+  db.update(notes).set({ supersededBy: null }).where(eq(notes.supersededBy, id)).run()
+  db.delete(notes).where(eq(notes.id, id)).run()
 }

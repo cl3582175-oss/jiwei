@@ -1,7 +1,7 @@
 {
   "name": "jiwei",
   "productName": "积微",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "积微 · Jiwei — AI 驱动的学习笔记与个人知识库",
   "main": "./out/main/index.js",
   "author": "cl3582175-oss",
@@ -19,13 +19,15 @@
     "dist:mac": "npm run build && electron-builder --mac",
     "dist:win": "npm run build && electron-builder --win",
     "dist:linux": "npm run build && electron-builder --linux",
-    "test:e2e": "npm run build && playwright test"
+    "test:e2e": "npm run build && playwright test",
+    "test": "vitest run"
   },
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
     "better-sqlite3": "^13.0.3",
-    "drizzle-orm": "^0.45.3"
+    "drizzle-orm": "^0.45.3",
+    "electron-log": "^5.4.4"
   },
   "devDependencies": {
     "@floating-ui/dom": "^1.8.0",
@@ -33,10 +35,13 @@
     "@tailwindcss/vite": "^4.3.3",
     "@tanstack/react-query": "^5.104.1",
     "@tiptap/extension-bubble-menu": "^3.31.4",
-    "@tiptap/extension-placeholder": "^3.31.4",
+    "@tiptap/extension-collaboration": "^3.31.4",
+    "@tiptap/extension-image": "^3.31.4",
+    "@tiptap/extension-unique-id": "^3.31.4",
     "@tiptap/pm": "^3.31.4",
     "@tiptap/react": "^3.31.4",
     "@tiptap/starter-kit": "^3.31.4",
+    "@tiptap/y-tiptap": "^3.0.9",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.18.0",
     "@types/react": "^19.2.0",
@@ -59,7 +64,11 @@
     "tailwind-merge": "^3.4.0",
     "tailwindcss": "^4.3.3",
     "typescript": "^5.9.3",
+    "uuid": "^14.0.2",
     "vite": "^7.3.7",
+    "vitest": "^5.0.3",
+    "yjs": "^13.6.33",
+    "zod": "^4.6.5",
     "zustand": "^5.0.15"
   }
 }

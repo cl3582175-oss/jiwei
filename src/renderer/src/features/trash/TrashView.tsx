@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Trash2, RotateCcw, NotebookText, Clock } from 'lucide-react'
+import { Trash2, RotateCcw, NotebookText, Clock, Folder } from 'lucide-react'
 import type { TrashItem } from '@shared/types'
 import { useTrash, invalidate } from '@/lib/queries'
 import { api, cn, formatRelative } from '@/lib/utils'
@@ -15,7 +15,7 @@ export function TrashView() {
   const qc = useQueryClient()
   const { data: items = [], isFetched } = useTrash()
 
-  const refresh = (): void => invalidate(qc, 'trash', 'notes', 'sources')
+  const refresh = (): void => invalidate(qc, 'trash', 'notes', 'sources', 'categories')
 
   const restore = async (it: TrashItem): Promise<void> => {
     await api.trash.restore(it.type, it.id)
@@ -72,7 +72,7 @@ export function TrashView() {
               {items.map((it) => (
                 <div key={`${it.type}:${it.id}`} className="group flex items-center gap-4 px-5 py-3.5 transition-colors hover:bg-surface-hover/60">
                   <div className="grid size-9 shrink-0 place-items-center rounded-lg bg-sunken text-muted [&_svg]:size-4">
-                    {it.type === 'note' ? <NotebookText /> : <FileStack />}
+                    {it.type === 'note' ? <NotebookText /> : it.type === 'category' ? <Folder /> : <FileStack />}
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium text-fg">{it.title || t('common.untitled')}</p>

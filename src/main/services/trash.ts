@@ -1,8 +1,12 @@
-import { and, eq, isNotNull, lt } from 'drizzle-orm'
+import { and, eq, isNotNull, or } from 'drizzle-orm'
 import { getDb } from '../db'
-import { notes, noteLinks, noteSources, sources } from '../db/schema'
+import { annotations, categories, links, notes, sources } from '../db/schema'
+import { deleteNoteRow } from './notes'
+import { purgeDocData } from './docs'
 import { purgeSource } from './sources'
-import { TRASH_RETENTION_DAYS, type TrashItem } from '@shared/types'
+import { purgeCategory, restoreCategory } from './categories'
+import { collectGarbage } from './assets'
+import { TRASH_RETENTION_DAYS, type TrashItem, type TrashType } from '@shared/types'
 
 const DAY = 86_400_000
 
@@ -12,38 +16,46 @@ function daysLeft(deletedAt: number): number {
 
 export function listTrash(): TrashItem[] {
   const db = getDb()
-  const n = db
-    .select({ id: notes.id, title: notes.title, deletedAt: notes.deletedAt })
-    .from(notes)
-    .where(isNotNull(notes.deletedAt))
-    .all()
-  const s = db
-    .select({ id: sources.id, title: sources.title, deletedAt: sources.deletedAt })
-    .from(sources)
-    .where(isNotNull(sources.deletedAt))
-    .all()
+  const item = (type: TrashType) => (r: { id: string; title: string; deletedAt: number | null }): TrashItem => ({
+    type,
+    id: r.id,
+    title: r.title,
+    deletedAt: r.deletedAt!,
+    daysLeft: daysLeft(r.deletedAt!)
+  })
+  const n = db.select({ id: notes.id, title: notes.title, deletedAt: notes.deletedAt }).from(notes).where(isNotNull(notes.deletedAt)).all()
+  const s = db.select({ id: sources.id, title: sources.title, deletedAt: sources.deletedAt }).from(sources).where(isNotNull(sources.deletedAt)).all()
+  // 子分类随父分类一起删除时只显示父分类
+  const c = db.select().from(categories).where(isNotNull(categories.deletedAt)).all()
+  const cTop = c.filter((x) => !c.some((p) => p.id === x.parentId && p.deletedAt === x.deletedAt))
   return [
-    ...n.map((r) => ({ type: 'note' as const, id: r.id, title: r.title, deletedAt: r.deletedAt!, daysLeft: daysLeft(r.deletedAt!) })),
-    ...s.map((r) => ({ type: 'source' as const, id: r.id, title: r.title, deletedAt: r.deletedAt!, daysLeft: daysLeft(r.deletedAt!) }))
+    ...n.map(item('note')),
+    ...s.map(item('source')),
+    ...cTop.map((r) => item('category')({ id: r.id, title: r.name, deletedAt: r.deletedAt }))
   ].sort((a, b) => b.deletedAt - a.deletedAt)
 }
 
-export function restore(type: TrashItem['type'], id: string): void {
+export function restore(type: TrashType, id: string): void {
+  if (type === 'category') return restoreCategory(id)
   const table = type === 'note' ? notes : sources
-  getDb().update(table).set({ deletedAt: null }).where(eq(table.id, id)).run()
+  getDb().update(table).set({ deletedAt: null, updatedAt: Date.now() }).where(eq(table.id, id)).run()
 }
 
-export async function purge(type: TrashItem['type'], id: string): Promise<void> {
+export async function purge(type: TrashType, id: string): Promise<void> {
   const db = getDb()
+  if (type === 'category') return purgeCategory(id)
+  // 清理指向 / 来自该对象的关联与批注
+  db.delete(links)
+    .where(or(and(eq(links.fromType, type), eq(links.fromId, id)), and(eq(links.toType, type), eq(links.toId, id))))
+    .run()
+  db.delete(annotations).where(and(eq(annotations.targetType, type), eq(annotations.targetId, id))).run()
   if (type === 'note') {
-    db.transaction((tx) => {
-      tx.delete(noteLinks).where(eq(noteLinks.fromId, id)).run()
-      tx.delete(noteLinks).where(eq(noteLinks.toId, id)).run()
-      tx.delete(noteSources).where(eq(noteSources.noteId, id)).run()
-      tx.delete(notes).where(eq(notes.id, id)).run()
+    db.transaction(() => {
+      purgeDocData(id)
+      deleteNoteRow(id)
     })
+    await collectGarbage()
   } else {
-    db.delete(noteSources).where(eq(noteSources.sourceId, id)).run()
     await purgeSource(id)
   }
 }
@@ -55,14 +67,8 @@ export async function emptyTrash(): Promise<void> {
 /** 自动清理超过保留期的项目；启动时与每小时执行 */
 export async function purgeExpired(): Promise<number> {
   const cutoff = Date.now() - TRASH_RETENTION_DAYS * DAY
-  const db = getDb()
-  const n = db.select({ id: notes.id }).from(notes).where(and(isNotNull(notes.deletedAt), lt(notes.deletedAt, cutoff))).all()
-  const s = db
-    .select({ id: sources.id })
-    .from(sources)
-    .where(and(isNotNull(sources.deletedAt), lt(sources.deletedAt, cutoff)))
-    .all()
-  for (const r of n) await purge('note', r.id)
-  for (const r of s) await purge('source', r.id)
-  return n.length + s.length
+  const expired = listTrash().filter((i) => i.deletedAt < cutoff)
+  for (const i of expired) await purge(i.type, i.id)
+  return expired.length
 }
+

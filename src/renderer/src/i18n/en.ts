@@ -2,7 +2,7 @@ import type { Messages } from './zh-CN'
 
 const en: Messages = {
   app: { name: 'Jiwei', slogan: 'Small steps, great knowledge' },
-  nav: { notes: 'Notes', library: 'Library', trash: 'Recently Deleted', settings: 'Settings', search: 'Search' },
+  nav: { home: 'Back to home', notes: 'Notes', library: 'Library', trash: 'Recently Deleted', settings: 'Settings', search: 'Search' },
   common: {
     cancel: 'Cancel',
     confirm: 'Confirm',
@@ -19,7 +19,9 @@ const en: Messages = {
     saved: 'Saved',
     saving: 'Saving…',
     words: '{{count}} words',
-    loading: 'Loading…'
+    loading: 'Loading…',
+    undo: 'Undo',
+    clear: 'Clear'
   },
   notes: {
     title: 'Notes',
@@ -35,7 +37,25 @@ const en: Messages = {
     empty: 'No notes yet',
     emptyHint: 'Write down the first thing you learned today',
     noResults: 'No matching notes',
-    sort: { updated: 'Last edited', created: 'Created', title: 'Title' },
+    sortLabel: 'Sort',
+    sort: { edited: 'Last edited', learned: 'Date learned', created: 'Created', title: 'Title' },
+    addRow: 'Add a row',
+    learnedOn: 'Learned {{date}}',
+    learnedAtHint: 'When you learned this — editable (e.g. for notes written later)',
+    createdAt: 'Created',
+    editedAgo: 'edited {{time}}',
+    aiExcluded: 'Hidden from AI',
+    aiExcludedHint: 'This note is never sent to any AI service',
+    aiExclude: 'Hide from AI',
+    aiInclude: 'Allow AI access',
+    status: { label: 'Knowledge status', active: 'Valid', disputed: 'Disputed', outdated: 'Outdated' },
+    supersede: 'Superseded by another note…',
+    supersedePick: 'Pick the note that supersedes this one',
+    supersededBy: 'Superseded by',
+    outdatedBanner: 'This note is marked outdated; AI will give it less weight.',
+    disputedBanner: 'This note is disputed; AI will ask you to verify when citing it.',
+    markActive: 'Mark as valid',
+    editorHint: '⌘/Ctrl + Enter adds a row · Tab switches between cue and notes · paste or drop images',
     titlePlaceholder: 'Note title',
     cue: 'Cues',
     cueHint: 'Keywords, questions, prompts',
@@ -49,6 +69,28 @@ const en: Messages = {
     deleted: 'Moved to Recently Deleted',
     deleteCategoryTitle: 'Delete category “{{name}}”?',
     deleteCategoryDesc: 'Items inside will not be deleted; they become uncategorized.'
+  },
+  tags: {
+    title: 'Tags',
+    add: 'Add tag',
+    search: 'Search or create a tag',
+    create: 'Create tag “{{name}}”',
+    deleteTitle: 'Delete tag “{{name}}”?',
+    deleteDesc: 'Only the tag is removed; notes and sources are not affected.'
+  },
+  categories: {
+    newSub: 'New subcategory',
+    removed: 'Deleted “{{name}}” — restore it from Recently Deleted'
+  },
+  history: {
+    title: 'Version history',
+    empty: 'Versions are saved automatically as you edit. You can also save one from the More menu.',
+    restore: 'Restore this version',
+    restoreTitle: 'Restore this version?',
+    restoreDesc: 'The note will be restored to its state at {{time}}. The current content is archived first, so you can always go back.',
+    saveVersion: 'Save current version',
+    saved: 'Version saved',
+    reason: { auto: 'Autosave', manual: 'Saved manually', restore: 'Before restore' }
   },
   home: {
     greeting: { morning: 'Good morning', noon: 'Good day', afternoon: 'Good afternoon', evening: 'Good evening' },
@@ -85,7 +127,12 @@ const en: Messages = {
       web: 'Web',
       other: 'Other'
     },
-    invalidUrl: 'Please enter a valid http(s) URL'
+    invalidUrl: 'Please enter a valid http(s) URL',
+    duplicates: '{{count}} file(s) already in your library were skipped',
+    info: 'Source details',
+    author: 'Author',
+    publishedAt: 'Published',
+    accessedAt: 'Added'
   },
   trash: {
     title: 'Recently Deleted',
@@ -96,6 +143,7 @@ const en: Messages = {
     today: 'Deleted permanently today',
     note: 'Note',
     source: 'Source',
+    category: 'Category',
     purge: 'Delete permanently',
     purgeTitle: 'Permanently delete “{{name}}”?',
     purgeDesc: 'This cannot be undone.',
@@ -117,6 +165,16 @@ const en: Messages = {
     dataDir: 'Data directory',
     dataDirDesc: 'Your notes database and imported files are stored locally in this folder.',
     openDataDir: 'Open folder',
+    changeDataDir: 'Change…',
+    changeDataDirDesc: 'Your data is copied to a new empty folder and the app restarts. The old folder is left untouched.',
+    cloudWarning: 'Your data folder is inside a cloud-sync drive, which can corrupt the database. Move it to a local folder.',
+    backups: 'Automatic backups',
+    backupsDesc: 'The database is backed up daily, keeping the last 7 days, 4 weeks and 12 months. A backup is also made before every upgrade.',
+    backupNow: 'Back up now',
+    backupDone: 'Backup complete',
+    openBackups: 'Open backups folder',
+    lastBackup: 'Last backup: {{time}}',
+    noBackup: 'No backups yet',
     version: 'Version',
     license: 'License',
     licenseDesc: 'PolyForm Noncommercial 1.0.0 — free for personal use, no commercial use.'

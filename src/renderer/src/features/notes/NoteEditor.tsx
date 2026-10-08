@@ -1,69 +1,32 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQueryClient } from '@tanstack/react-query'
 import type { Editor } from '@tiptap/react'
 import { toast } from 'sonner'
-import { Pin, MoreHorizontal, Trash2, Folder, Check, Inbox, ChevronDown, Circle } from 'lucide-react'
-import type { DocJSON, Note, NoteUpdate } from '@shared/types'
+import {
+  Pin, MoreHorizontal, Trash2, Folder, Check, Inbox, ChevronDown, History, ShieldOff, Shield, CircleCheck, CircleAlert,
+  Archive, Replace, ArrowLeft, CalendarDays, Bookmark
+} from 'lucide-react'
+import type { KnowledgeStatus, NoteMetaUpdate, NoteSummary } from '@shared/types'
 import { useCategories, useNote, invalidate } from '@/lib/queries'
-import { api, cn, formatRelative } from '@/lib/utils'
+import { api, cn, formatDate, formatDateTime, formatRelative, toDateInput, fromDateInput } from '@/lib/utils'
 import { useApp } from '@/store/app'
 import { Button } from '@/components/ui/button'
-import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger, Tip } from '@/components/ui/primitives'
+import { Menu, MenuContent, MenuItem, MenuLabel, MenuSeparator, MenuTrigger, Tip } from '@/components/ui/primitives'
 import { confirm } from '@/components/ui/confirm'
-import { RichEditor } from './RichEditor'
+import { CornellEditor } from './editor/CornellEditor'
+import { useNoteDoc } from './editor/useNoteDoc'
+import { TagEditor } from './TagEditor'
+import { NotePicker } from './NotePicker'
+import { HistoryDialog } from './HistoryDialog'
+import { categoryPaths } from './CategoryTree'
 
-const SAVE_DELAY = 700
+const TITLE_DELAY = 500
 
-type Part = 'cue' | 'content' | 'summary'
-
-function useAutosave(noteId: string) {
-  const qc = useQueryClient()
-  const pending = useRef<NoteUpdate>({})
-  const timer = useRef<number | undefined>(undefined)
-  const [status, setStatus] = useState<'saved' | 'saving'>('saved')
-  const [wordCount, setWordCount] = useState<number | null>(null)
-
-  const flush = useCallback(async () => {
-    window.clearTimeout(timer.current)
-    const patch = pending.current
-    if (Object.keys(patch).length === 0) return
-    pending.current = {}
-    setStatus('saving')
-    try {
-      const summary = await api.notes.update(noteId, patch)
-      setWordCount(summary.wordCount)
-      invalidate(qc, 'notes', 'heatmap')
-    } catch (e) {
-      // 保存失败时把补丁放回队列，下次继续尝试
-      pending.current = { ...patch, ...pending.current }
-      toast.error(String(e))
-    } finally {
-      setStatus('saved')
-    }
-  }, [noteId, qc])
-
-  const queue = useCallback(
-    (patch: NoteUpdate) => {
-      pending.current = { ...pending.current, ...patch }
-      setStatus('saving')
-      window.clearTimeout(timer.current)
-      timer.current = window.setTimeout(() => void flush(), SAVE_DELAY)
-    },
-    [flush]
-  )
-
-  // 切换笔记 / 关闭窗口时立即保存
-  useEffect(() => {
-    const onUnload = (): void => void flush()
-    window.addEventListener('beforeunload', onUnload)
-    return () => {
-      window.removeEventListener('beforeunload', onUnload)
-      void flush()
-    }
-  }, [flush])
-
-  return { queue, flush, status, wordCount }
+export const STATUS_META: Record<KnowledgeStatus, { icon: ReactNode; cls: string }> = {
+  active: { icon: <CircleCheck />, cls: 'text-accent' },
+  disputed: { icon: <CircleAlert />, cls: 'text-[#b8862b] dark:text-[#d9a74a]' },
+  outdated: { icon: <Archive />, cls: 'text-subtle' }
 }
 
 function TitleInput({ initial, onChange, onEnter }: { initial: string; onChange: (v: string) => void; onEnter: () => void }) {
@@ -98,43 +61,30 @@ function TitleInput({ initial, onChange, onEnter }: { initial: string; onChange:
   )
 }
 
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="mb-3 flex items-center gap-2 text-2xs font-medium tracking-[0.18em] text-subtle uppercase">
-      <Circle className="size-1.5 fill-accent text-accent" />
-      {children}
-    </div>
-  )
-}
-
-function CategoryPicker({ note, onChange }: { note: Note; onChange: (id: string | null) => void }) {
+function CategoryPicker({ value, onChange }: { value: string | null; onChange: (id: string | null) => void }) {
   const { t } = useTranslation()
   const { data: cats = [] } = useCategories('note')
-  const [current, setCurrent] = useState(note.categoryId)
-  const name = cats.find((c) => c.id === current)?.name ?? t('common.uncategorized')
-  const pick = (id: string | null): void => {
-    setCurrent(id)
-    onChange(id)
-  }
+  const paths = categoryPaths(cats)
+  const name = value ? (paths.get(value) ?? t('common.uncategorized')) : t('common.uncategorized')
   return (
     <Menu>
       <MenuTrigger asChild>
         <button className="no-drag flex h-7 items-center gap-1.5 rounded-md px-2 text-xs text-muted transition-colors hover:bg-surface-hover hover:text-fg">
-          {current ? <Folder className="size-3.5" /> : <Inbox className="size-3.5" />}
-          <span className="max-w-[180px] truncate">{name}</span>
+          {value ? <Folder className="size-3.5" /> : <Inbox className="size-3.5" />}
+          <span className="max-w-[260px] truncate">{name}</span>
           <ChevronDown className="size-3 opacity-60" />
         </button>
       </MenuTrigger>
-      <MenuContent align="start">
-        <MenuItem onSelect={() => pick(null)}>
-          <Check className={cn(current !== null && 'invisible')} />
+      <MenuContent align="start" className="max-h-[60vh] overflow-y-auto">
+        <MenuItem onSelect={() => onChange(null)}>
+          <Check className={cn(value !== null && 'invisible')} />
           {t('common.uncategorized')}
         </MenuItem>
         {cats.length > 0 && <MenuSeparator />}
-        {cats.map((c) => (
-          <MenuItem key={c.id} onSelect={() => pick(c.id)}>
-            <Check className={cn(current !== c.id && 'invisible')} />
-            {c.name}
+        {[...paths].sort((a, b) => a[1].localeCompare(b[1])).map(([id, path]) => (
+          <MenuItem key={id} onSelect={() => onChange(id)}>
+            <Check className={cn(value !== id && 'invisible')} />
+            {path}
           </MenuItem>
         ))}
       </MenuContent>
@@ -142,61 +92,117 @@ function CategoryPicker({ note, onChange }: { note: Note; onChange: (id: string 
   )
 }
 
-function EditorBody({ note }: { note: Note }) {
+/** 学习日期：可修改（例如补记上周的课） */
+function LearnedDate({ value, onChange }: { value: number; onChange: (ts: number) => void }) {
+  const { t, i18n } = useTranslation()
+  return (
+    <Tip label={t('notes.learnedAtHint')} side="bottom">
+      <label className="relative inline-flex h-6 cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-xs text-muted transition-colors hover:bg-surface-hover hover:text-fg">
+        <CalendarDays className="size-3.5 text-subtle" />
+        {t('notes.learnedOn', { date: formatDate(value, i18n.language) })}
+        <input
+          type="date"
+          value={toDateInput(value)}
+          max={toDateInput(Date.now())}
+          onChange={(e) => e.target.value && onChange(fromDateInput(e.target.value, value))}
+          className="absolute inset-0 cursor-pointer opacity-0 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:cursor-pointer"
+        />
+      </label>
+    </Tip>
+  )
+}
+
+function EditorBody({ note: initial }: { note: NoteSummary }) {
   const { t, i18n } = useTranslation()
   const qc = useQueryClient()
   const openNote = useApp((s) => s.openNote)
-  const { queue, flush, status, wordCount } = useAutosave(note.id)
-  const [pinned, setPinned] = useState(note.pinned)
-  const editors = useRef<Partial<Record<Part, Editor>>>({})
+  const { ydoc, saving } = useNoteDoc(initial.id)
+  const [note, setNote] = useState(initial)
+  const editorRef = useRef<Editor | null>(null)
+  const titleTimer = useRef<number | undefined>(undefined)
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const { data: superseder } = useNote(note.supersededBy)
 
-  const plainText = (): string =>
-    (['cue', 'content', 'summary'] as Part[])
-      .map((p) => editors.current[p]?.getText({ blockSeparator: '\n' }) ?? '')
-      .filter(Boolean)
-      .join('\n')
+  // 派生数据（字数、编辑时间）更新后刷新
+  useEffect(() => {
+    if (initial.wordCount !== note.wordCount || initial.editedAt !== note.editedAt) {
+      setNote((n) => ({ ...n, wordCount: initial.wordCount, editedAt: initial.editedAt }))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initial.wordCount, initial.editedAt])
 
-  const onPartChange = (part: Part) => (ed: Editor) => {
-    editors.current[part] = ed
-    queue({ [part]: ed.getJSON() as DocJSON, plainText: plainText() })
-  }
-
-  const togglePin = async (): Promise<void> => {
-    const next = !pinned
-    setPinned(next)
-    await api.notes.update(note.id, { pinned: next })
+  const update = async (patch: NoteMetaUpdate): Promise<void> => {
+    setNote((n) => ({ ...n, ...patch }) as NoteSummary)
+    const next = await api.notes.update(note.id, patch)
+    setNote((n) => ({ ...n, ...next, tagIds: n.tagIds }))
     invalidate(qc, 'notes')
   }
+
+  // 标题：防抖保存；离开时立即保存
+  const pendingTitle = useRef<string | null>(null)
+  const flushTitle = (): void => {
+    window.clearTimeout(titleTimer.current)
+    if (pendingTitle.current !== null) {
+      const title = pendingTitle.current
+      pendingTitle.current = null
+      void api.notes.update(note.id, { title }).then(() => invalidate(qc, 'notes'))
+    }
+  }
+  useEffect(() => flushTitle, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const remove = async (): Promise<void> => {
     const ok = await confirm({ title: t('notes.deleteTitle'), description: t('notes.deleteDesc'), confirmText: t('common.delete'), danger: true })
     if (!ok) return
-    await flush()
+    flushTitle()
     await api.notes.trash(note.id)
     invalidate(qc, 'notes', 'trash')
     openNote(null)
     toast(t('notes.deleted'))
   }
 
+  const saveVersion = async (): Promise<void> => {
+    await api.revisions.create(note.id, 'manual')
+    void qc.invalidateQueries({ queryKey: ['revisions', note.id] })
+    toast.success(t('history.saved'))
+  }
+
   return (
     <div className="flex h-full flex-col">
       {/* 顶栏 */}
-      <header className="drag flex h-[52px] shrink-0 items-center justify-between gap-4 border-b border-border/70 pr-[calc(var(--tb-right)+12px)] pl-6">
-        <CategoryPicker
-          note={note}
-          onChange={(id) => {
-            void api.notes.update(note.id, { categoryId: id }).then(() => invalidate(qc, 'notes'))
-          }}
-        />
+      <header className="drag flex h-[52px] shrink-0 items-center justify-between gap-4 border-b border-border/70 pr-[calc(var(--tb-right)+12px)] pl-4">
+        <div className="no-drag flex min-w-0 items-center gap-1">
+          <Tip label={t('nav.home')} side="bottom">
+            <Button variant="ghost" size="icon-sm" onClick={() => openNote(null)} aria-label={t('nav.home')}>
+              <ArrowLeft />
+            </Button>
+          </Tip>
+          <CategoryPicker value={note.categoryId} onChange={(categoryId) => void update({ categoryId })} />
+        </div>
         <div className="no-drag flex items-center gap-1">
-          <span className="mr-2 text-2xs text-subtle tabular-nums">
-            {status === 'saving'
-              ? t('common.saving')
-              : `${t('common.words', { count: wordCount ?? note.wordCount })} · ${formatRelative(note.updatedAt, i18n.language)}`}
-          </span>
-          <Tip label={pinned ? t('notes.unpin') : t('notes.pin')} side="bottom">
-            <Button variant="ghost" size="icon-sm" onClick={() => void togglePin()} aria-pressed={pinned}>
-              <Pin className={cn(pinned && 'fill-accent text-accent')} />
+          <Tip label={`${t('notes.createdAt')} ${formatDateTime(note.createdAt, i18n.language)}`} side="bottom">
+            <span className="mr-2 cursor-default text-2xs text-subtle tabular-nums">
+              {saving
+                ? t('common.saving')
+                : `${t('common.words', { count: note.wordCount })} · ${t('notes.editedAgo', { time: formatRelative(note.editedAt, i18n.language) })}`}
+            </span>
+          </Tip>
+          {note.aiExcluded && (
+            <Tip label={t('notes.aiExcludedHint')} side="bottom">
+              <span className="mr-1 inline-flex h-6 items-center gap-1 rounded-full bg-sunken px-2 text-2xs text-muted">
+                <ShieldOff className="size-3" />
+                {t('notes.aiExcluded')}
+              </span>
+            </Tip>
+          )}
+          <Tip label={t('history.title')} side="bottom">
+            <Button variant="ghost" size="icon-sm" onClick={() => setHistoryOpen(true)} aria-label={t('history.title')}>
+              <History />
+            </Button>
+          </Tip>
+          <Tip label={note.pinned ? t('notes.unpin') : t('notes.pin')} side="bottom">
+            <Button variant="ghost" size="icon-sm" onClick={() => void update({ pinned: !note.pinned })} aria-pressed={note.pinned}>
+              <Pin className={cn(note.pinned && 'fill-accent text-accent')} />
             </Button>
           </Tip>
           <Menu>
@@ -205,7 +211,29 @@ function EditorBody({ note }: { note: Note }) {
                 <MoreHorizontal />
               </Button>
             </MenuTrigger>
-            <MenuContent>
+            <MenuContent className="min-w-[220px]">
+              <MenuLabel>{t('notes.status.label')}</MenuLabel>
+              {(['active', 'disputed', 'outdated'] as KnowledgeStatus[]).map((s) => (
+                <MenuItem key={s} onSelect={() => void update({ status: s, ...(s === 'active' ? { supersededBy: null } : {}) })}>
+                  <span className={cn('[&_svg]:size-4', STATUS_META[s].cls)}>{STATUS_META[s].icon}</span>
+                  <span className="flex-1">{t(`notes.status.${s}`)}</span>
+                  {note.status === s && <Check />}
+                </MenuItem>
+              ))}
+              <MenuItem onSelect={() => setPickerOpen(true)}>
+                <Replace />
+                {t('notes.supersede')}
+              </MenuItem>
+              <MenuSeparator />
+              <MenuItem onSelect={() => void saveVersion()}>
+                <Bookmark />
+                {t('history.saveVersion')}
+              </MenuItem>
+              <MenuItem onSelect={() => void update({ aiExcluded: !note.aiExcluded })}>
+                {note.aiExcluded ? <Shield /> : <ShieldOff />}
+                {note.aiExcluded ? t('notes.aiInclude') : t('notes.aiExclude')}
+              </MenuItem>
+              <MenuSeparator />
               <MenuItem danger onSelect={() => void remove()}>
                 <Trash2 />
                 {t('common.delete')}
@@ -215,52 +243,89 @@ function EditorBody({ note }: { note: Note }) {
         </div>
       </header>
 
-      {/* 康奈尔版面：线索 0.382 | 笔记 0.618，底部总结 */}
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex min-h-full max-w-[1120px] flex-col px-10 pt-10 pb-16">
+        <div className="mx-auto max-w-[1120px] px-10 pt-9 pb-24">
+          {/* 已过时 / 被取代提示 */}
+          {note.status !== 'active' && (
+            <div
+              className={cn(
+                'mb-6 flex items-center gap-3 rounded-lg border px-4 py-2.5 text-sm',
+                note.status === 'outdated' ? 'border-border bg-sunken text-muted' : 'border-[#b8862b]/30 bg-[#b8862b]/8 text-fg'
+              )}
+            >
+              <span className={cn('[&_svg]:size-4', STATUS_META[note.status].cls)}>{STATUS_META[note.status].icon}</span>
+              <span className="flex-1">
+                {note.status === 'outdated' ? t('notes.outdatedBanner') : t('notes.disputedBanner')}
+                {superseder && (
+                  <>
+                    {' '}
+                    {t('notes.supersededBy')}
+                    <button onClick={() => openNote(superseder.id)} className="mx-1 font-medium text-accent underline-offset-2 hover:underline">
+                      《{superseder.title || t('common.untitled')}》
+                    </button>
+                  </>
+                )}
+              </span>
+              <button onClick={() => void update({ status: 'active', supersededBy: null })} className="text-xs text-subtle hover:text-fg">
+                {t('notes.markActive')}
+              </button>
+            </div>
+          )}
+
           <TitleInput
             initial={note.title}
-            onChange={(title) => queue({ title })}
+            onChange={(title) => {
+              pendingTitle.current = title
+              window.clearTimeout(titleTimer.current)
+              titleTimer.current = window.setTimeout(flushTitle, TITLE_DELAY)
+            }}
             onEnter={() => {
               // 同步聚焦（Tiptap 的 focus 命令是异步的，快速输入会落到标题里）
-              const ed = editors.current.content
+              const ed = editorRef.current
               if (!ed) return
+              // 跳到第一行的笔记栏：行(0) → 线索 → 笔记 → 段落内
+              const row = ed.state.doc.firstChild
               ed.view.focus()
-              ed.commands.setTextSelection(1)
+              ed.commands.setTextSelection(row ? 3 + row.child(0).nodeSize : 1)
             }}
           />
-          <div className="mt-8 grid flex-1 grid-cols-[38.2fr_61.8fr] rounded-xl border border-border bg-surface shadow-card">
-            <section className="min-h-[360px] border-r border-border px-6 py-6">
-              <SectionLabel>{t('notes.cue')}</SectionLabel>
-              <RichEditor
-                initial={note.cue}
-                placeholder={t('notes.cueHint')}
-                className="prose-cue"
-                onReady={(ed) => (editors.current.cue = ed)}
-                onChange={onPartChange('cue')}
-              />
-            </section>
-            <section className="min-h-[360px] px-8 py-6">
-              <SectionLabel>{t('notes.content')}</SectionLabel>
-              <RichEditor
-                initial={note.content}
-                placeholder={t('notes.contentHint')}
-                onReady={(ed) => (editors.current.content = ed)}
-                onChange={onPartChange('content')}
-              />
-            </section>
-            <section className="col-span-2 border-t border-border bg-sunken/40 px-8 py-6">
-              <SectionLabel>{t('notes.summary')}</SectionLabel>
-              <RichEditor
-                initial={note.summary}
-                placeholder={t('notes.summaryHint')}
-                onReady={(ed) => (editors.current.summary = ed)}
-                onChange={onPartChange('summary')}
-              />
-            </section>
+
+          {/* 元信息：学习日期 · 标签 */}
+          <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+            <LearnedDate value={note.learnedAt} onChange={(learnedAt) => void update({ learnedAt })} />
+            <span className="h-3 w-px bg-border" />
+            <TagEditor entityType="note" entityId={note.id} tagIds={note.tagIds} />
           </div>
+
+          {/* 康奈尔版面：表头 + 文档（行 = 线索 0.382 | 笔记 0.618，底部总结） */}
+          <div className="cornell-card mt-7">
+            <div className="cornell-head" aria-hidden>
+              <span>{t('notes.cue')}</span>
+              <span>{t('notes.content')}</span>
+            </div>
+            {ydoc ? (
+              <CornellEditor noteId={note.id} ydoc={ydoc} onReady={(ed) => (editorRef.current = ed)} />
+            ) : (
+              <div className="h-[360px]" />
+            )}
+          </div>
+          <p className="mt-3 text-center text-2xs text-subtle">{t('notes.editorHint')}</p>
         </div>
       </div>
+
+      <HistoryDialog
+        noteId={note.id}
+        open={historyOpen}
+        onOpenChange={setHistoryOpen}
+        onRestore={(doc) => editorRef.current?.commands.setContent(doc)}
+      />
+      <NotePicker
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        title={t('notes.supersedePick')}
+        excludeId={note.id}
+        onPick={(supersededBy) => void update({ supersededBy, status: 'outdated' })}
+      />
     </div>
   )
 }

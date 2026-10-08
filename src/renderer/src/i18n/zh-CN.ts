@@ -1,6 +1,6 @@
 const zhCN = {
   app: { name: '积微', slogan: '积微成著，日进有功' },
-  nav: { notes: '笔记', library: '资料库', trash: '最近删除', settings: '设置', search: '搜索' },
+  nav: { home: '返回首页', notes: '笔记', library: '资料库', trash: '最近删除', settings: '设置', search: '搜索' },
   common: {
     cancel: '取消',
     confirm: '确认',
@@ -17,7 +17,9 @@ const zhCN = {
     saved: '已保存',
     saving: '保存中…',
     words: '{{count}} 字',
-    loading: '加载中…'
+    loading: '加载中…',
+    undo: '撤销',
+    clear: '清除'
   },
   notes: {
     title: '笔记',
@@ -33,7 +35,25 @@ const zhCN = {
     empty: '还没有笔记',
     emptyHint: '记录今天学到的第一件事',
     noResults: '没有匹配的笔记',
-    sort: { updated: '最近编辑', created: '创建时间', title: '标题' },
+    sortLabel: '排序',
+    sort: { edited: '最近编辑', learned: '学习日期', created: '创建时间', title: '标题' },
+    addRow: '新增一行知识点',
+    learnedOn: '学习于 {{date}}',
+    learnedAtHint: '学到这条知识的日期，可修改（例如补记之前的课）',
+    createdAt: '创建于',
+    editedAgo: '编辑于{{time}}',
+    aiExcluded: '不发送给 AI',
+    aiExcludedHint: '这篇笔记永远不会被发送给任何 AI 服务',
+    aiExclude: '设为不发送给 AI',
+    aiInclude: '允许 AI 读取',
+    status: { label: '知识状态', active: '有效', disputed: '存疑', outdated: '已过时' },
+    supersede: '被另一篇笔记取代…',
+    supersedePick: '选择取代这篇笔记的新笔记',
+    supersededBy: '已被',
+    outdatedBanner: '这篇笔记已标记为过时，AI 回答时会降低它的权重。',
+    disputedBanner: '这篇笔记的内容存疑，AI 引用时会提示你核实。',
+    markActive: '恢复为有效',
+    editorHint: '⌘/Ctrl + Enter 新增一行 · Tab 在线索与笔记间切换 · 可直接粘贴或拖入图片',
     titlePlaceholder: '笔记标题',
     cue: '线索',
     cueHint: '关键词、问题、提示',
@@ -47,6 +67,28 @@ const zhCN = {
     deleted: '已移入最近删除',
     deleteCategoryTitle: '删除分类“{{name}}”？',
     deleteCategoryDesc: '分类中的内容不会被删除，将回到“未分类”。'
+  },
+  tags: {
+    title: '标签',
+    add: '添加标签',
+    search: '搜索或新建标签',
+    create: '新建标签“{{name}}”',
+    deleteTitle: '删除标签“{{name}}”？',
+    deleteDesc: '只删除标签本身，笔记和资料不受影响。'
+  },
+  categories: {
+    newSub: '新建子分类',
+    removed: '已删除分类“{{name}}”，可在最近删除中还原'
+  },
+  history: {
+    title: '版本历史',
+    empty: '编辑一段时间后，这里会自动保存版本。也可以在“更多”菜单中手动保存。',
+    restore: '恢复此版本',
+    restoreTitle: '恢复到这个版本？',
+    restoreDesc: '笔记将恢复为 {{time}} 的内容。当前内容会先自动存档，随时可以再恢复回来。',
+    saveVersion: '保存当前版本',
+    saved: '已保存版本',
+    reason: { auto: '自动保存', manual: '手动保存', restore: '恢复前存档' }
   },
   home: {
     greeting: { morning: '早上好', noon: '中午好', afternoon: '下午好', evening: '晚上好' },
@@ -83,7 +125,12 @@ const zhCN = {
       web: '网页',
       other: '其他'
     },
-    invalidUrl: '请输入有效的 http(s) 网址'
+    invalidUrl: '请输入有效的 http(s) 网址',
+    duplicates: '{{count}} 个文件已在资料库中，已跳过',
+    info: '资料信息',
+    author: '作者',
+    publishedAt: '发布日期',
+    accessedAt: '获取日期'
   },
   trash: {
     title: '最近删除',
@@ -94,6 +141,7 @@ const zhCN = {
     today: '今天将永久删除',
     note: '笔记',
     source: '资料',
+    category: '分类',
     purge: '永久删除',
     purgeTitle: '永久删除“{{name}}”？',
     purgeDesc: '此操作无法撤销。',
@@ -115,6 +163,16 @@ const zhCN = {
     dataDir: '数据目录',
     dataDirDesc: '笔记数据库与导入的资料都保存在本机此目录中。',
     openDataDir: '打开目录',
+    changeDataDir: '更改位置…',
+    changeDataDirDesc: '数据会复制到新的空文件夹，然后应用自动重启。原目录保留不动。',
+    cloudWarning: '数据目录位于云同步盘中，可能导致数据库损坏。建议迁移到本地文件夹。',
+    backups: '自动备份',
+    backupsDesc: '每天自动备份数据库，保留最近 7 天、4 周和 12 个月的备份。升级前也会自动备份。',
+    backupNow: '立即备份',
+    backupDone: '备份完成',
+    openBackups: '打开备份目录',
+    lastBackup: '最近备份：{{time}}',
+    noBackup: '尚无备份',
     version: '版本',
     license: '许可证',
     licenseDesc: 'PolyForm Noncommercial 1.0.0 — 个人免费使用，禁止商业用途。'

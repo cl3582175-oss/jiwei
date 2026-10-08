@@ -16,7 +16,7 @@ export function CommandPalette() {
   const { t } = useTranslation()
   const { paletteOpen, setPaletteOpen, openNote, setView, setSettingsOpen } = useApp()
   const [q, setQ] = useState('')
-  const { data: notes = [] } = useNotes({ search: q, sort: 'updated' })
+  const { data: notes = [] } = useNotes({ search: q, sort: 'edited' })
   const createNote = useCreateNote()
 
   const run = (fn: () => void) => () => {

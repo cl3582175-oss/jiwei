@@ -4,7 +4,12 @@ import type { NoteSort } from '@shared/types'
 export type View = 'notes' | 'library' | 'trash'
 
 /** 笔记列表筛选：全部 / 置顶 / 未分类 / 某分类 */
-export type NoteFilter = { type: 'all' } | { type: 'pinned' } | { type: 'uncategorized' } | { type: 'category'; id: string }
+export type NoteFilter =
+  | { type: 'all' }
+  | { type: 'pinned' }
+  | { type: 'uncategorized' }
+  | { type: 'category'; id: string }
+  | { type: 'tag'; id: string }
 
 interface AppState {
   view: View
@@ -28,7 +33,7 @@ export const useApp = create<AppState>((set) => ({
   openNote: (activeNoteId) => set({ activeNoteId, view: 'notes' }),
   noteFilter: { type: 'all' },
   setNoteFilter: (noteFilter) => set({ noteFilter }),
-  noteSort: 'updated',
+  noteSort: 'edited',
   setNoteSort: (noteSort) => set({ noteSort }),
   settingsOpen: false,
   setSettingsOpen: (settingsOpen) => set({ settingsOpen }),

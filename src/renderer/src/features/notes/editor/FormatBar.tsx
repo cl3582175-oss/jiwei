@@ -1,20 +1,7 @@
-import { useEffect } from 'react'
-import { useEditor, useEditorState, EditorContent, type Editor } from '@tiptap/react'
-import { BubbleMenu } from '@tiptap/react/menus'
-import StarterKit from '@tiptap/starter-kit'
-import Placeholder from '@tiptap/extension-placeholder'
+import { useEditorState, type Editor } from '@tiptap/react'
 import { useTranslation } from 'react-i18next'
 import { Bold, Italic, Strikethrough, Code, Heading1, Heading2, List, ListOrdered, Quote } from 'lucide-react'
-import type { DocJSON } from '@shared/types'
 import { cn } from '@/lib/utils'
-
-interface Props {
-  initial: DocJSON
-  placeholder: string
-  className?: string
-  onChange: (editor: Editor) => void
-  onReady?: (editor: Editor) => void
-}
 
 function FormatButton({ active, label, onClick, children }: { active: boolean; label: string; onClick: () => void; children: React.ReactNode }) {
   return (
@@ -33,7 +20,7 @@ function FormatButton({ active, label, onClick, children }: { active: boolean; l
   )
 }
 
-function FormatBar({ editor }: { editor: Editor }) {
+export function FormatBar({ editor }: { editor: Editor }) {
   const { t } = useTranslation()
   const c = (): ReturnType<Editor['chain']> => editor.chain().focus()
   const on = useEditorState({
@@ -74,35 +61,5 @@ function FormatBar({ editor }: { editor: Editor }) {
         )
       )}
     </div>
-  )
-}
-
-export function RichEditor({ initial, placeholder, className, onChange, onReady }: Props) {
-  const editor = useEditor({
-    extensions: [
-      StarterKit.configure({
-        heading: { levels: [1, 2, 3] },
-        link: { openOnClick: false, autolink: true }
-      }),
-      Placeholder.configure({ placeholder })
-    ],
-    content: initial,
-    editorProps: { attributes: { class: cn('prose-jiwei', className) } },
-    onUpdate: ({ editor }) => onChange(editor)
-  })
-
-  useEffect(() => {
-    if (editor) onReady?.(editor)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editor])
-
-  if (!editor) return null
-  return (
-    <>
-      <BubbleMenu editor={editor} options={{ placement: 'top', offset: 8 }}>
-        <FormatBar editor={editor} />
-      </BubbleMenu>
-      <EditorContent editor={editor} className="h-full" />
-    </>
   )
 }

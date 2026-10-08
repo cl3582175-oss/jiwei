@@ -1,12 +1,21 @@
 import { app, BrowserWindow, shell, nativeTheme } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
+import log from 'electron-log/main'
 import { openDatabase, closeDatabase } from './db'
 import { registerIpc } from './ipc'
 import { purgeExpired } from './services/trash'
 import { applyNativeTheme, getSettings } from './services/settings'
+import { registerProtocol, registerSchemePrivileges, collectGarbage } from './services/assets'
+import { autoBackup } from './services/backup'
+import { flushAll, pruneRevisions } from './services/docs'
+import { requestRendererFlush } from './lifecycle'
 
 const HOUR = 3_600_000
+
+log.initialize()
+log.errorHandler.startCatching()
+registerSchemePrivileges()
 
 function createWindow(): void {
   const isMac = process.platform === 'darwin'
@@ -23,30 +32,32 @@ function createWindow(): void {
     ...(isMac ? {} : { titleBarOverlay: { color: '#00000000', symbolColor: '#888', height: 44 } }),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
-      sandbox: false,
+      sandbox: true,
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      webSecurity: true
     }
   })
 
   win.on('ready-to-show', () => win.show())
 
-  // 外部链接一律交给系统浏览器
+  // 外部链接一律交给系统浏览器；应用内不允许跳转到其他页面
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:/.test(url)) shell.openExternal(url)
+    if (/^https?:/.test(url)) void shell.openExternal(url)
     return { action: 'deny' }
   })
   win.webContents.on('will-navigate', (e, url) => {
     if (url !== win.webContents.getURL()) {
       e.preventDefault()
-      if (/^https?:/.test(url)) shell.openExternal(url)
+      if (/^https?:/.test(url)) void shell.openExternal(url)
     }
   })
+  win.webContents.on('render-process-gone', (_, details) => log.error('[renderer] gone', details))
 
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    win.loadURL(process.env['ELECTRON_RENDERER_URL'])
+    void win.loadURL(process.env['ELECTRON_RENDERER_URL'])
   } else {
-    win.loadFile(join(__dirname, '../renderer/index.html'))
+    void win.loadFile(join(__dirname, '../renderer/index.html'))
   }
 }
 
@@ -61,17 +72,26 @@ app.on('second-instance', () => {
   }
 })
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   electronApp.setAppUserModelId('io.github.cl3582175-oss.jiwei')
   app.on('browser-window-created', (_, w) => optimizer.watchWindowShortcuts(w))
 
-  openDatabase()
+  await openDatabase()
   applyNativeTheme(getSettings())
+  registerProtocol()
   registerIpc()
 
-  const runPurge = (): void => void purgeExpired().catch((e) => console.error('[trash] purge failed', e))
-  runPurge()
-  setInterval(runPurge, HOUR)
+  const maintenance = async (): Promise<void> => {
+    try {
+      await purgeExpired()
+      pruneRevisions()
+      await collectGarbage()
+    } catch (e) {
+      log.error('[maintenance] failed', e)
+    }
+  }
+  void autoBackup().then(maintenance)
+  setInterval(() => void maintenance(), HOUR)
 
   createWindow()
   app.on('activate', () => {
@@ -83,4 +103,17 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
 
-app.on('will-quit', () => closeDatabase())
+// 退出前：让界面推送未保存的编辑 → 完成派生 → 关闭数据库
+let quitting = false
+app.on('before-quit', (e) => {
+  if (quitting) return
+  e.preventDefault()
+  quitting = true
+  void requestRendererFlush()
+    .catch(() => undefined)
+    .finally(() => {
+      flushAll()
+      closeDatabase()
+      app.quit()
+    })
+})

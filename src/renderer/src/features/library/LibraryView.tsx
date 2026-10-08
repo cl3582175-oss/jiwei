@@ -4,16 +4,18 @@ import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
   BookOpen, FileText, Film, Music, Image, File, Globe, FileType2, Layers, Upload, Link2, Search, X,
-  MoreHorizontal, ExternalLink, FolderOpen, Pencil, Trash2, Folder, Plus, Inbox, Check
+  MoreHorizontal, ExternalLink, FolderOpen, Pencil, Trash2, Folder, Inbox, Check
 } from 'lucide-react'
-import type { Source, SourceKind } from '@shared/types'
+import type { ImportResult, Source, SourceKind } from '@shared/types'
 import { useCategories, useSources, invalidate } from '@/lib/queries'
-import { api, cn, formatBytes, formatRelative } from '@/lib/utils'
+import { api, cn, formatBytes, formatDate, formatRelative, fromDateInput, toDateInput } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import {
   Dialog, DialogContent, Input, Menu, MenuContent, MenuItem, MenuSeparator, MenuSub, MenuSubContent, MenuSubTrigger, MenuTrigger, Tip, EmptyState
 } from '@/components/ui/primitives'
-import { confirm, prompt } from '@/components/ui/confirm'
+import { confirm } from '@/components/ui/confirm'
+import { CategoryTree, categoryPaths } from '../notes/CategoryTree'
+import { TagEditor } from '../notes/TagEditor'
 
 export const KIND_ICON: Record<SourceKind, ReactNode> = {
   book: <BookOpen />,
@@ -75,18 +77,69 @@ function AddLinkDialog({ open, onOpenChange, categoryId }: { open: boolean; onOp
   )
 }
 
+/** 资料信息：标题、作者、发布日期、标签 */
+function SourceInfoDialog({ source: s, open, onOpenChange }: { source: Source; open: boolean; onOpenChange: (o: boolean) => void }) {
+  const { t, i18n } = useTranslation()
+  const qc = useQueryClient()
+  const [title, setTitle] = useState(s.title)
+  const [author, setAuthor] = useState(s.author ?? '')
+  const [published, setPublished] = useState(s.publishedAt ? toDateInput(s.publishedAt) : '')
+  const save = async (): Promise<void> => {
+    await api.sources.update(s.id, {
+      title: title.trim() || s.title,
+      author: author.trim() || null,
+      publishedAt: published ? fromDateInput(published, new Date(2000, 0, 1, 12).getTime()) : null
+    })
+    invalidate(qc, 'sources')
+    onOpenChange(false)
+  }
+  const field = (label: string, el: ReactNode): ReactNode => (
+    <label className="block">
+      <span className="mb-1.5 block text-xs text-muted">{label}</span>
+      {el}
+    </label>
+  )
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent title={t('library.info')} className="w-[min(92vw,480px)]">
+        <form
+          className="mt-5 space-y-4"
+          onSubmit={(e) => {
+            e.preventDefault()
+            void save()
+          }}
+        >
+          {field(t('notes.titlePlaceholder'), <Input value={title} onChange={(e) => setTitle(e.target.value)} />)}
+          <div className="grid grid-cols-2 gap-3">
+            {field(t('library.author'), <Input value={author} onChange={(e) => setAuthor(e.target.value)} />)}
+            {field(t('library.publishedAt'), <Input type="date" value={published} onChange={(e) => setPublished(e.target.value)} />)}
+          </div>
+          {field(t('tags.title'), <TagEditor entityType="source" entityId={s.id} tagIds={s.tagIds} />)}
+          <p className="text-2xs text-subtle">
+            {t('library.accessedAt')} {formatDate(s.accessedAt, i18n.language)}
+            {s.originalName && <> · {s.originalName}</>}
+          </p>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="ghost" onClick={() => onOpenChange(false)}>
+              {t('common.cancel')}
+            </Button>
+            <Button type="submit" variant="primary">
+              {t('common.save')}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 function SourceCard({ s }: { s: Source }) {
   const { t, i18n } = useTranslation()
   const qc = useQueryClient()
   const { data: cats = [] } = useCategories('source')
   const run = (p: Promise<unknown>): void => void p.catch((e) => toast.error(String(e)))
 
-  const rename = async (): Promise<void> => {
-    const title = await prompt({ title: t('common.rename'), defaultValue: s.title, confirmText: t('common.save') })
-    if (!title) return
-    await api.sources.update(s.id, { title })
-    invalidate(qc, 'sources')
-  }
+  const [infoOpen, setInfoOpen] = useState(false)
   const move = async (categoryId: string | null): Promise<void> => {
     await api.sources.update(s.id, { categoryId })
     invalidate(qc, 'sources')
@@ -123,9 +176,9 @@ function SourceCard({ s }: { s: Source }) {
                 {t('library.reveal')}
               </MenuItem>
             )}
-            <MenuItem onSelect={() => void rename()}>
+            <MenuItem onSelect={() => setInfoOpen(true)}>
               <Pencil />
-              {t('common.rename')}
+              {t('library.info')}
             </MenuItem>
             <MenuSub>
               <MenuSubTrigger>
@@ -137,10 +190,10 @@ function SourceCard({ s }: { s: Source }) {
                   <Check className={cn(s.categoryId !== null && 'invisible')} />
                   {t('common.uncategorized')}
                 </MenuItem>
-                {cats.map((c) => (
-                  <MenuItem key={c.id} onSelect={() => void move(c.id)}>
-                    <Check className={cn(s.categoryId !== c.id && 'invisible')} />
-                    {c.name}
+                {[...categoryPaths(cats)].sort((a, b) => a[1].localeCompare(b[1])).map(([id, path]) => (
+                  <MenuItem key={id} onSelect={() => void move(id)}>
+                    <Check className={cn(s.categoryId !== id && 'invisible')} />
+                    {path}
                   </MenuItem>
                 ))}
               </MenuSubContent>
@@ -159,6 +212,7 @@ function SourceCard({ s }: { s: Source }) {
       <p className="mt-auto truncate pt-2 text-2xs text-subtle">
         {t(`library.kinds.${s.kind}`)} · {s.kind === 'web' ? new URL(s.url!).hostname : formatBytes(s.size)} · {formatRelative(s.createdAt, i18n.language)}
       </p>
+      <SourceInfoDialog source={s} open={infoOpen} onOpenChange={setInfoOpen} />
     </div>
   )
 }
@@ -171,37 +225,22 @@ export function LibraryView() {
   const [search, setSearch] = useState('')
   const [dragging, setDragging] = useState(false)
   const [linkOpen, setLinkOpen] = useState(false)
-  const { data: cats = [] } = useCategories('source')
   const categoryId = cat.type === 'all' ? undefined : cat.type === 'uncategorized' ? null : cat.id
-  const { data: items = [], isFetched } = useSources({ kind, search, categoryId })
+  const { data: items = [], isFetched } = useSources({ kind, search, categoryId, includeDescendants: true })
   const targetCat = cat.type === 'category' ? cat.id : null
 
-  const afterImport = (n: number): void => {
-    if (n > 0) toast.success(t('library.imported', { count: n }))
+  const afterImport = (r: ImportResult): void => {
+    if (r.imported.length > 0) toast.success(t('library.imported', { count: r.imported.length }))
+    if (r.duplicates > 0) toast(t('library.duplicates', { count: r.duplicates }))
     invalidate(qc, 'sources', 'heatmap')
   }
-  const importDialog = async (): Promise<void> => afterImport((await api.sources.importDialog(targetCat)).length)
+  const importDialog = async (): Promise<void> => afterImport(await api.sources.importDialog(targetCat))
   const onDrop = async (e: React.DragEvent): Promise<void> => {
     e.preventDefault()
     setDragging(false)
     const paths = [...e.dataTransfer.files].map((f) => window.platform.pathForFile(f)).filter(Boolean)
-    if (paths.length) afterImport((await api.sources.importPaths(paths, targetCat)).length)
+    if (paths.length) afterImport(await api.sources.importPaths(paths, targetCat))
   }
-  const addCategory = async (): Promise<void> => {
-    const name = await prompt({ title: t('notes.newCategory'), placeholder: t('notes.categoryName'), confirmText: t('common.create') })
-    if (!name) return
-    const c = await api.categories.create('source', name)
-    invalidate(qc, 'categories')
-    setCat({ type: 'category', id: c.id })
-  }
-  const removeCategory = async (id: string, name: string): Promise<void> => {
-    const ok = await confirm({ title: t('notes.deleteCategoryTitle', { name }), description: t('notes.deleteCategoryDesc'), confirmText: t('common.delete'), danger: true })
-    if (!ok) return
-    await api.categories.remove(id)
-    setCat({ type: 'all' })
-    invalidate(qc, 'categories', 'sources')
-  }
-
   const row = (active: boolean, icon: ReactNode, label: ReactNode, onClick: () => void, trailing?: ReactNode): ReactNode => (
     <div
       role="button"
@@ -242,34 +281,16 @@ export function LibraryView() {
           {KINDS.map((k) => (
             <div key={k}>{row(kind === k, KIND_ICON[k], t(`library.kinds.${k}`), () => setKind(k))}</div>
           ))}
-          <div className="flex items-center justify-between px-2 pt-5 pb-1">
-            <span className="text-2xs font-medium tracking-wider text-subtle uppercase">{t('notes.categories')}</span>
-            <button onClick={() => void addCategory()} className="rounded p-0.5 text-subtle hover:bg-surface-hover hover:text-fg" aria-label={t('notes.newCategory')}>
-              <Plus className="size-3.5" />
-            </button>
+          <div className="space-y-0.5 pt-4">
+            {row(cat.type === 'all', <Layers />, t('common.all'), () => setCat({ type: 'all' }))}
+            {row(cat.type === 'uncategorized', <Inbox />, t('common.uncategorized'), () => setCat({ type: 'uncategorized' }))}
           </div>
-          {row(cat.type === 'all', <Layers />, t('common.all'), () => setCat({ type: 'all' }))}
-          {row(cat.type === 'uncategorized', <Inbox />, t('common.uncategorized'), () => setCat({ type: 'uncategorized' }))}
-          {cats.map((c) => (
-            <div key={c.id}>
-              {row(
-                cat.type === 'category' && cat.id === c.id,
-                <Folder />,
-                c.name,
-                () => setCat({ type: 'category', id: c.id }),
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    void removeCategory(c.id, c.name)
-                  }}
-                  className="rounded p-0.5 text-subtle opacity-0 group-hover:opacity-100 hover:text-danger"
-                  aria-label={t('common.delete')}
-                >
-                  <Trash2 className="size-3.5" />
-                </button>
-              )}
-            </div>
-          ))}
+          <CategoryTree
+            kind="source"
+            activeId={cat.type === 'category' ? cat.id : null}
+            onSelect={(id) => setCat({ type: 'category', id })}
+            onRemoved={(id) => cat.type === 'category' && cat.id === id && setCat({ type: 'all' })}
+          />
         </div>
       </aside>
 

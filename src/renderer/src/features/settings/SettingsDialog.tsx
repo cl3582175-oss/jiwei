@@ -1,11 +1,14 @@
 import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Dialog as D } from 'radix-ui'
-import { Settings2, Palette, Database, Info, X, Monitor, Sun, Moon, Check, FolderOpen } from 'lucide-react'
+import { Settings2, Palette, Database, Info, X, Monitor, Sun, Moon, Check, FolderOpen, FolderInput, DatabaseBackup, TriangleAlert } from 'lucide-react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
+import { Tip } from '@/components/ui/primitives'
 import type { Language, ThemeMode } from '@shared/types'
 import { useAppInfo, useSettings, useUpdateSettings } from '@/lib/queries'
 import { useApp } from '@/store/app'
-import { api, cn } from '@/lib/utils'
+import { api, cn, formatDateTime } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Logo } from '@/components/Logo'
 
@@ -47,6 +50,81 @@ function Segmented<T extends string>({ value, options, onChange }: { value: T; o
         </button>
       ))}
     </div>
+  )
+}
+
+function DataTab() {
+  const { t, i18n } = useTranslation()
+  const qc = useQueryClient()
+  const { data: info } = useAppInfo()
+  const { data: backups = [] } = useQuery({ queryKey: ['backups'], queryFn: () => api.backups.list() })
+  const last = backups.find((b) => b.kind === 'auto')
+  if (!info) return null
+  const change = async (): Promise<void> => {
+    try {
+      await api.app.changeDataDir()
+    } catch (e) {
+      toast.error(String(e instanceof Error ? e.message : e).replace(/^Error invoking remote method '[^']+': (Error: )?/, ''))
+    }
+  }
+  const backup = async (): Promise<void> => {
+    await api.backups.create()
+    void qc.invalidateQueries({ queryKey: ['backups'] })
+    toast.success(t('settings.backupDone'))
+  }
+  return (
+    <>
+      <Row
+        label={t('settings.dataDir')}
+        desc={
+          <>
+            {t('settings.dataDirDesc')}
+            <code className="mt-2 block font-mono text-2xs break-all text-subtle select-text">{info.dataDir}</code>
+            {info.dataDirInCloud && (
+              <span className="mt-2 flex items-start gap-1.5 text-danger">
+                <TriangleAlert className="mt-0.5 size-3.5 shrink-0" />
+                {t('settings.cloudWarning')}
+              </span>
+            )}
+          </>
+        }
+      >
+        <div className="flex flex-col items-end gap-2">
+          <Button variant="outline" size="sm" onClick={() => void api.app.openDataDir()}>
+            <FolderOpen />
+            {t('settings.openDataDir')}
+          </Button>
+          <Tip label={t('settings.changeDataDirDesc')} side="left">
+            <Button variant="ghost" size="sm" onClick={() => void change()}>
+              <FolderInput />
+              {t('settings.changeDataDir')}
+            </Button>
+          </Tip>
+        </div>
+      </Row>
+      <Row
+        label={t('settings.backups')}
+        desc={
+          <>
+            {t('settings.backupsDesc')}
+            <span className="mt-2 block text-subtle">
+              {last ? t('settings.lastBackup', { time: formatDateTime(last.createdAt, i18n.language) }) : t('settings.noBackup')}
+            </span>
+          </>
+        }
+      >
+        <div className="flex flex-col items-end gap-2">
+          <Button variant="outline" size="sm" onClick={() => void backup()}>
+            <DatabaseBackup />
+            {t('settings.backupNow')}
+          </Button>
+          <Button variant="ghost" size="sm" onClick={() => void api.backups.reveal()}>
+            <FolderOpen />
+            {t('settings.openBackups')}
+          </Button>
+        </div>
+      </Row>
+    </>
   )
 }
 
@@ -141,14 +219,7 @@ export function SettingsDialog() {
                 </Row>
               </>
             )}
-            {tab === 'data' && info && (
-              <Row label={t('settings.dataDir')} desc={<>{t('settings.dataDirDesc')}<code className="mt-2 block font-mono text-2xs break-all text-subtle">{info.dataDir}</code></>}>
-                <Button variant="outline" size="sm" onClick={() => void api.app.openDataDir()}>
-                  <FolderOpen />
-                  {t('settings.openDataDir')}
-                </Button>
-              </Row>
-            )}
+            {tab === 'data' && info && <DataTab />}
             {tab === 'about' && info && (
               <div className="flex h-full flex-col items-center justify-center pb-6 text-center">
                 <Logo size={56} />

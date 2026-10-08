@@ -34,7 +34,7 @@ export function NotesHome() {
   const openNote = useApp((s) => s.openNote)
   const createNote = useCreateNote()
   const { data: heat = [] } = useHeatmap(HEAT_DAYS)
-  const { data: notes = [] } = useNotes({ sort: 'updated' })
+  const { data: notes = [] } = useNotes({ sort: 'edited' })
 
   const { streak, active } = useMemo(() => {
     let s = 0
@@ -107,7 +107,7 @@ export function NotesHome() {
                     <ArrowUpRight className="size-4 shrink-0 text-subtle opacity-0 transition-opacity group-hover:opacity-100" />
                   </div>
                   <p className="mt-2 line-clamp-3 flex-1 text-xs leading-[1.7] text-muted">{n.excerpt}</p>
-                  <p className="mt-2 text-2xs text-subtle">{formatRelative(n.updatedAt, i18n.language)}</p>
+                  <p className="mt-2 text-2xs text-subtle">{formatRelative(n.editedAt, i18n.language)}</p>
                 </button>
               ))}
             </div>

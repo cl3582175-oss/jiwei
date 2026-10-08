@@ -1,7 +1,8 @@
 import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Toaster } from 'sonner'
-import { useSettings } from './lib/queries'
+import { useQueryClient } from '@tanstack/react-query'
+import { invalidate, useSettings } from './lib/queries'
 import { useApp } from './store/app'
 import { TooltipProvider } from './components/ui/primitives'
 import { DialogHost } from './components/ui/confirm'
@@ -43,8 +44,30 @@ function useThemeSync(): 'light' | 'dark' {
   return mode === 'dark' || (mode === 'system' && prefersDark.matches) ? 'dark' : 'light'
 }
 
+/** 主进程派生数据更新后刷新列表与当前笔记 */
+function useMainEvents(): void {
+  const qc = useQueryClient()
+  useEffect(() => {
+    let timer: number | undefined
+    const ids = new Set<string>()
+    return window.jiweiEvents.on('notes:changed', (p) => {
+      p.ids.forEach((id) => ids.add(id))
+      window.clearTimeout(timer)
+      timer = window.setTimeout(() => {
+        invalidate(qc, 'notes', 'heatmap')
+        for (const id of ids) {
+          void qc.invalidateQueries({ queryKey: ['note', id] })
+          void qc.invalidateQueries({ queryKey: ['blocks', id] })
+        }
+        ids.clear()
+      }, 250)
+    })
+  }, [qc])
+}
+
 export function App() {
   const theme = useThemeSync()
+  useMainEvents()
   const view = useApp((s) => s.view)
   const { isSuccess } = useSettings()
   useGlobalShortcuts()

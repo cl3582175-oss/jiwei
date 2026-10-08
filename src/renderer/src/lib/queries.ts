@@ -10,7 +10,8 @@ export const keys = {
   note: (id: string) => ['note', id] as const,
   sources: (q?: SourceQuery) => (q ? (['sources', q] as const) : (['sources'] as const)),
   trash: ['trash'] as const,
-  heatmap: ['heatmap'] as const
+  heatmap: ['heatmap'] as const,
+  tags: ['tags'] as const
 }
 
 export function useSettings() {
@@ -45,9 +46,7 @@ export function useNote(id: string | null) {
   return useQuery({
     queryKey: keys.note(id ?? ''),
     queryFn: () => api.notes.get(id!),
-    enabled: !!id,
-    staleTime: Infinity,
-    gcTime: 0
+    enabled: !!id
   })
 }
 
@@ -59,11 +58,15 @@ export function useTrash() {
   return useQuery({ queryKey: keys.trash, queryFn: () => api.trash.list() })
 }
 
+export function useTags() {
+  return useQuery({ queryKey: keys.tags, queryFn: () => api.tags.list() })
+}
+
 export function useHeatmap(days: number) {
   return useQuery({ queryKey: [...keys.heatmap, days], queryFn: () => api.stats.heatmap(days) })
 }
 
 /** 数据变更后刷新相关列表 */
-export function invalidate(qc: QueryClient, ...groups: ('notes' | 'sources' | 'trash' | 'categories' | 'heatmap')[]): void {
+export function invalidate(qc: QueryClient, ...groups: ('notes' | 'note' | 'sources' | 'trash' | 'categories' | 'heatmap' | 'tags' | 'blocks')[]): void {
   for (const g of groups) void qc.invalidateQueries({ queryKey: [g] })
 }
