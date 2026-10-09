@@ -5,6 +5,10 @@ on:
   push:
     tags: ['v*']
 
+# 上传到 GitHub Releases 需要写权限（默认的 GITHUB_TOKEN 只读）
+permissions:
+  contents: write
+
 jobs:
   build:
     strategy:
