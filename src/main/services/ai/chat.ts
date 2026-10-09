@@ -7,11 +7,12 @@ import { newId } from '../../lib/ids'
 import { deviceId } from '../device'
 import { emit } from '../../events'
 import { getSettings } from '../settings'
-import { estimateCost, supportsVision, type Effort, type Usage } from '@shared/ai'
+import { estimateCost, type Effort, type ModelTier, type Usage } from '@shared/ai'
 import type { ChatScope, ChatSend } from '@shared/schemas'
 import type { Anchor } from '@shared/context'
 import type { AgentStep, ChatMessage, Citation, Conversation } from '@shared/types'
 import { buildModel } from './model'
+import { capsFor } from './providers'
 import { retrieve } from './retrieve'
 import { resolveContext } from './context'
 import { buildTools, numberHits, stepLabel, type AgentSession } from './tools'
@@ -136,7 +137,7 @@ const fmtDate = (ts: number | null): string => (ts ? new Date(ts).toISOString().
  * 系统提示：只放稳定内容（规则 + 技能目录 + 用户卡片 + 日期），每轮字节相同，便于命中前缀缓存。
  * 每轮变化的上下文、检索片段放在最后一条用户消息里。
  */
-function systemPrompt(zh: boolean, model: string, incognito: boolean, conversationId: string): string {
+function systemPrompt(zh: boolean, tier: ModelTier, incognito: boolean, conversationId: string): string {
   const rules = zh
     ? `你是「积微」的学习助手，帮助用户理解、整理和内化自己学到的知识。用户的知识库 = 用户写的笔记 + 用户上传的原始资料。
 规则：
@@ -169,7 +170,7 @@ Rules:
   const card = incognito ? null : cardFor(conversationId, zh)
   return [
     rules.replace('{{MEMORY_RULE}}', memoryRule),
-    skillCatalog(model, zh),
+    skillCatalog(tier, zh),
     card
       ? `${zh ? '用户卡片（关于这位用户，回答时自然地参考，不要复述）' : 'About the user (use naturally, do not recite)'}：\n${card}`
       : null,
@@ -290,6 +291,7 @@ async function generate(conversationId: string, messageId: string, input: ChatSe
   const session: AgentSession = {
     zh,
     model: input.model,
+    tier: capsFor(input.providerId, input.model).tier,
     scope: input.scope,
     incognito: conv.incognito,
     conversationId,
@@ -355,7 +357,7 @@ async function generate(conversationId: string, messageId: string, input: ChatSe
     // 最后一条（本轮）用户消息附上上下文、片段与技能
     const last = msgs.at(-1)
     if (last?.role === 'user') {
-      const vision = supportsVision(input.model)
+      const vision = capsFor(input.providerId, input.model).vision
       const imageNote =
         input.images?.length && !vision
           ? zh
@@ -376,7 +378,7 @@ async function generate(conversationId: string, messageId: string, input: ChatSe
     const run = (withTools: boolean) =>
       streamText({
         model: built.model,
-        system: systemPrompt(zh, input.model, session.incognito, conversationId),
+        system: systemPrompt(zh, session.tier, session.incognito, conversationId),
         messages: msgs,
         ...(withTools ? { tools: buildTools(session), stopWhen: stepCountIs(MAX_STEPS) } : {}),
         providerOptions: built.providerOptions as never,
@@ -443,6 +445,9 @@ async function generate(conversationId: string, messageId: string, input: ChatSe
         origin: h.origin
       }))
       .filter((c) => used.has(c.n))
+    // 服务商实际使用的模型（可能与请求的名称不同，例如旧名被路由到新模型）
+    const served = (await result.response).modelId
+    if (served && served !== input.model) log.info('[chat] requested', input.model, 'served by', served)
     const u = await result.totalUsage
     usage.inputTokens = u.inputTokens ?? 0
     usage.outputTokens = u.outputTokens ?? 0

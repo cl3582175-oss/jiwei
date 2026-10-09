@@ -334,3 +334,13 @@ AI 不直接修改笔记，而是创建提案（`proposals` 表）。提案里�
 - **学习者模型：** 评分时，问题中出现的已知概念记一次信号（忘了 → 没弄懂；记得 / 轻松 → 理解）。
 - **迁移 0008：** `cards.learning_steps`（ts-fsrs v5 字段）和 `notes.review_excluded`。
 
+## 41. 模型能力
+
+- 积微按两项能力使用模型：
+  - `tier`（strong / basic）决定可用的技能，以及后台小任务是否换用快速模型。
+  - `vision` 决定是否发送图像。
+- 能力由 `resolveCaps(model, overrides)` 计算：用户设定优先（服务商的 `model_caps` 列，迁移 0009），否则按名称表自动判断（`STRONG_MODELS` / `VISION_MODELS`）。所有调用方都走 `capsFor(providerId, model)`，不再直接查名称表。
+- 设定只存与自动判断不同的项。界面上切换回与自动判断相同的值时，即删除这项设定。
+- 为什么不只靠名称表：服务商会改名，或在原名下升级模型。例如 2026-09 DeepSeek 把 `deepseek-flash` 换成原生多模态，名称表跟不上时，用户能立即改正。
+- 生成后，主进程记录服务商返回的实际模型名，用来发现名称路由（如 `deepseek-v4-flash` 由 `deepseek-flash` 处理）。
+

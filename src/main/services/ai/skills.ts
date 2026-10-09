@@ -4,7 +4,7 @@ import { basename, dirname, join, relative, resolve, sep } from 'path'
 import log from 'electron-log/main'
 import type { SkillInfo } from '@shared/types'
 import { parseSkill, type ParsedSkill as Parsed } from '../../lib/skillFormat'
-import { modelTier } from '@shared/ai'
+import type { ModelTier } from '@shared/ai'
 import { getSettings, setSettings } from '../settings'
 import { skillPreferences } from '../memory'
 
@@ -73,15 +73,14 @@ export function listSkills(): SkillInfo[] {
   return [...all().values()].map((s) => toInfo(s, off)).sort((a, b) => a.name.localeCompare(b.name))
 }
 
-/** 当前模型可用的技能 */
-export function availableSkills(model: string): SkillInfo[] {
-  const tier = modelTier(model)
+/** 当前模型可用的技能（tier 由模型能力决定，见 resolveCaps） */
+export function availableSkills(tier: ModelTier): SkillInfo[] {
   return listSkills().filter((s) => s.enabled && (s.minModel === 'basic' || tier === 'strong'))
 }
 
 /** 提示词中的技能目录（只有名称与简介） */
-export function skillCatalog(model: string, zh: boolean): string | null {
-  const list = availableSkills(model)
+export function skillCatalog(tier: ModelTier, zh: boolean): string | null {
+  const list = availableSkills(tier)
   if (!list.length) return null
   return [
     zh

@@ -31,6 +31,17 @@ test('AI settings and chat UI without a key', async () => {
   const radios = page.getByRole('radiogroup', { name: '思考强度' }).getByRole('radio')
   await expect(radios).toHaveText(['关闭', '低', '高', '极限'])
   await expect(page.getByRole('radio', { name: '高' })).toHaveAttribute('aria-checked', 'true')
+  // 模型能力：默认按名称判断（deepseek-flash 能看图、普通；deepseek-v4-pro 纯文本、强模型），可逐个改写
+  await expect(page.getByRole('button', { name: 'deepseek-flash 看图' })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByRole('button', { name: 'deepseek-flash 强模型' })).toHaveAttribute('aria-pressed', 'false')
+  await expect(page.getByRole('button', { name: 'deepseek-v4-pro 看图' })).toHaveAttribute('aria-pressed', 'false')
+  await expect(page.getByRole('button', { name: 'deepseek-v4-pro 强模型' })).toHaveAttribute('aria-pressed', 'true')
+  await page.getByRole('button', { name: 'deepseek-flash 强模型' }).click()
+  await expect(page.getByRole('button', { name: 'deepseek-flash 强模型' })).toHaveAttribute('aria-pressed', 'true')
+  await expect.poll(async () => (await page.evaluate(() => window.jiwei.providers.list()))[0].modelCaps).toEqual({ 'deepseek-flash': { tier: 'strong' } })
+  // 再点一次：回到自动判断，不留下设定
+  await page.getByRole('button', { name: 'deepseek-flash 强模型' }).click()
+  await expect.poll(async () => (await page.evaluate(() => window.jiwei.providers.list()))[0].modelCaps).toEqual({})
   if (shots) await page.screenshot({ path: join(shots, '51-ai-settings.png') })
   // API Key 不会以明文出现在任何接口返回中
   const providers = await page.evaluate(() => window.jiwei.providers.list())

@@ -13,7 +13,7 @@ import type {
   SourceQuery,
   SourceUpdate
 } from './schemas'
-import type { Effort, ProviderKind, Usage } from './ai'
+import type { Effort, ModelCapsOverride, ProviderKind, Usage } from './ai'
 export type {
   AiSettings,
   ChatScope,
@@ -316,6 +316,8 @@ export interface ProviderInfo {
   /** API Key 末四位提示（明文永不离开主进程） */
   keyHint: string | null
   models: string[]
+  /** 用户对模型能力的改写（未改写的按名称自动判断，见 resolveCaps） */
+  modelCaps: Record<string, ModelCapsOverride>
   sendEffort: boolean
   enabled: boolean
 }

@@ -5,7 +5,7 @@ import { getDb, getSqlite } from '../../db'
 import { providers } from '../../db/schema'
 import { newId } from '../../lib/ids'
 import { deviceId } from '../device'
-import { PROVIDER_PRESETS, type ProviderKind } from '@shared/ai'
+import { PROVIDER_PRESETS, resolveCaps, type ModelCaps, type ModelCapsOverride, type ProviderKind } from '@shared/ai'
 import type { ProviderInfo, ProviderInput, ProviderTestResult } from '@shared/types'
 
 // 模型服务商管理。
@@ -29,6 +29,27 @@ export function decryptKey(row: Row): string | null {
   }
 }
 
+function parseCaps(r: Row): Record<string, ModelCapsOverride> {
+  try {
+    return JSON.parse(r.modelCaps) as Record<string, ModelCapsOverride>
+  } catch {
+    return {}
+  }
+}
+
+/** 某服务商下某个模型的实际能力（用户设定优先，否则按名称判断） */
+export function capsFor(providerId: string | null | undefined, model: string): ModelCaps {
+  let overrides: Record<string, ModelCapsOverride> = {}
+  if (providerId) {
+    try {
+      overrides = parseCaps(getProviderRow(providerId))
+    } catch {
+      /* 服务商已删除：按名称判断 */
+    }
+  }
+  return resolveCaps(model, overrides)
+}
+
 function toInfo(r: Row): ProviderInfo {
   const key = decryptKey(r)
   return {
@@ -39,6 +60,7 @@ function toInfo(r: Row): ProviderInfo {
     hasKey: !!key,
     keyHint: key ? `••••${key.slice(-4)}` : null,
     models: JSON.parse(r.models) as string[],
+    modelCaps: parseCaps(r),
     sendEffort: r.sendEffort,
     enabled: r.enabled
   }
@@ -75,6 +97,15 @@ export function saveProvider(input: ProviderInput): ProviderInfo {
   if (input.models) patch.models = JSON.stringify([...new Set(input.models.map((m) => m.trim()).filter(Boolean))])
   if (input.sendEffort !== undefined) patch.sendEffort = input.sendEffort
   if (input.enabled !== undefined) patch.enabled = input.enabled
+  if (input.modelCaps) {
+    // 只保留真正设定了的项（空对象等于“自动”）
+    const clean = Object.fromEntries(
+      Object.entries(input.modelCaps)
+        .map(([m, c]) => [m, Object.fromEntries(Object.entries(c).filter(([, v]) => v !== undefined))] as const)
+        .filter(([, c]) => Object.keys(c).length > 0)
+    )
+    patch.modelCaps = JSON.stringify(clean)
+  }
   if (input.id) {
     db.update(providers).set(patch).where(eq(providers.id, input.id)).run()
     return toInfo(getProviderRow(input.id))

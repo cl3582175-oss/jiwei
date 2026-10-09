@@ -1,7 +1,7 @@
 import { generateText, tool } from 'ai'
 import { z } from 'zod'
 import log from 'electron-log/main'
-import { modelTier } from '@shared/ai'
+import { resolveCaps } from '@shared/ai'
 import { extractJson } from '../../lib/learner'
 import { buildModel } from './model'
 import { getProviderRow } from './providers'
@@ -12,12 +12,14 @@ import { getProviderRow } from './providers'
 
 const NOT_CHAT = /embed|rerank|whisper|tts|audio|speech|transcri|-vl|vision|image/i
 
-/** 小任务用快速模型：当前是强模型时，换用同一服务商的普通模型（如 deepseek-v4-pro → deepseek-v4-flash） */
+/** 小任务用快速模型：当前是强模型时，换用同一服务商的普通模型（如 Claude Opus → Claude Haiku） */
 export function quickModel(providerId: string, model: string): string {
-  if (modelTier(model) === 'basic') return model
   try {
-    const models = JSON.parse(getProviderRow(providerId).models) as string[]
-    return models.find((m) => modelTier(m) === 'basic' && !NOT_CHAT.test(m)) ?? model
+    const row = getProviderRow(providerId)
+    const caps = JSON.parse(row.modelCaps) as Parameters<typeof resolveCaps>[1]
+    if (resolveCaps(model, caps).tier === 'basic') return model
+    const models = JSON.parse(row.models) as string[]
+    return models.find((m) => resolveCaps(m, caps).tier === 'basic' && !NOT_CHAT.test(m)) ?? model
   } catch {
     return model
   }

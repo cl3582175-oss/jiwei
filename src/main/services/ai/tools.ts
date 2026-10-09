@@ -11,7 +11,7 @@ import { nodeText } from '../../lib/derive'
 import { markdownToNodes } from '../../lib/markdown'
 import { fromNested, type NestedNode } from '@shared/embeds/mindmap'
 import { ChartDataSchema, checkChart, checkInteractive, checkSteps, InteractiveDataSchema, StepsDataSchema } from '@shared/embeds/visuals'
-import { modelTier } from '@shared/ai'
+import type { ModelTier } from '@shared/ai'
 import { validateInRenderer } from './rendererValidate'
 import { newId } from '../../lib/ids'
 import { loadSkill, readSkillFile } from './skills'
@@ -30,6 +30,8 @@ import type { AgentStep, DocNode, SearchHit } from '@shared/types'
 export interface AgentSession {
   zh: boolean
   model: string
+  /** 模型能力分级（用户设定优先，否则按名称判断） */
+  tier: ModelTier
   scope: ChatScope
   incognito: boolean
   conversationId: string
@@ -515,7 +517,7 @@ export function buildTools(s: AgentSession): ToolSet {
   })
 
   // 交互演示：自由 HTML 只对强模型开放（弱模型生成的质量不可控）
-  if (modelTier(s.model) === 'strong') {
+  if (s.tier === 'strong') {
     Object.assign(tools, {
       note_add_interactive: tool({
         description: zh

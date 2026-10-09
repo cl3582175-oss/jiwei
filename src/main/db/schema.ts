@@ -500,6 +500,8 @@ export const providers = sqliteTable('providers', {
   models: text('models').notNull().default('[]'),
   /** 是否在请求中发送思考强度参数（部分兼容接口不支持） */
   sendEffort: integer('send_effort', { mode: 'boolean' }).notNull().default(true),
+  /** 用户对模型能力的设定（JSON：{ 模型名: { vision?, tier? } }），覆盖按名称的自动判断 */
+  modelCaps: text('model_caps').notNull().default('{}'),
   enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
   ...syncCols
 })

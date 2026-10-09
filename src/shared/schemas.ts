@@ -156,7 +156,11 @@ export const ProviderInputSchema = z.object({
   apiKey: z.string().max(500).optional(),
   models: z.array(z.string().max(200)).max(500).optional(),
   sendEffort: z.boolean().optional(),
-  enabled: z.boolean().optional()
+  enabled: z.boolean().optional(),
+  /** 逐个模型改写能力（看图、强 / 普通）；某项不设表示按名称自动判断 */
+  modelCaps: z
+    .record(z.string().max(200), z.object({ vision: z.boolean().optional(), tier: z.enum(['basic', 'strong']).optional() }))
+    .optional()
 })
 export type ProviderInput = z.infer<typeof ProviderInputSchema>
 

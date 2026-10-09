@@ -1,0 +1,1 @@
+ALTER TABLE `providers` ADD `model_caps` text DEFAULT '{}' NOT NULL;

@@ -101,3 +101,60 @@ test('no knowledge base: answer marked as general knowledge', async () => {
   await ask('用一句话解释什么是光合作用。')
   await expect(lastAnswer().getByText(/内容来自模型的通用知识/)).toBeVisible({ timeout: 90_000 })
 })
+
+test('images reach models that can see them; capability can be overridden', async () => {
+  test.setTimeout(240_000)
+  const s = await page.evaluate(() => window.jiwei.settings.get())
+  const pid = s.ai.chat.providerId!
+  const kind = (await page.evaluate(() => window.jiwei.providers.list())).find((p) => p.id === pid)!.kind
+  // 一张图：红色圆形 + 数字 742
+  const img = await page.evaluate(() => {
+    const c = document.createElement('canvas')
+    c.width = 400
+    c.height = 200
+    const g = c.getContext('2d')!
+    g.fillStyle = '#fff'
+    g.fillRect(0, 0, 400, 200)
+    g.fillStyle = '#d00'
+    g.beginPath()
+    g.arc(100, 100, 60, 0, Math.PI * 2)
+    g.fill()
+    g.fillStyle = '#000'
+    g.font = 'bold 64px sans-serif'
+    g.fillText('742', 220, 125)
+    return c.toDataURL('image/png')
+  })
+  const look = async (): Promise<string> => {
+    const r = await page.evaluate((inp) => window.jiwei.chat.send(inp as never), {
+      conversationId: null,
+      providerId: pid,
+      model: s.ai.chat.model,
+      effort: 'off',
+      scope: { type: 'none' },
+      text: '图片里写着什么数字？只回答数字；看不到图片就回答“看不到”。',
+      images: [img]
+    })
+    let content = ''
+    await expect
+      .poll(
+        async () => {
+          const m = (await page.evaluate((cid) => window.jiwei.chat.messages(cid), r.conversation.id)).find((x) => x.id === r.assistantMessageId)
+          content = m?.content ?? ''
+          return m?.status
+        },
+        { timeout: 100_000, intervals: [1000] }
+      )
+      .toBe('done')
+    return content
+  }
+  // 默认：deepseek-flash 能看图
+  expect(await look()).toContain('742')
+  // 设为“不能看图”：只发送文字，模型如实说看不到
+  await page.evaluate(({ id, kind, model }) => window.jiwei.providers.save({ id, kind, modelCaps: { [model]: { vision: false } } }), {
+    id: pid,
+    kind,
+    model: s.ai.chat.model!
+  })
+  expect(await look()).not.toContain('742')
+  await page.evaluate(({ id, kind }) => window.jiwei.providers.save({ id, kind, modelCaps: {} }), { id: pid, kind })
+})

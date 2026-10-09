@@ -240,6 +240,17 @@ const en: Messages = {
     noKeyNeeded: 'No key needed',
     models: 'Models',
     fetchModels: 'Fetch from provider',
+    caps: {
+      vision: 'Vision',
+      strong: 'Strong',
+      visionOn: 'Sees images: region and video-frame questions include the image',
+      visionOff: 'Text only: region questions send only the text inside',
+      strongOn: 'Strong: all skills available (e.g. free-form interactive demos)',
+      strongOff: 'Basic: complex output uses fixed templates for reliability',
+      auto: 'detected from the model name',
+      custom: 'your setting (click again to go back to auto)',
+      hint: 'Vision and Strong are detected from the model name. If a provider updates a model before Jiwei catches up, click to correct it; outlined ones are your settings.'
+    },
     addModel: 'Add a model…',
     test: 'Test connection',
     saved: 'Saved',

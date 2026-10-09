@@ -45,6 +45,7 @@ export const PROVIDER_PRESETS: Record<ProviderKind, ProviderPreset> = {
     // DeepSeek 实际支持 low / high / max；“中”映射到 high
     efforts: ['off', 'low', 'high', 'max'],
     defaultEffort: 'high',
+    // deepseek-flash：V4.1-Flash，能看图；deepseek-v4-pro：V4-Pro-0813，纯文本旗舰（2026-10-09 实测）
     models: ['deepseek-flash', 'deepseek-v4-pro']
   },
   openai: {
@@ -141,13 +142,28 @@ export const PROVIDER_PRESETS: Record<ProviderKind, ProviderPreset> = {
 export const PROVIDER_ORDER: ProviderKind[] = ['deepseek', 'qwen', 'moonshot', 'zhipu', 'openai', 'anthropic', 'google', 'ollama', 'custom']
 
 /**
- * 模型价格（美元 / 百万 token），用于费用估算。未知模型不显示费用。
- * DeepSeek 采用官网标价（高峰期），2026-10 查证；如有变动以官网为准。
+ * 模型价格（美元 / 百万 token，高峰期标价），用于费用估算。未知模型不显示费用。
+ * DeepSeek 官网标价，2026-10-09 查证；如有变动以官网为准。
+ *   - deepseek-flash（V4.1-Flash，能看图）；旧名 deepseek-v4-flash / deepseek-v4-flash-vision-exp 路由到它，同价
+ *   - deepseek-v4-pro（V4-Pro-0813，纯文本）
  */
-export const MODEL_PRICES: Record<string, { input: number; cachedInput?: number; output: number }> = {
-  'deepseek-flash': { input: 0.3, cachedInput: 0.006, output: 1.2 },
-  'deepseek-v4-flash': { input: 0.3, cachedInput: 0.006, output: 1.2 },
-  'deepseek-v4-pro': { input: 1.32, cachedInput: 0.044, output: 3.96 }
+export const MODEL_PRICES: Record<string, { input: number; cachedInput?: number; output: number; offPeak?: 'deepseek' }> = {
+  'deepseek-flash': { input: 0.3, cachedInput: 0.006, output: 1.2, offPeak: 'deepseek' },
+  'deepseek-v4-flash': { input: 0.3, cachedInput: 0.006, output: 1.2, offPeak: 'deepseek' },
+  'deepseek-v4-flash-vision-exp': { input: 0.3, cachedInput: 0.006, output: 1.2, offPeak: 'deepseek' },
+  'deepseek-v4-pro': { input: 1.32, cachedInput: 0.044, output: 3.96, offPeak: 'deepseek' }
+}
+
+/**
+ * DeepSeek 错峰：高峰为周一至周五 UTC 01:00–04:00、06:00–10:00，其余时间半价。
+ * 官网另说明中国法定节假日全天为低谷，这里无法得知节假日，按工作日估算（偏高，不会少算）。
+ */
+export function isDeepSeekPeak(at: number): boolean {
+  const d = new Date(at)
+  const day = d.getUTCDay()
+  if (day === 0 || day === 6) return false
+  const h = d.getUTCHours()
+  return (h >= 1 && h < 4) || (h >= 6 && h < 10)
 }
 
 export interface Usage {
@@ -157,21 +173,38 @@ export interface Usage {
   cachedInputTokens: number
 }
 
-export function estimateCost(model: string, u: Usage): number | null {
+export function estimateCost(model: string, u: Usage, at = Date.now()): number | null {
   const p = MODEL_PRICES[model]
   if (!p) return null
   const uncached = Math.max(0, u.inputTokens - u.cachedInputTokens)
-  return (uncached * p.input + u.cachedInputTokens * (p.cachedInput ?? p.input) + u.outputTokens * p.output) / 1_000_000
+  const full = (uncached * p.input + u.cachedInputTokens * (p.cachedInput ?? p.input) + u.outputTokens * p.output) / 1_000_000
+  return p.offPeak === 'deepseek' && !isDeepSeekPeak(at) ? full / 2 : full
 }
 
-/* ——— 向量模型 ——— */
+/* ——— 模型能力 ——— */
 
-/** 内置向量模型：EmbeddingGemma 2（llama.cpp 本地运行），MRL 截断为 512 维 */
 /**
- * 模型能力分级：决定可用的技能（如自由 HTML 交互只对强模型开放）。
- * 按名称识别常见旗舰模型；无法识别的视为 basic（宁可降级为模板，也不产出低质量结果）。
+ * 两项能力决定积微怎么用一个模型：
+ *   - tier：strong / basic，决定可用的技能（如自由 HTML 交互只对强模型开放），以及后台小任务是否换用快速模型；
+ *   - vision：能否看图，决定框选区域 / 视频画面提问时是否发送图像（否则只发送区域内的文字）。
+ * 默认按名称自动判断（下面两张表）；服务商经常改名、升级，所以用户可以在「AI 模型」设置中逐个模型改写，
+ * 改写存于服务商的 modelCaps，优先于自动判断。
  */
+export type ModelTier = 'basic' | 'strong'
+export interface ModelCapsOverride {
+  vision?: boolean
+  tier?: ModelTier
+}
+export interface ModelCaps {
+  vision: boolean
+  tier: ModelTier
+  /** 按名称自动判断的结果（界面上显示“自动”时用） */
+  auto: { vision: boolean; tier: ModelTier }
+}
+
+/** 按名称识别的旗舰模型；无法识别的视为 basic（宁可降级为模板，也不产出低质量结果） */
 const STRONG_MODELS = [
+  // DeepSeek V4-Pro-0813：纯文本旗舰（2026-10 实测仍独立提供，不能看图）
   /deepseek-v4-pro/i,
   /deepseek-reasoner/i,
   /claude-(opus|sonnet)/i,
@@ -181,12 +214,12 @@ const STRONG_MODELS = [
   /kimi-k2/i,
   /glm-[45]/i
 ]
-export function modelTier(model: string): 'basic' | 'strong' {
-  return STRONG_MODELS.some((r) => r.test(model)) ? 'strong' : 'basic'
-}
 
-/** 能看图的模型（按名称识别）：框选区域 / 视频画面提问时才发送图像，否则只发送区域内的文字 */
+/** 按名称识别的能看图的模型（2026-10 查证） */
 const VISION_MODELS = [
+  // DeepSeek V4.1-Flash 原生多模态（2026-09-10）；旧名 deepseek-v4-flash 也路由到它
+  /^deepseek-flash/i,
+  /deepseek-v4(\.1)?-flash/i,
   /gpt-4o/i,
   /gpt-4\.1/i,
   /gpt-5/i,
@@ -201,10 +234,20 @@ const VISION_MODELS = [
   /llama3\.2-vision/i,
   /pixtral/i
 ]
-export function supportsVision(model: string): boolean {
-  return VISION_MODELS.some((r) => r.test(model))
+
+export const autoTier = (model: string): ModelTier => (STRONG_MODELS.some((r) => r.test(model)) ? 'strong' : 'basic')
+export const autoVision = (model: string): boolean => VISION_MODELS.some((r) => r.test(model))
+
+/** 模型的实际能力：用户设定优先，否则按名称自动判断 */
+export function resolveCaps(model: string, overrides?: Record<string, ModelCapsOverride> | null): ModelCaps {
+  const auto = { vision: autoVision(model), tier: autoTier(model) }
+  const o = overrides?.[model]
+  return { vision: o?.vision ?? auto.vision, tier: o?.tier ?? auto.tier, auto }
 }
 
+/* ——— 向量模型 ——— */
+
+/** 内置向量模型：EmbeddingGemma 2（llama.cpp 本地运行），MRL 截断为 512 维 */
 export const LOCAL_EMBEDDING = {
   id: 'local:embeddinggemma-2',
   name: 'EmbeddingGemma 2（本地）',
