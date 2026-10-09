@@ -1,9 +1,9 @@
 name: CI
 
+# 快速迭代阶段：不自动运行（节省 Actions 额度），需要时在 GitHub 的 Actions 页面手动运行。
+# 稳定后恢复为：push 到 main、pull_request 时自动运行。
 on:
-  push:
-    branches: [main]
-  pull_request:
+  workflow_dispatch:
 
 jobs:
   check:
