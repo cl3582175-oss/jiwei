@@ -293,3 +293,16 @@ export const ActionUpdateSchema = z.object({
   dueAt: z.number().int().nullable().optional()
 })
 
+/* ——— 学习目标 ——— */
+
+export const GoalInputSchema = z.object({
+  id: Id.optional(),
+  title: z.string().min(1).max(200),
+  description: z.string().max(2000).nullable().optional(),
+  status: z.enum(['active', 'achieved', 'paused', 'dropped']).optional(),
+  targetAt: z.number().int().nullable().optional(),
+  categoryId: Id.nullable().optional(),
+  noteIds: z.array(Id).max(500).optional()
+})
+export type GoalInput = z.infer<typeof GoalInputSchema>
+

@@ -5,6 +5,7 @@ import type { ChatScope } from '@shared/schemas'
 import type { KnowledgeStatus, SearchHit } from '@shared/types'
 import { embed, isReady } from './embedding'
 import { vecBuffer } from './indexer'
+import { ftsQuery } from '../../lib/fts'
 
 // 混合检索：关键词（FTS5 trigram）+ 向量（sqlite-vec）→ RRF 融合 → 时间与可信度加权。
 //   - 检索单位：笔记的康奈尔行 / 总结段落，资料的分段
@@ -16,18 +17,6 @@ const RRF_K = 60
 const DAY = 86_400_000
 
 type Key = string // `${ownerType}:${ownerId}`
-
-/** 把问题切成 trigram 关键词（中文按 3 字窗口、英文按单词）组成 OR 查询 */
-function ftsQuery(q: string): string | null {
-  const terms = new Set<string>()
-  for (const run of q.match(/[㐀-鿿]+/g) ?? []) {
-    if (run.length < 3) continue
-    for (let i = 0; i + 3 <= run.length; i++) terms.add(run.slice(i, i + 3))
-  }
-  for (const w of q.match(/[A-Za-z0-9_]{3,}/g) ?? []) terms.add(w.toLowerCase())
-  const list = [...terms].slice(0, 40)
-  return list.length ? list.map((t) => `"${t.replace(/"/g, '""')}"`).join(' OR ') : null
-}
 
 function keywordHits(q: string, limit: number): Key[] {
   const fq = ftsQuery(q)

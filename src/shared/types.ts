@@ -346,6 +346,64 @@ export interface Conversation {
   updatedAt: number
 }
 
+/* ——— 学习目标与掌握度（v0.4.3） ——— */
+
+/**
+ * 一篇笔记的掌握情况（由复习卡片的 FSRS 状态计算）：
+ * blank 有内容但没有线索问题；new 有卡片但还没复习过；weak / learning / solid 按记忆强度与当前记得的概率
+ */
+export type MasteryStatus = 'blank' | 'new' | 'weak' | 'learning' | 'solid'
+
+export interface NoteMastery {
+  id: string
+  title: string
+  categoryId: string | null
+  cards: number
+  reviewed: number
+  /** 复习过的卡片现在还记得的平均概率（FSRS 可提取性） */
+  recall: number | null
+  /** 平均记忆稳定性（天） */
+  stability: number | null
+  lapses: number
+  status: MasteryStatus
+  /** 笔记中出现的、学习情况为“薄弱”的概念 */
+  weakConcepts: string[]
+}
+
+export interface MasteryMap {
+  categories: { id: string; name: string; parentId: string | null }[]
+  notes: NoteMastery[]
+  totals: Record<MasteryStatus, number>
+}
+
+export interface Goal {
+  id: string
+  title: string
+  description: string | null
+  status: 'active' | 'achieved' | 'paused' | 'dropped'
+  targetAt: number | null
+  /** 关联的分类（含子分类） */
+  categoryId: string | null
+  /** 手动关联的笔记 */
+  noteIds: string[]
+  createdAt: number
+}
+
+export interface GoalProgress {
+  goal: Goal
+  notes: number
+  cards: number
+  reviewed: number
+  /** 掌握比例：牢固的卡片 / 全部卡片 */
+  mastered: number
+  recall: number | null
+  reviews7d: number
+  weakNotes: number
+  blankNotes: number
+  openActions: number
+  daysLeft: number | null
+}
+
 /* ——— 复盘（v0.4.2） ——— */
 
 /** daily 每日微复盘；weekly 每周复盘（GRAI）；topic 主题；practice 实践；belief 认知变化 */
@@ -378,6 +436,8 @@ export interface ReflectionMaterial {
   feynman: { concept: string; level: 'weak' | 'learning' | 'solid' | null; conversationId: string }[]
   /** 到期或期间完成的行动项（闭环检查） */
   actions: ActionItem[]
+  /** 进行中的学习目标及进度 */
+  goals: { id: string; title: string; mastered: number; reviews7d: number; daysLeft: number | null }[]
   /** 供 AI 使用的文字版 */
   text: string
 }
@@ -412,6 +472,7 @@ export interface ActionItem {
   dueAt: number | null
   doneAt: number | null
   reviewId: string | null
+  goalId: string | null
   createdAt: number
 }
 

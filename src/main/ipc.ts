@@ -29,6 +29,7 @@ import * as memoryLearn from './services/memoryLearn'
 import * as review from './services/review'
 import * as feynman from './services/feynman'
 import * as reflection from './services/reflection'
+import * as progress from './services/progress'
 import * as asr from './services/asr'
 import { saveAnswer } from './services/saveAnswer'
 import { exportNote } from './services/exportNote'
@@ -186,6 +187,16 @@ const handlers: Handlers = {
     harvest: (_, id) => reflection.harvestReflection(id),
     commit: (_, id, input) => reflection.commitReflection(id, input)
   },
+  goals: {
+    list: () => progress.listGoals(),
+    save: (_, input) => progress.saveGoal(input),
+    remove: (_, id) => progress.removeGoal(id),
+    progress: (_, id) => progress.goalProgress(id),
+    linkNote: (_, id, noteId, linked) => progress.linkNoteToGoal(id, noteId, linked)
+  },
+  mastery: {
+    map: (_, goalId) => progress.masteryMap(goalId)
+  },
   insights: {
     list: () => reflection.listInsights(),
     history: (_, id) => reflection.insightHistory(id),
@@ -194,7 +205,7 @@ const handlers: Handlers = {
   },
   actions: {
     list: (_, status) => reflection.listActions(status),
-    create: (_, title, dueAt) => reflection.createAction(title, dueAt),
+    create: (_, title, dueAt, goalId) => reflection.createAction(title, dueAt, goalId ?? null),
     update: (_, id, patch) => reflection.updateAction(id, patch),
     remove: (_, id) => reflection.removeAction(id)
   },

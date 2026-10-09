@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { Editor } from '@tiptap/react'
 import { toast } from 'sonner'
 import {
@@ -27,7 +27,8 @@ import {
   Sparkles,
   Download,
   Layers,
-  Layers2 as LayersOff
+  Layers2 as LayersOff,
+  Target
 } from 'lucide-react'
 import type { KnowledgeStatus, NoteMetaUpdate, NoteSummary } from '@shared/types'
 import { useCategories, useNote, invalidate } from '@/lib/queries'
@@ -217,6 +218,10 @@ function EditorBody({ note: initial }: { note: NoteSummary }) {
   const pendingInput = useRef<QueuedInput[] | null>(null)
   const titleTimer = useRef<number | undefined>(undefined)
   const [historyOpen, setHistoryOpen] = useState(false)
+  const { data: goals = [] } = useQuery({
+    queryKey: ['goals', 'active'],
+    queryFn: () => api.goals.list().then((l) => l.filter((g) => g.status === 'active'))
+  })
   const [pickerOpen, setPickerOpen] = useState(false)
   const { data: superseder } = useNote(note.supersededBy)
 
@@ -377,6 +382,30 @@ function EditorBody({ note: initial }: { note: NoteSummary }) {
                 {note.aiExcluded ? <Shield /> : <ShieldOff />}
                 {note.aiExcluded ? t('notes.aiInclude') : t('notes.aiExclude')}
               </MenuItem>
+              {note.kind === 'cornell' && goals.length > 0 && (
+                <MenuSub>
+                  <MenuSubTrigger>
+                    <Target />
+                    {t('goals.linkNote')}
+                  </MenuSubTrigger>
+                  <MenuSubContent>
+                    {goals.map((g) => {
+                      const linked = g.noteIds.includes(note.id)
+                      return (
+                        <MenuItem
+                          key={g.id}
+                          onSelect={() =>
+                            void api.goals.linkNote(g.id, note.id, !linked).then(() => qc.invalidateQueries({ queryKey: ['goals'] }))
+                          }
+                        >
+                          {linked ? <Check /> : <span className="size-4" />}
+                          {g.title}
+                        </MenuItem>
+                      )
+                    })}
+                  </MenuSubContent>
+                </MenuSub>
+              )}
               {note.kind === 'cornell' && (
                 <MenuItem onSelect={() => void update({ reviewExcluded: !note.reviewExcluded })}>
                   {note.reviewExcluded ? <Layers /> : <LayersOff />}

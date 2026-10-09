@@ -12,6 +12,8 @@ import { EmptyState, Kbd } from '@/components/ui/primitives'
 import { FloatingPanel } from '@/components/FloatingPanel'
 import { InkLeaf } from '@/components/Illustrations'
 import { errText } from '../chat/useChat'
+import { MasteryPanel } from './MasteryView'
+import { GoalsPanel } from './GoalsView'
 
 // 复习：线索是问题，笔记栏是答案。先想（可以写下来，让 AI 对照笔记检查），再看答案，再评分。
 // 评分按钮上显示下次复习的间隔（FSRS）。键盘：空格显示答案，1～4 评分，⌘Z 撤销。
@@ -94,7 +96,7 @@ function CheckResult({ r }: { r: AnswerCheck }) {
   )
 }
 
-export function ReviewView() {
+function ReviewToday() {
   const { t } = useTranslation()
   const qc = useQueryClient()
   const iv = useInterval()
@@ -202,11 +204,7 @@ export function ReviewView() {
 
   const now = Date.now()
   return (
-    <FloatingPanel flushLeft className="flex flex-col">
-      <header className="drag flex h-[52px] shrink-0 items-center border-b border-border/70 pr-[calc(var(--tb-right)+16px)] pl-8">
-        <h1 className="font-serif text-md font-semibold tracking-wide text-fg">{t('review.title')}</h1>
-      </header>
-      <div className="min-h-0 flex-1 overflow-y-auto">
+    <>
         {stats && (
           <div className="mx-auto flex max-w-[720px] flex-wrap gap-x-8 gap-y-3 px-10 pt-7">
             <Stat icon={<Layers />} label={t('review.statDue')} value={stats.due} />
@@ -373,6 +371,47 @@ export function ReviewView() {
                 </Button>
               </div>
             </div>
+          </div>
+        )}
+    </>
+  )
+}
+
+type Tab = 'today' | 'mastery' | 'goals'
+
+export function ReviewView() {
+  const { t } = useTranslation()
+  const tab = useApp((s) => s.reviewTab)
+  return (
+    <FloatingPanel flushLeft className="flex flex-col">
+      <header className="drag flex h-[52px] shrink-0 items-center gap-6 border-b border-border/70 pr-[calc(var(--tb-right)+16px)] pl-8">
+        <h1 className="font-serif text-md font-semibold tracking-wide text-fg">{t('review.title')}</h1>
+        <div role="tablist" className="no-drag inline-flex rounded-lg bg-sunken p-0.5">
+          {(['today', 'mastery', 'goals'] as Tab[]).map((k) => (
+            <button
+              key={k}
+              role="tab"
+              aria-selected={tab === k}
+              onClick={() => useApp.getState().setReviewTab(k)}
+              className={cn('rounded-md px-3 py-1 text-xs transition-colors', tab === k ? 'bg-surface text-fg shadow-card' : 'text-muted hover:text-fg')}
+            >
+              {t(`review.tabs.${k}`)}
+            </button>
+          ))}
+        </div>
+      </header>
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {tab === 'today' && <ReviewToday />}
+        {tab !== 'today' && (
+          <div className="mx-auto max-w-[920px] px-10 pt-8 pb-16">
+            {tab === 'mastery' ? (
+              <>
+                <p className="mb-5 text-sm text-muted">{t('mastery.desc')}</p>
+                <MasteryPanel />
+              </>
+            ) : (
+              <GoalsPanel />
+            )}
           </div>
         )}
       </div>

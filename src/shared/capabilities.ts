@@ -23,6 +23,9 @@ import type {
   Insight,
   InsightVersion,
   ActionItem,
+  Goal,
+  GoalProgress,
+  MasteryMap,
   ReviewCard,
   ReviewStats,
   AnswerCheck,
@@ -329,6 +332,16 @@ export const capabilities = {
     harvest: cap<ReflectionHarvest>()({ description: 'AI 从复盘中提炼洞见、修正与行动项（供确认）', params: [id()] }),
     commit: cap<Reflection>()({ description: '保存确认的洞见、修正与行动项，复盘完成', params: [id(), ['input', S.HarvestCommitSchema]] })
   },
+  goals: {
+    list: cap<Goal[]>()({ description: '列出学习目标', params: none }),
+    save: cap<Goal>()({ description: '新建或修改学习目标', params: [['input', S.GoalInputSchema]] }),
+    remove: cap<void>()({ description: '删除学习目标', params: [id()] }),
+    progress: cap<GoalProgress>()({ description: '学习目标的进度（笔记、卡片、掌握比例、近 7 天复习）', params: [id()] }),
+    linkNote: cap<Goal>()({ description: '把笔记关联到目标或取消关联', params: [id(), id('noteId'), ['linked', z.boolean()]] })
+  },
+  mastery: {
+    map: cap<MasteryMap>()({ description: '掌握度地图：各笔记的掌握情况（可按目标筛选）', params: [['goalId', S.Id.nullable()]] })
+  },
   insights: {
     list: cap<Insight[]>()({ description: '列出洞见', params: none }),
     history: cap<InsightVersion[]>()({ description: '洞见的版本历史（认知成长轨迹）', params: [id()] }),
@@ -337,7 +350,10 @@ export const capabilities = {
   },
   actions: {
     list: cap<ActionItem[]>()({ description: '列出行动项', params: [['status', z.enum(['open', 'done', 'dropped']).optional()]] }),
-    create: cap<ActionItem>()({ description: '新建行动项', params: [['title', z.string().min(1).max(300)], ['dueAt', z.number().int().nullable()]] }),
+    create: cap<ActionItem>()({
+      description: '新建行动项',
+      params: [['title', z.string().min(1).max(300)], ['dueAt', z.number().int().nullable()], ['goalId', S.Id.nullable().optional()]]
+    }),
     update: cap<ActionItem>()({ description: '修改行动项（完成 / 放弃 / 改期）', params: [id(), ['patch', S.ActionUpdateSchema]] }),
     remove: cap<void>()({ description: '删除行动项', params: [id()] })
   },

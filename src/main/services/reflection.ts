@@ -28,6 +28,7 @@ import { loadDoc, replaceDoc, stateToContent } from './docs'
 import { nodeText } from '../lib/derive'
 import { parseMeta } from './feynman'
 import { structured } from './ai/structured'
+import { goalProgress, listGoals } from './progress'
 
 // 复盘（v0.4.2）：每日 1 分钟微复盘、每周完整复盘（GRAI）、专题复盘（主题 / 实践 / 认知变化）。
 // 复盘正文是一篇 kind = review 的康奈尔笔记：线索栏是引导问题，笔记栏是你的回答，总结栏写最重要的一点。
@@ -445,6 +446,14 @@ export function reflectionMaterial(id: string): ReflectionMaterial {
     .all()
     .map(toAction)
 
+  const goalList = listGoals()
+    .filter((g) => g.status === 'active')
+    .slice(0, 6)
+    .map((g) => {
+      const p = goalProgress(g.id)
+      return { id: g.id, title: g.title, mastered: p.mastered, reviews7d: p.reviews7d, daysLeft: p.daysLeft }
+    })
+
   const L = (zhText: string, en: string): string => (zh ? zhText : en)
   const text = [
     `${L('时间', 'Period')}：${new Date(start).toLocaleDateString()} – ${new Date(end - 1).toLocaleDateString()}`,
@@ -457,7 +466,10 @@ export function reflectionMaterial(id: string): ReflectionMaterial {
     unanswered.length ? `${L('还没回答的线索', 'Unanswered cues')}：${unanswered.slice(0, 8).map((u) => u.question).join('；')}` : '',
     concepts.length ? `${L('概念掌握', 'Concepts')}：${concepts.map((c) => `${c.name}（${c.level}，${c.change}）`).join('、')}` : '',
     feynman.length ? `${L('费曼练习', 'Feynman practice')}：${feynman.map((f) => `${f.concept}（${f.level ?? '-'}）`).join('、')}` : '',
-    acts.length ? `${L('行动项', 'Actions')}：${acts.map((a) => `${a.title}（${a.status}）`).join('；')}` : ''
+    acts.length ? `${L('行动项', 'Actions')}：${acts.map((a) => `${a.title}（${a.status}）`).join('；')}` : '',
+    goalList.length
+      ? `${L('学习目标', 'Goals')}：${goalList.map((g) => `${g.title}（${L('掌握', 'mastered')} ${Math.round(g.mastered * 100)}%${g.daysLeft !== null ? `，${L(`剩 ${g.daysLeft} 天`, `${g.daysLeft} days left`)}` : ''}）`).join('；')}`
+      : ''
   ]
     .filter(Boolean)
     .join('\n')
@@ -471,6 +483,7 @@ export function reflectionMaterial(id: string): ReflectionMaterial {
     concepts,
     feynman,
     actions: acts,
+    goals: goalList,
     text
   }
 }
@@ -649,7 +662,7 @@ export function removeInsight(id: string): void {
 
 type ActionRow = typeof actions.$inferSelect
 function toAction(r: ActionRow): ActionItem {
-  return { id: r.id, title: r.title, status: r.status, dueAt: r.dueAt, doneAt: r.doneAt, reviewId: r.reviewId, createdAt: r.createdAt }
+  return { id: r.id, title: r.title, status: r.status, dueAt: r.dueAt, doneAt: r.doneAt, reviewId: r.reviewId, goalId: r.goalId, createdAt: r.createdAt }
 }
 
 export function listActions(status?: ActionItem['status']): ActionItem[] {
@@ -663,10 +676,10 @@ export function listActions(status?: ActionItem['status']): ActionItem[] {
     .map(toAction)
 }
 
-export function createAction(title: string, dueAt: number | null): ActionItem {
+export function createAction(title: string, dueAt: number | null, goalId: string | null = null): ActionItem {
   const now = Date.now()
   const id = newId()
-  getDb().insert(actions).values({ id, title, dueAt, createdAt: now, updatedAt: now, updatedBy: deviceId() }).run()
+  getDb().insert(actions).values({ id, title, dueAt, goalId, createdAt: now, updatedAt: now, updatedBy: deviceId() }).run()
   emit('reflection:changed', {})
   return toAction(getDb().select().from(actions).where(eq(actions.id, id)).get()!)
 }

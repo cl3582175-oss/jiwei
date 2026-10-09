@@ -17,7 +17,8 @@ import {
   Sparkle,
   GraduationCap,
   ListTodo,
-  MessageCircleQuestion
+  MessageCircleQuestion,
+  Target
 } from 'lucide-react'
 import { PROVIDER_PRESETS, type Effort } from '@shared/ai'
 import type { InsightConfidence, ReflectionHarvest, ReflectionMaterial } from '@shared/types'
@@ -53,10 +54,30 @@ function MaterialPane({ m }: { m: ReflectionMaterial }) {
   const qc = useQueryClient()
   const open = (id: string): void => useApp.getState().openNote(id)
   const empty =
-    !m.notes.length && !m.episodes.length && !m.review.reviewed && !m.unanswered.length && !m.concepts.length && !m.feynman.length && !m.actions.length
+    !m.goals.length && !m.notes.length && !m.episodes.length && !m.review.reviewed && !m.unanswered.length && !m.concepts.length && !m.feynman.length && !m.actions.length
   if (empty) return <p className="py-8 text-center text-xs leading-relaxed text-subtle">{t('reflect.noMaterial')}</p>
   return (
     <div data-testid="material">
+      {m.goals.length > 0 && (
+        <Section icon={<Target />} title={t('reflect.mGoals')} count={m.goals.length}>
+          <ul className="space-y-2">
+            {m.goals.map((g) => (
+              <li key={g.id}>
+                <div className="flex items-baseline justify-between gap-2 text-[13px]">
+                  <span className="min-w-0 truncate">{g.title}</span>
+                  <span className="shrink-0 text-2xs text-subtle">
+                    {t('goals.mastered', { pct: Math.round(g.mastered * 100) })}
+                    {g.daysLeft !== null && ` · ${g.daysLeft >= 0 ? t('goals.daysLeft', { count: g.daysLeft }) : t('goals.overdue')}`}
+                  </span>
+                </div>
+                <div className="mt-1 h-1 overflow-hidden rounded-full bg-sunken">
+                  <div className="h-full rounded-full bg-accent" style={{ width: `${Math.round(g.mastered * 100)}%` }} />
+                </div>
+              </li>
+            ))}
+          </ul>
+        </Section>
+      )}
       {m.actions.length > 0 && (
         <Section icon={<ListTodo />} title={t('reflect.mActions')} count={m.actions.length}>
           <p className="mb-1.5 text-2xs text-subtle">{t('reflect.mActionsHint')}</p>

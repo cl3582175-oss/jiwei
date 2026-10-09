@@ -19,6 +19,7 @@ import { buildTools, numberHits, stepLabel, type AgentSession } from './tools'
 import { loadSkill, skillCatalog } from './skills'
 import { userCard } from '../memory'
 import { learnerNote } from '../learner'
+import { activeGoalsText } from '../progress'
 import { noteExplainRequest, scheduleExtract } from '../memoryLearn'
 import { ensureReference, feynmanSystem, parseMeta, toInfo as feynmanInfo, type FeynmanMeta } from '../feynman'
 import { coachSystem, coachTurn, ensureCoachMaterial, type CoachMeta } from '../reflectionCoach'
@@ -179,12 +180,14 @@ Rules:
       ? '用户明确要求记住，或表达了稳定的偏好、目标、背景时，用 memory_remember 记下；不要记一次性的请求。'
       : 'Use memory_remember when the user explicitly asks to remember, or states stable preferences, goals or background; not for one-off requests.'
   const card = incognito ? null : cardFor(conversationId, zh)
+  const goals = incognito ? null : activeGoalsText(zh)
   return [
     rules.replace('{{MEMORY_RULE}}', memoryRule),
     skillCatalog(tier, zh),
     card
       ? `${zh ? '用户卡片（关于这位用户，回答时自然地参考，不要复述）' : 'About the user (use naturally, do not recite)'}：\n${card}`
       : null,
+    goals ? `${zh ? '用户正在进行的学习目标（回答时可以联系到它们）' : "The user's active learning goals (relate to them when useful)"}：\n${goals}` : null,
     `${zh ? '今天是' : 'Today is'} ${fmtDate(Date.now())}。`
   ]
     .filter(Boolean)

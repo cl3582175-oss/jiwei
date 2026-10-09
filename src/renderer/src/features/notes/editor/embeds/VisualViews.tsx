@@ -28,7 +28,8 @@ function useData<T>(
 }
 
 /** 界面配色（随主题变化重新读取） */
-function useTokens(): Record<string, string> {
+/** 当前主题的颜色（图表、导图与掌握度地图使用） */
+export function useTokens(): Record<string, string> {
   const [v, setV] = useState(0)
   useEffect(() => {
     const obs = new MutationObserver(() => setV((x) => x + 1))

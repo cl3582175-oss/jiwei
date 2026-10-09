@@ -47,6 +47,10 @@ interface AppState extends Location {
   context: WorkspaceContext
   setContext: (patch: Partial<WorkspaceContext>) => void
 
+  /** 复习页的标签：今日复习 / 掌握度地图 / 学习目标 */
+  reviewTab: 'today' | 'mastery' | 'goals'
+  setReviewTab: (t: 'today' | 'mastery' | 'goals') => void
+
   /** 复盘页中打开的复盘（null 为复盘首页） */
   reflectionId: string | null
   openReflection: (id: string | null) => void
@@ -133,6 +137,9 @@ export const useApp = create<AppState>((set, get) => {
 
     context: emptyContext,
     setContext: (patch) => set((s) => ({ context: { ...s.context, ...patch } })),
+
+    reviewTab: 'today',
+    setReviewTab: (reviewTab) => set({ reviewTab }),
 
     reflectionId: null,
     openReflection: (reflectionId) => {
