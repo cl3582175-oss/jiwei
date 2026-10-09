@@ -24,6 +24,9 @@ test.beforeAll(async () => {
   })
   page = await app.firstWindow()
   await page.waitForSelector('nav')
+  // 模拟 CI 的小屏幕：JIWEI_TEST_WINDOW=1000x680
+  const size = process.env.JIWEI_TEST_WINDOW?.split('x').map(Number)
+  if (size?.length === 2) await app.evaluate(({ BrowserWindow }, [w, h]) => BrowserWindow.getAllWindows()[0].setSize(w, h), size)
 })
 test.afterAll(async () => {
   await app?.close()
@@ -139,7 +142,10 @@ test('the AI panel sees the current page', async () => {
 })
 
 test('downloads are imported into the library', async () => {
-  const r = await inPage<{ x: number; y: number }>(`(() => { const b = document.getElementById('dl').getBoundingClientRect(); return { x: b.left + 5, y: b.top + 5 } })()`)
+  // 小屏幕上链接可能在可见区域之外：先滚动到可见处
+  const r = await inPage<{ x: number; y: number }>(
+    `(() => { const a = document.getElementById('dl'); a.scrollIntoView({ block: 'center' }); const b = a.getBoundingClientRect(); return { x: b.left + 5, y: b.top + 5 } })()`
+  )
   await clickInPage(r.x, r.y)
   await expect(page.getByText('已下载并导入资料库：lecture.pdf')).toBeVisible({ timeout: 15_000 })
   await expect.poll(() => page.evaluate(() => window.jiwei.sources.list({}).then((s) => s.map((x) => x.title)))).toContain('lecture')
