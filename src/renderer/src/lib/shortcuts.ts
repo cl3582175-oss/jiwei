@@ -67,6 +67,10 @@ export function useGlobalShortcuts(): void {
       } else if (k === '6') {
         e.preventDefault()
         s.openGraph(null)
+      } else if (k === 'l' && !(s.browserOpen && s.view === 'notes')) {
+        // 内置浏览器（打开后由地址栏处理 ⌘L）
+        e.preventDefault()
+        s.openBrowser()
       } else if (k === 'j') {
         // 工作区 AI 面板
         e.preventDefault()

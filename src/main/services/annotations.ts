@@ -31,8 +31,16 @@ const toAnnotation = (r: Row): Annotation => ({
   updatedAt: r.updatedAt
 })
 
+type ChangeListener = (targetType: 'note' | 'source', targetId: string) => void
+const listeners: ChangeListener[] = []
+/** 主进程内的批注变化监听（如：内置浏览器更新网页上的高亮） */
+export function onAnnotationsChange(fn: ChangeListener): void {
+  listeners.push(fn)
+}
+
 const changed = (r: Pick<Row, 'targetType' | 'targetId'>, text: boolean): void => {
   emit('annotations:changed', { targetType: r.targetType, targetId: r.targetId })
+  for (const fn of listeners) fn(r.targetType, r.targetId)
   // 评论与提问进入检索
   if (text) requestIndex()
 }

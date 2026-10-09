@@ -23,6 +23,7 @@ import { useCelebrations } from './lib/celebrate'
 import { useMemoryToasts } from './features/memory/useMemoryToasts'
 import { SelectionToolbar } from './features/assist/SelectionToolbar'
 import { AnnotationCard } from './features/annotate/AnnotationCard'
+import { useBrowserEvents } from './features/browser/actions'
 import { AnswerCard } from './features/assist/AnswerCard'
 
 function useThemeSync(): 'light' | 'dark' {
@@ -99,6 +100,8 @@ export function App() {
   const theme = useThemeSync()
   useMainEvents()
   const view = useApp((s) => s.view)
+  const browserOpen = useApp((s) => s.browserOpen && s.view === 'notes')
+  useBrowserEvents()
   const { isSuccess } = useSettings()
   useGlobalShortcuts()
   useCelebrations()
@@ -131,7 +134,7 @@ export function App() {
       <AnswerCard />
       <Toaster
         theme={theme}
-        position="bottom-center"
+        position={browserOpen ? 'bottom-right' : 'bottom-center'}
         toastOptions={{
           className: '!rounded-lg !border !border-border !bg-surface !text-fg !shadow-float !text-sm !font-sans'
         }}

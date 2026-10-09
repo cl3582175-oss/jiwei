@@ -17,7 +17,13 @@ export default defineConfig({
   },
   preload: {
     plugins: [externalizeDepsPlugin()],
-    resolve: { alias: shared }
+    resolve: { alias: shared },
+    build: {
+      rollupOptions: {
+        // browser：内置浏览器网页中的内容脚本（v0.6.0）
+        input: { index: resolve('src/preload/index.ts'), browser: resolve('src/preload/browser.ts') }
+      }
+    }
   },
   renderer: {
     resolve: {

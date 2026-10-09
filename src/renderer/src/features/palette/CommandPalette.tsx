@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Command } from 'cmdk'
 import { Dialog as D } from 'radix-ui'
 import { useTranslation } from 'react-i18next'
-import { NotebookText, PenLine, Library, Settings, Trash2, Search, Home, Layers, GraduationCap, Sprout, Network } from 'lucide-react'
+import { NotebookText, PenLine, Library, Settings, Trash2, Search, Home, Layers, GraduationCap, Sprout, Network, Globe } from 'lucide-react'
 import { useApp } from '@/store/app'
 import { useNotes } from '@/lib/queries'
 import { useCreateNote } from '@/lib/shortcuts'
@@ -105,6 +105,19 @@ export function CommandPalette() {
                   >
                     <GraduationCap />
                     <span className="flex-1 truncate">{t('feynman.paletteItem', { concept: q.trim() })}</span>
+                  </Command.Item>
+                </Command.Group>
+              )}
+              {q.trim() && (
+                <Command.Group
+                  heading={t('browser.title')}
+                  className="[&_[cmdk-group-heading]]:px-3 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-2xs [&_[cmdk-group-heading]]:text-subtle"
+                >
+                  <Command.Item value={`browser ${q}`} className={itemCls} onSelect={run(() => useApp.getState().openBrowser(q.trim()))}>
+                    <Globe />
+                    <span className="flex-1 truncate">
+                      {/^(https?:\/\/|[\w-]+(\.[\w-]+)+(\/|$))/i.test(q.trim()) ? t('browser.paletteOpen', { url: q.trim() }) : t('browser.paletteSearch', { q: q.trim() })}
+                    </span>
                   </Command.Item>
                 </Command.Group>
               )}

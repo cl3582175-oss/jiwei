@@ -14,6 +14,7 @@ import { requestRendererFlush } from './lifecycle'
 import { ensureIdentity } from './services/device'
 import { registerJobKinds, resegmentEmptyPdfs } from './services/jobKinds'
 import { registerRecognizeJob } from './services/recognize'
+import { registerBrowser } from './services/browser'
 import { registerAsrJob } from './services/asr'
 import { pruneJobs, startJobs, stopJobs } from './services/jobs'
 import { emit } from './events'
@@ -140,6 +141,7 @@ app.whenReady().then(async () => {
   registerJobKinds()
   registerAsrJob()
   registerRecognizeJob()
+  registerBrowser()
   registerIndexJob()
   startJobs()
   startMemoryLearning()

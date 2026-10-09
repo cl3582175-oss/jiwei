@@ -209,3 +209,37 @@ export async function retrieve(query: string, scope: ChatScope, limit = 8): Prom
     .sort((a, b) => b.score - a.score)
     .slice(0, limit)
 }
+
+/**
+ * 与一段文字语义相近的笔记 / 资料片段：只用本地向量，带相似度门槛（余弦相似度），宁缺毋滥。
+ * 用于浏览器的“相关笔记”旁注（v0.6.0）——不调用大模型、不花钱。
+ */
+export async function similarTo(text: string, scope: ChatScope, limit: number, minSim: number): Promise<(SearchHit & { sim: number })[]> {
+  if (!text.trim() || !(await isReady())) return []
+  const [v] = await embed([text.slice(0, 2000)], 'doc')
+  const rows = getSqlite()
+    .prepare('SELECT rowid, distance FROM vec_chunks WHERE embedding MATCH ? AND k = ? ORDER BY distance')
+    .all(vecBuffer(v), limit * 4) as { rowid: number; distance: number }[]
+  const good = rows.filter((r) => 1 - r.distance >= minSim)
+  if (!good.length) return []
+  const meta = getDb()
+    .select({ rowid: chunks.rowid, ownerType: chunks.ownerType, ownerId: chunks.ownerId })
+    .from(chunks)
+    .where(
+      inArray(
+        chunks.rowid,
+        good.map((r) => Number(r.rowid))
+      )
+    )
+    .all()
+  const simOf = new Map(good.map((r) => [Number(r.rowid), 1 - r.distance]))
+  const keyed = meta.map((m) => ({ key: `${m.ownerType}:${m.ownerId}` as Key, sim: simOf.get(m.rowid) ?? 0 }))
+  const hits = hydrate(
+    keyed.map((k) => k.key),
+    scope
+  )
+  return keyed
+    .filter((k) => hits.has(k.key))
+    .map((k) => ({ ...hits.get(k.key)!, score: k.sim, sim: k.sim }))
+    .sort((a, b) => b.sim - a.sim)
+}

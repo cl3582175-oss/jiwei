@@ -20,7 +20,8 @@ import {
   Eye,
   Zap,
   X,
-  ScanText
+  ScanText,
+  Globe
 } from 'lucide-react'
 import { PROVIDER_ORDER, PROVIDER_PRESETS, resolveCaps, type Effort, type ModelCapsOverride, type ProviderKind } from '@shared/ai'
 import type { ProviderInfo } from '@shared/types'
@@ -606,6 +607,86 @@ function RecognitionSection() {
   )
 }
 
+/** 内置浏览器（v0.6.0）：主动程度、不发送给 AI 的网站、搜索引擎 */
+const ENGINES = [
+  { id: 'bing', url: 'https://cn.bing.com/search?q=' },
+  { id: 'baidu', url: 'https://www.baidu.com/s?wd=' },
+  { id: 'google', url: 'https://www.google.com/search?q=' },
+  { id: 'duckduckgo', url: 'https://duckduckgo.com/?q=' }
+]
+
+function BrowserSection() {
+  const { t } = useTranslation()
+  const { data: s } = useSettings()
+  const update = useUpdateSettings()
+  const [sites, setSites] = useState<string | null>(null)
+  if (!s) return null
+  const b = s.browser ?? {}
+  const set = (patch: Partial<NonNullable<typeof s.browser>>): void => update.mutate({ browser: { ...b, ...patch } })
+  const engine = ENGINES.find((e) => e.url === (b.searchEngine ?? ENGINES[0].url))?.id ?? 'bing'
+  return (
+    <section className="space-y-3" data-testid="browser-settings">
+      <h4 className="flex items-center gap-2 text-sm font-medium text-fg">
+        <Globe className="size-4 text-accent" />
+        {t('browser.settings.title')}
+      </h4>
+      <p className="text-xs leading-relaxed text-muted">{t('browser.settings.desc')}</p>
+      <div className="space-y-1.5">
+        <p className="text-xs text-fg">{t('browser.settings.proactivity')}</p>
+        <div className="flex flex-wrap gap-2" role="radiogroup" aria-label={t('browser.settings.proactivity')}>
+          {(['quiet', 'balanced', 'active'] as const).map((p) => (
+            <button
+              key={p}
+              role="radio"
+              aria-checked={(b.proactivity ?? 'balanced') === p}
+              onClick={() => set({ proactivity: p })}
+              className={cn(
+                'rounded-lg border px-3 py-1.5 text-xs transition-colors',
+                (b.proactivity ?? 'balanced') === p ? 'border-accent bg-accent-soft text-accent' : 'border-border text-muted hover:text-fg'
+              )}
+            >
+              {t(`browser.settings.p.${p}`)}
+            </button>
+          ))}
+        </div>
+        <p className="text-2xs leading-relaxed text-muted">{t(`browser.settings.pHint.${b.proactivity ?? 'balanced'}`)}</p>
+      </div>
+      <label className="block space-y-1.5">
+        <span className="text-xs text-fg">{t('browser.settings.blocked')}</span>
+        <textarea
+          aria-label={t('browser.settings.blocked')}
+          rows={3}
+          value={sites ?? (b.aiBlockedSites ?? []).join('\n')}
+          placeholder="company.cn&#10;wiki.example.com"
+          onChange={(e) => setSites(e.target.value)}
+          onBlur={() => {
+            if (sites === null) return
+            set({ aiBlockedSites: [...new Set(sites.split(/[\s,，]+/).map((x) => x.trim().replace(/^https?:\/\//, '').replace(/\/.*$/, '')).filter(Boolean))] })
+            setSites(null)
+          }}
+          className="w-full resize-none rounded-lg border border-border bg-surface px-2.5 py-2 text-xs text-fg outline-none focus:border-accent"
+        />
+        <span className="block text-2xs leading-relaxed text-muted">{t('browser.settings.blockedHint')}</span>
+      </label>
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-fg">{t('browser.settings.engine')}</span>
+        <select
+          aria-label={t('browser.settings.engine')}
+          value={engine}
+          onChange={(e) => set({ searchEngine: ENGINES.find((x) => x.id === e.target.value)!.url })}
+          className="h-8 rounded-lg border border-border bg-surface px-2 text-xs text-fg"
+        >
+          {ENGINES.map((e) => (
+            <option key={e.id} value={e.id}>
+              {t(`browser.settings.engines.${e.id}`)}
+            </option>
+          ))}
+        </select>
+      </div>
+    </section>
+  )
+}
+
 export function AiSettingsTab() {
   const { t } = useTranslation()
   const qc = useQueryClient()
@@ -684,6 +765,7 @@ export function AiSettingsTab() {
       <EmbeddingSection />
       <TranscriptionSection />
       <RecognitionSection />
+      <BrowserSection />
     </div>
   )
 }

@@ -29,7 +29,8 @@ import {
   Layers,
   Layers2 as LayersOff,
   Target,
-  Network
+  Network,
+  Globe
 } from 'lucide-react'
 import type { KnowledgeStatus, NoteMetaUpdate, NoteSummary } from '@shared/types'
 import { useCategories, useNote, invalidate } from '@/lib/queries'
@@ -211,7 +212,7 @@ function focusFirstBody(ed: Editor): void {
 function EditorBody({ note: initial }: { note: NoteSummary }) {
   const { t, i18n } = useTranslation()
   const qc = useQueryClient()
-  const { openNote, openSource, sourceId, back, forward, historyIndex, history } = useApp()
+  const { openNote, openSource, sourceId, back, forward, historyIndex, history, browserOpen } = useApp()
   const { ydoc, saving } = useNoteDoc(initial.id)
   const [note, setNote] = useState(initial)
   const editorRef = useRef<Editor | null>(null)
@@ -328,7 +329,20 @@ function EditorBody({ note: initial }: { note: NoteSummary }) {
               </span>
             </Tip>
           )}
-          {!sourceId && (
+          {/* 内置浏览器（v0.6.0）：在笔记旁边打开，边看网页边记 */}
+          <Tip label={browserOpen ? t('browser.close') : t('browser.openBeside')} side="bottom">
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-pressed={browserOpen}
+              onClick={() => (browserOpen ? useApp.getState().closeBrowser() : useApp.getState().openBrowser())}
+              aria-label={t('browser.openBeside')}
+              className={cn(browserOpen && 'text-accent')}
+            >
+              <Globe />
+            </Button>
+          </Tip>
+          {!sourceId && !browserOpen && (
             <Tip label={t('workspace.openSource')} side="bottom">
               <Button variant="ghost" size="icon-sm" onClick={() => setSourcePickerOpen(true)} aria-label={t('workspace.openSource')}>
                 <PanelLeftOpen />

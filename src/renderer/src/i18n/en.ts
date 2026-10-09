@@ -3,6 +3,7 @@ import type { Messages } from './zh-CN'
 const en: Messages = {
   app: { name: 'Jiwei', slogan: 'Small steps, great knowledge' },
   nav: {
+    browser: 'Browse',
     chat: 'AI Chat',
     collapseSidebar: 'Hide sidebar',
     expandSidebar: 'Show sidebar',
@@ -163,6 +164,56 @@ const en: Messages = {
     open: 'Open annotation: {{text}}',
     emptyComment: '(no comment yet)',
     addToParagraph: 'Annotate this paragraph'
+  },
+  browser: {
+    title: 'Browser',
+    tabs: 'Tabs',
+    newTab: 'New tab',
+    newIncognito: 'New incognito tab',
+    closeTab: 'Close tab: {{title}}',
+    back: 'Back',
+    forward: 'Forward',
+    reload: 'Reload',
+    stop: 'Stop',
+    address: 'Address bar',
+    addressHint: 'Search or enter a URL',
+    close: 'Close browser',
+    openBeside: 'Open the browser beside the note',
+    openOriginal: 'Open the original page in the browser',
+    save: 'Save as source',
+    saved: 'Saved as a source; the text is now in your knowledge base',
+    savedShort: 'Saved',
+    saveHint: 'Save this page as a source: a snapshot is kept and its text goes into your knowledge base',
+    savedHint: 'This page is saved as a source; find it in the library',
+    aiOff: 'AI off',
+    aiOffHint: 'Sensitive page (banking, payment, mail, sign-in) or a site you excluded: content is not read and the AI toolbar is hidden',
+    incognito: 'Incognito',
+    incognitoHint: 'Incognito tab: no browsing data kept, no memories, no AI toolbar, and pages are never saved as sources.',
+    startHint: 'Select text on a page to explain, translate, ask AI, highlight or comment. Saving to a note also saves the page as a source, so you can always go back.',
+    related: 'Related to your notes:',
+    viewing: 'Viewing: {{title}}',
+    recap: 'You highlighted {{highlights}} and asked {{questions}} questions on “{{title}}”. Turn them into notes?',
+    recapAction: 'Make notes',
+    imported: 'Downloaded and added to the library: {{name}}',
+    openImported: 'Open',
+    downloaded: 'Downloaded: {{name}}',
+    paletteOpen: 'Open {{url}} in the browser',
+    paletteSearch: 'Search “{{q}}” in the browser',
+    settings: {
+      title: 'Built-in browser',
+      desc: 'Browse, watch online courses and read e-books inside Jiwei while taking notes. Pages run in a sandbox; sign-ins are kept separate from Jiwei itself.',
+      proactivity: 'Proactivity',
+      p: { quiet: 'Quiet', balanced: 'Balanced', active: 'Active' },
+      pHint: {
+        quiet: 'Only appears when you act. No related notes, no prompt to make notes when closing a page.',
+        balanced: 'Shows related notes when a page opens; after a long read with questions or comments, offers to make notes when you close it.',
+        active: 'Like Balanced, but offers to make notes after 2 minutes.'
+      },
+      blocked: 'Sites not sent to AI',
+      blockedHint: 'One domain per line (subdomains included). Banking, payment, mail and sign-in pages are always AI-free.',
+      engine: 'Search engine',
+      engines: { bing: 'Bing', baidu: 'Baidu', google: 'Google', duckduckgo: 'DuckDuckGo' }
+    }
   },
   workspace: {
     recog: {

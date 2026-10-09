@@ -18,6 +18,8 @@ import { loadSkill, readSkillFile } from './skills'
 import { retrieve } from './retrieve'
 import { saveMemory, searchMemories } from '../memory'
 import { conceptsIn, describeConcept } from '../learner'
+import { browserState, openTab } from '../browser/manager'
+import { findInPage, pageLinks, readPage } from '../browser/pages'
 import type { ChatScope, ProposalOp } from '@shared/schemas'
 import type { AgentStep, DocNode, SearchHit } from '@shared/types'
 
@@ -582,6 +584,54 @@ export function buildTools(s: AgentSession): ToolSet {
       })
     })
   }
+  // 内置浏览器（v0.6.0）：AI 只读浏览——读取网页、在网页中查找、列出链接、打开网址；点击、填写、下载留给用户
+  if (browserState().tabs.length) {
+    Object.assign(tools, {
+      browser_read_page: tool({
+        description: zh
+          ? '读取内置浏览器当前网页（或指定标签页）的标题、网址、正文与选中的文字。敏感网页（网银、邮箱等）不可读取。'
+          : 'Read the current page in the built-in browser: title, URL, main text and selection. Sensitive pages are not readable.',
+        inputSchema: z.object({ tabId: z.string().max(64).optional() }),
+        execute: async ({ tabId }) => {
+          const p = await readPage(tabId, 12000)
+          return `${p.title}\n${p.url}\n${p.selection ? `${zh ? '选中' : 'Selected'}：${p.selection}\n` : ''}\n${p.text}`
+        }
+      }),
+      browser_find: tool({
+        description: zh ? '在内置浏览器当前网页中查找关键词，返回出现次数与上下文' : 'Find a phrase in the current page; returns count and context',
+        inputSchema: z.object({ query: z.string().min(1).max(200), tabId: z.string().max(64).optional() }),
+        execute: async ({ query, tabId }) => {
+          const r = await findInPage(query, tabId)
+          return r.count ? `${r.count}\n${r.matches.map((m) => `… ${m} …`).join('\n')}` : zh ? '没有找到。' : 'Not found.'
+        }
+      }),
+      browser_links: tool({
+        description: zh ? '列出内置浏览器当前网页中的链接（文字与网址）' : 'List the links on the current page',
+        inputSchema: z.object({ tabId: z.string().max(64).optional() }),
+        execute: async ({ tabId }) => (await pageLinks(tabId)).map((l) => `${l.text} — ${l.href}`).join('\n') || (zh ? '没有链接。' : 'No links.')
+      }),
+      browser_open: tool({
+        description: zh
+          ? '在内置浏览器的新标签页中打开网址或搜索（用户看得到）。只做打开，不点击、不填写、不下载。'
+          : 'Open a URL or a search in a new tab of the built-in browser (visible to the user). Opens only; no clicks, forms or downloads.',
+        inputSchema: z.object({ url: z.string().min(1).max(2000) }),
+        execute: async ({ url }) => {
+          const id = openTab(url)
+          return zh ? `已在新标签页打开（${id}）。可以用 browser_read_page 读取。` : `Opened in a new tab (${id}). Use browser_read_page to read it.`
+        }
+      }),
+      browser_tabs: tool({
+        description: zh ? '列出内置浏览器打开的标签页（ID、标题、网址）' : 'List open tabs in the built-in browser',
+        inputSchema: z.object({}),
+        execute: async () =>
+          browserState()
+            .tabs.filter((t) => !t.sensitive && !t.incognito)
+            .map((t) => `${t.id} · ${t.title} · ${t.url}`)
+            .join('\n') || (zh ? '没有标签页。' : 'No tabs.')
+      })
+    })
+  }
+
   return tools
 }
 

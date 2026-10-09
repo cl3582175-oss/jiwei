@@ -85,7 +85,15 @@ export const SettingsPatchSchema = z.object({
       time: z.string().regex(/^\d{2}:\d{2}$/)
     })
     .optional(),
-  review: z.object({ newPerDay: z.number().int().min(0).max(500), retention: z.number().min(0.8).max(0.97) }).optional()
+  review: z.object({ newPerDay: z.number().int().min(0).max(500), retention: z.number().min(0.8).max(0.97) }).optional(),
+  /** 内置浏览器（v0.6.0）：搜索引擎、不发送给 AI 的网站、主动程度 */
+  browser: z
+    .object({
+      searchEngine: z.string().url().max(300).optional(),
+      aiBlockedSites: z.array(z.string().max(200)).max(500).optional(),
+      proactivity: z.enum(['quiet', 'balanced', 'active']).optional()
+    })
+    .optional()
 })
 export type SettingsPatch = z.infer<typeof SettingsPatchSchema>
 
@@ -363,3 +371,7 @@ export const AnnotationPatchSchema = z.object({
   selector: AnnotationSelectorSchema.optional()
 })
 export type AnnotationPatch = z.infer<typeof AnnotationPatchSchema>
+
+/* ——— 内置浏览器（v0.6.0） ——— */
+
+export const BrowserRectSchema = z.object({ x: z.number(), y: z.number(), width: z.number().min(0), height: z.number().min(0) })

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Sparkles, X, Pin, PinOff, SquarePen, ArrowUp, Square, NotebookText, FileText, TextQuote } from 'lucide-react'
+import { Sparkles, X, Pin, PinOff, SquarePen, ArrowUp, Square, NotebookText, FileText, TextQuote, Globe } from 'lucide-react'
 import { packetFromWorkspace, fmtTime, type ContextPacket } from '@shared/context'
 import type { WorkspaceContext } from '@shared/types'
 import { api, cn, modKey } from '@/lib/utils'
@@ -15,6 +15,7 @@ import { errText, sendChat, useChatThread, useModelChoice } from '../chat/useCha
 import { ModelPicker } from '../ai/ModelPicker'
 import { EffortPicker } from '../ai/EffortPicker'
 import { useAssist } from './store'
+import { activeTab, aiAllowed, useBrowser } from '../browser/store'
 
 // 工作区 AI 面板：右下角按钮 → 浮动面板 → 可钉住为右侧栏。
 // 它“看得见”两侧：当前笔记（光标所在行）、当前资料（可见位置 / 选中文字），以标签显示，可逐个移除。
@@ -39,6 +40,10 @@ function useContextChips(ctx: WorkspaceContext) {
         : ''
     chips.push({ id: 'source', icon: <FileText />, label: `${source.title}${loc ? ` · ${loc}` : ''}` })
   }
+  // 内置浏览器：还没存为资料的当前网页（发送时自动存为资料）
+  const browserOpen = useApp((a) => a.browserOpen)
+  const web = useBrowser(activeTab)
+  if (browserOpen && !ctx.sourceId && aiAllowed(web)) chips.push({ id: 'source', icon: <Globe />, label: t('browser.viewing', { title: web.title }) })
   if (ctx.sourceSelection || ctx.noteSelection) {
     const q = (ctx.sourceSelection || ctx.noteSelection)!
     chips.push({ id: 'selection', icon: <TextQuote />, label: `「${q.length > 18 ? q.slice(0, 18) + '…' : q}」` })
@@ -90,6 +95,11 @@ export function AiPanelBody({ pinned }: { pinned: boolean }) {
     if (!choice.providerId || !choice.model) return void toast.error(t('chat.needModel'))
     setText('')
     try {
+      // 正在看的网页：先存为资料，AI 才能读到并引用（v0.6.0）
+      const app = useApp.getState()
+      const web = activeTab(useBrowser.getState())
+      if (app.browserOpen && !app.context.sourceId && !off.has('source') && aiAllowed(web))
+        app.setContext({ sourceId: await api.browser.saveSource(web.id) })
       const r = await sendChat({
         conversationId,
         text: q.trim(),

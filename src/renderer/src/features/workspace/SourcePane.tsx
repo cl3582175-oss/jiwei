@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { X, ExternalLink, Loader2, FileQuestion, Highlighter } from 'lucide-react'
+import { X, ExternalLink, Loader2, FileQuestion, Highlighter, Globe } from 'lucide-react'
 import type { Conversation, Segment, Source } from '@shared/types'
 import { api, cn, formatBytes } from '@/lib/utils'
 import { useApp } from '@/store/app'
@@ -206,6 +206,13 @@ export function SourcePane({ sourceId }: { sourceId: string }) {
           </p>
         </div>
         <div className="no-drag flex items-center gap-0.5">
+          {source.kind === 'web' && source.url && (
+            <Tip label={t('browser.openOriginal')} side="bottom">
+              <Button variant="ghost" size="icon-sm" aria-label={t('browser.openOriginal')} onClick={() => useApp.getState().openBrowser(source.url!)}>
+                <Globe />
+              </Button>
+            </Tip>
+          )}
           <Tip label={t('annotate.panel')} side="bottom">
             <Button
               variant={showAnnotations ? 'secondary' : 'ghost'}

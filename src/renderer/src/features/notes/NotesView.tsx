@@ -5,6 +5,7 @@ import { NotesSidebar } from './NotesSidebar'
 import { NoteEditor } from './NoteEditor'
 import { NotesHome } from '../home/NotesHome'
 import { SourcePane } from '../workspace/SourcePane'
+import { BrowserPane } from '../browser/BrowserPane'
 import { FloatingPanel } from '@/components/FloatingPanel'
 import { CollapsibleSidebar, useSidebar } from '@/components/CollapsibleSidebar'
 import { AiPanelBody, AiPanelFloat } from '../assist/AiPanel'
@@ -15,7 +16,9 @@ import { useAssist } from '../assist/store'
  * 资料栏可拖动，默认按黄金比例 0.382；AI 面板未钉住时浮在右下角。
  */
 export function NotesView() {
-  const { noteId, sourceId, sourcePaneSize, setSourcePaneSize } = useApp()
+  const { noteId, sourceId, browserOpen, sourcePaneSize, setSourcePaneSize } = useApp()
+  // 左栏：浏览器优先于资料（v0.6.0）
+  const left = browserOpen ? <BrowserPane /> : sourceId ? <SourcePane sourceId={sourceId} /> : null
   const pinned = useAssist((s) => s.panelOpen && s.panelPinned)
   const sidebar = useSidebar()
   // 钉住 AI 面板时收起第 2 栏，把空间留给资料与笔记
@@ -30,16 +33,16 @@ export function NotesView() {
         <NotesSidebar />
       </CollapsibleSidebar>
       <FloatingPanel flushLeft>
-        {sourceId || pinned ? (
+        {left || pinned ? (
           <Group
             orientation="horizontal"
             className="h-full"
             onLayoutChanged={(layout) => layout.source && setSourcePaneSize(layout.source)}
           >
-            {sourceId && (
+            {left && (
               <>
                 <Panel id="source" defaultSize={`${sourcePaneSize}%`} minSize="20%" maxSize="70%">
-                  <SourcePane sourceId={sourceId} />
+                  {left}
                 </Panel>
                 <Separator className="workspace-sep" />
               </>

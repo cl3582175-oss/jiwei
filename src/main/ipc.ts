@@ -35,6 +35,8 @@ import { knowledgeGraph } from './services/graph'
 import * as asr from './services/asr'
 import * as recognize from './services/recognize'
 import * as annotations from './services/annotations'
+import * as browser from './services/browser/manager'
+import * as pages from './services/browser/pages'
 import { saveAnswer } from './services/saveAnswer'
 import { exportNote } from './services/exportNote'
 import { registerSandbox } from './services/sandbox'
@@ -278,6 +280,28 @@ const handlers: Handlers = {
     transcribe: (_, id) => asr.enqueueTranscribe(id),
     importSubtitles: ({ win }, id) => sources.importSubtitlesDialog(win, id)
   },
+  browser: {
+    state: () => browser.browserState(),
+    open: ({ win }, input, opts) => {
+      if (win) browser.attach(win)
+      const active = browser.getTab()
+      if (opts?.newTab === false && active && !opts.incognito) {
+        browser.navigate(active.id, input || 'about:blank')
+        return active.id
+      }
+      return browser.openTab(input, { incognito: opts?.incognito })
+    },
+    navigate: (_, id, input) => browser.navigate(id, input),
+    command: (_, id, cmd) => browser.command(id, cmd),
+    activate: (_, id) => browser.activateTab(id),
+    close: (_, id) => browser.closeTab(id),
+    setBounds: ({ win }, rect) => browser.setBounds(win, rect),
+    freeze: (_, on) => browser.freeze(on),
+    saveSource: (_, id) => pages.saveTab(id),
+    recapCheck: (_, id) => pages.shouldRecap(id),
+    recap: (_, sourceId, noteId) => pages.recapToNote(sourceId, noteId),
+    readPage: (_, id) => pages.readPage(id)
+  },
   annotations: {
     list: (_, type, id) => annotations.listAnnotations(type, id),
     recent: (_, since) => annotations.recentAnnotations(since),
@@ -323,6 +347,8 @@ export function registerIpc(): void {
     const fn = (handlers as unknown as Record<string, Record<string, (ctx: Ctx, ...a: unknown[]) => unknown>>)[ns][name]
     if (!fn) throw new Error(`Capability ${ns}.${name} has no handler`)
     ipcMain.handle(`${ns}:${name}`, async (e, ...raw) => {
+      // 内置浏览器中的网页不得调用积微的接口（内容脚本只走 jw-page:* 消息）
+      if (browser.isBrowserContents(e.sender)) throw new Error('Forbidden')
       try {
         const args = parseArgs(def, raw)
         return await fn({ win: BrowserWindow.fromWebContents(e.sender) }, ...args)

@@ -13,6 +13,7 @@ import type {
   RecognizerStatus,
   Annotation,
   AnnotationWithTarget,
+  BrowserState,
   SourceRecognition,
   HeatmapDay,
   ImportResult,
@@ -428,6 +429,35 @@ export const capabilities = {
     install: cap<void>()({ description: '下载并安装语音转写引擎（sherpa-onnx + SenseVoice）', params: none }),
     transcribe: cap<void>()({ description: '为视频 / 音频生成转写稿（后台任务）', params: [id('sourceId')] }),
     importSubtitles: cap<number | null>()({ description: '为视频 / 音频导入字幕文件', params: [id('sourceId')] })
+  },
+  browser: {
+    state: cap<BrowserState>()({ description: '内置浏览器的标签页状态', params: none }),
+    open: cap<string>()({
+      description: '在内置浏览器中打开网址或搜索（新标签页或当前标签页），返回标签页 ID',
+      params: [
+        ['input', z.string().max(4000)],
+        ['opts', z.object({ incognito: z.boolean().optional(), newTab: z.boolean().optional() }).optional()]
+      ]
+    }),
+    navigate: cap<void>()({ description: '在标签页中打开网址或搜索', params: [id('tabId'), ['input', z.string().min(1).max(4000)]] }),
+    command: cap<void>()({ description: '后退、前进、刷新、停止', params: [id('tabId'), ['cmd', z.enum(['back', 'forward', 'reload', 'stop'])]] }),
+    activate: cap<void>()({ description: '切换标签页', params: [id('tabId')] }),
+    close: cap<void>()({ description: '关闭标签页', params: [id('tabId')] }),
+    setBounds: cap<void>()({ description: '网页显示区域（窗口坐标）；null 表示不显示', params: [['rect', S.BrowserRectSchema.nullable()]] }),
+    freeze: cap<string | null>()({ description: '弹出层盖住网页时暂停显示，返回截图', params: [['on', z.boolean()]] }),
+    saveSource: cap<string>()({ description: '把网页存为资料（同一网址复用），返回资料 ID', params: [['tabId', S.Id.nullable().optional()]] }),
+    recapCheck: cap<{ sourceId: string; title: string; highlights: number; questions: number } | null>()({
+      description: '关闭标签页前：是否提示把这篇的高亮与问答整理成笔记',
+      params: [id('tabId')]
+    }),
+    recap: cap<{ noteId: string; proposalId: string }>()({
+      description: '把网页资料上的高亮、批注与问答整理成康奈尔笔记（提案）',
+      params: [id('sourceId'), ['noteId', S.Id.nullable()]]
+    }),
+    readPage: cap<{ url: string; title: string; text: string; selection: string }>()({
+      description: '读取内置浏览器当前网页的正文',
+      params: [['tabId', S.Id.nullable().optional()]]
+    })
   },
   annotations: {
     list: cap<Annotation[]>()({

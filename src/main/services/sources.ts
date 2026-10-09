@@ -10,7 +10,7 @@ import { deviceId } from './device'
 import { recordActivity } from './stats'
 import { deletedCategoryIds, descendantIds } from './categories'
 import { entitiesWithTag, tagIdsFor } from './tags'
-import { assetPath, assetUrl, collectGarbage, importFile } from './assets'
+import { assetPath, assetUrl, collectGarbage, importBytes, importFile } from './assets'
 import { canSegment, enqueueFetch, enqueueSegment } from './jobKinds'
 import { applySubtitleFile, canAutoTranscribe, enqueueTranscribe, findSidecarSubtitles, isMedia } from './asr'
 import { deleteSegments } from './segments'
@@ -165,6 +165,49 @@ export async function importDialog(win: BrowserWindow | null, categoryId?: strin
   const res = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts)
   if (res.canceled) return { imported: [], duplicates: 0 }
   return importPaths(res.filePaths, categoryId)
+}
+
+/**
+ * 内置浏览器：把正在看的网页存为资料（v0.6.0）。直接使用网页中已加载的内容（登录后才能看的页面也能存），
+ * 同一网址复用已有资料；内容有变化时更新快照，重新分段（片段 ID 按内容沿用，批注与引用不失效）。
+ */
+export async function saveWebPage(input: { url: string; title: string; html: string }): Promise<Source> {
+  const db = getDb()
+  const ref = await importBytes('snapshot.html', 'text/html', new TextEncoder().encode(input.html))
+  const now = Date.now()
+  const existing = db
+    .select()
+    .from(sources)
+    .where(and(eq(sources.url, input.url), eq(sources.kind, 'web'), isNull(sources.deletedAt)))
+    .get()
+  if (existing) {
+    const set: Partial<typeof sources.$inferInsert> = { accessedAt: now }
+    if (existing.assetId !== ref.id) {
+      set.assetId = ref.id
+      set.updatedAt = now
+      set.updatedBy = deviceId()
+    }
+    db.update(sources).set(set).where(eq(sources.id, existing.id)).run()
+    if (existing.assetId !== ref.id) enqueueSegment(existing.id)
+    return getSource(existing.id)!
+  }
+  const id = newId()
+  db.insert(sources)
+    .values({
+      id,
+      title: input.title.trim().slice(0, 500) || new URL(input.url).hostname,
+      kind: 'web',
+      url: input.url,
+      assetId: ref.id,
+      accessedAt: now,
+      createdAt: now,
+      updatedAt: now,
+      updatedBy: deviceId()
+    })
+    .run()
+  recordActivity('source_add')
+  enqueueSegment(id)
+  return getSource(id)!
 }
 
 export function addUrl(url: string, title?: string, categoryId?: string | null): Source {

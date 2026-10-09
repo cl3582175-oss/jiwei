@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next'
-import { NotebookPen, Library, Trash2, Settings, Search, PanelLeftClose, PanelLeftOpen, Sparkles, Layers, Sprout, Network } from 'lucide-react'
+import { NotebookPen, Library, Trash2, Settings, Search, PanelLeftClose, PanelLeftOpen, Sparkles, Layers, Sprout, Network, Globe } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useApp, type View } from '@/store/app'
 import { cn, isMac, modKey } from '@/lib/utils'
@@ -50,7 +50,7 @@ function RailButton({
 
 export function NavRail() {
   const { t } = useTranslation()
-  const { view, setView, openNote, setSettingsOpen, setPaletteOpen } = useApp()
+  const { view, setView, openNote, setSettingsOpen, setPaletteOpen, browserOpen } = useApp()
   const sidebar = useSidebar()
   const { data: stats } = useReviewStats()
   const items: { id: View; label: string; icon: ReactNode }[] = [
@@ -94,6 +94,14 @@ export function NavRail() {
           {it.icon}
         </RailButton>
       ))}
+      {/* 内置浏览器（v0.6.0）：在工作区左栏打开，笔记在右栏 */}
+      <RailButton
+        active={browserOpen && view === 'notes'}
+        label={`${t('nav.browser')}  ${modKey}L`}
+        onClick={() => (browserOpen && view === 'notes' ? useApp.getState().closeBrowser() : useApp.getState().openBrowser())}
+      >
+        <Globe />
+      </RailButton>
       <div className="flex-1" />
       <JobsIndicator />
       <RailButton active={view === 'trash'} label={t('nav.trash')} onClick={() => setView('trash')}>

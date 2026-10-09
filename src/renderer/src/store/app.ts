@@ -40,6 +40,12 @@ interface AppState extends Location {
   /** 在工作区左侧打开资料（null 关闭） */
   openSource: (id: string | null) => void
 
+  /** 内置浏览器是否显示在工作区左栏（v0.6.0；显示时资料栏让位） */
+  browserOpen: boolean
+  /** 打开浏览器；input 为网址或搜索词时在新标签页打开 */
+  openBrowser: (input?: string, opts?: { incognito?: boolean }) => void
+  closeBrowser: () => void
+
   /** 工作区分栏比例（资料栏百分比） */
   sourcePaneSize: number
   setSourcePaneSize: (n: number) => void
@@ -135,7 +141,24 @@ export const useApp = create<AppState>((set, get) => {
 
     setView: (view) => get().navigate({ view }),
     openNote: (noteId) => get().navigate({ view: 'notes', noteId }),
-    openSource: (sourceId) => get().navigate({ view: 'notes', sourceId }),
+    openSource: (sourceId) => {
+      if (sourceId) set({ browserOpen: false })
+      get().navigate({ view: 'notes', sourceId })
+    },
+    browserOpen: false,
+    openBrowser: (input, opts) => {
+      set({ browserOpen: true })
+      if (get().view !== 'notes') get().navigate({ view: 'notes' })
+      if (input !== undefined || opts?.incognito) void window.jiwei.browser.open(input ?? '', { newTab: true, incognito: opts?.incognito })
+      else
+        void window.jiwei.browser.state().then((st) => {
+          if (!st.tabs.length) void window.jiwei.browser.open('', { newTab: true })
+        })
+    },
+    closeBrowser: () => {
+      set({ browserOpen: false })
+      void window.jiwei.browser.setBounds(null)
+    },
 
     sourcePaneSize: 38.2,
     setSourcePaneSize: (sourcePaneSize) => set({ sourcePaneSize }),

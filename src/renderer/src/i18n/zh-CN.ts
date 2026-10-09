@@ -1,6 +1,7 @@
 const zhCN = {
   app: { name: '积微', slogan: '积微成著，日进有功' },
   nav: {
+    browser: '浏览',
     chat: 'AI 对话',
     collapseSidebar: '收起侧栏',
     expandSidebar: '展开侧栏',
@@ -155,6 +156,56 @@ const zhCN = {
     open: '打开批注：{{text}}',
     emptyComment: '（还没有写评论）',
     addToParagraph: '给这一段添加批注'
+  },
+  browser: {
+    title: '浏览器',
+    tabs: '标签页',
+    newTab: '新标签页',
+    newIncognito: '新的无痕标签页',
+    closeTab: '关闭标签页：{{title}}',
+    back: '后退',
+    forward: '前进',
+    reload: '刷新',
+    stop: '停止',
+    address: '地址栏',
+    addressHint: '搜索或输入网址',
+    close: '关闭浏览器',
+    openBeside: '在笔记旁打开浏览器',
+    openOriginal: '在浏览器中打开原网页',
+    save: '存为资料',
+    saved: '已存为资料，正文进入知识库',
+    savedShort: '已存为资料',
+    saveHint: '把这个网页存为资料：保存快照，正文进入知识库，可以引用和批注',
+    savedHint: '这个网页已存为资料，可以在资料库中找到',
+    aiOff: 'AI 已关闭',
+    aiOffHint: '敏感页面（网银、支付、邮箱、登录）或你设为不发送给 AI 的网站：不读取内容、不显示 AI 浮条',
+    incognito: '无痕',
+    incognitoHint: '无痕标签页：不保留浏览数据，不形成记忆，不显示 AI 浮条，网页不会存为资料。',
+    startHint: '选中网页中的文字可以解释、翻译、问 AI、高亮和批注；“存入笔记”时网页会自动存为资料，出处可以随时回看。',
+    related: '与你的笔记相关：',
+    viewing: '正在看：{{title}}',
+    recap: '《{{title}}》你高亮了 {{highlights}} 处、问了 {{questions}} 个问题，要整理成笔记吗？',
+    recapAction: '整理成笔记',
+    imported: '已下载并导入资料库：{{name}}',
+    openImported: '打开',
+    downloaded: '已下载：{{name}}',
+    paletteOpen: '在浏览器中打开 {{url}}',
+    paletteSearch: '在浏览器中搜索“{{q}}”',
+    settings: {
+      title: '内置浏览器',
+      desc: '在积微里浏览网页、看网课、读电子书，边看边记。网页在沙箱中运行，登录状态与积微本身隔离。',
+      proactivity: '主动程度',
+      p: { quiet: '安静', balanced: '适中', active: '积极' },
+      pHint: {
+        quiet: '只在你操作时出现，不显示相关笔记，关闭网页时不提示整理。',
+        balanced: '打开网页时提示相关笔记；看得久且有过提问或批注的网页，关闭时轻提示整理成笔记。',
+        active: '同“适中”，并且停留 2 分钟以上就会提示整理。'
+      },
+      blocked: '不发送给 AI 的网站',
+      blockedHint: '每行一个域名（包含其子域名）。网银、支付、邮箱、登录页面已自动关闭 AI。',
+      engine: '搜索引擎',
+      engines: { bing: '必应', baidu: '百度', google: 'Google', duckduckgo: 'DuckDuckGo' }
+    }
   },
   workspace: {
     recog: {

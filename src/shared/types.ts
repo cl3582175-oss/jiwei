@@ -216,6 +216,59 @@ export interface Settings {
   /** 侧栏（目录 / 资料分类）是否收起 */
   sidebarCollapsed: boolean
   ai: AiSettings
+  /** 内置浏览器（v0.6.0） */
+  browser?: BrowserSettings
+}
+
+export interface BrowserSettings {
+  /** 搜索引擎（查询词拼接在末尾） */
+  searchEngine?: string
+  /** 不发送给 AI 的网站（域名，按后缀匹配） */
+  aiBlockedSites?: string[]
+  /** 主动程度：安静 / 适中（默认）/ 积极 */
+  proactivity?: 'quiet' | 'balanced' | 'active'
+}
+
+/** 浏览器标签页（v0.6.0） */
+export interface BrowserTab {
+  id: string
+  url: string
+  title: string
+  favicon: string | null
+  loading: boolean
+  canBack: boolean
+  canForward: boolean
+  /** 无痕：不形成记忆、不保留浏览数据、不自动存为资料 */
+  incognito: boolean
+  /** 敏感页面：AI 已关闭 */
+  sensitive: boolean
+  /** 已存为资料 */
+  sourceId: string | null
+}
+
+export interface BrowserState {
+  tabs: BrowserTab[]
+  activeId: string | null
+}
+
+/** 网页中选区浮条的操作（内容脚本 → 主进程 → 界面） */
+export interface BrowserAction {
+  tabId: string
+  action: 'explain' | 'clarify' | 'translate' | 'ask' | 'highlighting' | 'commenting' | 'questioning' | 'annotation'
+  quote: string
+  prefix: string
+  suffix: string
+  /** 选区在网页视图中的位置 */
+  rect: { x: number; y: number; w: number; h: number }
+  /** 点击已有高亮时：批注 ID */
+  annotationId?: string
+}
+
+/** 打开网页时找到的相关笔记（本地向量，不调用大模型） */
+export interface BrowserRelated {
+  tabId: string
+  url: string
+  items: { type: 'note' | 'source'; id: string; title: string; text: string }[]
 }
 
 export interface Vault {
@@ -865,6 +918,16 @@ export interface JiweiEvents {
   'segments:changed': { sourceId: string }
   /** 文档识别引擎状态 */
   'recognition:status': RecognizerStatus
+  /** 内置浏览器：标签页状态 */
+  'browser:state': BrowserState
+  /** 内置浏览器：网页中选区浮条的操作 */
+  'browser:action': BrowserAction
+  /** 内置浏览器：打开网页时找到的相关笔记 */
+  'browser:related': BrowserRelated
+  /** 内置浏览器：焦点在网页中时按下的积微快捷键 */
+  'browser:shortcut': { key: string; shift: boolean }
+  /** 内置浏览器：下载完成并导入资料库 */
+  'browser:download': { name: string; sourceId: string | null; path: string }
   /** 某个笔记 / 资料的批注变化 */
   'annotations:changed': { targetType: 'note' | 'source'; targetId: string }
   /** 某份资料的识别进度 */
