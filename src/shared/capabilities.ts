@@ -26,6 +26,7 @@ import type {
   Goal,
   GoalProgress,
   MasteryMap,
+  NoteConnections,
   ReviewCard,
   ReviewStats,
   AnswerCheck,
@@ -338,6 +339,17 @@ export const capabilities = {
     remove: cap<void>()({ description: '删除学习目标', params: [id()] }),
     progress: cap<GoalProgress>()({ description: '学习目标的进度（笔记、卡片、掌握比例、近 7 天复习）', params: [id()] }),
     linkNote: cap<Goal>()({ description: '把笔记关联到目标或取消关联', params: [id(), id('noteId'), ['linked', z.boolean()]] })
+  },
+  connections: {
+    get: cap<NoteConnections>()({ description: '笔记的关联：反向链接、手动关联、相关推荐、未链接的提及', params: [id('noteId')], ai: { effect: 'read' } }),
+    relate: cap<void>()({
+      description: '把笔记与另一篇笔记或资料关联（双向）',
+      params: [id('noteId'), ['toType', z.enum(['note', 'source'])], id('toId')]
+    }),
+    unrelate: cap<void>()({
+      description: '取消关联，或把推荐标为不相关（以后不再推荐）',
+      params: [id('noteId'), ['toType', z.enum(['note', 'source'])], id('toId')]
+    })
   },
   mastery: {
     map: cap<MasteryMap>()({ description: '掌握度地图：各笔记的掌握情况（可按目标筛选）', params: [['goalId', S.Id.nullable()]] })

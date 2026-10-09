@@ -716,6 +716,23 @@ const en: Messages = {
     openNote: 'Open note',
     again: 'Explain again'
   },
+  links: {
+    title: 'Connections',
+    count: '{{count}} items',
+    backlinks: 'Linked here',
+    linked: 'Connected',
+    related: 'Related (by content)',
+    mentions: 'Mentions without a link',
+    relate: 'Connect',
+    unrelate: 'Disconnect',
+    dismiss: 'Not related',
+    similarTo: 'Similar to “{{text}}” here',
+    empty: 'No connections yet. Type [[ to link to another note or source.',
+    emptyNoVectors: 'No connections yet. Type [[ to link; with the embedding model on, related notes are suggested here.',
+    pickerLabel: 'Link to a note or source',
+    pickerEmpty: 'Nothing found — keep typing to create a note',
+    createNote: 'Create note “{{title}}” and link'
+  },
   review: {
     title: 'Review',
     statDue: 'Due',

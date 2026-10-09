@@ -13,6 +13,7 @@ import { idExtension, schemaExtensions } from './extensions'
 import { CornellAddRowWidget, CornellKeymap, CornellRowTimes, CornellShortcuts, CORNELL, rowTimesKey } from './cornell'
 import { FormatBar } from './FormatBar'
 import { OriginAttribute } from './origin'
+import { WikiLink } from './wikiLink'
 import { ProposalDiff } from './proposalDiff'
 import { Embed } from './embeds/EmbedNode'
 import './embeds/MindmapView'
@@ -65,6 +66,8 @@ export function CornellEditor({ noteId, ydoc, onReady }: Props) {
       idExtension((tr) => !isChangeOrigin(tr)),
       CornellKeymap,
       CornellShortcuts,
+      // [[ 链接到其他笔记与资料
+      WikiLink.configure({ noteId }),
       CornellAddRowWidget.configure({ label: t('notes.addRow'), hint: `${modKey}↵` }),
       CornellRowTimes,
       OriginAttribute,

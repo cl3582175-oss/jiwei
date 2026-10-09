@@ -448,6 +448,19 @@
   text-underline-offset: 3px;
   text-decoration-color: color-mix(in oklab, var(--accent) 40%, transparent);
 }
+/* 应用内链接（[[笔记]] / 资料）：淡底、无下划线，与网页链接区分 */
+.prose-jiwei a[href^='jiwei://note/'],
+.prose-jiwei a[href^='jiwei://source/'] {
+  text-decoration: none;
+  background: color-mix(in oklab, var(--accent) 9%, transparent);
+  border-radius: 4px;
+  padding: 0 0.2em;
+  cursor: pointer;
+}
+.prose-jiwei a[href^='jiwei://note/']:hover,
+.prose-jiwei a[href^='jiwei://source/']:hover {
+  background: color-mix(in oklab, var(--accent) 16%, transparent);
+}
 .prose-jiwei mark {
   background: color-mix(in oklab, #f5c84b 45%, transparent);
   color: inherit;

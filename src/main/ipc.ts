@@ -30,6 +30,7 @@ import * as review from './services/review'
 import * as feynman from './services/feynman'
 import * as reflection from './services/reflection'
 import * as progress from './services/progress'
+import * as connections from './services/connections'
 import * as asr from './services/asr'
 import { saveAnswer } from './services/saveAnswer'
 import { exportNote } from './services/exportNote'
@@ -193,6 +194,11 @@ const handlers: Handlers = {
     remove: (_, id) => progress.removeGoal(id),
     progress: (_, id) => progress.goalProgress(id),
     linkNote: (_, id, noteId, linked) => progress.linkNoteToGoal(id, noteId, linked)
+  },
+  connections: {
+    get: (_, noteId) => connections.noteConnections(noteId),
+    relate: (_, noteId, toType, toId) => connections.relate(noteId, toType, toId),
+    unrelate: (_, noteId, toType, toId) => connections.unrelate(noteId, toType, toId)
   },
   mastery: {
     map: (_, goalId) => progress.masteryMap(goalId)

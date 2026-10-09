@@ -700,6 +700,23 @@ const zhCN = {
     openNote: '打开笔记',
     again: '再讲一遍'
   },
+  links: {
+    title: '关联',
+    count: '{{count}} 项',
+    backlinks: '链接到这里',
+    linked: '已关联',
+    related: '相关笔记（按内容推荐）',
+    mentions: '提到了这篇、但还没链接',
+    relate: '关联',
+    unrelate: '取消关联',
+    dismiss: '不相关',
+    similarTo: '与本篇的“{{text}}”相似',
+    empty: '还没有关联。输入 [[ 可以链接到其他笔记或资料。',
+    emptyNoVectors: '还没有关联。输入 [[ 可以链接到其他笔记或资料；开启向量模型后，这里会推荐内容相关的笔记。',
+    pickerLabel: '链接到笔记或资料',
+    pickerEmpty: '没有找到，继续输入可以新建一篇笔记',
+    createNote: '新建笔记「{{title}}」并链接'
+  },
   review: {
     title: '复习',
     statDue: '待复习',

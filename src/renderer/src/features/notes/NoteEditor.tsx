@@ -56,6 +56,7 @@ import { NotePicker } from './NotePicker'
 import { HistoryDialog } from './HistoryDialog'
 import { categoryPaths } from './CategoryTree'
 import { ProposalPanel } from './ProposalPanel'
+import { ConnectionsPanel } from './ConnectionsPanel'
 import { CornellHelp } from './CornellHelp'
 import { SaveSeal } from './SaveSeal'
 import { SourcePicker } from '../workspace/SourcePicker'
@@ -507,6 +508,7 @@ function EditorBody({ note: initial }: { note: NoteSummary }) {
             )}
           </div>
           <p className="mt-3 text-center text-2xs text-subtle">{t('notes.editorHint')}</p>
+          {note.kind === 'cornell' && <ConnectionsPanel noteId={note.id} />}
         </div>
       </div>
 

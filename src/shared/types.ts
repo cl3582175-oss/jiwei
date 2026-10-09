@@ -346,6 +346,21 @@ export interface Conversation {
   updatedAt: number
 }
 
+/* ——— 双向链接（v0.5.0） ——— */
+
+export interface NoteConnections {
+  /** 正文中链接到本篇的笔记（及所在段落） */
+  backlinks: { noteId: string; title: string; blockId: string | null; text: string }[]
+  /** 手动建立的关联（双向） */
+  linked: { linkId: string; type: 'note' | 'source'; id: string; title: string }[]
+  /** 按内容相似度推荐的相关笔记 / 资料（mine：本篇中最相似的段落；theirs：对方的段落） */
+  related: { type: 'note' | 'source'; id: string; title: string; score: number; mine: string; theirs: string }[]
+  /** 正文提到本篇标题、但还没有链接的笔记 */
+  mentions: { noteId: string; title: string; blockId: string; text: string }[]
+  /** 向量索引是否可用（不可用时没有推荐） */
+  vectors: boolean
+}
+
 /* ——— 学习目标与掌握度（v0.4.3） ——— */
 
 /**
