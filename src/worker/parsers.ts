@@ -34,6 +34,10 @@ function splitWithLocator(text: string, locator: Record<string, unknown>, kind: 
 
 export async function parsePdf(path: string, progress: (p: number) => void): Promise<Segment[]> {
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs')
+  // Electron 工作进程（process.type = 'utility'）不被 pdf.js 视为 Node，不会自动加载解析器：
+  // 预先放到 globalThis.pdfjsWorker，pdf.js 会在当前进程内直接使用
+  const g = globalThis as { pdfjsWorker?: unknown }
+  g.pdfjsWorker ??= await import('pdfjs-dist/legacy/build/pdf.worker.mjs')
   const data = new Uint8Array(await readFile(path))
   const doc = await pdfjs.getDocument({ data, useSystemFonts: true }).promise
   const out: Segment[] = []

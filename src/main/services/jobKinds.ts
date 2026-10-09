@@ -1,5 +1,5 @@
 import { net } from 'electron'
-import { eq } from 'drizzle-orm'
+import { and, eq, isNull, sql } from 'drizzle-orm'
 import { getDb } from '../db'
 import { assets, sources } from '../db/schema'
 import { assetPath, importBytes } from './assets'
@@ -33,6 +33,18 @@ export function enqueueSegment(sourceId: string): void {
 
 export function enqueueFetch(sourceId: string): void {
   enqueue('source.fetch', { sourceId }, { dedupeKey: `fetch:${sourceId}` })
+}
+
+/** 补救：v0.5.1.1 之前 PDF 解析全部失败，启动时为没有分段的 PDF 重新排队 */
+export function resegmentEmptyPdfs(): number {
+  const rows = getDb()
+    .select({ id: sources.id })
+    .from(sources)
+    .innerJoin(assets, eq(sources.assetId, assets.id))
+    .where(and(isNull(sources.deletedAt), eq(assets.ext, 'pdf'), sql`NOT EXISTS (SELECT 1 FROM source_segments g WHERE g.source_id = ${sources.id})`))
+    .all()
+  for (const r of rows) enqueueSegment(r.id)
+  return rows.length
 }
 
 const sourceTitle = (id: string): string =>

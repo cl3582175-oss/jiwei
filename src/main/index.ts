@@ -12,7 +12,7 @@ import { autoBackup } from './services/backup'
 import { flushAll, pruneRevisions } from './services/docs'
 import { requestRendererFlush } from './lifecycle'
 import { ensureIdentity } from './services/device'
-import { registerJobKinds } from './services/jobKinds'
+import { registerJobKinds, resegmentEmptyPdfs } from './services/jobKinds'
 import { registerAsrJob } from './services/asr'
 import { pruneJobs, startJobs, stopJobs } from './services/jobs'
 import { emit } from './events'
@@ -148,6 +148,12 @@ app.whenReady().then(async () => {
       syncAllCards()
     } catch (e) {
       log.warn('[review] sync failed', e)
+    }
+    try {
+      const n = resegmentEmptyPdfs()
+      if (n) log.info('[sources] re-parse PDFs without segments', n)
+    } catch (e) {
+      log.warn('[sources] re-parse failed', e)
     }
   }, 3000)
   // 向量模型已安装则补齐索引（例如上次退出时未完成的部分）

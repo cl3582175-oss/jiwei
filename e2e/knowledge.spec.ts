@@ -2,6 +2,7 @@ import { test, expect, _electron as electron, type ElectronApplication, type Pag
 import { mkdtempSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
+import { makePdf } from './fixtures/makePdf'
 
 // v0.2 知识库：本地向量模型（多镜像下载、校验）→ 笔记与资料两类来源建索引 → 混合检索（含隐私与范围过滤）
 // 不需要 API Key。
@@ -81,4 +82,19 @@ test('scope and privacy filters', async () => {
       { timeout: 30_000 }
     )
     .toBe(0)
+})
+
+test('PDF sources are parsed into page segments', async () => {
+  // 回归：pdf.js 在 Electron 工作进程中曾因找不到解析器而全部失败
+  const dir = mkdtempSync(join(tmpdir(), 'jiwei-kb-pdf-'))
+  const file = join(dir, 'Retrieval Practice.pdf')
+  writeFileSync(file, makePdf([['Retrieval practice', 'Testing yourself beats rereading.'], ['Spacing', 'Spread reviews over days.']]))
+  const res = await page.evaluate((p) => window.jiwei.sources.importPaths([p]), file)
+  const id = res.imported[0].id
+  await expect.poll(() => page.evaluate((id) => window.jiwei.segments.list(id).then((s) => s.length), id), { timeout: 30_000 }).toBe(2)
+  const segs = await page.evaluate((id) => window.jiwei.segments.list(id), id)
+  expect(segs[1].text).toContain('Spread reviews')
+  expect(JSON.stringify(segs[1].locator)).toContain('page=2')
+  const jobs = await page.evaluate(() => window.jiwei.jobs.list())
+  expect(jobs.filter((j) => j.kind === 'source.segment' && j.status === 'failed')).toHaveLength(0)
 })
