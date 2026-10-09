@@ -349,6 +349,10 @@ export const capabilities = {
     unrelate: cap<void>()({
       description: '取消关联，或把推荐标为不相关（以后不再推荐）',
       params: [id('noteId'), ['toType', z.enum(['note', 'source'])], id('toId')]
+    }),
+    linkMention: cap<boolean>()({
+      description: '把另一篇笔记中提到本篇标题的文字变成链接（undo 为撤销）',
+      params: [id('noteId'), id('mentionNoteId'), ['blockId', z.string().max(64)], ['undo', z.boolean().optional()]]
     })
   },
   mastery: {

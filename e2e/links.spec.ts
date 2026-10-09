@@ -93,6 +93,30 @@ test('unlinked mentions and two-way connections', async () => {
   expect(after.mentions.map((m) => m.title)).not.toContain('吃包子的观察')
 })
 
+test('turn a mention into a link inside the other note (undoable)', async () => {
+  ids.econ = await newNote('经济学读书笔记', '这一章讲到需求曲线和价格的关系，还有弹性。')
+  await expect.poll(async () => (await connections(ids.demand)).mentions.map((m) => m.title), { timeout: 10_000 }).toContain('经济学读书笔记')
+  // 打开“需求曲线”，把提及变成链接（不用打开那篇笔记）
+  await page.getByRole('button', { name: /^笔记/ }).click()
+  if (await page.getByPlaceholder('笔记标题').count()) await page.getByRole('button', { name: /^笔记/ }).click()
+  await page.getByText('需求曲线', { exact: true }).first().click()
+  await expect(page.getByPlaceholder('笔记标题')).toHaveValue('需求曲线')
+  const panel = page.getByTestId('connections')
+  await panel.locator('[data-mention="经济学读书笔记"]').getByRole('button', { name: '变成链接' }).click()
+  // 成为反向链接，不再是“提及”
+  await expect(panel.locator('[data-backlink="经济学读书笔记"]')).toBeVisible({ timeout: 10_000 })
+  await expect(panel.locator('[data-mention="经济学读书笔记"]')).toHaveCount(0)
+  // 那篇笔记的正文里确实有了链接，其余文字不变
+  await panel.locator('[data-backlink="经济学读书笔记"]').click()
+  await expect(page.getByPlaceholder('笔记标题')).toHaveValue('经济学读书笔记')
+  await expect(page.locator(`.cornell-doc a[href="jiwei://note/${ids.demand}"]`)).toHaveText('需求曲线')
+  await expect(page.locator('.cornell-doc')).toContainText('这一章讲到需求曲线和价格的关系，还有弹性。')
+  // 撤销：去掉链接
+  const block = (await page.evaluate((id) => window.jiwei.notes.blocks(id), ids.econ)).find((b) => b.text.includes('需求曲线'))!
+  await page.evaluate(({ a, b, blk }) => window.jiwei.connections.linkMention(a, b, blk, true), { a: ids.demand, b: ids.econ, blk: block.id })
+  await expect.poll(async () => (await connections(ids.demand)).backlinks.map((x) => x.title), { timeout: 10_000 }).not.toContain('经济学读书笔记')
+})
+
 test('related notes by content (local vectors)', async () => {
   test.skip(!process.env.JIWEI_EVAL, '需要本地向量模型（JIWEI_EVAL=1）')
   test.setTimeout(300_000)

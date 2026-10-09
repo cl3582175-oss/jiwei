@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowUpLeft, ChevronDown, FileText, Link2, NotebookText, Sparkles, X, AtSign, Plus } from 'lucide-react'
 import type { NoteConnections } from '@shared/types'
+import { toast } from 'sonner'
 import { api, cn } from '@/lib/utils'
 import { useApp } from '@/store/app'
 import { Button } from '@/components/ui/button'
@@ -55,6 +56,14 @@ export function ConnectionsPanel({ noteId }: { noteId: string }) {
   const refresh = (): void => void qc.invalidateQueries({ queryKey: ['connections'] })
   const relate = (type: 'note' | 'source', id: string): void => void api.connections.relate(noteId, type, id).then(refresh)
   const unrelate = (type: 'note' | 'source', id: string): void => void api.connections.unrelate(noteId, type, id).then(refresh)
+  // 把提及变成链接：直接在那篇笔记中给标题文字加上链接（可撤销）
+  const linkMention = async (m: NoteConnections['mentions'][number]): Promise<void> => {
+    const ok = await api.connections.linkMention(noteId, m.noteId, m.blockId)
+    if (!ok) return void toast.error(t('links.makeLinkFailed'))
+    toast.success(t('links.madeLink', { title: m.title }), {
+      action: { label: t('memory.undo'), onClick: () => void api.connections.linkMention(noteId, m.noteId, m.blockId, true) }
+    })
+  }
   const total = c.backlinks.length + c.linked.length + c.related.length + c.mentions.length
   const Icon = ({ type }: { type: 'note' | 'source' }) => (type === 'note' ? <NotebookText /> : <FileText />)
   const row = 'group flex items-start gap-2.5 rounded-lg px-2.5 py-2 hover:bg-surface-hover [&>svg]:mt-0.5 [&>svg]:size-3.5 [&>svg]:shrink-0 [&>svg]:text-subtle'
@@ -137,10 +146,17 @@ export function ConnectionsPanel({ noteId }: { noteId: string }) {
                   </button>
                   <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-muted">{m.text}</p>
                 </div>
-                <Button size="sm" variant="outline" className="shrink-0" onClick={() => relate('note', m.noteId)}>
-                  <Plus />
-                  {t('links.relate')}
-                </Button>
+                <div className="flex shrink-0 gap-1">
+                  <Button size="sm" variant="outline" onClick={() => void linkMention(m)}>
+                    <Link2 />
+                    {t('links.makeLink')}
+                  </Button>
+                  <Tip label={t('links.relateHint')}>
+                    <Button size="sm" variant="ghost" onClick={() => relate('note', m.noteId)}>
+                      {t('links.relate')}
+                    </Button>
+                  </Tip>
+                </div>
               </li>
             ))}
           </Group>

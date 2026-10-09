@@ -198,7 +198,8 @@ const handlers: Handlers = {
   connections: {
     get: (_, noteId) => connections.noteConnections(noteId),
     relate: (_, noteId, toType, toId) => connections.relate(noteId, toType, toId),
-    unrelate: (_, noteId, toType, toId) => connections.unrelate(noteId, toType, toId)
+    unrelate: (_, noteId, toType, toId) => connections.unrelate(noteId, toType, toId),
+    linkMention: (_, noteId, mentionNoteId, blockId, undo) => connections.linkMention(noteId, mentionNoteId, blockId, undo)
   },
   mastery: {
     map: (_, goalId) => progress.masteryMap(goalId)

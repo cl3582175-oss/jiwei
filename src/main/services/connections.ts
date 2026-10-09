@@ -6,6 +6,7 @@ import { emit } from '../events'
 import type { NoteConnections } from '@shared/types'
 import { deviceId } from './device'
 import { isReady } from './ai/embedding'
+import { setTextLink } from './docs'
 
 // 双向链接（v0.5.0）：链接到这里（反向链接）、手动关联、相关笔记推荐（本地向量）、未链接的提及。
 // 正文中的 [[链接]] 在派生时写入 links（origin = doc）；“关联”是 origin = manual、relation = related 的链接，双向显示。
@@ -247,3 +248,14 @@ export function allEdges(): { from: string; to: string; kind: 'reference' | 'rel
       kind: l.toType === 'source' ? ('source' as const) : l.origin === 'manual' ? ('related' as const) : ('reference' as const)
     }))
 }
+
+/**
+ * 把“提及”变成链接：在提到本篇标题的那篇笔记里，给标题文字加上指向本篇的链接（undo 为去掉）。
+ * 派生后自然成为反向链接。
+ */
+export function linkMention(noteId: string, mentionNoteId: string, blockId: string, undo = false): boolean {
+  const me = noteTitle(noteId)
+  if (!me.ok || !me.title.trim()) return false
+  return setTextLink(mentionNoteId, blockId, me.title.trim(), undo ? null : `jiwei://note/${noteId}`)
+}
+

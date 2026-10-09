@@ -112,6 +112,45 @@ export function pushUpdate(noteId: string, update: Uint8Array): void {
   )
 }
 
+/**
+ * 在笔记的某个段落中，给第一次出现的一段文字加上（href）或去掉（null）链接。
+ * 主进程直接编辑 Yjs 文档并作为增量写入——与在编辑器中加链接完全等价（多端合并安全，进入版本历史）。
+ * 用于“把提及变成链接”：不需要打开那篇笔记。返回是否找到并修改。
+ */
+export function setTextLink(noteId: string, blockId: string, text: string, href: string | null): boolean {
+  if (!text) return false
+  const ydoc = new Y.Doc()
+  Y.applyUpdate(ydoc, readState(noteId))
+  const before = Y.encodeStateVector(ydoc)
+  const find = (node: Y.XmlFragment | Y.XmlElement): Y.XmlElement | null => {
+    for (const c of node.toArray()) {
+      if (c instanceof Y.XmlElement) {
+        if (c.getAttribute('id') === blockId) return c
+        const hit = find(c)
+        if (hit) return hit
+      }
+    }
+    return null
+  }
+  const texts = (node: Y.XmlElement): Y.XmlText[] =>
+    node.toArray().flatMap((c) => (c instanceof Y.XmlText ? [c] : c instanceof Y.XmlElement ? texts(c) : []))
+  const el = find(ydoc.getXmlFragment(DOC_FIELD))
+  let done = false
+  if (el) {
+    for (const t of texts(el)) {
+      const plain = (t.toDelta() as { insert: unknown }[]).map((d) => (typeof d.insert === 'string' ? d.insert : '\uFFFC')).join('')
+      const i = plain.indexOf(text)
+      if (i < 0) continue
+      ydoc.transact(() => t.format(i, text.length, { link: href ? { href } : null }))
+      done = true
+      break
+    }
+  }
+  if (done) pushUpdate(noteId, Y.encodeStateAsUpdate(ydoc, before))
+  ydoc.destroy()
+  return done
+}
+
 /** 立即执行所有待派生任务（退出前调用） */
 export function flushAll(): void {
   for (const [id, t] of timers) {
