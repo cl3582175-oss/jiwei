@@ -185,7 +185,9 @@ export const ChatSendSchema = z.object({
   /** 无痕：不读取、不形成记忆（仅新建对话时生效） */
   incognito: z.boolean().optional(),
   /** 对话类型（仅新建时生效）：chat 对话页；workspace 工作区面板；inline 选区就地提问 */
-  kind: z.enum(['chat', 'workspace', 'inline']).optional(),
+  kind: z.enum(['chat', 'workspace', 'inline', 'feynman']).optional(),
+  /** 费曼练习（仅新建时生效）：要讲的概念、关联笔记 / 卡片 */
+  feynman: z.object({ concept: z.string().min(1).max(200), noteId: Id.nullable().optional(), cardId: Id.nullable().optional() }).optional(),
   /** 就地提问的锚点（仅新建时生效） */
   anchor: AnchorSchema.optional(),
   /** 框选区域 / 视频画面（PNG data URL）；只发送给能看图的模型 */

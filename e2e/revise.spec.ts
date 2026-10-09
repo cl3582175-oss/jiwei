@@ -90,7 +90,7 @@ test('selection toolbar has the AI edit menu', async () => {
   await expect(bar).toBeVisible()
   await bar.click()
   const menu = page.getByRole('menu', { name: 'AI 修改' })
-  await expect(menu.getByRole('menuitem')).toHaveText(['精简', '扩写', '改得通俗', '纠错', '改成要点列表', '告诉 AI 怎么改…', '解释'])
+  await expect(menu.getByRole('menuitem')).toHaveText(['精简', '扩写', '改得通俗', '纠错', '改成要点列表', '告诉 AI 怎么改…', '解释', '讲给 AI 听（费曼）'])
   if (shots) await page.screenshot({ path: join(shots, '94-ai-menu.png') })
   // 自定义指令：打开输入卡片（未配置模型时不会发送）
   await menu.getByRole('menuitem', { name: '告诉 AI 怎么改…' }).click()

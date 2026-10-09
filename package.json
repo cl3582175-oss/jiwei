@@ -1,7 +1,7 @@
 {
   "name": "jiwei",
   "productName": "积微",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "积微 · Jiwei — AI 驱动的学习笔记与个人知识库",
   "main": "./out/main/index.js",
   "author": "cl3582175-oss",

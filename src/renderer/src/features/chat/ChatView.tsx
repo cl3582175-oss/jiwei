@@ -92,7 +92,17 @@ function ChatSidebar() {
   )
 }
 
-function Composer({ busy, onSend, onStop }: { busy: boolean; onSend: (text: string) => void; onStop: () => void }) {
+export function Composer({
+  busy,
+  onSend,
+  onStop,
+  placeholder
+}: {
+  busy: boolean
+  onSend: (text: string) => void
+  onStop: () => void
+  placeholder?: string
+}) {
   const { t } = useTranslation()
   const [text, setText] = useState('')
   const ref = useRef<HTMLTextAreaElement>(null)
@@ -125,8 +135,8 @@ function Composer({ busy, onSend, onStop }: { busy: boolean; onSend: (text: stri
             submit()
           }
         }}
-        placeholder={t('chat.placeholder')}
-        aria-label={t('chat.placeholder')}
+        placeholder={placeholder ?? t('chat.placeholder')}
+        aria-label={placeholder ?? t('chat.placeholder')}
         className="block max-h-[220px] min-h-[52px] w-full resize-none bg-transparent px-4 pt-3.5 pb-2 text-sm leading-relaxed text-fg outline-none placeholder:text-subtle"
       />
       <div className="absolute right-2.5 bottom-2.5">

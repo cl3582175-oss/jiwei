@@ -51,7 +51,8 @@ export function ProposalPanel({ noteId, editor, ydoc }: { noteId: string; editor
   const { t, i18n } = useTranslation()
   const qc = useQueryClient()
   const key = ['proposals', noteId]
-  const { data: list = [] } = useQuery({ queryKey: key, queryFn: () => api.proposals.list(noteId) })
+  // 打开笔记时总是重新读取：笔记没打开期间（如费曼练习、存入笔记）新增的提案不会经过下面的事件监听
+  const { data: list = [] } = useQuery({ queryKey: key, queryFn: () => api.proposals.list(noteId), staleTime: 0 })
 
   useEffect(
     () =>

@@ -27,6 +27,7 @@ import * as memory from './services/memory'
 import * as learner from './services/learner'
 import * as memoryLearn from './services/memoryLearn'
 import * as review from './services/review'
+import * as feynman from './services/feynman'
 import * as asr from './services/asr'
 import { saveAnswer } from './services/saveAnswer'
 import { exportNote } from './services/exportNote'
@@ -172,6 +173,11 @@ const handlers: Handlers = {
     saveAnswer: (_, input) => saveAnswer(input),
     update: (_, id, patch) => chat.updateConversation(id, patch),
     remove: (_, id) => chat.deleteConversation(id)
+  },
+  feynman: {
+    get: (_, id) => chat.getConversation(id),
+    finish: (_, id) => feynman.finishFeynman(id),
+    addCues: (_, id, indices) => feynman.addFeynmanCues(id, indices)
   },
   review: {
     next: (_, exclude) => review.nextCard(exclude),

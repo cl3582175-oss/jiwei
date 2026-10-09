@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Streamdown } from 'streamdown'
 import { toast } from 'sonner'
-import { BrainCircuit, Flame, Layers, NotebookText, PauseCircle, Sparkles, Undo2, Loader2, CheckCircle2, Target } from 'lucide-react'
+import { BrainCircuit, Flame, Layers, NotebookText, PauseCircle, Sparkles, Undo2, Loader2, CheckCircle2, Target, GraduationCap } from 'lucide-react'
 import type { AnswerCheck, ReviewCard, ReviewRating } from '@shared/types'
 import { api, cn } from '@/lib/utils'
 import { useApp } from '@/store/app'
@@ -351,6 +351,16 @@ export function ReviewView() {
                 {card.reps > 0 ? t('review.history', { reps: card.reps, lapses: card.lapses }) : t('review.firstTime')}
               </span>
               <div className="flex gap-1">
+                {revealed && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => useApp.getState().startFeynman({ concept: card.question, noteId: card.noteId, cardId: card.id })}
+                  >
+                    <GraduationCap />
+                    {t('feynman.fromCard')}
+                  </Button>
+                )}
                 {last.current && (
                   <Button variant="ghost" size="sm" onClick={() => void undo()}>
                     <Undo2 />

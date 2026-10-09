@@ -15,7 +15,8 @@ import {
   X,
   RotateCcw,
   MessageSquare,
-  Quote
+  Quote,
+  GraduationCap
 } from 'lucide-react'
 import { PROFILE_KEYS, type Concept, type Memory, type MemoryKind, type MemorySettings, type ProfileKey } from '@shared/types'
 import { useMemories, useUserProfile } from '@/lib/queries'
@@ -254,6 +255,19 @@ function ConceptRow({ c }: { c: Concept }) {
       <div className="flex items-center gap-3">
         <span className="min-w-0 flex-1 truncate text-sm font-medium text-fg">{c.name}</span>
         <div className="flex shrink-0 gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+          <Tip label={t('feynman.action')}>
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              aria-label={`${t('feynman.action')}：${c.name}`}
+              onClick={() => {
+                useApp.getState().setSettingsOpen(false)
+                useApp.getState().startFeynman({ concept: c.name })
+              }}
+            >
+              <GraduationCap />
+            </Button>
+          </Tip>
           {(['weak', 'learning', 'solid'] as const).map((l) => (
             <button
               key={l}
@@ -329,9 +343,12 @@ function EpisodesSection() {
   const qc = useQueryClient()
   const { data: list = [] } = useMemories()
   const episodes = list.filter((m) => m.kind === 'episode')
-  const open = (id: string): void => {
+  // 费曼练习回到练习页面，其他对话回到对话页
+  const open = async (id: string): Promise<void> => {
+    const c = await api.feynman.get(id)
     useApp.getState().setSettingsOpen(false)
-    useApp.getState().openConversation(id)
+    if (c?.feynman) useApp.getState().startFeynman({ ...c.feynman, conversationId: c.id })
+    else useApp.getState().openConversation(id)
   }
   return (
     <section>
@@ -351,7 +368,7 @@ function EpisodesSection() {
               <div className="absolute top-1.5 right-1.5 flex gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
                 {m.evidence?.conversationId && (
                   <Tip label={t('memory.openChat')}>
-                    <Button size="icon-sm" variant="ghost" aria-label={t('memory.openChat')} onClick={() => open(m.evidence!.conversationId!)}>
+                    <Button size="icon-sm" variant="ghost" aria-label={t('memory.openChat')} onClick={() => void open(m.evidence!.conversationId!)}>
                       <MessageSquare />
                     </Button>
                   </Tip>

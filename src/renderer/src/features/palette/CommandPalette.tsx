@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Command } from 'cmdk'
 import { Dialog as D } from 'radix-ui'
 import { useTranslation } from 'react-i18next'
-import { NotebookText, PenLine, Library, Settings, Trash2, Search, Home, Layers } from 'lucide-react'
+import { NotebookText, PenLine, Library, Settings, Trash2, Search, Home, Layers, GraduationCap } from 'lucide-react'
 import { useApp } from '@/store/app'
 import { useNotes } from '@/lib/queries'
 import { useCreateNote } from '@/lib/shortcuts'
@@ -79,6 +79,22 @@ export function CommandPalette() {
                     <Settings />
                     <span className="flex-1">{t('nav.settings')}</span>
                     <Kbd>{modKey},</Kbd>
+                  </Command.Item>
+                </Command.Group>
+              )}
+              {q.trim().length >= 2 && (
+                <Command.Group
+                  heading={t('palette.actions')}
+                  className="[&_[cmdk-group-heading]]:px-3 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-2xs [&_[cmdk-group-heading]]:text-subtle"
+                >
+                  {/* 输入一个概念，直接开始费曼练习（value 带上输入，保证总是匹配） */}
+                  <Command.Item
+                    value={`feynman ${q}`}
+                    className={itemCls}
+                    onSelect={run(() => useApp.getState().startFeynman({ concept: q.trim() }))}
+                  >
+                    <GraduationCap />
+                    <span className="flex-1 truncate">{t('feynman.paletteItem', { concept: q.trim() })}</span>
                   </Command.Item>
                 </Command.Group>
               )}

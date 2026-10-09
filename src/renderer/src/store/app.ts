@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import type { NoteSort, WorkspaceContext } from '@shared/types'
 
-export type View = 'notes' | 'library' | 'chat' | 'review' | 'trash'
+export type View = 'notes' | 'library' | 'chat' | 'review' | 'feynman' | 'trash'
 
 /** 笔记列表筛选：全部 / 置顶 / 未分类 / 某分类 / 某标签 */
 export type NoteFilter =
@@ -46,6 +46,12 @@ interface AppState extends Location {
 
   context: WorkspaceContext
   setContext: (patch: Partial<WorkspaceContext>) => void
+
+  /** 当前的费曼练习：conversationId 为 null 表示还没开始讲 */
+  feynman: { conversationId: string | null; concept: string; noteId: string | null; cardId: string | null } | null
+  /** 开始（或继续）一次费曼练习 */
+  startFeynman: (f: { concept: string; noteId?: string | null; cardId?: string | null; conversationId?: string | null }) => void
+  setFeynmanConversation: (id: string) => void
 
   /** 当前 AI 对话（null 为新对话） */
   conversationId: string | null
@@ -123,6 +129,15 @@ export const useApp = create<AppState>((set, get) => {
 
     context: emptyContext,
     setContext: (patch) => set((s) => ({ context: { ...s.context, ...patch } })),
+
+    feynman: null,
+    startFeynman: (f) => {
+      set({
+        feynman: { conversationId: f.conversationId ?? null, concept: f.concept.trim(), noteId: f.noteId ?? null, cardId: f.cardId ?? null }
+      })
+      get().navigate({ view: 'feynman' })
+    },
+    setFeynmanConversation: (id) => set((s) => (s.feynman ? { feynman: { ...s.feynman, conversationId: id } } : {})),
 
     conversationId: null,
     openConversation: (conversationId) => {

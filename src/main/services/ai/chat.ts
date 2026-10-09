@@ -20,6 +20,7 @@ import { loadSkill, skillCatalog } from './skills'
 import { userCard } from '../memory'
 import { learnerNote } from '../learner'
 import { noteExplainRequest, scheduleExtract } from '../memoryLearn'
+import { ensureReference, feynmanSystem, parseMeta, toInfo as feynmanInfo, type FeynmanMeta } from '../feynman'
 
 // AI 对话：检索知识库 → 组织带时间与状态的上下文 → 流式生成 → 记录引用与用量。
 
@@ -51,6 +52,7 @@ const toConversation = (r: ConvRow): Conversation => ({
   incognito: r.incognito,
   kind: r.kind,
   anchor: r.anchor ? (JSON.parse(r.anchor) as Anchor) : null,
+  feynman: r.kind === 'feynman' ? feynmanInfo(parseMeta(r.meta)) : null,
   createdAt: r.createdAt,
   updatedAt: r.updatedAt
 })
@@ -73,15 +75,20 @@ const toMessage = (r: MsgRow): ChatMessage => ({
   createdAt: r.createdAt
 })
 
-/** 对话页列表：就地提问（inline）不在其中，它们挂在原文旁边 */
+/** 对话页列表：就地提问（inline）挂在原文旁边，费曼练习（feynman）在复习与学习经历中，都不在其中 */
 export function listConversations(): Conversation[] {
   return getDb()
     .select()
     .from(conversations)
-    .where(and(isNull(conversations.deletedAt), ne(conversations.kind, 'inline')))
+    .where(and(isNull(conversations.deletedAt), ne(conversations.kind, 'inline'), ne(conversations.kind, 'feynman')))
     .orderBy(desc(conversations.pinned), desc(conversations.updatedAt))
     .all()
     .map(toConversation)
+}
+
+export function getConversation(id: string): Conversation | null {
+  const r = getDb().select().from(conversations).where(eq(conversations.id, id)).get()
+  return r && !r.deletedAt ? toConversation(r) : null
 }
 
 /** 某份资料 / 笔记上的就地提问（用于原文边缘标记） */
@@ -208,12 +215,20 @@ export function send(input: ChatSend): SendResult {
     db.insert(conversations)
       .values({
         id: convId,
-        title: input.text.replace(/\s+/g, ' ').slice(0, 40),
+        title: input.feynman ? input.feynman.concept.slice(0, 40) : input.text.replace(/\s+/g, ' ').slice(0, 40),
         scope: JSON.stringify(input.scope),
         incognito: !!input.incognito,
-        kind: input.kind ?? 'chat',
+        kind: input.feynman ? 'feynman' : (input.kind ?? 'chat'),
         anchor: input.anchor ? JSON.stringify(input.anchor) : null,
-        anchorParentId: input.anchor?.parentId ?? null,
+        anchorParentId: input.anchor?.parentId ?? input.feynman?.noteId ?? null,
+        meta: input.feynman
+          ? JSON.stringify({
+              concept: input.feynman.concept.trim(),
+              noteId: input.feynman.noteId ?? null,
+              cardId: input.feynman.cardId ?? null,
+              report: null
+            } satisfies FeynmanMeta)
+          : null,
         createdAt: now,
         updatedAt: now,
         updatedBy: deviceId()
@@ -335,13 +350,16 @@ async function generate(conversationId: string, messageId: string, input: ChatSe
     flush(true)
   }
 
+  // 费曼练习：AI 扮演学生，只追问；不检索、不用工具，参考资料固定在系统提示中
+  let feynman = conv.kind === 'feynman' ? parseMeta(conv.meta) : null
   try {
-    const ctx = resolveContext(input.context, zh)
+    if (feynman) feynman = await ensureReference(conversationId, feynman)
+    const ctx = feynman ? { text: '', query: '' } : resolveContext(input.context, zh)
     // 检索：问题本身 + 用户指着的文字
     const query = [input.text, ctx.query].filter(Boolean).join('\n').slice(0, 2000)
-    const hits = input.scope.type === 'none' ? [] : await retrieve(query, input.scope, 8)
-    const kb = input.scope.type === 'none' ? null : numberHits(session, hits)
-    const skillBody = input.skill ? loadSkill(input.skill, zh) : null
+    const hits = feynman || input.scope.type === 'none' ? [] : await retrieve(query, input.scope, 8)
+    const kb = feynman || input.scope.type === 'none' ? null : numberHits(session, hits)
+    const skillBody = input.skill && !feynman ? loadSkill(input.skill, zh) : null
 
     // 历史只带原话（不重复带旧的上下文与片段，省 token）
     const history = db
@@ -356,7 +374,7 @@ async function generate(conversationId: string, messageId: string, input: ChatSe
     const msgs: ModelMessage[] = history.map((m) => ({ role: m.role, content: m.content }))
     // 最后一条（本轮）用户消息附上上下文、片段与技能
     const last = msgs.at(-1)
-    if (last?.role === 'user') {
+    if (last?.role === 'user' && !feynman) {
       const vision = capsFor(input.providerId, input.model).vision
       const imageNote =
         input.images?.length && !vision
@@ -378,9 +396,9 @@ async function generate(conversationId: string, messageId: string, input: ChatSe
     const run = (withTools: boolean) =>
       streamText({
         model: built.model,
-        system: systemPrompt(zh, session.tier, session.incognito, conversationId),
+        system: feynman ? feynmanSystem(feynman, zh) : systemPrompt(zh, session.tier, session.incognito, conversationId),
         messages: msgs,
-        ...(withTools ? { tools: buildTools(session), stopWhen: stepCountIs(MAX_STEPS) } : {}),
+        ...(withTools && !feynman ? { tools: buildTools(session), stopWhen: stepCountIs(MAX_STEPS) } : {}),
         providerOptions: built.providerOptions as never,
         maxOutputTokens: built.maxOutputTokens,
         abortSignal: ctrl.signal

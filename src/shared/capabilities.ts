@@ -15,6 +15,7 @@ import type {
   Job,
   Memory,
   Concept,
+  FeynmanReport,
   ReviewCard,
   ReviewStats,
   AnswerCheck,
@@ -308,6 +309,14 @@ export const capabilities = {
     maintain: cap<{ reviewed: number; skills: number; faded: number }>()({
       description: '立即执行记忆维护：检查 AI 内容是否被修改、归纳技能偏好、淡出久未使用的记忆',
       params: [['opts', z.object({ force: z.boolean().optional() })]]
+    })
+  },
+  feynman: {
+    get: cap<Conversation | null>()({ description: '读取一次费曼练习（含诊断报告）', params: [id()] }),
+    finish: cap<FeynmanReport>()({ description: '结束费曼练习并诊断：讲清楚了什么、漏洞、错误、建议的复习问题', params: [id()] }),
+    addCues: cap<{ noteId: string; created: boolean }>()({
+      description: '把选中的复习问题补进笔记（成为复习卡片）',
+      params: [id(), ['indices', z.array(z.number().int().min(0)).min(1).max(10)]]
     })
   },
   review: {

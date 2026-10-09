@@ -14,12 +14,14 @@ import {
   Sparkles,
   ChevronDown,
   Lightbulb,
-  PenLine
+  PenLine,
+  GraduationCap
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { askInline } from '@/features/assist/actions'
 import { useAssist, REVISE_ACTIONS, type AskAction } from '@/features/assist/store'
 import { noteSelectionTargets } from './aiSelection'
+import { useApp } from '@/store/app'
 
 function FormatButton({
   active,
@@ -53,10 +55,16 @@ function FormatButton({
 function AiMenu({ editor, noteId }: { editor: Editor; noteId: string }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
-  const run = (action: AskAction | 'custom'): void => {
+  const run = (action: AskAction | 'custom' | 'feynman'): void => {
     setOpen(false)
     const sel = noteSelectionTargets(editor, noteId)
     if (!sel?.anchors.length) return
+    if (action === 'feynman') {
+      // 费曼练习：选中的文字作为要讲的概念（太长时取开头）
+      const q = sel.quote.replace(/\s+/g, ' ').trim()
+      useApp.getState().startFeynman({ concept: q.length > 40 ? q.slice(0, 40) + '…' : q, noteId })
+      return
+    }
     const [first, ...rest] = sel.anchors
     const primary = { ...first, quote: sel.quote.slice(0, 8000) }
     if (action === 'custom') {
@@ -100,6 +108,10 @@ function AiMenu({ editor, noteId }: { editor: Editor; noteId: string }) {
           <button role="menuitem" className={item} onMouseDown={(e) => e.preventDefault()} onClick={() => run('explain')}>
             <Lightbulb />
             {t('assist.actions.explain')}
+          </button>
+          <button role="menuitem" className={item} onMouseDown={(e) => e.preventDefault()} onClick={() => run('feynman')}>
+            <GraduationCap />
+            {t('feynman.action')}
           </button>
         </div>
       )}

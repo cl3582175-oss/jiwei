@@ -335,11 +335,41 @@ export interface Conversation {
   pinned: boolean
   /** 无痕：不使用、不形成记忆 */
   incognito: boolean
-  kind: 'chat' | 'workspace' | 'inline'
+  kind: 'chat' | 'workspace' | 'inline' | 'feynman'
   /** 就地提问的锚点 */
   anchor: Anchor | null
+  /** 费曼练习的信息（kind = feynman） */
+  feynman: FeynmanInfo | null
   createdAt: number
   updatedAt: number
+}
+
+/* ——— 费曼练习（v0.4.1） ——— */
+
+export interface FeynmanInfo {
+  /** 要讲清楚的概念 */
+  concept: string
+  /** 关联的笔记（参考资料来源；漏洞补进这篇笔记） */
+  noteId: string | null
+  /** 从复习卡片进入时的卡片 */
+  cardId: string | null
+  /** 讲完后的诊断 */
+  report: FeynmanReport | null
+}
+
+export interface FeynmanReport {
+  /** 一两句总体评价（先肯定讲清楚的部分） */
+  verdict: string
+  level: 'weak' | 'learning' | 'solid'
+  /** 讲清楚了的 */
+  clear: string[]
+  /** 没讲清楚 / 漏掉的，以及可以怎样补 */
+  gaps: { point: string; hint: string }[]
+  /** 说错的地方 */
+  misconceptions: string[]
+  /** 建议补进笔记的线索问题（问题 + 简短答案），进入复习 */
+  cues: { question: string; answer: string }[]
+  finishedAt: number
 }
 
 /** AI 执行过程中的一步（调用工具、加载技能） */
