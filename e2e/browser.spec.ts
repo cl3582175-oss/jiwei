@@ -110,7 +110,10 @@ test('ask AI from the page: the answer card docks beside the browser; overlays f
   const card = page.getByRole('dialog', { name: '就地答复' })
   await expect(card).toBeVisible()
   const [cb, vb] = await Promise.all([card.boundingBox(), page.getByTestId('browser-view').boundingBox()])
-  expect(cb!.x).toBeGreaterThanOrEqual(vb!.x + vb!.width - 1)
+  const room = (await page.evaluate(() => window.innerWidth)) - (vb!.x + vb!.width)
+  // 浏览器右侧放得下卡片：停靠在右侧，网页照常显示；放不下（小屏幕）：卡片盖住网页时网页换成截图
+  if (room >= 432) expect(cb!.x).toBeGreaterThanOrEqual(vb!.x + vb!.width - 1)
+  else await expect(page.getByTestId('browser-view').locator('img, div.absolute')).toHaveCount(1)
   if (shots) await page.screenshot({ path: join(shots, '201-browser-ask.png') })
   await page.keyboard.press('Escape')
   // 命令面板盖住网页：网页换成截图，关闭后恢复
