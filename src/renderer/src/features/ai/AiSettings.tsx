@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -412,6 +412,55 @@ function EmbeddingSection() {
 /** 视频 / 音频转写：本地（离线）或云端（OpenAI 兼容接口，音频会上传） */
 const ASR_MODELS = ['whisper-1', 'gpt-4o-transcribe', 'gpt-4o-mini-transcribe', 'whisper-large-v3-turbo', 'FunAudioLLM/SenseVoiceSmall']
 
+function MossSection() {
+  const { t } = useTranslation()
+  const qc = useQueryClient()
+  const { data: status } = useQuery({ queryKey: ['moss'], queryFn: () => api.moss.status() })
+  useEffect(() => window.jiweiEvents.on('moss:status', (s) => qc.setQueryData(['moss'], s)), [qc])
+  return (
+    <div className="space-y-2 rounded-xl border border-border p-3" data-testid="moss-settings">
+      <p className="text-xs font-medium">{t('course.mossTitle')}</p>
+      <p className="text-2xs text-muted">{t('course.mossHint')}</p>
+      <p role="status" className="text-xs text-muted">
+        {status?.state === 'downloading'
+          ? t('course.downloading', { p: Math.round(status.progress * 100) })
+          : status?.running
+            ? t('course.running')
+            : t(`course.${status?.state ?? 'missing'}`, { defaultValue: status?.message ?? '' })}
+      </p>
+      {status?.message && <p className="text-2xs text-danger">{status.message}</p>}
+      <div className="flex gap-2">
+        {status?.state !== 'ready' && (
+          <Tip label={t('course.mossDownload')}>
+            <Button
+              size="sm"
+              aria-label={t('course.install')}
+              disabled={status?.state === 'downloading' || status?.state === 'unsupported'}
+              onClick={() => void api.moss.install().catch((e: unknown) => toast.error(errText(e)))}
+            >
+              <Download />
+              {t('course.install')}
+            </Button>
+          </Tip>
+        )}
+        {status?.state === 'ready' && (
+          <Tip label={t('course.remove')}>
+            <Button
+              size="sm"
+              aria-label={t('course.remove')}
+              disabled={status.running}
+              onClick={() => void api.moss.remove().catch((e: unknown) => toast.error(errText(e)))}
+            >
+              <Trash2 />
+              {t('course.remove')}
+            </Button>
+          </Tip>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function TranscriptionSection() {
   const { t } = useTranslation()
   const { data: s } = useSettings()
@@ -428,6 +477,7 @@ function TranscriptionSection() {
         {t('ai.asr.title')}
       </h4>
       <p className="text-xs leading-relaxed text-muted">{t('ai.asr.desc')}</p>
+      <MossSection />
       <div className="flex flex-wrap items-center gap-2" role="radiogroup" aria-label={t('ai.asr.title')}>
         {(['local', 'cloud'] as const).map((m) => (
           <button
@@ -493,7 +543,14 @@ function RecognitionSection() {
   useRecognitionEvents()
   const { data: st } = useQuery({ queryKey: ['recognizer'], queryFn: () => api.recognition.status() })
   if (!s) return null
-  const rc = s.ai.recognition ?? { mode: 'local' as const, providerId: null, model: null, auto: true, figures: true, localModel: 'fast' as const }
+  const rc = s.ai.recognition ?? {
+    mode: 'local' as const,
+    providerId: null,
+    model: null,
+    auto: true,
+    figures: true,
+    localModel: 'fast' as const
+  }
   const set = (patch: Partial<typeof rc>): void => update.mutate({ ai: { ...s.ai, recognition: { ...rc, ...patch } } })
   // 能看图的模型（服务商 / 模型）
   const vision = providers.flatMap((p) => p.models.filter((m) => resolveCaps(m, p.modelCaps).vision).map((m) => ({ p, m })))
@@ -535,7 +592,9 @@ function RecognitionSection() {
                   (rc.localModel ?? 'fast') === m ? 'border-accent bg-accent-soft' : 'border-border hover:border-border-strong'
                 )}
               >
-                <span className={cn('block text-xs font-medium', (rc.localModel ?? 'fast') === m ? 'text-accent' : 'text-fg')}>{t(`ai.ocr.models.${m}.name`)}</span>
+                <span className={cn('block text-xs font-medium', (rc.localModel ?? 'fast') === m ? 'text-accent' : 'text-fg')}>
+                  {t(`ai.ocr.models.${m}.name`)}
+                </span>
                 <span className="mt-0.5 block text-2xs leading-relaxed text-muted">{t(`ai.ocr.models.${m}.desc`)}</span>
               </button>
             ))}
@@ -631,6 +690,25 @@ function BrowserSection() {
         {t('browser.settings.title')}
       </h4>
       <p className="text-xs leading-relaxed text-muted">{t('browser.settings.desc')}</p>
+      <div className="space-y-2 rounded-xl border border-border p-3">
+        <p className="text-xs font-medium">{t('course.title')}</p>
+        <p className="text-2xs text-muted">{t('course.settingsHint')}</p>
+        {(['autoTimestamp', 'autoSlides', 'quiz'] as const).map((key) => {
+          const course = b.course ?? { autoTimestamp: true, autoSlides: true, quiz: false }
+          return (
+            <label key={key} className="flex items-center justify-between gap-3 text-xs">
+              <span>{t(`course.${key}`)}</span>
+              <Tip label={t(`course.${key}`)}>
+                <Switch
+                  aria-label={t(`course.${key}`)}
+                  checked={course[key]}
+                  onCheckedChange={(checked) => set({ course: { ...course, [key]: checked } })}
+                />
+              </Tip>
+            </label>
+          )
+        })}
+      </div>
       <div className="space-y-1.5">
         <p className="text-xs text-fg">{t('browser.settings.proactivity')}</p>
         <div className="flex flex-wrap gap-2" role="radiogroup" aria-label={t('browser.settings.proactivity')}>
@@ -661,7 +739,21 @@ function BrowserSection() {
           onChange={(e) => setSites(e.target.value)}
           onBlur={() => {
             if (sites === null) return
-            set({ aiBlockedSites: [...new Set(sites.split(/[\s,，]+/).map((x) => x.trim().replace(/^https?:\/\//, '').replace(/\/.*$/, '')).filter(Boolean))] })
+            set({
+              aiBlockedSites: [
+                ...new Set(
+                  sites
+                    .split(/[\s,，]+/)
+                    .map((x) =>
+                      x
+                        .trim()
+                        .replace(/^https?:\/\//, '')
+                        .replace(/\/.*$/, '')
+                    )
+                    .filter(Boolean)
+                )
+              ]
+            })
             setSites(null)
           }}
           className="w-full resize-none rounded-lg border border-border bg-surface px-2.5 py-2 text-xs text-fg outline-none focus:border-accent"

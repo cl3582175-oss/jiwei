@@ -1,4 +1,5 @@
 @import 'tailwindcss';
+
 /* streamdown（AI 回答的流式 Markdown）使用 Tailwind 类名 */
 @source '../../../../node_modules/streamdown/dist/*.js';
 
@@ -1415,4 +1416,34 @@
   position: absolute;
   left: 10px;
   pointer-events: auto;
+}
+
+/* ——— 网课（v0.6.1）：课程面板 ——— */
+/* 面板宽度决定缩略图位置，网页原生视图保持在面板之外。 */
+[data-testid='course-panel'] {
+  container-type: inline-size;
+}
+.course-content {
+  flex-direction: column;
+}
+.course-slides {
+  order: -1;
+  border-bottom: 1px solid var(--color-border);
+}
+@container (min-width: 480px) {
+  .course-content {
+    flex-direction: row;
+  }
+  .course-slides {
+    order: 1;
+    flex-direction: column;
+    width: 116px;
+    border-bottom: none;
+    border-left: 1px solid var(--color-border);
+  }
+}
+/* 课程面板空间有限：文字稿用小一号字 */
+[data-testid='course-panel'] .transcript {
+  padding-top: 8px;
+  font-size: var(--text-sm, 13px);
 }

@@ -16,6 +16,7 @@ import { registerJobKinds, resegmentEmptyPdfs } from './services/jobKinds'
 import { registerRecognizeJob } from './services/recognize'
 import { registerBrowser } from './services/browser'
 import { registerAsrJob } from './services/asr'
+import { registerMossJob, stopMoss } from './services/moss'
 import { pruneJobs, startJobs, stopJobs } from './services/jobs'
 import { emit } from './events'
 import { registerIndexJob, requestIndex } from './services/ai/indexer'
@@ -140,6 +141,7 @@ app.whenReady().then(async () => {
   registerIpc()
   registerJobKinds()
   registerAsrJob()
+  registerMossJob()
   registerRecognizeJob()
   registerBrowser()
   registerIndexJob()
@@ -201,6 +203,7 @@ app.on('before-quit', (e) => {
       stopReminders()
       shutdownEmbedding()
       stopJobs()
+      stopMoss()
       flushAll()
       closeDatabase()
       closeProfileDb()

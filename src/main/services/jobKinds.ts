@@ -4,7 +4,7 @@ import { getDb } from '../db'
 import { assets, sources } from '../db/schema'
 import { assetPath, importBytes } from './assets'
 import { registerJobKind, enqueue } from './jobs'
-import { replaceSegments, type SegmentInput } from './segments'
+import { listSegments, replaceSegments, type SegmentInput } from './segments'
 import { requestIndex } from './ai/indexer'
 import { deviceId } from './device'
 import type { TextSegment } from '../lib/segment'
@@ -42,7 +42,13 @@ export function resegmentEmptyPdfs(): number {
     .select({ id: sources.id })
     .from(sources)
     .innerJoin(assets, eq(sources.assetId, assets.id))
-    .where(and(isNull(sources.deletedAt), eq(assets.ext, 'pdf'), sql`NOT EXISTS (SELECT 1 FROM source_segments g WHERE g.source_id = ${sources.id})`))
+    .where(
+      and(
+        isNull(sources.deletedAt),
+        eq(assets.ext, 'pdf'),
+        sql`NOT EXISTS (SELECT 1 FROM source_segments g WHERE g.source_id = ${sources.id})`
+      )
+    )
     .all()
   for (const r of rows) enqueueSegment(r.id)
   return rows.length
@@ -77,7 +83,9 @@ export function registerJobKinds(): void {
       })
       if (ctx.isCanceled()) return
       const segs = Array.isArray(result) ? result : result.segments
-      const n = replaceSegments(sourceId, segs as SegmentInput[])
+      // 网页解析可能晚于字幕与截图完成；正文刷新只能替换正文，不能清空课程材料。
+      const course = listSegments(sourceId).filter((s) => s.kind === 'transcript' || s.kind === 'slide')
+      const n = replaceSegments(sourceId, [...(segs as SegmentInput[]), ...course])
       // PDF：登记需要识别的页，并入已有的识别结果（重新解析不必重算），按设置自动识别
       if (!Array.isArray(result) && 'pages' in result) {
         recordPages(sourceId, (result as { pages: { page: number; need: 'scan' | 'table' | 'figure' }[] }).pages)
@@ -111,7 +119,8 @@ export function registerJobKinds(): void {
           .where(eq(sources.id, sourceId))
           .run()
       }
-      const n = replaceSegments(sourceId, parsed.segments)
+      const course = listSegments(sourceId).filter((segment) => segment.kind === 'transcript' || segment.kind === 'slide')
+      const n = replaceSegments(sourceId, [...parsed.segments, ...course])
       requestIndex()
       return { segments: n }
     }

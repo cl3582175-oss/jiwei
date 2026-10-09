@@ -1,6 +1,71 @@
 import type { Messages } from './zh-CN'
 
 const en: Messages = {
+  course: {
+    jobs: { audio: 'Transcribe course audio', slides: 'Recognize course slides', moss: 'Refine course transcript' },
+    title: 'Online courses',
+    expand: 'Expand course panel',
+    collapse: 'Collapse course panel',
+    resize: 'Resize course panel',
+    timestamp: 'Insert timestamp',
+    notGet: 'Explain that',
+    notGetQuestion: 'Explain the last 30 seconds using the transcript and current frame.',
+    transcribe: 'Transcription',
+    slides: 'Slides',
+    organize: 'Organize course',
+    quiz: 'Practice as you watch',
+    refine: 'Refine with speakers',
+    refineHint: 'About 3.4× realtime; recordings over 85 minutes are split, with independent speaker IDs',
+    needRecording: 'Record the entire video from start to end to refine',
+    mossDownload: 'Download the optional 1.2 GB refinement engine to run locally.',
+    install: 'Download engine',
+    installAsr: 'Download local transcription (about 267 MB)',
+    local: 'Use local transcription',
+    refining: 'Refining {{p}}%',
+    estimate: 'Create a note proposal · Estimated {{cost}}',
+    costUnknown: 'cost depends on the selected model',
+    proposalReady: 'Course note proposal ready for review',
+    ended: 'The course has ended; organize it into notes',
+    betterTranscript: 'Enable transcription for better explanations',
+    skip: 'Skip',
+    answer: 'Your answer',
+    compare: 'Compare answers',
+    remembered: 'Remembered',
+    addReview: 'Add to review',
+    generating: 'Preparing a practice question…',
+    checking: 'Checking your answer…',
+    jump: 'Jump to {{time}}',
+    slide: 'Slide at {{time}}',
+    empty: 'Reading platform captions; local transcription is available if there are none.',
+    autoTimestamp: 'Automatic timestamps',
+    autoSlides: 'Capture slides automatically',
+    settingsHint: 'New note rows include the video time. Capture runs only on eligible, non-incognito pages.',
+    mossTitle: 'Refinement engine (MOSS, optional)',
+    mossHint:
+      'About 1.2 GB. Refine transcripts and identify speakers locally. Long recordings use 60-minute parts with independent speaker IDs.',
+    remove: 'Remove refinement engine',
+    unsupported: 'This platform is not supported yet',
+    missing: 'Not downloaded',
+    ready: 'Ready',
+    running: 'Refining',
+    downloading: 'Downloading {{p}}%',
+    status: {
+      waiting: 'Reading captions',
+      captions: 'Captions',
+      local: 'Transcribing locally',
+      complete: 'Complete',
+      'needs-install': 'Install transcription engine',
+      error: 'Transcription failed',
+      off: 'Transcription off'
+    },
+    errors: {
+      'audio-blocked': 'This website blocks audio capture. Import subtitles or download the video to transcribe it.',
+      'audio-unavailable': 'No audio track is available. You can import subtitles.',
+      'audio-transcribe-failed': 'Audio transcription failed and will retry automatically. Check background tasks for details.',
+      'audio-incomplete': 'The recording has gaps or seeks. Play the course continuously from start to finish before refining.',
+      'frame-blocked': 'This website blocks frame capture. Ask using the transcript instead.'
+    }
+  },
   app: { name: 'Jiwei', slogan: 'Small steps, great knowledge' },
   nav: {
     browser: 'Browse',
@@ -189,7 +254,8 @@ const en: Messages = {
     aiOffHint: 'Sensitive page (banking, payment, mail, sign-in) or a site you excluded: content is not read and the AI toolbar is hidden',
     incognito: 'Incognito',
     incognitoHint: 'Incognito tab: no browsing data kept, no memories, no AI toolbar, and pages are never saved as sources.',
-    startHint: 'Select text on a page to explain, translate, ask AI, highlight or comment. Saving to a note also saves the page as a source, so you can always go back.',
+    startHint:
+      'Select text on a page to explain, translate, ask AI, highlight or comment. Saving to a note also saves the page as a source, so you can always go back.',
     related: 'Related to your notes:',
     viewing: 'Viewing: {{title}}',
     recap: 'You highlighted {{highlights}} and asked {{questions}} questions on “{{title}}”. Turn them into notes?',
@@ -206,7 +272,8 @@ const en: Messages = {
       p: { quiet: 'Quiet', balanced: 'Balanced', active: 'Active' },
       pHint: {
         quiet: 'Only appears when you act. No related notes, no prompt to make notes when closing a page.',
-        balanced: 'Shows related notes when a page opens; after a long read with questions or comments, offers to make notes when you close it.',
+        balanced:
+          'Shows related notes when a page opens; after a long read with questions or comments, offers to make notes when you close it.',
         active: 'Like Balanced, but offers to make notes after 2 minutes.'
       },
       blocked: 'Sites not sent to AI',
@@ -323,18 +390,26 @@ const en: Messages = {
       localHint: 'Runs on this computer; nothing is uploaded. Started when needed and stopped after 2 idle minutes.',
       localModel: 'Local model',
       models: {
-        fast: { name: 'Fast (0.8B, recommended)', desc: 'About 0.9 GB download, 1.5 GB memory, 3–10 s per page. Accurate on Chinese, handwriting and tables' },
-        accurate: { name: 'High accuracy (4B)', desc: 'About 3.1 GB download, 3.6 GB memory, 8–35 s per page. Steadier on complex tables and badly blurred scans' }
+        fast: {
+          name: 'Fast (0.8B, recommended)',
+          desc: 'About 0.9 GB download, 1.5 GB memory, 3–10 s per page. Accurate on Chinese, handwriting and tables'
+        },
+        accurate: {
+          name: 'High accuracy (4B)',
+          desc: 'About 3.1 GB download, 3.6 GB memory, 8–35 s per page. Steadier on complex tables and badly blurred scans'
+        }
       },
       download: 'Download recognition model ({{size}})',
       downloading: 'Downloading recognition model {{percent}}%',
       ready: '{{model}} ready',
       remove: 'Delete model',
-      cloudHint: 'Uses the vision model below; if none is chosen, the default chat model (or a vision model from the same provider). Page images are uploaded to that provider.',
+      cloudHint:
+        'Uses the vision model below; if none is chosen, the default chat model (or a vision model from the same provider). Page images are uploaded to that provider.',
       pickModel: 'Follow default chat model',
       auto: 'Recognize automatically after import',
       figures: 'Explain figures and charts',
-      figuresHint: 'The local model gives a short description of each figure and turns charts into data tables; a cloud vision model gives a fuller structural explanation. Results start with “［图解］”. Sources marked “don’t send to AI” are never uploaded.'
+      figuresHint:
+        'The local model gives a short description of each figure and turns charts into data tables; a cloud vision model gives a fuller structural explanation. Results start with “［图解］”. Sources marked “don’t send to AI” are never uploaded.'
     },
     asr: {
       title: 'Video / audio transcription',
@@ -577,6 +652,10 @@ const en: Messages = {
     skills: 'Skills'
   },
   assist: {
+    addTabs: 'Add other tabs',
+    tabsLimit: 'Add up to 6 other tabs',
+    tabsUnavailable: 'Some tabs were closed, navigated, or made private and were removed from this context',
+    tabContext: 'Tab: {{title}}',
     cueClarify: 'What does “{{q}}” mean?',
     qRegion: { explain: 'Explain this part', clarify: 'Walk me through this', translate: 'Translate this part' },
     region: 'Ask about a region',
@@ -703,7 +782,8 @@ const en: Messages = {
     target: 'Target date',
     category: 'Category',
     noCategory: 'No category',
-    linkHint: 'Notes in the category (and subcategories) count towards this goal; you can also link single notes from a note’s “More” menu.',
+    linkHint:
+      'Notes in the category (and subcategories) count towards this goal; you can also link single notes from a note’s “More” menu.',
     linkNote: 'Link to goal',
     empty: 'No goals yet. Set one: what, why, and by when.',
     status: { active: 'Active', achieved: 'Achieved', paused: 'Paused', dropped: 'Dropped' },
@@ -748,7 +828,11 @@ const en: Messages = {
       belief: 'A view changed: before, now, and why'
     },
     startTitle: { topic: 'Which topic?', practice: 'Which experience?', belief: 'Which view changed?' },
-    startPh: { topic: 'e.g. Statistics basics', practice: 'e.g. My first A/B test analysis', belief: 'e.g. I thought rereading was enough' },
+    startPh: {
+      topic: 'e.g. Statistics basics',
+      practice: 'e.g. My first A/B test analysis',
+      belief: 'e.g. I thought rereading was enough'
+    },
     start: 'Start',
     status: { draft: 'In progress', done: 'Done' },
     recent: 'Recent reflections',
@@ -790,7 +874,8 @@ const en: Messages = {
     mUnanswered: 'Unanswered cues',
     mConcepts: 'Concepts',
     mFeynman: 'Feynman practice',
-    coachIntro: 'AI reads what you have written and the material on the left, then asks one question at a time to help you think deeper. It will not draw conclusions for you.',
+    coachIntro:
+      'AI reads what you have written and the material on the left, then asks one question at a time to help you think deeper. It will not draw conclusions for you.',
     coachStart: 'Please ask me one question about what I have written so far.',
     coachStartBtn: 'Ask me',
     coachPh: 'Answer, or share your thoughts…',
@@ -819,7 +904,8 @@ const en: Messages = {
     fromCard: 'Explain in my own words',
     paletteItem: 'Feynman practice: explain "{{concept}}" to AI',
     heading: 'Explain "{{concept}}" to Wei',
-    intro: 'If you can explain it simply to a newcomer, you really understand it. Wei is a smart student who knows nothing about this and asks one question at a time — where you get stuck is what you have not figured out yet.',
+    intro:
+      'If you can explain it simply to a newcomer, you really understand it. Wei is a smart student who knows nothing about this and asks one question at a time — where you get stuck is what you have not figured out yet.',
     opener: 'Hi! I know nothing about "{{concept}}". Could you explain it to me as simply as you can, like I am a smart 13-year-old?',
     placeholder: 'Explain in your own words… (Enter to send)',
     tip: 'When you think you have made it clear, click “I’m done”',
@@ -905,7 +991,8 @@ const en: Messages = {
     laterToday: '{{count}} learning cards are due later today.',
     tomorrow: '{{count}} cards are due tomorrow.',
     emptyTitle: 'No review cards yet',
-    emptyHint: 'Write a question in the cue column of a Cornell note — every such row becomes a card: the cue is the question, the note is the answer.',
+    emptyHint:
+      'Write a question in the cue column of a Cornell note — every such row becomes a card: the cue is the question, the note is the answer.',
     settingsTitle: 'Review',
     newPerDay: 'New cards per day',
     newPerDayDesc: 'How many new cards to start each day. Too many makes daily reviews pile up.',
@@ -961,7 +1048,8 @@ const en: Messages = {
     sections: { profile: 'Profile', memories: 'Memories', concepts: 'Progress', episodes: 'Study log' },
     learn: {
       autoLearn: 'Learn from conversations',
-      autoLearnDesc: 'After a conversation, Jiwei quietly notes your preferences and background, how well you know each concept, and a short study log. Incognito chats are never used.',
+      autoLearnDesc:
+        'After a conversation, Jiwei quietly notes your preferences and background, how well you know each concept, and a short study log. Incognito chats are never used.',
       learnSkills: 'Learn from your edits',
       learnSkillsDesc: 'When you reject or rewrite AI output, Jiwei takes note; repeated patterns become preferences for that skill.'
     },
@@ -975,7 +1063,8 @@ const en: Messages = {
       stuck: 'stuck on: {{note}}'
     },
     conceptsTitle: 'Progress',
-    conceptsDesc: 'Jiwei estimates how well you know each concept from your questions and adjusts its explanations. Correct it if it is off.',
+    conceptsDesc:
+      'Jiwei estimates how well you know each concept from your questions and adjusts its explanations. Correct it if it is off.',
     conceptsEmpty: 'Nothing yet. Ask the AI to explain a term and it will show up here.',
     episodesTitle: 'Study log',
     episodesDesc: 'After each study conversation, Jiwei notes what you studied, where you got stuck and what you concluded.',

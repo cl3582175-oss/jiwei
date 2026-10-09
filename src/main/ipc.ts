@@ -37,6 +37,10 @@ import * as recognize from './services/recognize'
 import * as annotations from './services/annotations'
 import * as browser from './services/browser/manager'
 import * as pages from './services/browser/pages'
+import * as course from './services/browser/course'
+import * as courseLearning from './services/browser/courseLearning'
+import * as moss from './services/moss'
+import { refreshConcepts } from './services/browser/concepts'
 import { saveAnswer } from './services/saveAnswer'
 import { exportNote } from './services/exportNote'
 import { registerSandbox } from './services/sandbox'
@@ -94,6 +98,11 @@ const handlers: Handlers = {
       const r = setSettings(patch)
       // 换了识别引擎或开启插图解读：有待识别页的资料按新设置排队
       if (patch.ai && JSON.stringify(patch.ai.recognition ?? null) !== before) recognize.queuePending()
+      if (patch.browser) {
+        browser.refreshPrivacy()
+        if (patch.browser.course) browser.refreshCourseSettings(patch.browser.course)
+        refreshConcepts()
+      }
       return r
     }
   },
@@ -282,6 +291,8 @@ const handlers: Handlers = {
   },
   browser: {
     state: () => browser.browserState(),
+    seek: (_, id, t, play) => browser.seek(id, t, play),
+    playback: (_, id, play) => browser.playback(id, play),
     open: ({ win }, input, opts) => {
       if (win) browser.attach(win)
       const active = browser.getTab()
@@ -301,6 +312,23 @@ const handlers: Handlers = {
     recapCheck: (_, id) => pages.shouldRecap(id),
     recap: (_, sourceId, noteId) => pages.recapToNote(sourceId, noteId),
     readPage: (_, id) => pages.readPage(id)
+  },
+  course: {
+    configure: (_, id, patch) => course.configureCourse(id, patch),
+    snapshot: (_, id) => course.snapshot(id),
+    organize: (_, sourceId, noteId) => courseLearning.organizeCourse(sourceId, noteId),
+    estimate: (_, sourceId) => courseLearning.organizeEstimate(sourceId),
+    quiz: (_, id) => courseLearning.makeCourseQuiz(id),
+    check: (_, id, answer) => courseLearning.checkCourseAnswer(id, answer),
+    review: (_, id, noteId) => courseLearning.reviewCourseQuiz(id, noteId)
+  },
+  moss: {
+    status: () => moss.mossStatus(),
+    install: () => {
+      void moss.installMoss().catch(() => {})
+    },
+    remove: () => moss.removeMoss(),
+    refine: (_, sourceId) => moss.enqueueMoss(sourceId)
   },
   annotations: {
     list: (_, type, id) => annotations.listAnnotations(type, id),

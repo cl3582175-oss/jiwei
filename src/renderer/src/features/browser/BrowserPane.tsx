@@ -1,6 +1,21 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ArrowLeft, ArrowRight, RotateCw, X, Plus, Globe, ShieldOff, EyeOff, BookmarkPlus, BookmarkCheck, NotebookText, FileText, Search, Loader2 } from 'lucide-react'
+import {
+  ArrowLeft,
+  ArrowRight,
+  RotateCw,
+  X,
+  Plus,
+  Globe,
+  ShieldOff,
+  EyeOff,
+  BookmarkPlus,
+  BookmarkCheck,
+  NotebookText,
+  FileText,
+  Search,
+  Loader2
+} from 'lucide-react'
 import { toast } from 'sonner'
 import type { BrowserTab } from '@shared/types'
 import { api, cn } from '@/lib/utils'
@@ -8,6 +23,7 @@ import { useApp } from '@/store/app'
 import { Button } from '@/components/ui/button'
 import { Tip, Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui/primitives'
 import { activeTab, aiAllowed, useBrowser } from './store'
+import { CoursePanel } from './CoursePanel'
 
 // 内置浏览器（v0.6.0）：工作区左栏，笔记在右栏。网页是主进程的原生视图（WebContentsView），
 // 叠放在本组件的占位区域上：占位区域的位置、大小随布局同步；弹出层盖住网页时换成截图。
@@ -59,7 +75,11 @@ function useNativeView(slot: React.RefObject<HTMLDivElement | null>, show: boole
         const box = el.getBoundingClientRect()
         // 注意：浮动卡片是 position: fixed，offsetParent 恒为 null，不能用它判断是否显示
         const covered = [...document.querySelectorAll<HTMLElement>(OVERLAYS)].some(
-          (o) => !el.contains(o) && o.getClientRects().length > 0 && getComputedStyle(o).visibility !== 'hidden' && intersects(o.getBoundingClientRect(), box)
+          (o) =>
+            !el.contains(o) &&
+            o.getClientRects().length > 0 &&
+            getComputedStyle(o).visibility !== 'hidden' &&
+            intersects(o.getBoundingClientRect(), box)
         )
         if (covered === frozen || busy) return
         frozen = covered
@@ -143,7 +163,10 @@ function TabStrip({ tabs, activeId }: { tabs: BrowserTab[]; activeId: string | n
       ))}
       <Menu>
         <MenuTrigger asChild>
-          <button aria-label={t('browser.newTab')} className="mb-1 grid size-6 shrink-0 place-items-center rounded-md text-muted hover:bg-surface-hover hover:text-fg [&_svg]:size-3.5">
+          <button
+            aria-label={t('browser.newTab')}
+            className="mb-1 grid size-6 shrink-0 place-items-center rounded-md text-muted hover:bg-surface-hover hover:text-fg [&_svg]:size-3.5"
+          >
             <Plus />
           </button>
         </MenuTrigger>
@@ -195,17 +218,37 @@ function AddressBar({ tab }: { tab: BrowserTab }) {
   return (
     <div className="flex h-10 shrink-0 items-center gap-1 border-b border-border/70 bg-surface px-2">
       <Tip label={t('browser.back')} side="bottom">
-        <Button variant="ghost" size="icon-sm" className={btn} aria-label={t('browser.back')} disabled={!tab.canBack} onClick={() => void api.browser.command(tab.id, 'back')}>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className={btn}
+          aria-label={t('browser.back')}
+          disabled={!tab.canBack}
+          onClick={() => void api.browser.command(tab.id, 'back')}
+        >
           <ArrowLeft />
         </Button>
       </Tip>
       <Tip label={t('browser.forward')} side="bottom">
-        <Button variant="ghost" size="icon-sm" className={btn} aria-label={t('browser.forward')} disabled={!tab.canForward} onClick={() => void api.browser.command(tab.id, 'forward')}>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className={btn}
+          aria-label={t('browser.forward')}
+          disabled={!tab.canForward}
+          onClick={() => void api.browser.command(tab.id, 'forward')}
+        >
           <ArrowRight />
         </Button>
       </Tip>
       <Tip label={tab.loading ? t('browser.stop') : t('browser.reload')} side="bottom">
-        <Button variant="ghost" size="icon-sm" className={btn} aria-label={tab.loading ? t('browser.stop') : t('browser.reload')} onClick={() => void api.browser.command(tab.id, tab.loading ? 'stop' : 'reload')}>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className={btn}
+          aria-label={tab.loading ? t('browser.stop') : t('browser.reload')}
+          onClick={() => void api.browser.command(tab.id, tab.loading ? 'stop' : 'reload')}
+        >
           {tab.loading ? <X /> : <RotateCw />}
         </Button>
       </Tip>
@@ -261,7 +304,13 @@ function AddressBar({ tab }: { tab: BrowserTab }) {
         )
       )}
       <Tip label={t('browser.close')} side="bottom">
-        <Button variant="ghost" size="icon-sm" className={btn} aria-label={t('browser.close')} onClick={() => useApp.getState().closeBrowser()}>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className={btn}
+          aria-label={t('browser.close')}
+          onClick={() => useApp.getState().closeBrowser()}
+        >
           <X />
         </Button>
       </Tip>
@@ -275,7 +324,10 @@ function RelatedStrip({ tab }: { tab: BrowserTab }) {
   const r = useBrowser((s) => s.related[tab.id])
   if (!r || r.url !== tab.url || !r.items.length || !aiAllowed(tab)) return null
   return (
-    <div className="flex h-8 shrink-0 items-center gap-1.5 overflow-x-auto border-b border-border/60 bg-surface/70 px-3 text-2xs" data-testid="browser-related">
+    <div
+      className="flex h-8 shrink-0 items-center gap-1.5 overflow-x-auto border-b border-border/60 bg-surface/70 px-3 text-2xs"
+      data-testid="browser-related"
+    >
       <span className="shrink-0 text-subtle">{t('browser.related')}</span>
       {r.items.map((i) => (
         <Tip key={`${i.type}:${i.id}`} label={i.text} side="bottom">
@@ -318,7 +370,9 @@ function StartPage({ tab }: { tab: BrowserTab }) {
           />
         </label>
       </form>
-      <p className="max-w-[420px] text-center text-xs leading-relaxed text-subtle">{tab.incognito ? t('browser.incognitoHint') : t('browser.startHint')}</p>
+      <p className="max-w-[420px] text-center text-xs leading-relaxed text-subtle">
+        {tab.incognito ? t('browser.incognitoHint') : t('browser.startHint')}
+      </p>
     </div>
   )
 }
@@ -333,9 +387,10 @@ export function BrowserPane() {
 
   // AI 上下文：当前网页（已存为资料时）
   const setContext = useApp((s) => s.setContext)
+  const contextSourceId = aiAllowed(tab) ? tab.sourceId : null
   useEffect(() => {
-    setContext({ sourceId: aiAllowed(tab) ? tab.sourceId : null, sourceLocator: null, sourceSelection: null, sourceSegmentId: null })
-  }, [tab, setContext])
+    setContext({ sourceId: contextSourceId, sourceLocator: null, sourceSelection: null, sourceSegmentId: null })
+  }, [tab?.id, tab?.url, contextSourceId, setContext])
   useEffect(() => () => setContext({ sourceId: useApp.getState().sourceId }), [setContext])
 
   return (
@@ -345,8 +400,15 @@ export function BrowserPane() {
       {tab && <RelatedStrip tab={tab} />}
       <div ref={slot} className="relative min-h-0 flex-1 bg-white" data-testid="browser-view">
         {blank && tab && <StartPage tab={tab} />}
-        {!blank && frozen !== null && (frozen ? <img src={frozen} alt="" className="absolute inset-0 size-full object-fill" /> : <div className="absolute inset-0 bg-surface" />)}
+        {!blank &&
+          frozen !== null &&
+          (frozen ? (
+            <img src={frozen} alt="" className="absolute inset-0 size-full object-fill" />
+          ) : (
+            <div className="absolute inset-0 bg-surface" />
+          ))}
       </div>
+      {tab?.video && aiAllowed(tab) && <CoursePanel key={`${tab.id}:${tab.video.mediaId}`} tab={tab} />}
     </div>
   )
 }

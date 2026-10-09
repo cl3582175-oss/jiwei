@@ -8,7 +8,7 @@ import { pathToFileURL } from 'url'
 import { eq, inArray, notInArray } from 'drizzle-orm'
 import log from 'electron-log/main'
 import { assetsDir, getDb } from '../db'
-import { assets, noteAssets, sources } from '../db/schema'
+import { assets, noteAssets, sources, sourceSegments } from '../db/schema'
 import type { AssetRef } from '@shared/types'
 
 // 内容寻址素材仓库：文件以 sha256 命名，相同内容只存一份。
@@ -138,6 +138,15 @@ export async function collectGarbage(): Promise<number> {
       .all()
       .map((r) => r.id)
   ])
+  // 幻灯片资产由资料分段引用，没有 source.assetId；清理时必须计入可达素材。
+  for (const row of db.select({ locator: sourceSegments.locator }).from(sourceSegments).all()) {
+    try {
+      const locator = JSON.parse(row.locator) as { image?: unknown }
+      if (typeof locator.image === 'string') used.add(locator.image)
+    } catch {
+      /* 旧定位数据不能影响其他素材的清理 */
+    }
+  }
   const orphans = used.size
     ? db
         .select()

@@ -1,5 +1,7 @@
 import { create } from 'zustand'
+import { canonicalUrl } from '@shared/browserUrl'
 import type { NoteSort, WorkspaceContext } from '@shared/types'
+import { toast } from 'sonner'
 
 export type View = 'notes' | 'library' | 'chat' | 'review' | 'reflect' | 'graph' | 'feynman' | 'trash'
 
@@ -223,6 +225,20 @@ export function openSourceAt(id: string, q: URLSearchParams): void {
   const s = useApp.getState()
   const seg = q.get('seg')
   const locator = q.get('t') ? `t=${q.get('t')}` : q.get('page') ? `page=${q.get('page')}` : null
-  if (seg || locator) s.setHighlight({ type: 'segment', id: seg ?? '', locator })
-  s.openSource(id)
+  void (async () => {
+    const source = await window.jiwei.sources.get(id)
+    if (source?.kind === 'web' && source.url && q.has('t')) {
+      const at = Number(q.get('t'))
+      if (!Number.isFinite(at) || at < 0) return
+      const state = await window.jiwei.browser.state()
+      const existing = state.tabs.find((t) => !t.incognito && !t.sensitive && canonicalUrl(t.url) === canonicalUrl(source.url!))
+      const tabId = existing?.id ?? (await window.jiwei.browser.open(source.url, { newTab: true }))
+      if (existing) await window.jiwei.browser.activate(tabId)
+      s.openBrowser()
+      await window.jiwei.browser.seek(tabId, at, true)
+      return
+    }
+    if (seg || locator) s.setHighlight({ type: 'segment', id: seg ?? '', locator })
+    s.openSource(id)
+  })().catch((e: Error) => toast.error(e.message))
 }

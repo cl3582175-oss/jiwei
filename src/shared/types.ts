@@ -33,6 +33,7 @@ export type {
   SourceUpdate
 }
 export type { JiweiAPI } from './capabilities'
+export type { MossStatus } from './moss'
 
 /** Tiptap / ProseMirror 文档 JSON */
 export type DocNode = {
@@ -227,6 +228,36 @@ export interface BrowserSettings {
   aiBlockedSites?: string[]
   /** 主动程度：安静 / 适中（默认）/ 积极 */
   proactivity?: 'quiet' | 'balanced' | 'active'
+  course?: { autoTimestamp: boolean; autoSlides: boolean; quiz: boolean }
+}
+
+export interface BrowserVideo {
+  /** 同一页面替换主视频时也要撤销旧课程的异步界面操作。 */
+  mediaId: string
+  currentTime: number
+  duration: number
+  paused: boolean
+  rate: number
+  title: string
+  ended: boolean
+  updatedAt: number
+}
+
+export interface CourseState {
+  mode: 'auto' | 'local' | 'off'
+  transcript: 'waiting' | 'captions' | 'local' | 'complete' | 'needs-install' | 'error' | 'off'
+  slides: boolean
+  quiz: boolean
+  recordingComplete: boolean
+  error: string | null
+}
+
+export interface CourseQuiz {
+  id: string
+  sourceId: string
+  question: string
+  answer: string
+  t: number
 }
 
 /** 浏览器标签页（v0.6.0） */
@@ -244,6 +275,8 @@ export interface BrowserTab {
   sensitive: boolean
   /** 已存为资料 */
   sourceId: string | null
+  video: BrowserVideo | null
+  course: CourseState
 }
 
 export interface BrowserState {
@@ -928,6 +961,7 @@ export interface JiweiEvents {
   'browser:shortcut': { key: string; shift: boolean }
   /** 内置浏览器：下载完成并导入资料库 */
   'browser:download': { name: string; sourceId: string | null; path: string }
+  'course:event': { tabId: string; kind: 'ended' | 'slide' | 'error'; message?: string }
   /** 某个笔记 / 资料的批注变化 */
   'annotations:changed': { targetType: 'note' | 'source'; targetId: string }
   /** 某份资料的识别进度 */
@@ -942,6 +976,7 @@ export interface JiweiEvents {
   'embedding:status': EmbeddingStatus
   /** 语音转写引擎状态 */
   'asr:status': AsrStatus
+  'moss:status': import('./moss').MossStatus
   /** 记忆变化；added 为 AI 新记住的内容（界面提示，可撤销 / 确认） */
   'memory:changed': { added?: Memory; learned?: Memory[] }
   /** 深层链接：jiwei://note/<id> 或 jiwei://source/<id> */

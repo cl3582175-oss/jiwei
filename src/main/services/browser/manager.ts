@@ -3,9 +3,10 @@ import { app, BrowserWindow, WebContentsView, ipcMain, session, shell, type Sess
 import log from 'electron-log/main'
 import { newId } from '../../lib/ids'
 import { emit } from '../../events'
-import type { BrowserState, BrowserTab } from '@shared/types'
-import { isSensitiveUrl } from '../../lib/browserPolicy'
+import type { BrowserState, BrowserTab, BrowserVideo, CourseState } from '@shared/types'
+import { canonicalUrl, isSensitiveUrl } from '../../lib/browserPolicy'
 import { getSettings } from '../settings'
+import { clearConcepts } from './concepts'
 
 // 内置浏览器（v0.6.0，设计见 docs/design/v0.6-browser-and-capture.md §3.1）：
 //   - 每个标签页是一个 WebContentsView（Electron 推荐的嵌入方式），叠放在工作区左栏的占位区域上
@@ -22,13 +23,30 @@ interface Tab {
   incognito: boolean
   /** 页面中出现了密码输入框（内容脚本报告） */
   hasPassword: boolean
+  navigating: boolean
+  committedUrl: string
+  navigationUrl: string
   /** 已存为资料（同一网址复用） */
   sourceId: string | null
   /** 打开时间与互动次数（离开时的回顾） */
   openedAt: number
   interactions: number
   favicon: string | null
+  video: BrowserVideo | null
+  media: string | null
+  scope: string
+  course: CourseState
+  pendingSeek: { t: number; play: boolean; url: string } | null
 }
+
+const initialCourse = (): CourseState => ({
+  mode: 'auto',
+  transcript: 'waiting',
+  slides: getSettings().browser?.course?.autoSlides ?? true,
+  quiz: getSettings().browser?.course?.quiz ?? false,
+  recordingComplete: false,
+  error: null
+})
 
 const tabs = new Map<string, Tab>()
 let order: string[] = []
@@ -36,6 +54,8 @@ let activeId: string | null = null
 let host: BrowserWindow | null = null
 let bounds: { x: number; y: number; width: number; height: number } | null = null
 let visible = false
+let frozen = false
+let freezeRevision = 0
 let incognitoSeq = 0
 
 /* ——— 会话：浏览器式 UA、权限、下载 ——— */
@@ -74,7 +94,8 @@ function setupSession(ses: Session): void {
 /* ——— 状态 ——— */
 
 const tabUrl = (t: Tab): string => t.view.webContents.getURL()
-const sensitive = (t: Tab): boolean => t.hasPassword || isSensitiveUrl(tabUrl(t), getSettings().browser?.aiBlockedSites ?? [])
+const sensitive = (t: Tab): boolean =>
+  t.navigating || t.hasPassword || isSensitiveUrl(tabUrl(t), getSettings().browser?.aiBlockedSites ?? [])
 
 function toTab(t: Tab): BrowserTab {
   const wc = t.view.webContents
@@ -88,7 +109,9 @@ function toTab(t: Tab): BrowserTab {
     canForward: wc.navigationHistory.canGoForward(),
     incognito: t.incognito,
     sensitive: sensitive(t),
-    sourceId: t.sourceId
+    sourceId: t.sourceId,
+    video: !t.incognito && !sensitive(t) ? t.video : null,
+    course: t.course
   }
 }
 
@@ -97,7 +120,7 @@ export function browserState(): BrowserState {
 }
 
 let emitTimer: NodeJS.Timeout | null = null
-function changed(): void {
+export function changed(): void {
   if (emitTimer) return
   emitTimer = setTimeout(() => {
     emitTimer = null
@@ -144,7 +167,24 @@ function createTab(url: string, opts: { incognito?: boolean; activate?: boolean 
       spellcheck: false
     }
   })
-  const t: Tab = { id: newId(), view, incognito, hasPassword: false, sourceId: null, openedAt: Date.now(), interactions: 0, favicon: null }
+  const t: Tab = {
+    id: newId(),
+    view,
+    incognito,
+    hasPassword: false,
+    navigating: true,
+    committedUrl: '',
+    navigationUrl: url || HOME,
+    sourceId: null,
+    openedAt: Date.now(),
+    interactions: 0,
+    favicon: null,
+    video: null,
+    media: null,
+    scope: newId(),
+    course: initialCourse(),
+    pendingSeek: null
+  }
   tabs.set(t.id, t)
   order.push(t.id)
   host.contentView.addChildView(view)
@@ -160,11 +200,28 @@ function createTab(url: string, opts: { incognito?: boolean; activate?: boolean 
   wc.on('will-navigate', (e, u) => {
     if (!/^(https?:|about:blank)/i.test(u)) e.preventDefault()
   })
-  wc.on('did-start-navigation', (_e, _u, inPlace, isMain) => {
-    if (isMain && !inPlace) {
-      t.hasPassword = false
+  wc.on('did-start-navigation', (_e, targetUrl, inPlace, isMain) => {
+    if (isMain) {
+      if (t.pendingSeek && canonicalUrl(t.pendingSeek.url) !== canonicalUrl(targetUrl)) t.pendingSeek = null
+      t.navigationUrl = targetUrl
+      if (inPlace && canonicalUrl(t.committedUrl) === canonicalUrl(targetUrl)) return
+      if (!inPlace) t.navigating = true
       // 换了网址：不再对应之前存的资料
       t.sourceId = null
+      invalidateCourse(t)
+    }
+  })
+  wc.on('did-navigate', (_e, url) => {
+    t.navigating = false
+    t.hasPassword = false
+    t.committedUrl = url
+    changed()
+  })
+  wc.on('did-navigate-in-page', (_e, _url, isMain) => {
+    if (isMain) {
+      t.committedUrl = _url
+      pushConfig(t.id)
+      onLoaded?.(t.id)
     }
   })
   for (const ev of ['did-start-loading', 'did-stop-loading', 'page-title-updated', 'did-navigate', 'did-navigate-in-page'] as const)
@@ -181,8 +238,11 @@ function createTab(url: string, opts: { incognito?: boolean; activate?: boolean 
     if (k === 'r' && !input.shift) wc.reload()
     else if (k === '[') command(t.id, 'back')
     else if (k === ']') command(t.id, 'forward')
-    else if (k === 't') openTab('', { incognito: input.shift })
-    else if (['l', 'w', 'k', 'n', 'j', ',', '\\', '1', '2', '3', '4', '5', '6'].includes(k)) emit('browser:shortcut', { key: k, shift: input.shift })
+    else if (k === 't' && !input.shift) openTab('')
+    else if (k === 'n' && input.shift) openTab('', { incognito: true })
+    else if (k === 't' && input.shift) emit('browser:shortcut', { key: k, shift: true })
+    else if (['l', 'w', 'k', 'n', 'j', ',', '\\', '1', '2', '3', '4', '5', '6'].includes(k))
+      emit('browser:shortcut', { key: k, shift: input.shift })
     else return
     e.preventDefault()
   })
@@ -216,6 +276,7 @@ export function openTab(input: string, opts: { incognito?: boolean; activate?: b
 export function closeTab(id: string): void {
   const t = tabs.get(id)
   if (!t) return
+  invalidateCourse(t)
   tabs.delete(id)
   const i = order.indexOf(id)
   order = order.filter((x) => x !== id)
@@ -237,7 +298,123 @@ export const getTab = (id?: string | null): Tab | null => tabs.get(id ?? activeI
 
 export function navigate(id: string, input: string): void {
   const t = getTab(id)
-  if (t) void t.view.webContents.loadURL(normalizeInput(input)).catch(() => {})
+  if (t) {
+    t.pendingSeek = null
+    void t.view.webContents.loadURL(normalizeInput(input)).catch(() => {})
+  }
+}
+
+let courseReset: ((id: string) => void) | null = null
+export function onCourseReset(fn: (id: string) => void): void {
+  courseReset = fn
+}
+
+function invalidateCourse(t: Tab): void {
+  clearConcepts(t.id)
+  courseReset?.(t.id)
+  t.video = null
+  t.media = null
+  t.scope = newId()
+  t.course = initialCourse()
+  changed()
+}
+
+export function clearVideo(id: string): void {
+  const t = getTab(id)
+  if (!t) return
+  courseReset?.(id)
+  t.video = null
+  t.media = null
+  t.course = initialCourse()
+  changed()
+}
+
+export function setVideo(id: string, media: string, video: Omit<BrowserVideo, 'mediaId'>): void {
+  const t = getTab(id)
+  if (!t || t.incognito || sensitive(t)) return
+  const replaced = !!t.media && t.media !== media
+  if (replaced) {
+    courseReset?.(id)
+    t.sourceId = null
+    t.course = initialCourse()
+  }
+  t.media = media
+  t.video = { ...video, mediaId: media }
+  if (replaced) pushConfig(id)
+  if (t.pendingSeek) {
+    const pending = t.pendingSeek
+    t.pendingSeek = null
+    if (canonicalUrl(pending.url) === canonicalUrl(tabUrl(t))) seek(id, pending.t, pending.play)
+  }
+  changed()
+}
+
+export function seek(id: string, at: number, play = false): void {
+  const t = getTab(id)
+  if (!t || t.incognito || (sensitive(t) && !t.navigating)) throw new Error('Video unavailable')
+  if (!t.video) {
+    t.pendingSeek = { t: at, play, url: t.navigationUrl || tabUrl(t) }
+    return
+  }
+  toPage(id, 'jw-page:seek', { t: Math.min(at, t.video.duration), play })
+}
+
+export function playback(id: string, play: boolean): void {
+  const t = getTab(id)
+  if (!t || !t.video || t.incognito || sensitive(t)) return
+  toPage(id, play ? 'jw-page:play' : 'jw-page:pause', {})
+}
+
+export function pageConfig(id: string): { allowed: boolean; scope: string; course: CourseState; labels: Record<string, string> } {
+  const t = getTab(id)
+  const zh = getSettings().language.startsWith('zh')
+  return {
+    allowed: !!t && !t.incognito && !sensitive(t),
+    scope: t?.scope ?? '',
+    course: t?.course ?? initialCourse(),
+    labels: zh
+      ? {
+          explain: '解释',
+          clarify: '讲明白',
+          translate: '翻译',
+          ask: '问 AI',
+          highlighting: '高亮',
+          commenting: '批注',
+          questioning: '存疑'
+        }
+      : {
+          explain: 'Explain',
+          clarify: 'Clarify',
+          translate: 'Translate',
+          ask: 'Ask AI',
+          highlighting: 'Highlight',
+          commenting: 'Comment',
+          questioning: 'Question'
+        }
+  }
+}
+
+export function pushConfig(id: string): void {
+  toPage(id, 'jw-page:config-update', pageConfig(id))
+}
+
+/** 设置与密码变化即时撤销采集，不能等下一次页面加载。 */
+export function refreshPrivacy(): void {
+  for (const t of tabs.values()) {
+    if (t.incognito || sensitive(t)) invalidateCourse(t)
+    pushConfig(t.id)
+  }
+  changed()
+}
+
+/** 设置是所有打开课程的默认偏好；仅改动用户在设置中明确切换的选项。 */
+export function refreshCourseSettings(patch: { autoSlides?: boolean; quiz?: boolean }): void {
+  for (const t of tabs.values()) {
+    if (patch.autoSlides !== undefined) t.course.slides = patch.autoSlides
+    if (patch.quiz !== undefined) t.course.quiz = patch.quiz
+    pushConfig(t.id)
+  }
+  changed()
 }
 
 export function command(id: string, cmd: 'back' | 'forward' | 'reload' | 'stop'): void {
@@ -252,23 +429,33 @@ export function command(id: string, cmd: 'back' | 'forward' | 'reload' | 'stop')
 /** 渲染进程报告占位区域（窗口坐标）；null 表示浏览器不在屏幕上 */
 export function setBounds(win: BrowserWindow | null, rect: { x: number; y: number; width: number; height: number } | null): void {
   if (win) attach(win)
-  bounds = rect && rect.width > 0 && rect.height > 0 ? { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) } : null
-  visible = !!bounds
+  bounds =
+    rect && rect.width > 0 && rect.height > 0
+      ? { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) }
+      : null
+  visible = !!bounds && !frozen
   layout()
 }
 
 /** 弹出层（对话框、卡片）盖住浏览器时：暂停显示网页，返回当前画面截图 */
 export async function freeze(on: boolean): Promise<string | null> {
   const t = getTab()
+  const revision = ++freezeRevision
+  frozen = on
   if (!on) {
     visible = !!bounds
     layout()
     return null
   }
-  const img = t && !t.view.webContents.isDestroyed() ? await t.view.webContents.capturePage().catch(() => null) : null
+  const scope = t?.scope
+  const img =
+    t && !t.incognito && !sensitive(t) && !t.view.webContents.isDestroyed()
+      ? await t.view.webContents.capturePage().catch(() => null)
+      : null
+  if (revision !== freezeRevision) return null
   visible = false
   layout()
-  return img && !img.isEmpty() ? img.toDataURL() : null
+  return t && getTab()?.id === t.id && t.scope === scope && !sensitive(t) && img && !img.isEmpty() ? img.toDataURL() : null
 }
 
 export function markInteraction(id: string, sourceId?: string): void {
@@ -313,34 +500,28 @@ export function toPage(id: string, channel: string, payload: unknown): void {
 
 /* ——— 内容脚本消息 ——— */
 
-export function registerContentIpc(handlers: {
-  action: (tabId: string, msg: unknown) => void
-  ready: (tabId: string) => void
-}): void {
+export function registerContentIpc(handlers: { action: (tabId: string, msg: unknown) => void; ready: (tabId: string) => void }): void {
   ipcMain.on('jw-page:password', (e) => {
     const t = tabOf(e.sender)
-    if (t && !t.hasPassword) {
+    if (t && e.senderFrame === e.sender.mainFrame && !t.hasPassword) {
       t.hasPassword = true
+      t.pendingSeek = null
+      invalidateCourse(t)
+      pushConfig(t.id)
       changed()
     }
   })
   ipcMain.on('jw-page:action', (e, msg) => {
     const t = tabOf(e.sender)
-    if (t && !t.incognito && !sensitive(t)) handlers.action(t.id, msg)
+    if (t && e.senderFrame === e.sender.mainFrame && !t.incognito && !sensitive(t)) handlers.action(t.id, msg)
   })
   ipcMain.on('jw-page:ready', (e) => {
     const t = tabOf(e.sender)
-    if (t) handlers.ready(t.id)
+    if (t && e.senderFrame === e.sender.mainFrame) handlers.ready(t.id)
   })
   // 内容脚本的配置：本页是否允许 AI（敏感页面、无痕标签不显示浮条）与浮条文字
   ipcMain.handle('jw-page:config', (e) => {
     const t = tabOf(e.sender)
-    const zh = getSettings().language.startsWith('zh')
-    return {
-      allowed: !!t && !t.incognito && !sensitive(t),
-      labels: zh
-        ? { explain: '解释', clarify: '讲明白', translate: '翻译', ask: '问 AI', highlighting: '高亮', commenting: '批注', questioning: '存疑' }
-        : { explain: 'Explain', clarify: 'Clarify', translate: 'Translate', ask: 'Ask AI', highlighting: 'Highlight', commenting: 'Comment', questioning: 'Question' }
-    }
+    return pageConfig(e.senderFrame === e.sender.mainFrame ? (t?.id ?? '') : '')
   })
 }

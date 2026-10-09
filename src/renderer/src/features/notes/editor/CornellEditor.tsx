@@ -20,6 +20,8 @@ import './embeds/MindmapView'
 import './embeds/VisualViews'
 import { useApp, openSourceAt } from '@/store/app'
 import { MindmapActions } from './embeds/MindmapActions'
+import { insertCourseTimestamp } from '../../browser/courseNotes'
+import type { Transaction } from '@tiptap/pm/state'
 
 const INTERNAL_LINK = /^jiwei:\/\/(note|source)\/([0-9a-f-]{36})(?:\?(.*))?/i
 
@@ -127,6 +129,29 @@ export function CornellEditor({ noteId, ydoc, onReady }: Props) {
     if (editor) onReady?.(editor)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor])
+
+  useEffect(() => {
+    if (!editor) return
+    const manual = (): void => {
+      void insertCourseTimestamp(editor, noteId).catch((e: Error) => toast.error(e.message))
+    }
+    const added = ({ transaction }: { transaction: Transaction }): void => {
+      const at = transaction.getMeta('cornell:new-row') as number | undefined
+      if (at === undefined) return
+      // ID 扩展在本次事务的追加事务里分配行 ID，等这一轮完成后再捕获。
+      queueMicrotask(() => {
+        if (editor.isDestroyed) return
+        const id = editor.state.doc.nodeAt(at)?.attrs.id as string | undefined
+        if (id) void insertCourseTimestamp(editor, noteId, id).catch((e: Error) => toast.error(e.message))
+      })
+    }
+    window.addEventListener('course:insert-time', manual)
+    editor.on('transaction', added)
+    return () => {
+      window.removeEventListener('course:insert-time', manual)
+      editor.off('transaction', added)
+    }
+  }, [editor, noteId])
 
   // AI 引用跳转：定位并高亮段落
   const highlight = useApp((s) => s.highlight)

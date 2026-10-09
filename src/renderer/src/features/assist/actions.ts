@@ -57,6 +57,16 @@ export async function askInline(
   const text = question?.trim() || actionQuestion(action, anchor.quote ?? '', anchor.kind === 'region')
   const st = useAssist.getState()
   if (!p || !settings.ai.chat.model) {
+    // 保留画面和锚点供配置模型后重试，不能让无会话的卡片永远停在加载骨架。
+    st.openCard({
+      anchor,
+      rect,
+      action,
+      conversationId: null,
+      question: '',
+      ...(image ? { image } : {}),
+      ...(extra.length ? { extra } : {})
+    })
     toast.error(i18n.t('chat.needModel'), {
       action: { label: i18n.t('chat.setupModel'), onClick: () => useApp.getState().openSettings('ai') }
     })
@@ -169,7 +179,7 @@ export function textSelectionAnchor(sourceId: string): { anchor: Anchor; rect: R
   const b = range.getBoundingClientRect()
   return {
     anchor: {
-      kind: 'source-text',
+      kind: t0 !== undefined ? 'media-range' : 'source-text',
       parentType: 'source',
       parentId: sourceId,
       ownerId: seg?.dataset.segment ?? null,

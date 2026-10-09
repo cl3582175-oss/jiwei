@@ -5,6 +5,7 @@ import { api } from './utils'
 import { invalidate } from './queries'
 import { useSidebar } from '@/components/CollapsibleSidebar'
 import { useAssist } from '@/features/assist/store'
+import { requestTimestamp } from '@/features/browser/courseNotes'
 
 /** 新建笔记并打开（继承当前分类筛选） */
 export function useCreateNote() {
@@ -34,6 +35,15 @@ export function useGlobalShortcuts(): void {
       if (k === 'k') {
         e.preventDefault()
         s.setPaletteOpen(!s.paletteOpen)
+      } else if (k === 't' && e.shiftKey && s.browserOpen) {
+        e.preventDefault()
+        requestTimestamp()
+      } else if (k === 'n' && e.shiftKey && s.browserOpen) {
+        e.preventDefault()
+        s.openBrowser('', { incognito: true })
+      } else if (k === 't' && !e.shiftKey && s.browserOpen) {
+        e.preventDefault()
+        s.openBrowser('')
       } else if (k === 'n' && !e.shiftKey) {
         e.preventDefault()
         void createNote()

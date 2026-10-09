@@ -14,7 +14,7 @@ import { modelsDir } from './ai/localEmbedding'
 import { assetPath } from './assets'
 import { emit } from '../events'
 import { enqueue, registerJobKind } from './jobs'
-import { replaceSegments } from './segments'
+import { listSegments, replaceSegments } from './segments'
 import { requestIndex } from './ai/indexer'
 import { cuesToSegments, parseSubtitles, type Cue } from '../lib/subtitles'
 import { decryptKey, getProviderRow } from './ai/providers'
@@ -340,7 +340,7 @@ export function findSidecarSubtitles(mediaPath: string): string | null {
 export function applySubtitles(sourceId: string, text: string): number {
   const cues = parseSubtitles(text)
   if (!cues.length) throw new Error('字幕文件中没有可用的内容')
-  const n = replaceSegments(sourceId, cuesToSegments(cues))
+  const n = replaceSegments(sourceId, [...listSegments(sourceId).filter((s) => s.kind !== 'transcript'), ...cuesToSegments(cues)])
   requestIndex()
   return n
 }

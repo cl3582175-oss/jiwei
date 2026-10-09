@@ -1,6 +1,9 @@
 /// <reference lib="dom.iterable" />
 /// <reference lib="dom" />
 import { ipcRenderer } from 'electron'
+import { configureVideo, startBrowserVideo } from './browserVideo'
+import type { CourseState } from '../shared/types'
+import { startConcepts } from './browserConcepts'
 
 // 内置浏览器的内容脚本（v0.6.0）：运行在网页的隔离环境中（contextIsolation），网页本身的脚本无法访问。
 //   - 选区浮条：解释 / 讲明白 / 翻译 / 问 AI / 高亮 / 批注 / 存疑（Shadow DOM，不受网页样式影响）
@@ -12,6 +15,8 @@ type Action = 'explain' | 'clarify' | 'translate' | 'ask' | 'highlighting' | 'co
 interface Config {
   allowed: boolean
   labels: Record<Exclude<Action, 'annotation'>, string>
+  scope: string
+  course: CourseState
 }
 interface Ann {
   id: string
@@ -25,6 +30,10 @@ interface Ann {
 
 const CONTEXT = 32
 let config: Config | null = null
+const concepts = startConcepts(
+  () => !!config?.allowed,
+  () => config?.labels.ask ?? ''
+)
 let host: HTMLElement | null = null
 let bar: HTMLElement | null = null
 let ranges: { id: string; range: Range }[] = []
@@ -38,6 +47,8 @@ function checkPassword(): void {
   ipcRenderer.send('jw-page:password')
   // 敏感页面：立即关闭浮条
   if (config) config.allowed = false
+  if (config) configureVideo(config)
+  concepts.clear()
   hideBar()
 }
 
@@ -120,7 +131,13 @@ function fire(action: Exclude<Action, 'annotation'>): void {
   hideBar()
   if (!info) return
   const r = info.rect
-  ipcRenderer.send('jw-page:action', { action, quote: info.quote, prefix: info.prefix, suffix: info.suffix, rect: { x: r.left, y: r.top, w: r.width, h: r.height } })
+  ipcRenderer.send('jw-page:action', {
+    action,
+    quote: info.quote,
+    prefix: info.prefix,
+    suffix: info.suffix,
+    rect: { x: r.left, y: r.top, w: r.width, h: r.height }
+  })
   if (action === 'highlighting' || action === 'commenting' || action === 'questioning') getSelection()?.removeAllRanges()
 }
 
@@ -142,10 +159,15 @@ function onMouseUp(e: MouseEvent): void {
     b.style.left = `${left}px`
     b.style.top = `${top}px`
     // 各按钮的位置（只有坐标，便于自动化测试用真实点击验证；不暴露任何接口）
-    host?.setAttribute('data-buttons', JSON.stringify([...b.querySelectorAll('button')].map((x) => {
-      const r = x.getBoundingClientRect()
-      return { action: x.dataset.action, x: r.left + r.width / 2, y: r.top + r.height / 2 }
-    })))
+    host?.setAttribute(
+      'data-buttons',
+      JSON.stringify(
+        [...b.querySelectorAll('button')].map((x) => {
+          const r = x.getBoundingClientRect()
+          return { action: x.dataset.action, x: r.left + r.width / 2, y: r.top + r.height / 2 }
+        })
+      )
+    )
   }, 0)
 }
 
@@ -256,7 +278,14 @@ function hitHighlight(x: number, y: number): void {
     for (const r of range.getClientRects())
       if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) {
         const b = range.getBoundingClientRect()
-        ipcRenderer.send('jw-page:action', { action: 'annotation', annotationId: id, quote: '', prefix: '', suffix: '', rect: { x: b.left, y: b.top, w: b.width, h: b.height } })
+        ipcRenderer.send('jw-page:action', {
+          action: 'annotation',
+          annotationId: id,
+          quote: '',
+          prefix: '',
+          suffix: '',
+          rect: { x: b.left, y: b.top, w: b.width, h: b.height }
+        })
         return
       }
 }
@@ -270,15 +299,32 @@ ipcRenderer.on('jw-page:annotations', (_e, p: { items: Ann[] }) => {
 })
 
 window.addEventListener('DOMContentLoaded', () => {
+  startBrowserVideo()
   checkPassword()
-  new MutationObserver(() => checkPassword()).observe(document.documentElement, { childList: true, subtree: true })
+  new MutationObserver(() => checkPassword()).observe(document.documentElement, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ['type']
+  })
   void (ipcRenderer.invoke('jw-page:config') as Promise<Config>).then((c) => {
     config = c
+    if (passwordReported) config.allowed = false
+    configureVideo(config)
+    concepts.refresh()
   })
   document.addEventListener('mouseup', onMouseUp, true)
   document.addEventListener('keydown', (e) => e.key === 'Escape' && hideBar(), true)
   window.addEventListener('scroll', hideBar, true)
   ipcRenderer.send('jw-page:ready')
+})
+
+ipcRenderer.on('jw-page:config-update', (_e, c: Config) => {
+  config = c
+  if (passwordReported) config.allowed = false
+  configureVideo(config)
+  concepts.refresh()
+  if (!config.allowed) hideBar()
 })
 
 // 动态内容加载后重新定位高亮（节流）

@@ -15,7 +15,7 @@ import { buildModel } from './model'
 import { recognizeRegion } from '../recognize'
 import { capsFor } from './providers'
 import { retrieve } from './retrieve'
-import { resolveContext } from './context'
+import { contextSourceEvidence, resolveContext } from './context'
 import { buildTools, numberHits, stepLabel, type AgentSession } from './tools'
 import { loadSkill, skillCatalog } from './skills'
 import { userCard } from '../memory'
@@ -85,7 +85,12 @@ export function listConversations(): Conversation[] {
     .select()
     .from(conversations)
     .where(
-      and(isNull(conversations.deletedAt), ne(conversations.kind, 'inline'), ne(conversations.kind, 'feynman'), ne(conversations.kind, 'reflection'))
+      and(
+        isNull(conversations.deletedAt),
+        ne(conversations.kind, 'inline'),
+        ne(conversations.kind, 'feynman'),
+        ne(conversations.kind, 'reflection')
+      )
     )
     .orderBy(desc(conversations.pinned), desc(conversations.updatedAt))
     .all()
@@ -188,7 +193,9 @@ Rules:
     card
       ? `${zh ? '用户卡片（关于这位用户，回答时自然地参考，不要复述）' : 'About the user (use naturally, do not recite)'}：\n${card}`
       : null,
-    goals ? `${zh ? '用户正在进行的学习目标（回答时可以联系到它们）' : "The user's active learning goals (relate to them when useful)"}：\n${goals}` : null,
+    goals
+      ? `${zh ? '用户正在进行的学习目标（回答时可以联系到它们）' : "The user's active learning goals (relate to them when useful)"}：\n${goals}`
+      : null,
     `${zh ? '今天是' : 'Today is'} ${fmtDate(Date.now())}。`
   ]
     .filter(Boolean)
@@ -232,13 +239,13 @@ export function send(input: ChatSend): SendResult {
         meta: input.reflectionId
           ? JSON.stringify({ reflectionId: input.reflectionId } satisfies CoachMeta)
           : input.feynman
-          ? JSON.stringify({
-              concept: input.feynman.concept.trim(),
-              noteId: input.feynman.noteId ?? null,
-              cardId: input.feynman.cardId ?? null,
-              report: null
-            } satisfies FeynmanMeta)
-          : null,
+            ? JSON.stringify({
+                concept: input.feynman.concept.trim(),
+                noteId: input.feynman.noteId ?? null,
+                cardId: input.feynman.cardId ?? null,
+                report: null
+              } satisfies FeynmanMeta)
+            : null,
         createdAt: now,
         updatedAt: now,
         updatedBy: deviceId()
@@ -370,8 +377,13 @@ async function generate(conversationId: string, messageId: string, input: ChatSe
     const ctx = feynman || coach ? { text: '', query: '' } : resolveContext(input.context, zh)
     // 检索：问题本身 + 用户指着的文字
     const query = [input.text, ctx.query].filter(Boolean).join('\n').slice(0, 2000)
-    const hits = feynman || coach || input.scope.type === 'none' ? [] : await retrieve(query, input.scope, 8)
-    const kb = feynman || coach || input.scope.type === 'none' ? null : numberHits(session, hits)
+    const retrieved = feynman || coach || input.scope.type === 'none' ? [] : await retrieve(query, input.scope, 8)
+    const explicit = feynman || coach ? [] : contextSourceEvidence(input.context)
+    const hits = [
+      ...explicit,
+      ...retrieved.filter((hit) => !explicit.some((item) => item.parentId === hit.parentId && item.ownerId === hit.ownerId))
+    ]
+    const kb = hits.length ? numberHits(session, hits) : null
     const skillBody = input.skill && !feynman && !coach ? loadSkill(input.skill, zh) : null
 
     // 历史只带原话（不重复带旧的上下文与片段，省 token）

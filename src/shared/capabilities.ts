@@ -4,6 +4,7 @@ import type {
   AppInfo,
   AssetRef,
   AsrStatus,
+  MossStatus,
   BackupInfo,
   BlockInfo,
   Category,
@@ -14,6 +15,7 @@ import type {
   Annotation,
   AnnotationWithTarget,
   BrowserState,
+  CourseQuiz,
   SourceRecognition,
   HeatmapDay,
   ImportResult,
@@ -335,7 +337,10 @@ export const capabilities = {
     remove: cap<void>()({ description: '删除一次复盘（复盘笔记进入最近删除）', params: [id()] }),
     answers: cap<string[]>()({ description: '各引导问题下的回答', params: [id()] }),
     material: cap<ReflectionMaterial>()({ description: '复盘素材包（由数据统计生成）', params: [id()] }),
-    saveDaily: cap<Reflection>()({ description: '保存每日微复盘的三个回答', params: [['answers', z.array(z.string().max(2000)).length(3)]] }),
+    saveDaily: cap<Reflection>()({
+      description: '保存每日微复盘的三个回答',
+      params: [['answers', z.array(z.string().max(2000)).length(3)]]
+    }),
     harvest: cap<ReflectionHarvest>()({ description: 'AI 从复盘中提炼洞见、修正与行动项（供确认）', params: [id()] }),
     commit: cap<Reflection>()({ description: '保存确认的洞见、修正与行动项，复盘完成', params: [id(), ['input', S.HarvestCommitSchema]] })
   },
@@ -347,7 +352,11 @@ export const capabilities = {
     linkNote: cap<Goal>()({ description: '把笔记关联到目标或取消关联', params: [id(), id('noteId'), ['linked', z.boolean()]] })
   },
   connections: {
-    get: cap<NoteConnections>()({ description: '笔记的关联：反向链接、手动关联、相关推荐、未链接的提及', params: [id('noteId')], ai: { effect: 'read' } }),
+    get: cap<NoteConnections>()({
+      description: '笔记的关联：反向链接、手动关联、相关推荐、未链接的提及',
+      params: [id('noteId')],
+      ai: { effect: 'read' }
+    }),
     relate: cap<void>()({
       description: '把笔记与另一篇笔记或资料关联（双向）',
       params: [id('noteId'), ['toType', z.enum(['note', 'source'])], id('toId')]
@@ -377,7 +386,11 @@ export const capabilities = {
     list: cap<ActionItem[]>()({ description: '列出行动项', params: [['status', z.enum(['open', 'done', 'dropped']).optional()]] }),
     create: cap<ActionItem>()({
       description: '新建行动项',
-      params: [['title', z.string().min(1).max(300)], ['dueAt', z.number().int().nullable()], ['goalId', S.Id.nullable().optional()]]
+      params: [
+        ['title', z.string().min(1).max(300)],
+        ['dueAt', z.number().int().nullable()],
+        ['goalId', S.Id.nullable().optional()]
+      ]
     }),
     update: cap<ActionItem>()({ description: '修改行动项（完成 / 放弃 / 改期）', params: [id(), ['patch', S.ActionUpdateSchema]] }),
     remove: cap<void>()({ description: '删除行动项', params: [id()] })
@@ -399,7 +412,11 @@ export const capabilities = {
     stats: cap<ReviewStats>()({ description: '复习统计：到期数量、今日已复习、连续天数、记住比例', params: none }),
     rate: cap<ReviewCard | null>()({
       description: '为卡片评分（1 忘了 2 困难 3 记得 4 轻松）',
-      params: [id(), ['rating', z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)])], ['durationMs', z.number().int().min(0).optional()]]
+      params: [
+        id(),
+        ['rating', z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)])],
+        ['durationMs', z.number().int().min(0).optional()]
+      ]
     }),
     undo: cap<ReviewCard | null>()({ description: '撤销这张卡片最近一次评分', params: [id()] }),
     suspend: cap<void>()({ description: '暂停或恢复一张卡片', params: [id(), ['suspended', z.boolean()]] }),
@@ -432,6 +449,11 @@ export const capabilities = {
   },
   browser: {
     state: cap<BrowserState>()({ description: '内置浏览器的标签页状态', params: none }),
+    seek: cap<void>()({
+      description: '网页视频跳到时间点，视频就绪后执行',
+      params: [id('tabId'), ['t', z.number().finite().min(0).max(604800)], ['play', z.boolean().optional()]]
+    }),
+    playback: cap<void>()({ description: '播放或暂停网页视频', params: [id('tabId'), ['play', z.boolean()]] }),
     open: cap<string>()({
       description: '在内置浏览器中打开网址或搜索（新标签页或当前标签页），返回标签页 ID',
       params: [
@@ -440,12 +462,21 @@ export const capabilities = {
       ]
     }),
     navigate: cap<void>()({ description: '在标签页中打开网址或搜索', params: [id('tabId'), ['input', z.string().min(1).max(4000)]] }),
-    command: cap<void>()({ description: '后退、前进、刷新、停止', params: [id('tabId'), ['cmd', z.enum(['back', 'forward', 'reload', 'stop'])]] }),
+    command: cap<void>()({
+      description: '后退、前进、刷新、停止',
+      params: [id('tabId'), ['cmd', z.enum(['back', 'forward', 'reload', 'stop'])]]
+    }),
     activate: cap<void>()({ description: '切换标签页', params: [id('tabId')] }),
     close: cap<void>()({ description: '关闭标签页', params: [id('tabId')] }),
-    setBounds: cap<void>()({ description: '网页显示区域（窗口坐标）；null 表示不显示', params: [['rect', S.BrowserRectSchema.nullable()]] }),
+    setBounds: cap<void>()({
+      description: '网页显示区域（窗口坐标）；null 表示不显示',
+      params: [['rect', S.BrowserRectSchema.nullable()]]
+    }),
     freeze: cap<string | null>()({ description: '弹出层盖住网页时暂停显示，返回截图', params: [['on', z.boolean()]] }),
-    saveSource: cap<string>()({ description: '把网页存为资料（同一网址复用），返回资料 ID', params: [['tabId', S.Id.nullable().optional()]] }),
+    saveSource: cap<string>()({
+      description: '把网页存为资料（同一网址复用），返回资料 ID',
+      params: [['tabId', S.Id.nullable().optional()]]
+    }),
     recapCheck: cap<{ sourceId: string; title: string; highlights: number; questions: number } | null>()({
       description: '关闭标签页前：是否提示把这篇的高亮与问答整理成笔记',
       params: [id('tabId')]
@@ -457,6 +488,27 @@ export const capabilities = {
     readPage: cap<{ url: string; title: string; text: string; selection: string }>()({
       description: '读取内置浏览器当前网页的正文',
       params: [['tabId', S.Id.nullable().optional()]]
+    })
+  },
+  moss: {
+    status: cap<MossStatus>()({ description: '精修转写引擎的安装与运行状态', params: none }),
+    install: cap<void>()({ description: '下载并校验可选 MOSS 精修引擎', params: none }),
+    remove: cap<void>()({ description: '删除 MOSS 精修引擎与模型', params: none }),
+    refine: cap<void>()({ description: '精修完整课程录音并区分说话人', params: [id('sourceId')] })
+  },
+  course: {
+    configure: cap<void>()({ description: '设置当前网课的转写、幻灯片和练习', params: [id('tabId'), ['patch', S.CourseOptionsSchema]] }),
+    snapshot: cap<string | null>()({ description: '截取当前视频画面供就地提问', params: [id('tabId')] }),
+    organize: cap<{ noteId: string; proposalId: string }>()({
+      description: '根据课程证据整理康奈尔笔记提案',
+      params: [id('sourceId'), ['noteId', S.Id.nullable()]]
+    }),
+    estimate: cap<number | null>()({ description: '预估课后整理费用（美元）', params: [id('sourceId')] }),
+    quiz: cap<CourseQuiz>()({ description: '根据刚播放的文字稿生成提取练习题', params: [id('tabId')] }),
+    check: cap<string>()({ description: '评价本次课程练习答案', params: [id('quizId'), ['answer', z.string().max(4000)]] }),
+    review: cap<{ noteId: string; proposalId: string }>()({
+      description: '把课程练习加入当前笔记的复习提案',
+      params: [id('quizId'), ['noteId', S.Id.nullable()]]
     })
   },
   annotations: {
@@ -483,7 +535,11 @@ export const capabilities = {
     status: cap<RecognizerStatus>()({ description: '文档识别引擎（本地模型）状态', params: none }),
     install: cap<void>()({ description: '下载本地文档识别模型（LightOnOCR-2-1B）', params: none }),
     remove: cap<void>()({ description: '删除本地文档识别模型', params: none }),
-    source: cap<SourceRecognition>()({ description: '资料的识别情况（扫描页、表格页、图页）', params: [id('sourceId')], ai: { effect: 'read' } }),
+    source: cap<SourceRecognition>()({
+      description: '资料的识别情况（扫描页、表格页、图页）',
+      params: [id('sourceId')],
+      ai: { effect: 'read' }
+    }),
     start: cap<void>()({ description: '识别资料中的扫描页、表格（后台任务）', params: [id('sourceId')] })
   },
   embedding: {

@@ -53,7 +53,7 @@ export function JobsIndicator() {
                 )}
               </span>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-fg">{j.title}</p>
+                <p className="truncate text-fg">{t(j.title, { defaultValue: j.title })}</p>
                 {j.status === 'running' && (
                   <div className="mt-1 h-1 overflow-hidden rounded-full bg-sunken">
                     <div className="h-full bg-accent transition-[width]" style={{ width: `${Math.round(j.progress * 100)}%` }} />

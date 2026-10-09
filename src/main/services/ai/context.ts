@@ -8,7 +8,8 @@ import { nodesToMarkdown } from '../../lib/markdown'
 import { embedText } from '@shared/embeds'
 import { MindmapDataSchema, toTree, type MindmapTree } from '@shared/embeds/mindmap'
 import { fmtTime, type Anchor, type ContextPacket } from '@shared/context'
-import type { DocNode, Segment } from '@shared/types'
+import type { DocNode, SearchHit, Segment } from '@shared/types'
+import { sourceContextHits, type ContextSource } from '../../lib/sourceContext'
 
 // 上下文包 → 提示词：把用户“指着”的内容连同必要的前后文交给模型。
 // 隐私：标记为“不让 AI 读取”或已删除的笔记 / 资料一律跳过。
@@ -26,12 +27,20 @@ export interface ResolvedContext {
   sourceId: string | null
 }
 
-type SourceRow = { title: string; kind: string; aiExcluded: boolean; deletedAt: number | null }
+type SourceRow = Omit<ContextSource, 'segments'> & { kind: string }
 type NoteRow = { title: string; aiExcluded: boolean; deletedAt: number | null }
 
 function sourceRow(id: string): SourceRow | null {
   const r = getDb()
-    .select({ title: sources.title, kind: sources.kind, aiExcluded: sources.aiExcluded, deletedAt: sources.deletedAt })
+    .select({
+      id: sources.id,
+      title: sources.title,
+      kind: sources.kind,
+      aiExcluded: sources.aiExcluded,
+      deletedAt: sources.deletedAt,
+      accessedAt: sources.accessedAt,
+      publishedAt: sources.publishedAt
+    })
     .from(sources)
     .where(eq(sources.id, id))
     .get()
@@ -70,7 +79,7 @@ function sourceAnchor(anchor: Anchor, zh: boolean): string | null {
   const src = sourceRow(a.parentId)
   if (!src) return null
   const segs = listSegments(a.parentId)
-  const head = `${zh ? '资料' : 'Source'}《${src.title}》`
+  const head = `${zh ? '资料' : 'Source'}《${src.title}》（ID：${a.parentId}）`
   const kindLabel: Record<Anchor['kind'], [string, string]> = {
     'source-text': ['用户在资料中选中的文字', 'Text the user selected in the source'],
     'note-text': ['用户在笔记中选中的文字', 'Text selected in the note'],
@@ -94,6 +103,12 @@ function sourceAnchor(anchor: Anchor, zh: boolean): string | null {
       lines.push(`${zh ? '转写稿' : 'Transcript'}：\n${clip(hit.map((s) => `[${segLabel(s)}] ${s.text}`).join('\n'), MAX_SURROUND * 2)}`)
   }
   if (a.quote) lines.push(`「${a.quote}」`)
+  if (wholeSource(a))
+    lines.push(
+      zh
+        ? `共 ${segs.length} 段；下方带编号片段按预算提供前文，更多内容可用 source_read 继续读取。`
+        : `${segs.length} segments; numbered excerpts below contain the opening text within the context budget. Use source_read for more.`
+    )
   const idx = a.ownerId
     ? segs.findIndex((s) => s.id === a.ownerId)
     : a.page
@@ -109,6 +124,21 @@ function sourceAnchor(anchor: Anchor, zh: boolean): string | null {
     )
   }
   return lines.join('\n')
+}
+
+const wholeSource = (anchor: Anchor): boolean =>
+  anchor.parentType === 'source' && anchor.kind === 'viewport' && !anchor.ownerId && !anchor.page && !anchor.t && !anchor.quote
+
+/** 多标签页显式选中的整份资料必须进入带编号证据；仅放标题会让比较问题缺少正文与可点击引用。 */
+export function contextSourceEvidence(packet: ContextPacket | undefined): SearchHit[] {
+  if (!packet) return []
+  const anchors = [...packet.targets, ...(packet.viewport ? [packet.viewport] : [])].filter(wholeSource)
+  const selected: ContextSource[] = []
+  for (const id of new Set(anchors.map((anchor) => anchor.parentId))) {
+    const source = sourceRow(id)
+    if (source) selected.push({ ...source, segments: listSegments(id) })
+  }
+  return sourceContextHits(selected)
 }
 
 /** 在文档中找到块及其所在行 */

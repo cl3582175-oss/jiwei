@@ -102,17 +102,27 @@ export function useTextHighlights(
           return false
         }
         // 光标落在范围边界时，用矩形确认确实点在高亮上
-        return [...x.range.getClientRects()].some((r) => e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom)
+        return [...x.range.getClientRects()].some(
+          (r) => e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom
+        )
       })
       if (!hit) return
       const a = list.find((x) => x.id === hit.id)
       if (!a) return
       const b = hit.range.getBoundingClientRect()
-      useAnnotate.getState().open({ id: a.id, targetType: a.targetType, targetId: a.targetId, rect: { x: b.left, y: b.top, w: b.width, h: b.height }, edit: false })
+      useAnnotate
+        .getState()
+        .open({
+          id: a.id,
+          targetType: a.targetType,
+          targetId: a.targetId,
+          rect: { x: b.left, y: b.top, w: b.width, h: b.height },
+          edit: false
+        })
     }
     el.addEventListener('click', onClick)
     return () => el.removeEventListener('click', onClick)
-  }, [root, list])
+  }, [root, list, version])
 
   return orphans
 }

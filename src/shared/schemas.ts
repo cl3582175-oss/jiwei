@@ -91,7 +91,8 @@ export const SettingsPatchSchema = z.object({
     .object({
       searchEngine: z.string().url().max(300).optional(),
       aiBlockedSites: z.array(z.string().max(200)).max(500).optional(),
-      proactivity: z.enum(['quiet', 'balanced', 'active']).optional()
+      proactivity: z.enum(['quiet', 'balanced', 'active']).optional(),
+      course: z.object({ autoTimestamp: z.boolean(), autoSlides: z.boolean(), quiz: z.boolean() }).optional()
     })
     .optional()
 })
@@ -216,7 +217,9 @@ export const AiSettingsSchema = z.object({
   /** 停用的技能名称 */
   disabledSkills: z.array(z.string().max(64)).max(200).optional(),
   /** 视频 / 音频转写：本地（SenseVoice，离线）或云端（OpenAI 兼容 /audio/transcriptions） */
-  transcription: z.object({ mode: z.enum(['local', 'cloud']), providerId: Id.nullable(), model: z.string().max(200).nullable() }).optional(),
+  transcription: z
+    .object({ mode: z.enum(['local', 'cloud']), providerId: Id.nullable(), model: z.string().max(200).nullable() })
+    .optional(),
   /**
    * 文档识别（扫描页、表格、图片资料）：本地（LightOnOCR，离线）、云端看图模型或关闭。
    * figures：解读插图（本地 LightOnOCR-3 给出简短描述；云端看图模型给出结构说明）
@@ -294,9 +297,15 @@ export type ReflectionStart = z.infer<typeof ReflectionStartSchema>
 
 export const InsightConfidenceSchema = z.enum(['hypothesis', 'believed', 'verified'])
 export const HarvestCommitSchema = z.object({
-  insights: z.array(z.object({ statement: z.string().min(1).max(500), confidence: InsightConfidenceSchema, evidence: z.string().max(500).optional() })).max(20),
+  insights: z
+    .array(
+      z.object({ statement: z.string().min(1).max(500), confidence: InsightConfidenceSchema, evidence: z.string().max(500).optional() })
+    )
+    .max(20),
   revisions: z
-    .array(z.object({ insightId: Id, statement: z.string().min(1).max(500), confidence: InsightConfidenceSchema, reason: z.string().max(500) }))
+    .array(
+      z.object({ insightId: Id, statement: z.string().min(1).max(500), confidence: InsightConfidenceSchema, reason: z.string().max(500) })
+    )
     .max(20),
   actions: z.array(z.object({ title: z.string().min(1).max(300), dueAt: z.number().int().nullable() })).max(20)
 })
@@ -328,7 +337,6 @@ export const GoalInputSchema = z.object({
   noteIds: z.array(Id).max(500).optional()
 })
 export type GoalInput = z.infer<typeof GoalInputSchema>
-
 
 /* ——— 批注（v0.5.3） ——— */
 
@@ -375,3 +383,47 @@ export type AnnotationPatch = z.infer<typeof AnnotationPatchSchema>
 /* ——— 内置浏览器（v0.6.0） ——— */
 
 export const BrowserRectSchema = z.object({ x: z.number(), y: z.number(), width: z.number().min(0), height: z.number().min(0) })
+
+export const CourseOptionsSchema = z.object({
+  mode: z.enum(['auto', 'local', 'off']).optional(),
+  slides: z.boolean().optional(),
+  quiz: z.boolean().optional()
+})
+const CourseTime = z.number().finite().min(0).max(604800)
+const CourseEnvelope = z.object({ scope: Id, url: z.string().max(4000), media: Id })
+export const CourseAbsentSchema = CourseEnvelope
+/** 录音会话 ID：用作磁盘目录名，只允许字母、数字、下划线与连字符（防止路径穿越；来自网页进程的消息不可信） */
+const CaptureId = z.string().regex(/^[\w-]{1,64}$/)
+export const CourseAudioStartSchema = CourseEnvelope.extend({ capture: CaptureId })
+export const CourseVideoSchema = CourseEnvelope.extend({
+  currentTime: CourseTime,
+  duration: CourseTime,
+  paused: z.boolean(),
+  rate: z.number().finite().positive().max(16),
+  title: z
+    .string()
+    .max(10000)
+    .transform((s) => s.slice(0, 300)),
+  ended: z.boolean()
+}).refine((v) => v.duration > 30 && v.currentTime <= v.duration + 5)
+export const CourseCaptionsSchema = CourseEnvelope.extend({
+  batch: z.number().int().min(0).max(200),
+  done: z.boolean(),
+  cues: z.array(z.object({ start: CourseTime, end: CourseTime, text: z.string().max(1000) }).refine((c) => c.end >= c.start)).max(500)
+})
+const boundedBuffer = (max: number) => z.custom<ArrayBuffer>((v) => v instanceof ArrayBuffer && v.byteLength > 0 && v.byteLength <= max)
+export const CourseAudioSchema = CourseEnvelope.extend({
+  capture: CaptureId,
+  sequence: z.number().int().min(0).max(100000),
+  start: CourseTime,
+  end: CourseTime,
+  rate: z.number().finite().positive().max(16),
+  elapsed: z.number().finite().min(0).max(60),
+  final: z.boolean(),
+  bytes: boundedBuffer(2 * 1024 * 1024)
+}).refine((v) => v.end >= v.start && v.end - v.start <= v.elapsed * v.rate + 3)
+export const CourseFrameSchema = CourseEnvelope.extend({ t: CourseTime, jpeg: boundedBuffer(1.5 * 1024 * 1024), requestId: Id.optional() })
+export const CourseErrorSchema = CourseEnvelope.extend({
+  code: z.enum(['audio-blocked', 'frame-blocked', 'audio-unavailable']),
+  requestId: Id.optional()
+})

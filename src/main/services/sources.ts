@@ -171,9 +171,10 @@ export async function importDialog(win: BrowserWindow | null, categoryId?: strin
  * 内置浏览器：把正在看的网页存为资料（v0.6.0）。直接使用网页中已加载的内容（登录后才能看的页面也能存），
  * 同一网址复用已有资料；内容有变化时更新快照，重新分段（片段 ID 按内容沿用，批注与引用不失效）。
  */
-export async function saveWebPage(input: { url: string; title: string; html: string }): Promise<Source> {
+export async function saveWebPage(input: { url: string; title: string; html: string }, valid?: () => boolean): Promise<Source> {
   const db = getDb()
   const ref = await importBytes('snapshot.html', 'text/html', new TextEncoder().encode(input.html))
+  if (valid && !valid()) throw new Error('Page changed')
   const now = Date.now()
   const existing = db
     .select()

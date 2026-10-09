@@ -24,15 +24,40 @@ const zh = (): boolean => getSettings().language.startsWith('zh')
 /* ——— 存为资料 ——— */
 
 /** 把标签页中的网页存为资料（已存过则复用）；敏感页面与无痕标签不存 */
+const saving = new Map<string, Promise<string>>()
 export async function saveTab(tabId?: string | null): Promise<string> {
+  const t = m.getTab(tabId)
+  if (!t) throw new Error('没有打开的网页')
+  const key = `${t.id}:${t.scope}`
+  const pending = saving.get(key)
+  if (pending) return pending
+  const work = saveCurrentTab(t.id)
+  saving.set(key, work)
+  try {
+    return await work
+  } finally {
+    if (saving.get(key) === work) saving.delete(key)
+  }
+}
+
+async function saveCurrentTab(tabId: string): Promise<string> {
   const t = m.getTab(tabId)
   if (!t) throw new Error('没有打开的网页')
   if (m.isSensitive(t.id)) throw new Error(zh() ? '这个网页设为不发送给 AI，不能存为资料' : 'AI is off on this page')
   if (t.incognito) throw new Error(zh() ? '无痕标签中的网页不会存为资料' : 'Incognito pages are not saved')
   const url = t.view.webContents.getURL()
   if (!/^https?:/i.test(url)) throw new Error(zh() ? '这个页面不能存为资料' : 'This page cannot be saved')
+  const scope = t.scope
+  const valid = (): boolean =>
+    m.getTab(t.id) === t && t.scope === scope && !t.incognito && !m.isSensitive(t.id) && t.view.webContents.getURL() === url
+  if (t.sourceId) {
+    const existing = getDb().select().from(sources).where(eq(sources.id, t.sourceId)).get()
+    if (existing && !existing.deletedAt && !existing.aiExcluded && existing.url === canonicalUrl(url)) return existing.id
+  }
   const html = await m.inPage<string>(t.id, 'document.documentElement.outerHTML')
-  const src = await saveWebPage({ url: canonicalUrl(url), title: t.view.webContents.getTitle(), html })
+  if (!valid()) throw new Error('Page changed')
+  const src = await saveWebPage({ url: canonicalUrl(url), title: t.view.webContents.getTitle(), html }, valid)
+  if (!valid()) throw new Error('Page changed')
   m.markInteraction(t.id, src.id)
   pushAnnotations(t.id)
   return src.id
@@ -41,7 +66,7 @@ export async function saveTab(tabId?: string | null): Promise<string> {
 /** 已存为资料的网页：把它的批注发给内容脚本绘制高亮 */
 export function pushAnnotations(tabId: string): void {
   const t = m.getTab(tabId)
-  if (!t) return
+  if (!t || t.incognito || m.isSensitive(tabId)) return
   let sourceId = t.sourceId
   if (!sourceId) {
     const url = canonicalUrl(t.view.webContents.getURL())
@@ -151,7 +176,11 @@ async function related(tabId: string): Promise<void> {
     if (seen.has(key)) continue
     seen.add(key)
     // 本网页自己的资料不算
-    if (h.parentType === 'source' && getDb().select({ url: sources.url }).from(sources).where(eq(sources.id, h.parentId)).get()?.url === self) continue
+    if (
+      h.parentType === 'source' &&
+      getDb().select({ url: sources.url }).from(sources).where(eq(sources.id, h.parentId)).get()?.url === self
+    )
+      continue
     items.push({ type: h.parentType, id: h.parentId, title: h.title, text: h.text.slice(0, 140) })
     if (items.length >= 3) break
   }
@@ -162,7 +191,27 @@ type BrowserRelatedItem = { type: 'note' | 'source'; id: string; title: string; 
 
 /* ——— 下载：可导入的文件自动进入资料库 ——— */
 
-const IMPORTABLE = new Set(['pdf', 'epub', 'docx', 'md', 'txt', 'html', 'htm', 'png', 'jpg', 'jpeg', 'webp', 'mp3', 'm4a', 'wav', 'mp4', 'mov', 'webm', 'srt', 'vtt'])
+const IMPORTABLE = new Set([
+  'pdf',
+  'epub',
+  'docx',
+  'md',
+  'txt',
+  'html',
+  'htm',
+  'png',
+  'jpg',
+  'jpeg',
+  'webp',
+  'mp3',
+  'm4a',
+  'wav',
+  'mp4',
+  'mov',
+  'webm',
+  'srt',
+  'vtt'
+])
 
 export async function onDownloaded(path: string, name: string): Promise<void> {
   const ext = extname(name).slice(1).toLowerCase()
@@ -206,7 +255,12 @@ function threadsOf(sourceId: string): { q: string; a: string }[] {
     .all()
   const out: { q: string; a: string }[] = []
   for (const c of convs.slice(-20)) {
-    const ms = db.select({ role: messages.role, content: messages.content }).from(messages).where(eq(messages.conversationId, c.id)).orderBy(messages.createdAt).all()
+    const ms = db
+      .select({ role: messages.role, content: messages.content })
+      .from(messages)
+      .where(eq(messages.conversationId, c.id))
+      .orderBy(messages.createdAt)
+      .all()
     const q = ms.find((x) => x.role === 'user')?.content ?? ''
     const a = ms.find((x) => x.role === 'assistant')?.content ?? ''
     if (q && a) out.push({ q: q.slice(0, 500), a: a.slice(0, 1200) })
@@ -265,7 +319,13 @@ export async function recapToNote(sourceId: string, noteId: string | null): Prom
       cue: markdownToNodes(r.cue),
       body: [
         ...markdownToNodes(r.body),
-        { type: 'paragraph', content: [{ type: 'text', text: zh() ? '出处：' : 'Source: ' }, link(`《${src.title}》${r.quote ? `“${r.quote.slice(0, 40)}”` : ''}`)] }
+        {
+          type: 'paragraph',
+          content: [
+            { type: 'text', text: zh() ? '出处：' : 'Source: ' },
+            link(`《${src.title}》${r.quote ? `“${r.quote.slice(0, 40)}”` : ''}`)
+          ]
+        }
       ]
     }))
   })

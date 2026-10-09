@@ -120,7 +120,7 @@ export const CornellKeymap = Extension.create({
           const cur = findRow(state.selection.$from)
           const at = cur ? cur.end : rowsEnd(state.doc)
           if (dispatch) {
-            tr.insert(at, newRow)
+            tr.insert(at, newRow).setMeta('cornell:new-row', at)
             const target = opts?.focus === 'cue' ? cueStart(at) : bodyStart(at, newRow)
             selectNear(tr, target).scrollIntoView()
           }
@@ -205,7 +205,7 @@ export const CornellAddRowWidget = Extension.create<{ label: string; hint: strin
                   const row = state.schema.nodes[CORNELL.row].createAndFill()
                   if (!row) return
                   const at = rowsEnd(state.doc)
-                  const tr = state.tr.insert(at, row)
+                  const tr = state.tr.insert(at, row).setMeta('cornell:new-row', at)
                   view.dispatch(selectNear(tr, bodyStart(at, row)).scrollIntoView())
                   view.focus()
                 })
