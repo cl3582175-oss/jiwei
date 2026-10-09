@@ -30,7 +30,7 @@ test('AI settings and chat UI without a key', async () => {
   // DeepSeek 支持的思考档位：关闭 / 低 / 高 / 极限（没有“中”）
   const radios = page.getByRole('radiogroup', { name: '思考强度' }).getByRole('radio')
   await expect(radios).toHaveText(['关闭', '低', '高', '极限'])
-  await expect(page.getByRole('radio', { name: '高' })).toHaveAttribute('aria-checked', 'true')
+  await expect(page.getByRole('radio', { name: '高', exact: true })).toHaveAttribute('aria-checked', 'true')
   // 模型能力：默认按名称判断（deepseek-flash 能看图、普通；deepseek-v4-pro 纯文本、强模型），可逐个改写
   await expect(page.getByRole('button', { name: 'deepseek-flash 看图' })).toHaveAttribute('aria-pressed', 'true')
   await expect(page.getByRole('button', { name: 'deepseek-flash 强模型' })).toHaveAttribute('aria-pressed', 'false')

@@ -78,7 +78,7 @@ test('citation jumps to the source passage', async () => {
 
 test('thinking effort high returns a reasoning trace', async () => {
   test.setTimeout(240_000)
-  await page.getByRole('radio', { name: '高' }).click()
+  await page.getByRole('radio', { name: '高', exact: true }).click()
   await ask('比较“间隔重复”和“费曼学习法”各自适合解决什么问题，简要回答。')
   await expect(lastAnswer().getByRole('button', { name: /思考/ })).toBeVisible({ timeout: 180_000 })
   await expect(lastAnswer().getByText(/思考：高/)).toBeVisible({ timeout: 180_000 })
