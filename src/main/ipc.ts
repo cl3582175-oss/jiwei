@@ -31,6 +31,7 @@ import * as feynman from './services/feynman'
 import * as reflection from './services/reflection'
 import * as progress from './services/progress'
 import * as connections from './services/connections'
+import { knowledgeGraph } from './services/graph'
 import * as asr from './services/asr'
 import { saveAnswer } from './services/saveAnswer'
 import { exportNote } from './services/exportNote'
@@ -200,6 +201,9 @@ const handlers: Handlers = {
     relate: (_, noteId, toType, toId) => connections.relate(noteId, toType, toId),
     unrelate: (_, noteId, toType, toId) => connections.unrelate(noteId, toType, toId),
     linkMention: (_, noteId, mentionNoteId, blockId, undo) => connections.linkMention(noteId, mentionNoteId, blockId, undo)
+  },
+  graph: {
+    data: () => knowledgeGraph()
   },
   mastery: {
     map: (_, goalId) => progress.masteryMap(goalId)

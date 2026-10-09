@@ -64,6 +64,9 @@ export function useGlobalShortcuts(): void {
       } else if (k === '5') {
         e.preventDefault()
         s.setView('reflect')
+      } else if (k === '6') {
+        e.preventDefault()
+        s.openGraph(null)
       } else if (k === 'j') {
         // 工作区 AI 面板
         e.preventDefault()

@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next'
-import { NotebookPen, Library, Trash2, Settings, Search, PanelLeftClose, PanelLeftOpen, Sparkles, Layers, Sprout } from 'lucide-react'
+import { NotebookPen, Library, Trash2, Settings, Search, PanelLeftClose, PanelLeftOpen, Sparkles, Layers, Sprout, Network } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useApp, type View } from '@/store/app'
 import { cn, isMac, modKey } from '@/lib/utils'
@@ -58,7 +58,8 @@ export function NavRail() {
     { id: 'library', label: `${t('nav.library')}  ${modKey}2`, icon: <Library /> },
     { id: 'chat', label: `${t('nav.chat')}  ${modKey}3`, icon: <Sparkles /> },
     { id: 'review', label: `${t('nav.review')}  ${modKey}4`, icon: <Layers /> },
-    { id: 'reflect', label: `${t('nav.reflect')}  ${modKey}5`, icon: <Sprout /> }
+    { id: 'reflect', label: `${t('nav.reflect')}  ${modKey}5`, icon: <Sprout /> },
+    { id: 'graph', label: `${t('nav.graph')}  ${modKey}6`, icon: <Network /> }
   ]
 
   return (
@@ -85,7 +86,9 @@ export function NavRail() {
           key={it.id}
           active={view === it.id}
           label={it.label}
-          onClick={() => (it.id === 'notes' && view === 'notes' ? openNote(null) : setView(it.id))}
+          onClick={() =>
+            it.id === 'notes' && view === 'notes' ? openNote(null) : it.id === 'graph' ? useApp.getState().openGraph(null) : setView(it.id)
+          }
           badge={it.id === 'review' ? stats?.due : undefined}
         >
           {it.icon}

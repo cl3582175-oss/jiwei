@@ -361,6 +361,35 @@ export interface NoteConnections {
   vectors: boolean
 }
 
+/* ——— 知识结构图（v0.5.1） ——— */
+
+export interface GraphNode {
+  /** note:<id> 或 source:<id> */
+  key: string
+  type: 'note' | 'source'
+  id: string
+  title: string
+  /** 笔记的顶级分类（着色用）；资料为 null */
+  categoryId: string | null
+  /** 笔记字数 / 资料分段数（节点大小） */
+  weight: number
+  /** 笔记的掌握情况（与掌握度地图一致） */
+  mastery: MasteryStatus | null
+}
+
+export interface GraphEdge {
+  from: string
+  to: string
+  /** reference 正文链接；related 手动关联；source 引用资料 */
+  kind: 'reference' | 'related' | 'source'
+}
+
+export interface KnowledgeGraph {
+  nodes: GraphNode[]
+  edges: GraphEdge[]
+  categories: { id: string; name: string; color: string | null }[]
+}
+
 /* ——— 学习目标与掌握度（v0.4.3） ——— */
 
 /**

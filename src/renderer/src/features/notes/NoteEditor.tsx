@@ -28,7 +28,8 @@ import {
   Download,
   Layers,
   Layers2 as LayersOff,
-  Target
+  Target,
+  Network
 } from 'lucide-react'
 import type { KnowledgeStatus, NoteMetaUpdate, NoteSummary } from '@shared/types'
 import { useCategories, useNote, invalidate } from '@/lib/queries'
@@ -329,6 +330,13 @@ function EditorBody({ note: initial }: { note: NoteSummary }) {
             <Tip label={t('workspace.openSource')} side="bottom">
               <Button variant="ghost" size="icon-sm" onClick={() => setSourcePickerOpen(true)} aria-label={t('workspace.openSource')}>
                 <PanelLeftOpen />
+              </Button>
+            </Tip>
+          )}
+          {note.kind === 'cornell' && (
+            <Tip label={t('graph.local')} side="bottom">
+              <Button variant="ghost" size="icon-sm" onClick={() => useApp.getState().openGraph(`note:${note.id}`)} aria-label={t('graph.local')}>
+                <Network />
               </Button>
             </Tip>
           )}

@@ -13,6 +13,7 @@ const en: Messages = {
     library: 'Library',
     review: 'Review',
     reflect: 'Reflect',
+    graph: 'Graph',
     trash: 'Recently Deleted',
     settings: 'Settings',
     search: 'Search'
@@ -715,6 +716,20 @@ const en: Messages = {
     added: 'Added {{count}} questions to your note',
     openNote: 'Open note',
     again: 'Explain again'
+  },
+  graph: {
+    title: 'Knowledge graph',
+    count: '{{notes}} notes · {{sources}} sources · {{edges}} links',
+    colorBy: { category: 'By category', mastery: 'By mastery' },
+    search: 'Find a note',
+    open: 'Open',
+    clear: 'Clear selection',
+    localOf: 'Around “{{title}}” (2 steps)',
+    showAll: 'Show all',
+    sources: 'Sources',
+    local: 'Local graph',
+    hint: 'Hover to see neighbours, click to open; scroll to zoom, drag to pan.',
+    empty: 'No notes yet. Write notes and link them with [[ — your knowledge structure grows here.'
   },
   links: {
     title: 'Connections',

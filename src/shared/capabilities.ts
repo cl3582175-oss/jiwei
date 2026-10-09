@@ -27,6 +27,7 @@ import type {
   GoalProgress,
   MasteryMap,
   NoteConnections,
+  KnowledgeGraph,
   ReviewCard,
   ReviewStats,
   AnswerCheck,
@@ -354,6 +355,9 @@ export const capabilities = {
       description: '把另一篇笔记中提到本篇标题的文字变成链接（undo 为撤销）',
       params: [id('noteId'), id('mentionNoteId'), ['blockId', z.string().max(64)], ['undo', z.boolean().optional()]]
     })
+  },
+  graph: {
+    data: cap<KnowledgeGraph>()({ description: '知识结构图：笔记、资料与它们之间的链接、关联、出处', params: none, ai: { effect: 'read' } })
   },
   mastery: {
     map: cap<MasteryMap>()({ description: '掌握度地图：各笔记的掌握情况（可按目标筛选）', params: [['goalId', S.Id.nullable()]] })

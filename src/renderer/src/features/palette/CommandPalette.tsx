@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Command } from 'cmdk'
 import { Dialog as D } from 'radix-ui'
 import { useTranslation } from 'react-i18next'
-import { NotebookText, PenLine, Library, Settings, Trash2, Search, Home, Layers, GraduationCap, Sprout } from 'lucide-react'
+import { NotebookText, PenLine, Library, Settings, Trash2, Search, Home, Layers, GraduationCap, Sprout, Network } from 'lucide-react'
 import { useApp } from '@/store/app'
 import { useNotes } from '@/lib/queries'
 import { useCreateNote } from '@/lib/shortcuts'
@@ -75,6 +75,11 @@ export function CommandPalette() {
                     <Sprout />
                     <span className="flex-1">{t('nav.reflect')}</span>
                     <Kbd>{modKey}5</Kbd>
+                  </Command.Item>
+                  <Command.Item className={itemCls} onSelect={run(() => useApp.getState().openGraph(null))}>
+                    <Network />
+                    <span className="flex-1">{t('nav.graph')}</span>
+                    <Kbd>{modKey}6</Kbd>
                   </Command.Item>
                   <Command.Item className={itemCls} onSelect={run(() => setView('trash'))}>
                     <Trash2 />

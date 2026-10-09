@@ -14,6 +14,7 @@ import { ChatView } from './features/chat/ChatView'
 import { ReviewView } from './features/review/ReviewView'
 import { FeynmanView } from './features/feynman/FeynmanView'
 import { ReflectView } from './features/reflect/ReflectView'
+import { GraphView } from './features/graph/GraphView'
 import { SettingsDialog } from './features/settings/SettingsDialog'
 import { CommandPalette } from './features/palette/CommandPalette'
 import { Onboarding } from './features/onboarding/Onboarding'
@@ -116,6 +117,7 @@ export function App() {
           {view === 'review' && <ReviewView />}
           {view === 'feynman' && <FeynmanView />}
           {view === 'reflect' && <ReflectView />}
+          {view === 'graph' && <GraphView />}
           {view === 'trash' && <TrashView />}
         </main>
       </div>

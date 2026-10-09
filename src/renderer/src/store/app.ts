@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import type { NoteSort, WorkspaceContext } from '@shared/types'
 
-export type View = 'notes' | 'library' | 'chat' | 'review' | 'reflect' | 'feynman' | 'trash'
+export type View = 'notes' | 'library' | 'chat' | 'review' | 'reflect' | 'graph' | 'feynman' | 'trash'
 
 /** 笔记列表筛选：全部 / 置顶 / 未分类 / 某分类 / 某标签 */
 export type NoteFilter =
@@ -46,6 +46,11 @@ interface AppState extends Location {
 
   context: WorkspaceContext
   setContext: (patch: Partial<WorkspaceContext>) => void
+
+  /** 知识结构图的焦点（局部图：note:<id>；null 为全局） */
+  graphFocus: string | null
+  setGraphFocus: (key: string | null) => void
+  openGraph: (focus?: string | null) => void
 
   /** 复习页的标签：今日复习 / 掌握度地图 / 学习目标 */
   reviewTab: 'today' | 'mastery' | 'goals'
@@ -137,6 +142,13 @@ export const useApp = create<AppState>((set, get) => {
 
     context: emptyContext,
     setContext: (patch) => set((s) => ({ context: { ...s.context, ...patch } })),
+
+    graphFocus: null,
+    setGraphFocus: (graphFocus) => set({ graphFocus }),
+    openGraph: (focus) => {
+      set({ graphFocus: focus ?? null })
+      get().navigate({ view: 'graph' })
+    },
 
     reviewTab: 'today',
     setReviewTab: (reviewTab) => set({ reviewTab }),

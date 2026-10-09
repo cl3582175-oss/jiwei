@@ -11,6 +11,7 @@ const zhCN = {
     library: '资料库',
     review: '复习',
     reflect: '复盘',
+    graph: '图谱',
     trash: '最近删除',
     settings: '设置',
     search: '搜索'
@@ -699,6 +700,20 @@ const zhCN = {
     added: '已把 {{count}} 个问题加入笔记',
     openNote: '打开笔记',
     again: '再讲一遍'
+  },
+  graph: {
+    title: '知识结构',
+    count: '{{notes}} 篇笔记 · {{sources}} 份资料 · {{edges}} 条连线',
+    colorBy: { category: '按分类', mastery: '按掌握度' },
+    search: '查找笔记',
+    open: '打开',
+    clear: '取消选中',
+    localOf: '《{{title}}》附近（两步以内）',
+    showAll: '显示全部',
+    sources: '资料',
+    local: '局部图',
+    hint: '悬停查看相邻的笔记，点击打开；滚轮缩放，拖动平移。',
+    empty: '还没有笔记。写下笔记、用 [[ 把它们连起来，这里就会长出你的知识结构。'
   },
   links: {
     title: '关联',
