@@ -22,6 +22,7 @@ import { useGlobalShortcuts } from './lib/shortcuts'
 import { useCelebrations } from './lib/celebrate'
 import { useMemoryToasts } from './features/memory/useMemoryToasts'
 import { SelectionToolbar } from './features/assist/SelectionToolbar'
+import { AnnotationCard } from './features/annotate/AnnotationCard'
 import { AnswerCard } from './features/assist/AnswerCard'
 
 function useThemeSync(): 'light' | 'dark' {
@@ -126,6 +127,7 @@ export function App() {
       <Onboarding />
       <DialogHost />
       <SelectionToolbar />
+      <AnnotationCard />
       <AnswerCard />
       <Toaster
         theme={theme}

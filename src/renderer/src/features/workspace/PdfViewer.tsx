@@ -7,12 +7,13 @@ import 'pdfjs-dist/web/pdf_viewer.css'
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import { Loader2, ZoomIn, ZoomOut, SquareDashedMousePointer } from 'lucide-react'
 import type { Anchor } from '@shared/context'
-import type { Conversation, Segment, Source } from '@shared/types'
+import type { Annotation, Conversation, Segment, Source } from '@shared/types'
 import { api, cn } from '@/lib/utils'
 import { useApp } from '@/store/app'
 import { Button } from '@/components/ui/button'
 import { Tip } from '@/components/ui/primitives'
 import { useAssist, type Rect } from '../assist/store'
+import { useAnnotate, useAnnotations } from '../annotate/store'
 
 // PDF 阅读：pdf.js 自带的查看器（文字层可选中、可定位）。
 //   - 翻页 → 工作区上下文（page=N）；AI 引用 / 出处链接 → 跳到对应页并闪烁
@@ -44,6 +45,28 @@ function relRect(page: HTMLElement, r: DOMRect | Rect): NonNullable<Anchor['rect
   return { x: (x - b.left) / b.width, y: (y - b.top) / b.height, w: w / b.width, h: h / b.height }
 }
 
+/** 选区在页内的相对矩形：同一行的片段合并为一个（高亮批注用） */
+function lineRects(page: HTMLElement, range: Range): Rect[] {
+  const b = page.getBoundingClientRect()
+  const lines: DOMRect[] = []
+  for (const r of range.getClientRects()) {
+    if (r.width < 1 || r.height < 1) continue
+    // 只取本页内的部分
+    if (r.bottom < b.top || r.top > b.bottom) continue
+    const same = lines.find((l) => Math.abs(l.top - r.top) < r.height * 0.5 && Math.abs(l.height - r.height) < r.height * 0.6)
+    if (same) {
+      const left = Math.min(same.left, r.left)
+      const right = Math.max(same.right, r.right)
+      same.x = left
+      same.width = right - left
+    } else lines.push(DOMRect.fromRect(r))
+  }
+  return lines.slice(0, 200).map((l) => {
+    const r = relRect(page, l)
+    return { x: r.x, y: r.y, w: r.w, h: r.h }
+  })
+}
+
 export function PdfViewer({ source }: { source: Source }) {
   const { t } = useTranslation()
   const container = useRef<HTMLDivElement>(null)
@@ -59,6 +82,9 @@ export function PdfViewer({ source }: { source: Source }) {
   const { data: threads = [] } = useQuery({ queryKey: ['threads', source.id], queryFn: () => api.chat.threads(source.id) })
   const segRef = useRef(segs)
   segRef.current = segs
+  const annotations = useAnnotations('source', source.id)
+  const annRef = useRef(annotations)
+  annRef.current = annotations
 
   // 加载文档
   useEffect(() => {
@@ -162,15 +188,105 @@ export function PdfViewer({ source }: { source: Source }) {
     return () => obs.disconnect()
   }, [threads, state, t])
 
-  // 选中文字 → 浮条
-  const onMouseUp = (): void => {
+  // 批注高亮层：每页一层（页面重新渲染后补上）
+  useEffect(() => {
+    const el = container.current
+    if (!el || state !== 'ready') return
+    const byPage = new Map<number, Annotation[]>()
+    for (const a of annotations) if (a.selector.page && a.selector.rects?.length) byPage.set(a.selector.page, [...(byPage.get(a.selector.page) ?? []), a])
+    const fill = (pg: HTMLElement, list: Annotation[]): void => {
+      const layer = document.createElement('div')
+      layer.className = 'jw-anno-layer'
+      layer.dataset.version = String(annotations.length)
+      for (const a of list) {
+        for (const r of a.selector.rects!) {
+          const d = document.createElement('div')
+          d.className = 'jw-anno-rect'
+          d.dataset.id = a.id
+          d.dataset.color = a.color ?? 'yellow'
+          if (a.motivation === 'questioning') d.dataset.question = '1'
+          Object.assign(d.style, { left: `${r.x * 100}%`, top: `${r.y * 100}%`, width: `${r.w * 100}%`, height: `${r.h * 100}%` })
+          layer.appendChild(d)
+        }
+        // 有评论：首行右上角的气泡
+        if (a.body?.trim()) {
+          const first = a.selector.rects![0]
+          const n = document.createElement('button')
+          n.className = 'jw-anno-note'
+          n.textContent = a.motivation === 'questioning' ? '?' : '…'
+          n.title = a.body
+          n.setAttribute('aria-label', t('annotate.open', { text: a.body.slice(0, 40) }))
+          Object.assign(n.style, { left: `${(first.x + first.w) * 100}%`, top: `${first.y * 100}%` })
+          n.onmousedown = (e) => e.stopPropagation()
+          n.onclick = (e) => {
+            e.stopPropagation()
+            const b = (e.currentTarget as HTMLElement).getBoundingClientRect()
+            useAnnotate.getState().open({ id: a.id, targetType: 'source', targetId: source.id, rect: { x: b.left, y: b.top, w: b.width, h: b.height }, edit: false })
+          }
+          layer.appendChild(n)
+        }
+      }
+      // 放在文字层之下：不妨碍选中文字
+      const text = pg.querySelector('.textLayer')
+      if (text) pg.insertBefore(layer, text)
+      else pg.appendChild(layer)
+    }
+    const place = (): void => {
+      el.querySelectorAll('.jw-anno-layer').forEach((d) => d.remove())
+      for (const [p, list] of byPage) {
+        const pg = el.querySelector<HTMLElement>(`.page[data-page-number="${p}"]`)
+        if (pg?.querySelector('.canvasWrapper')) fill(pg, list)
+      }
+    }
+    place()
+    const obs = new MutationObserver(() => {
+      for (const p of byPage.keys()) {
+        const pg = el.querySelector<HTMLElement>(`.page[data-page-number="${p}"]`)
+        if (pg?.querySelector('.canvasWrapper') && !pg.querySelector('.jw-anno-layer')) fill(pg, byPage.get(p)!)
+      }
+    })
+    obs.observe(el, { childList: true, subtree: true })
+    return () => {
+      obs.disconnect()
+      el.querySelectorAll('.jw-anno-layer').forEach((d) => d.remove())
+    }
+  }, [annotations, state, source.id, t])
+
+  /** 点在高亮上：打开批注卡片 */
+  const hitAnnotation = (x: number, y: number): boolean => {
+    const pg = document.elementsFromPoint(x, y).map(pageOf).find(Boolean)
+    if (!pg) return false
+    const n = Number(pg.dataset.pageNumber)
+    const b = pg.getBoundingClientRect()
+    const px = (x - b.left) / b.width
+    const py = (y - b.top) / b.height
+    const a = annRef.current.find(
+      (a) => a.selector.page === n && a.selector.rects?.some((r) => px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h)
+    )
+    if (!a) return false
+    const r = a.selector.rects![0]
+    useAnnotate.getState().open({
+      id: a.id,
+      targetType: 'source',
+      targetId: source.id,
+      rect: { x: b.left + r.x * b.width, y: b.top + r.y * b.height, w: r.w * b.width, h: r.h * b.height },
+      edit: false
+    })
+    return true
+  }
+
+  // 选中文字 → 浮条；单击高亮 → 批注卡片
+  const onMouseUp = (e: React.MouseEvent): void => {
     if (regionMode) return
+    const { clientX, clientY } = e
     requestAnimationFrame(() => {
       const sel = window.getSelection()
       const quote = sel?.toString().replace(/\s+/g, ' ').trim() ?? ''
       if (!sel || !quote || !sel.rangeCount) {
         setContext({ sourceSelection: null })
-        return useAssist.getState().showToolbar(null)
+        useAssist.getState().showToolbar(null)
+        hitAnnotation(clientX, clientY)
+        return
       }
       const range = sel.getRangeAt(0)
       const pg = pageOf(range.startContainer instanceof Element ? range.startContainer : range.startContainer.parentElement)
@@ -186,7 +302,7 @@ export function PdfViewer({ source }: { source: Source }) {
         ...(pg ? { rect: relRect(pg, b) } : {})
       }
       setContext({ sourceSelection: quote.slice(0, 4000), sourceSegmentId: anchor.ownerId ?? null, sourceLocator: `page=${n}` })
-      useAssist.getState().showToolbar({ anchor, rect: { x: b.left, y: b.top, w: b.width, h: b.height } })
+      useAssist.getState().showToolbar({ anchor, rect: { x: b.left, y: b.top, w: b.width, h: b.height }, ...(pg ? { rects: lineRects(pg, range) } : {}) })
     })
   }
 

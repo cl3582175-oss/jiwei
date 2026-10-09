@@ -33,7 +33,8 @@ export interface CardState {
 }
 
 interface AssistState {
-  toolbar: { anchor: Anchor; rect: Rect } | null
+  /** rects：PDF 选区在页内的相对矩形（跨行时多个），用于高亮批注 */
+  toolbar: { anchor: Anchor; rect: Rect; rects?: Rect[] } | null
   showToolbar: (t: AssistState['toolbar']) => void
   card: CardState | null
   openCard: (c: Omit<CardState, 'key'>) => void

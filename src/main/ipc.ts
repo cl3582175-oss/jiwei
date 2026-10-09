@@ -34,6 +34,7 @@ import * as connections from './services/connections'
 import { knowledgeGraph } from './services/graph'
 import * as asr from './services/asr'
 import * as recognize from './services/recognize'
+import * as annotations from './services/annotations'
 import { saveAnswer } from './services/saveAnswer'
 import { exportNote } from './services/exportNote'
 import { registerSandbox } from './services/sandbox'
@@ -276,6 +277,15 @@ const handlers: Handlers = {
     },
     transcribe: (_, id) => asr.enqueueTranscribe(id),
     importSubtitles: ({ win }, id) => sources.importSubtitlesDialog(win, id)
+  },
+  annotations: {
+    list: (_, type, id) => annotations.listAnnotations(type, id),
+    recent: (_, since) => annotations.recentAnnotations(since),
+    create: (_, input) => annotations.createAnnotation(input),
+    update: (_, id, patch) => annotations.updateAnnotation(id, patch),
+    remove: (_, id) => annotations.removeAnnotation(id),
+    restore: (_, id) => annotations.removeAnnotation(id, true),
+    exportPdf: ({ win }, id) => annotations.exportAnnotatedPdf(id, win)
   },
   recognition: {
     status: () => recognize.recognizerStatus(),

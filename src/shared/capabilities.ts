@@ -11,6 +11,8 @@ import type {
   Conversation,
   EmbeddingStatus,
   RecognizerStatus,
+  Annotation,
+  AnnotationWithTarget,
   SourceRecognition,
   HeatmapDay,
   ImportResult,
@@ -426,6 +428,26 @@ export const capabilities = {
     install: cap<void>()({ description: '下载并安装语音转写引擎（sherpa-onnx + SenseVoice）', params: none }),
     transcribe: cap<void>()({ description: '为视频 / 音频生成转写稿（后台任务）', params: [id('sourceId')] }),
     importSubtitles: cap<number | null>()({ description: '为视频 / 音频导入字幕文件', params: [id('sourceId')] })
+  },
+  annotations: {
+    list: cap<Annotation[]>()({
+      description: '列出笔记或资料上的批注（高亮、评论、存疑）',
+      params: [
+        ['targetType', z.enum(['note', 'source'])],
+        ['targetId', S.Id]
+      ],
+      ai: { effect: 'read' }
+    }),
+    recent: cap<AnnotationWithTarget[]>()({
+      description: '最近的批注（含所在笔记 / 资料标题）',
+      params: [['since', z.number().int().min(0)]],
+      ai: { effect: 'read' }
+    }),
+    create: cap<Annotation>()({ description: '添加批注', params: [['input', S.AnnotationInputSchema]] }),
+    update: cap<Annotation>()({ description: '修改批注', params: [id(), ['patch', S.AnnotationPatchSchema]] }),
+    remove: cap<void>()({ description: '删除批注', params: [id()] }),
+    restore: cap<void>()({ description: '撤销删除批注', params: [id()] }),
+    exportPdf: cap<string | null>()({ description: '导出带批注的 PDF（标准 PDF 批注），返回保存路径', params: [id('sourceId')] })
   },
   recognition: {
     status: cap<RecognizerStatus>()({ description: '文档识别引擎（本地模型）状态', params: none }),

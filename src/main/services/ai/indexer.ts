@@ -1,7 +1,7 @@
-import { and, eq, inArray, isNull, or } from 'drizzle-orm'
+import { and, eq, inArray, isNotNull, isNull, or } from 'drizzle-orm'
 import log from 'electron-log/main'
 import { getDb, getSqlite } from '../../db'
-import { blocks, chunks, notes, sourceSegments, sources } from '../../db/schema'
+import { annotations, blocks, chunks, notes, sourceSegments, sources } from '../../db/schema'
 import { hashText } from '../../lib/derive'
 import { enqueue, registerJobKind } from '../jobs'
 import { currentModelId, embed, isReady, setStatus } from './embedding'
@@ -12,7 +12,7 @@ import { currentModelId, embed, isReady, setStatus } from './embedding'
 // - 由后台任务执行，可中断续跑
 
 interface DesiredChunk {
-  ownerType: 'block' | 'segment'
+  ownerType: 'block' | 'segment' | 'annotation'
   ownerId: string
   parentType: 'note' | 'source'
   parentId: string
@@ -46,6 +46,7 @@ function desiredChunks(): DesiredChunk[] {
     .where(and(isNull(sources.deletedAt), eq(sources.aiExcluded, false)))
     .all()
   return [
+    ...annotationChunks(),
     ...noteRows
       .filter((r) => r.text.trim().length >= MIN_TEXT)
       .map((r) => ({
@@ -69,6 +70,44 @@ function desiredChunks(): DesiredChunk[] {
         hash: hashText(r.title, r.text)
       }))
   ]
+}
+
+/** 批注检索时的文字：评论 / 提问 + 原文 */
+export function annotationText(motivation: string, body: string, quote?: string): string {
+  const tag = motivation === 'questioning' ? '［存疑］' : '［批注］'
+  return `${tag}${body}${quote ? `\n（原文：${quote.slice(0, 300)}）` : ''}`
+}
+
+/** 有评论或提问的批注（所在笔记 / 资料未删除、未设为不发送给 AI） */
+function annotationChunks(): DesiredChunk[] {
+  const db = getDb()
+  const rows = db
+    .select()
+    .from(annotations)
+    .where(and(isNull(annotations.deletedAt), isNotNull(annotations.body)))
+    .all()
+  if (!rows.length) return []
+  const live = (type: 'note' | 'source') => {
+    const t = type === 'note' ? notes : sources
+    return new Map(
+      db
+        .select({ id: t.id, title: t.title })
+        .from(t)
+        .where(and(isNull(t.deletedAt), eq(t.aiExcluded, false)))
+        .all()
+        .map((r) => [r.id, r.title])
+    )
+  }
+  const titles = { note: live('note'), source: live('source') }
+  const out: DesiredChunk[] = []
+  for (const r of rows) {
+    const title = titles[r.targetType].get(r.targetId)
+    if (title === undefined || !r.body?.trim()) continue
+    const sel = JSON.parse(r.selector) as { quote?: string }
+    const text = annotationText(r.motivation, r.body, sel.quote)
+    out.push({ ownerType: 'annotation', ownerId: r.id, parentType: r.targetType, parentId: r.targetId, title, text, hash: hashText(title, text) })
+  }
+  return out
 }
 
 function deleteChunks(rowids: number[]): void {

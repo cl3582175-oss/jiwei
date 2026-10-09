@@ -3,6 +3,9 @@
 import type { Anchor } from './context'
 import type {
   AiSettings,
+  AnnotationInput,
+  AnnotationPatch,
+  AnnotationSelector,
   ChatScope,
   NoteMetaUpdate,
   NoteQuery,
@@ -16,6 +19,9 @@ import type {
 import type { Effort, ModelCapsOverride, ProviderKind, Usage } from './ai'
 export type {
   AiSettings,
+  AnnotationInput,
+  AnnotationPatch,
+  AnnotationSelector,
   ChatScope,
   NoteMetaUpdate,
   NoteQuery,
@@ -482,6 +488,21 @@ export interface ReflectionMaterial {
   actions: ActionItem[]
   /** 进行中的学习目标及进度 */
   goals: { id: string; title: string; mastered: number; reviews7d: number; daysLeft: number | null }[]
+  /** 期间新增的批注：高亮总数；有评论或存疑的条目 */
+  annotations: {
+    highlights: number
+    items: {
+      id: string
+      targetType: 'note' | 'source'
+      targetId: string
+      targetTitle: string
+      quote: string | null
+      body: string | null
+      question: boolean
+      page: number | null
+      ownerId: string | null
+    }[]
+  }
   /** 供 AI 使用的文字版 */
   text: string
 }
@@ -780,6 +801,24 @@ export interface AsrStatus {
   message: string | null
 }
 
+/** 批注（v0.5.3） */
+export interface Annotation {
+  id: string
+  targetType: 'note' | 'source'
+  targetId: string
+  selector: AnnotationSelector
+  motivation: 'highlighting' | 'commenting' | 'questioning' | 'bookmarking' | 'drawing'
+  body: string | null
+  color: 'yellow' | 'green' | 'blue' | 'pink' | null
+  createdAt: number
+  updatedAt: number
+}
+
+/** 最近的批注（带所在笔记 / 资料的标题），用于复盘与列表 */
+export interface AnnotationWithTarget extends Annotation {
+  targetTitle: string
+}
+
 /** 文档识别引擎（本地模型）状态 */
 export interface RecognizerStatus {
   /** 本地模型：未下载 / 下载中 / 已就绪 / 出错 */
@@ -824,6 +863,8 @@ export interface JiweiEvents {
   'segments:changed': { sourceId: string }
   /** 文档识别引擎状态 */
   'recognition:status': RecognizerStatus
+  /** 某个笔记 / 资料的批注变化 */
+  'annotations:changed': { targetType: 'note' | 'source'; targetId: string }
   /** 某份资料的识别进度 */
   'recognition:source': { sourceId: string }
   /** AI 回答的流式增量 */

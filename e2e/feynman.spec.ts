@@ -62,7 +62,8 @@ test('explain to the student, get diagnosed, add gaps to the note (live)', async
 
   // 从复习卡片进入
   await page.getByRole('button', { name: /^复习/ }).click()
-  await page.keyboard.press('Space')
+  // 点按钮显示答案（按空格时，若回答框已获得焦点，空格会输入进框里）
+  await page.getByRole('button', { name: /显示答案/ }).click()
   await page.getByRole('button', { name: '用自己的话讲一遍' }).click()
   await expect(page.getByRole('heading', { name: '把「什么是边际效用递减？」讲给小微听' })).toBeVisible()
 

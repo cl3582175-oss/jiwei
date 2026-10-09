@@ -1,7 +1,7 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { X, ExternalLink, Loader2, FileQuestion } from 'lucide-react'
+import { X, ExternalLink, Loader2, FileQuestion, Highlighter } from 'lucide-react'
 import type { Conversation, Segment, Source } from '@shared/types'
 import { api, cn, formatBytes } from '@/lib/utils'
 import { useApp } from '@/store/app'
@@ -14,6 +14,9 @@ import { textSelectionAnchor } from '../assist/actions'
 import { PdfViewer } from './PdfViewer'
 import { MediaPane } from './MediaPane'
 import { RecognitionBar } from './RecognitionBar'
+import { useAnnotations } from '../annotate/store'
+import { useTextHighlights } from '../annotate/textHighlights'
+import { AnnotationsPanel } from '../annotate/AnnotationsPanel'
 
 // 工作区左栏：在应用内查看资料，并把“看到哪里 / 选中了什么”同步到工作区上下文。
 
@@ -92,6 +95,9 @@ function SegmentList({ sourceId, segs }: { sourceId: string; segs: Segment[] }) 
   const ref = useRef<HTMLElement>(null)
   const onSelect = useSourceSelection(sourceId)
   const { data: threads = [] } = useQuery({ queryKey: ['threads', sourceId], queryFn: () => api.chat.threads(sourceId) })
+  // 批注高亮
+  const annotations = useAnnotations('source', sourceId)
+  useTextHighlights(`source:${sourceId}`, ref, annotations, segs)
   // AI 引用跳转：定位并高亮片段
   useEffect(() => {
     if (highlight?.type !== 'segment') return
@@ -180,6 +186,8 @@ export function SourcePane({ sourceId }: { sourceId: string }) {
   const { t } = useTranslation()
   const openSource = useApp((s) => s.openSource)
   const { data: source } = useQuery({ queryKey: ['source', sourceId], queryFn: () => api.sources.get(sourceId) })
+  const annotations = useAnnotations('source', sourceId)
+  const [showAnnotations, setShowAnnotations] = useState(false)
   if (!source) return <div className="h-full bg-sunken" />
   return (
     <div className="flex h-full flex-col bg-sunken/50">
@@ -198,6 +206,19 @@ export function SourcePane({ sourceId }: { sourceId: string }) {
           </p>
         </div>
         <div className="no-drag flex items-center gap-0.5">
+          <Tip label={t('annotate.panel')} side="bottom">
+            <Button
+              variant={showAnnotations ? 'secondary' : 'ghost'}
+              size="sm"
+              className="h-7 px-2"
+              aria-pressed={showAnnotations}
+              aria-label={t('annotate.panelCount', { count: annotations.length })}
+              onClick={() => setShowAnnotations(!showAnnotations)}
+            >
+              <Highlighter />
+              {annotations.length > 0 && <span className="tabular-nums">{annotations.length}</span>}
+            </Button>
+          </Tip>
           <Tip label={t('workspace.openExternal')} side="bottom">
             <Button
               variant="ghost"
@@ -216,8 +237,11 @@ export function SourcePane({ sourceId }: { sourceId: string }) {
         </div>
       </header>
       {(source.kind === 'pdf' || source.kind === 'image') && <RecognitionBar sourceId={source.id} />}
-      <div className={cn('min-h-0 flex-1 overflow-auto')}>
-        <Body source={source} />
+      <div className="relative min-h-0 flex-1">
+        <div className={cn('h-full overflow-auto')}>
+          <Body source={source} />
+        </div>
+        {showAnnotations && <AnnotationsPanel sourceId={source.id} isPdf={source.kind === 'pdf'} onClose={() => setShowAnnotations(false)} />}
       </div>
     </div>
   )

@@ -18,7 +18,8 @@ import {
   GraduationCap,
   ListTodo,
   MessageCircleQuestion,
-  Target
+  Target,
+  Highlighter
 } from 'lucide-react'
 import { PROVIDER_PRESETS, type Effort } from '@shared/ai'
 import type { InsightConfidence, ReflectionHarvest, ReflectionMaterial } from '@shared/types'
@@ -54,7 +55,7 @@ function MaterialPane({ m }: { m: ReflectionMaterial }) {
   const qc = useQueryClient()
   const open = (id: string): void => useApp.getState().openNote(id)
   const empty =
-    !m.goals.length && !m.notes.length && !m.episodes.length && !m.review.reviewed && !m.unanswered.length && !m.concepts.length && !m.feynman.length && !m.actions.length
+    !m.goals.length && !m.notes.length && !m.episodes.length && !m.review.reviewed && !m.unanswered.length && !m.concepts.length && !m.feynman.length && !m.actions.length && !m.annotations.items.length
   if (empty) return <p className="py-8 text-center text-xs leading-relaxed text-subtle">{t('reflect.noMaterial')}</p>
   return (
     <div data-testid="material">
@@ -133,6 +134,36 @@ function MaterialPane({ m }: { m: ReflectionMaterial }) {
               <li key={i}>
                 <button onClick={() => open(u.noteId)} className="text-left hover:text-accent">
                   · {u.question} <span className="text-2xs text-subtle">《{u.noteTitle || t('common.untitled')}》</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </Section>
+      )}
+      {m.annotations.items.length > 0 && (
+        <Section icon={<Highlighter />} title={t('reflect.mAnnotations', { count: m.annotations.highlights })} count={m.annotations.items.length}>
+          <ul className="space-y-1 text-[13px]" data-testid="material-annotations">
+            {m.annotations.items.map((a) => (
+              <li key={a.id}>
+                <button
+                  onClick={() => {
+                    const app = useApp.getState()
+                    if (a.targetType === 'note') {
+                      app.openNote(a.targetId)
+                      if (a.ownerId) app.setHighlight({ type: 'block', id: a.ownerId })
+                    } else {
+                      app.openSource(a.targetId)
+                      app.setHighlight({ type: 'segment', id: a.ownerId ?? '', locator: a.page ? `page=${a.page}` : null })
+                    }
+                  }}
+                  className="text-left hover:text-accent"
+                >
+                  {a.question ? <span className="text-[#c0663a]">{t('reflect.mQuestionTag')}</span> : '· '}
+                  {a.body || a.quote}
+                  <span className="text-2xs text-subtle">
+                    {' '}
+                    《{a.targetTitle || t('common.untitled')}》{a.body && a.quote ? `“${a.quote.slice(0, 40)}${a.quote.length > 40 ? '…' : ''}”` : ''}
+                  </span>
                 </button>
               </li>
             ))}

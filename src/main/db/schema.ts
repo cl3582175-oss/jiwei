@@ -592,7 +592,7 @@ export const chunks = sqliteTable(
   'chunks',
   {
     rowid: integer('rowid').primaryKey({ autoIncrement: true }),
-    ownerType: text('owner_type', { enum: ['block', 'segment'] }).notNull(),
+    ownerType: text('owner_type', { enum: ['block', 'segment', 'annotation'] }).notNull(),
     ownerId: text('owner_id').notNull(),
     /** 所属笔记或资料 */
     parentType: text('parent_type', { enum: ['note', 'source'] }).notNull(),

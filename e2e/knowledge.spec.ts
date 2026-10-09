@@ -40,16 +40,22 @@ test('notes and sources are both indexed', async () => {
     join(dir, '遗忘曲线.md'),
     '# 艾宾浩斯遗忘曲线\n\n学习后 20 分钟遗忘约 42%，一天后遗忘约 66%。\n\n## 间隔重复\n\n在快要遗忘的时候复习，记忆保持最久。复习间隔应逐渐拉长。'
   )
-  await page.evaluate((p) => window.jiwei.sources.importPaths([p]), join(dir, '遗忘曲线.md'))
+  const res = await page.evaluate((p) => window.jiwei.sources.importPaths([p]), join(dir, '遗忘曲线.md'))
+  // 先等资料解析完成，再等索引覆盖它（否则可能只等到示例笔记的索引）
+  const sid = res.imported[0].id
+  await expect.poll(() => page.evaluate((id) => window.jiwei.segments.list(id).then((s) => s.length), sid), { timeout: 30_000 }).toBeGreaterThan(0)
   await expect
     .poll(
       async () => {
         const s = await page.evaluate(() => window.jiwei.embedding.status())
-        return s.total > 0 && s.indexed === s.total ? s.total : 0
+        if (!(s.total > 5 && s.indexed === s.total)) return false
+        // 资料的片段已经进入检索
+        const hits = await page.evaluate((id) => window.jiwei.knowledge.search('艾宾浩斯遗忘曲线', { type: 'items', notes: [], sources: [id] }, 3), sid)
+        return hits.length > 0
       },
       { timeout: 90_000 }
     )
-    .toBeGreaterThan(5)
+    .toBe(true)
 })
 
 test('hybrid search finds notes and sources by meaning', async () => {

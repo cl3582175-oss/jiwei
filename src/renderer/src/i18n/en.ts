@@ -138,6 +138,32 @@ const en: Messages = {
       delete_block: 'Delete'
     }
   },
+  annotate: {
+    highlight: 'Highlight',
+    comment: 'Comment',
+    question: 'Question',
+    card: 'Annotation',
+    commentPlaceholder: 'Write your thoughts… (⌘↵ to finish)',
+    questionPlaceholder: 'What is unclear? (⌘↵ to finish)',
+    markQuestion: 'Mark as a question (goes into reflection)',
+    unmarkQuestion: 'Unmark question',
+    askAi: 'Ask AI about this',
+    remove: 'Delete annotation',
+    removed: 'Annotation deleted',
+    colors: { yellow: 'Yellow', green: 'Green', blue: 'Blue', pink: 'Pink' },
+    panel: 'Annotations',
+    panelCount: 'Annotations ({{count}})',
+    filter: { all: 'All', comments: 'Comments', questions: 'Questions' },
+    empty: 'No annotations yet. Select text and choose Highlight, Comment or Question.',
+    page: 'Page {{n}}',
+    orphan: 'Not found',
+    exportPdf: 'Export PDF with annotations',
+    exported: 'Exported PDF with annotations',
+    reveal: 'Show in folder',
+    open: 'Open annotation: {{text}}',
+    emptyComment: '(no comment yet)',
+    addToParagraph: 'Annotate this paragraph'
+  },
   workspace: {
     recog: {
       pending: '{{count}} pages need recognition ({{detail}})',
@@ -703,6 +729,8 @@ const en: Messages = {
     mEpisodes: 'Study log',
     mReview: 'Reviews',
     mReviewStat: '{{count}} reviews, forgot {{forgot}}',
+    mAnnotations: 'Annotations ({{count}} in total)',
+    mQuestionTag: '[Question] ',
     mUnanswered: 'Unanswered cues',
     mConcepts: 'Concepts',
     mFeynman: 'Feynman practice',

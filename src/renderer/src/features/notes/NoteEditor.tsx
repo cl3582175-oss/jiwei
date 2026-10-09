@@ -62,6 +62,7 @@ import { CornellHelp } from './CornellHelp'
 import { SaveSeal } from './SaveSeal'
 import { SourcePicker } from '../workspace/SourcePicker'
 import { modKey } from '@/lib/utils'
+import { NoteAnnotations } from '../annotate/NoteAnnotations'
 
 const TITLE_DELAY = 500
 
@@ -215,6 +216,7 @@ function EditorBody({ note: initial }: { note: NoteSummary }) {
   const [note, setNote] = useState(initial)
   const editorRef = useRef<Editor | null>(null)
   const [editor, setEditor] = useState<Editor | null>(null)
+  const cardRef = useRef<HTMLDivElement>(null)
   const [sourcePickerOpen, setSourcePickerOpen] = useState(false)
   /** 标题回车时编辑器仍在加载：缓冲随后的输入，就绪后转入正文 */
   const pendingInput = useRef<QueuedInput[] | null>(null)
@@ -488,7 +490,7 @@ function EditorBody({ note: initial }: { note: NoteSummary }) {
           </div>
 
           {/* 康奈尔版面：表头 + 文档（行 = 线索 0.382 | 笔记 0.618，底部总结） */}
-          <div className="cornell-card mt-7">
+          <div ref={cardRef} className="cornell-card relative mt-7">
             <div className="cornell-head">
               <span className="inline-flex items-center">
                 {t('notes.cue')}
@@ -514,6 +516,8 @@ function EditorBody({ note: initial }: { note: NoteSummary }) {
             ) : (
               <div className="h-[360px]" />
             )}
+            {/* 段落批注（v0.5.3） */}
+            {editor && <NoteAnnotations noteId={note.id} editor={editor} wrapper={cardRef} />}
           </div>
           <p className="mt-3 text-center text-2xs text-subtle">{t('notes.editorHint')}</p>
           {note.kind === 'cornell' && <ConnectionsPanel noteId={note.id} />}

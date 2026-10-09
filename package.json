@@ -1,7 +1,7 @@
 {
   "name": "jiwei",
   "productName": "积微",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "积微 · Jiwei — AI 驱动的学习笔记与个人知识库",
   "main": "./out/main/index.js",
   "author": "cl3582175-oss",
@@ -46,6 +46,7 @@
     "marked": "^18.1.0",
     "mermaid": "^12.1.0",
     "mind-elixir": "^5.15.1",
+    "pdf-lib": "1.17.1",
     "pdfjs-dist": "^6.4.299",
     "shiki": "^4.5.0",
     "sigma": "3.0.3",

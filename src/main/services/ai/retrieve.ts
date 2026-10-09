@@ -1,10 +1,10 @@
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { getDb, getSqlite } from '../../db'
-import { blocks, chunks, notes, sourceSegments, sources } from '../../db/schema'
+import { annotations, blocks, chunks, notes, sourceSegments, sources } from '../../db/schema'
 import type { ChatScope } from '@shared/schemas'
 import type { KnowledgeStatus, SearchHit } from '@shared/types'
 import { embed, isReady } from './embedding'
-import { vecBuffer } from './indexer'
+import { annotationText, vecBuffer } from './indexer'
 import { ftsQuery } from '../../lib/fts'
 
 // 混合检索：关键词（FTS5 trigram）+ 向量（sqlite-vec）→ RRF 融合 → 时间与可信度加权。
@@ -55,6 +55,15 @@ function keywordHits(q: string, limit: number): Key[] {
     const r = b[i] && byId.get(b[i].block_id)
     if (r) push(`block:${r.section === 'row' || r.section === 'summary' ? r.id : (r.rowId ?? r.id)}`)
     if (s[i]) push(`segment:${s[i].segment_id}`)
+  }
+  // 批注（评论 / 提问）：表很小，直接按原句匹配
+  const q2 = q.trim()
+  if ([...q2].length >= 2 && [...q2].length <= 60) {
+    const like = `%${q2.replace(/[%_]/g, '')}%`
+    for (const a of sqlite
+      .prepare('SELECT id FROM annotations WHERE deleted_at IS NULL AND body IS NOT NULL AND (body LIKE ? OR selector LIKE ?) LIMIT ?')
+      .all(like, like, limit) as { id: string }[])
+      push(`annotation:${a.id}`)
   }
   return keys.slice(0, limit * 2)
 }
@@ -135,6 +144,41 @@ function hydrate(keys: Key[], scope: ChatScope): Map<Key, SearchHit> {
         updatedAt: s.accessedAt,
         status: null,
         origin: null
+      })
+    }
+  }
+  const annIds = keys.filter((k) => k.startsWith('annotation:')).map((k) => k.slice(11))
+  if (annIds.length) {
+    for (const a of db
+      .select()
+      .from(annotations)
+      .where(and(inArray(annotations.id, annIds), isNull(annotations.deletedAt)))
+      .all()) {
+      if (!a.body?.trim()) continue
+      const sel = JSON.parse(a.selector) as { quote?: string; page?: number; ownerId?: string | null }
+      const t =
+        a.targetType === 'note'
+          ? db.select({ title: notes.title, d: notes.deletedAt, x: notes.aiExcluded, l: notes.learnedAt }).from(notes).where(eq(notes.id, a.targetId)).get()
+          : db
+              .select({ title: sources.title, d: sources.deletedAt, x: sources.aiExcluded, l: sources.accessedAt })
+              .from(sources)
+              .where(eq(sources.id, a.targetId))
+              .get()
+      if (!t || t.d || t.x) continue
+      if (a.targetType === 'note' ? noteScope && !noteScope.has(a.targetId) : srcScope && !srcScope.has(a.targetId)) continue
+      out.set(`annotation:${a.id}`, {
+        parentType: a.targetType,
+        parentId: a.targetId,
+        // 引用跳转到批注所在的片段 / 段落
+        ownerId: sel.ownerId ?? a.id,
+        title: t.title,
+        text: annotationText(a.motivation, a.body, sel.quote),
+        locator: sel.page ? `page=${sel.page}` : null,
+        score: 0,
+        learnedAt: t.l,
+        updatedAt: a.updatedAt,
+        status: null,
+        origin: 'user'
       })
     }
   }

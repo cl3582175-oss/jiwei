@@ -29,6 +29,7 @@ import { nodeText } from '../lib/derive'
 import { parseMeta } from './feynman'
 import { structured } from './ai/structured'
 import { goalProgress, listGoals } from './progress'
+import { recentAnnotations } from './annotations'
 
 // 复盘（v0.4.2）：每日 1 分钟微复盘、每周完整复盘（GRAI）、专题复盘（主题 / 实践 / 认知变化）。
 // 复盘正文是一篇 kind = review 的康奈尔笔记：线索栏是引导问题，笔记栏是你的回答，总结栏写最重要的一点。
@@ -454,6 +455,26 @@ export function reflectionMaterial(id: string): ReflectionMaterial {
       return { id: g.id, title: g.title, mastered: p.mastered, reviews7d: p.reviews7d, daysLeft: p.daysLeft }
     })
 
+  // 期间新增的批注：评论、存疑（存疑即未解决的问题）、高亮数量
+  const anns = recentAnnotations(start, end - 1)
+  const annotationsOut: ReflectionMaterial['annotations'] = {
+    highlights: anns.length,
+    items: anns
+      .filter((a) => a.body?.trim() || a.motivation === 'questioning')
+      .slice(0, 30)
+      .map((a) => ({
+        id: a.id,
+        targetType: a.targetType,
+        targetId: a.targetId,
+        targetTitle: a.targetTitle,
+        quote: a.selector.quote ? clip(a.selector.quote, 160) : null,
+        body: a.body,
+        question: a.motivation === 'questioning',
+        page: a.selector.page ?? null,
+        ownerId: a.selector.ownerId ?? null
+      }))
+  }
+
   const L = (zhText: string, en: string): string => (zh ? zhText : en)
   const text = [
     `${L('时间', 'Period')}：${new Date(start).toLocaleDateString()} – ${new Date(end - 1).toLocaleDateString()}`,
@@ -467,6 +488,11 @@ export function reflectionMaterial(id: string): ReflectionMaterial {
     concepts.length ? `${L('概念掌握', 'Concepts')}：${concepts.map((c) => `${c.name}（${c.level}，${c.change}）`).join('、')}` : '',
     feynman.length ? `${L('费曼练习', 'Feynman practice')}：${feynman.map((f) => `${f.concept}（${f.level ?? '-'}）`).join('、')}` : '',
     acts.length ? `${L('行动项', 'Actions')}：${acts.map((a) => `${a.title}（${a.status}）`).join('；')}` : '',
+    annotationsOut.items.length
+      ? `${L('批注', 'Annotations')}（${L(`共 ${anns.length} 处`, `${anns.length} in total`)}）：\n${annotationsOut.items
+          .map((a) => `- ${a.question ? L('［存疑］', '[Question] ') : ''}《${a.targetTitle}》${a.quote ? `“${a.quote}”` : ''}${a.body ? `：${clip(a.body, 200)}` : ''}`)
+          .join('\n')}`
+      : '',
     goalList.length
       ? `${L('学习目标', 'Goals')}：${goalList.map((g) => `${g.title}（${L('掌握', 'mastered')} ${Math.round(g.mastered * 100)}%${g.daysLeft !== null ? `，${L(`剩 ${g.daysLeft} 天`, `${g.daysLeft} days left`)}` : ''}）`).join('；')}`
       : ''
@@ -484,6 +510,7 @@ export function reflectionMaterial(id: string): ReflectionMaterial {
     feynman,
     actions: acts,
     goals: goalList,
+    annotations: annotationsOut,
     text
   }
 }

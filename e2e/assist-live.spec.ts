@@ -71,7 +71,7 @@ test('select → explain: answer card in place, follow-up', async () => {
   await selectText('合意困难')
   const bar = page.getByRole('toolbar', { name: '选区操作' })
   await expect(bar).toBeVisible()
-  await expect(bar.getByRole('button')).toHaveText(['解释', '讲明白', '翻译', '问 AI'])
+  await expect(bar.getByRole('button')).toHaveText(['解释', '讲明白', '翻译', '问 AI', '高亮', '批注', '存疑'])
   await shot('81-selection-toolbar')
   await bar.getByRole('button', { name: '解释' }).click()
   await expect(card()).toBeVisible()

@@ -319,3 +319,45 @@ export const GoalInputSchema = z.object({
 })
 export type GoalInput = z.infer<typeof GoalInputSchema>
 
+
+/* ——— 批注（v0.5.3） ——— */
+
+const RectSchema = z.object({ x: z.number(), y: z.number(), w: z.number(), h: z.number() })
+
+/** W3C Web Annotation 选择器（合并表示）：原文引用 + 片段 / 段落 + 页码与页内矩形 + 媒体时间段 */
+export const AnnotationSelectorSchema = z.object({
+  /** 资料片段 ID 或笔记段落 ID */
+  ownerId: Id.nullable().optional(),
+  quote: z.string().max(4000).optional(),
+  prefix: z.string().max(200).optional(),
+  suffix: z.string().max(200).optional(),
+  start: z.number().int().min(0).optional(),
+  end: z.number().int().min(0).optional(),
+  page: z.number().int().min(1).optional(),
+  /** 页内相对矩形（0–1），一段高亮可跨多行 */
+  rects: z.array(RectSchema).max(200).optional(),
+  t: z.tuple([z.number().min(0), z.number().min(0)]).optional()
+})
+export type AnnotationSelector = z.infer<typeof AnnotationSelectorSchema>
+
+export const AnnotationMotivationSchema = z.enum(['highlighting', 'commenting', 'questioning', 'bookmarking', 'drawing'])
+export const ANNOTATION_COLORS = ['yellow', 'green', 'blue', 'pink'] as const
+export const AnnotationColorSchema = z.enum(ANNOTATION_COLORS)
+
+export const AnnotationInputSchema = z.object({
+  targetType: z.enum(['note', 'source']),
+  targetId: Id,
+  selector: AnnotationSelectorSchema,
+  motivation: AnnotationMotivationSchema,
+  body: z.string().max(20000).nullable().optional(),
+  color: AnnotationColorSchema.nullable().optional()
+})
+export type AnnotationInput = z.infer<typeof AnnotationInputSchema>
+
+export const AnnotationPatchSchema = z.object({
+  body: z.string().max(20000).nullable().optional(),
+  color: AnnotationColorSchema.nullable().optional(),
+  motivation: AnnotationMotivationSchema.optional(),
+  selector: AnnotationSelectorSchema.optional()
+})
+export type AnnotationPatch = z.infer<typeof AnnotationPatchSchema>

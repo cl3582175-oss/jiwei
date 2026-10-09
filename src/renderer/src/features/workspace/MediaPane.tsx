@@ -13,6 +13,8 @@ import { useAssist, elementRect, type Rect } from '../assist/store'
 import { useSettings } from '@/lib/queries'
 import { askInline } from '../assist/actions'
 import { useSourceSelection } from './SourcePane'
+import { useAnnotations } from '../annotate/store'
+import { useTextHighlights } from '../annotate/textHighlights'
 
 // 视频 / 音频：播放器 + 时间轴（就地提问标记、A–B 区间）+ 与播放同步的转写稿。
 // “指”的方式：选中转写稿文字 / 「没听懂」（当前时刻前 30 秒）/ 标出 A–B 区间 / 「问这个画面」（截取当前帧）。
@@ -140,6 +142,10 @@ export function MediaPane({ source }: { source: Source }) {
   const isVideo = source.kind === 'video'
 
   const { data: segs = [] } = useQuery({ queryKey: ['segments', source.id], queryFn: () => api.segments.list(source.id) })
+  // 转写稿上的批注高亮
+  const annotations = useAnnotations('source', source.id)
+  const hlVersion = useMemo(() => ({ segs, editing }), [segs, editing])
+  useTextHighlights(`media:${source.id}`, list, annotations, hlVersion)
   const { data: threads = [] } = useQuery({ queryKey: ['threads', source.id], queryFn: () => api.chat.threads(source.id) })
   useEffect(
     () =>
