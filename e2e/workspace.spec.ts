@@ -131,7 +131,10 @@ test('mind map expands into Cornell rows', async () => {
 })
 
 test('blocks record origin; derived text includes the mind map', async () => {
-  await page.waitForTimeout(1200)
+  // 派生数据在保存防抖之后写入（CI 机器较慢）：等到写入完成
+  await expect
+    .poll(() => page.evaluate((id) => window.jiwei.notes.blocks(id).then((b) => b.find((x) => x.section === 'cue' && x.text === '间隔重复')?.origin), noteId))
+    .toBe('ai')
   const blocks = await page.evaluate((id) => window.jiwei.notes.blocks(id), noteId)
   expect(blocks.find((b) => b.kind === 'embed')?.origin).toBe('ai')
   expect(blocks.some((b) => b.origin === 'user' && b.text === '我自己写的一句话。')).toBe(true)
@@ -144,7 +147,8 @@ test('blocks record origin; derived text includes the mind map', async () => {
 test('navigation history: back and forward', async () => {
   await page.keyboard.press('ControlOrMeta+n')
   await page.getByPlaceholder('笔记标题').fill('第二篇')
-  await page.waitForTimeout(700)
+  // 标题防抖保存后才进入历史
+  await expect.poll(() => page.evaluate(() => window.jiwei.notes.list({ search: '第二篇' }).then((n) => n.length))).toBeGreaterThan(0)
   await page.keyboard.press('ControlOrMeta+[')
   await expect(page.getByPlaceholder('笔记标题')).toHaveValue('学习科学')
   await page.keyboard.press('ControlOrMeta+]')
