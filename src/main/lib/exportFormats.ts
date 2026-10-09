@@ -1,3 +1,4 @@
+import katex from 'katex'
 import type { DocJSON, DocNode } from '@shared/types'
 import { MindmapDataSchema, toTree, type MindmapTree } from '@shared/embeds/mindmap'
 import { ChartDataSchema, DiagramDataSchema, InteractiveDataSchema, StepsDataSchema, TimelineDataSchema } from '@shared/embeds/visuals'
@@ -129,8 +130,8 @@ export function toMarkdown(
       .join('\n\n')
   const out = [`# ${meta.title || (zh ? '无标题' : 'Untitled')}`, `> ${zh ? '学习于' : 'Learned'} ${fmtDate(meta.learnedAt, meta.lang)}`]
   for (const r of rows) {
-    const cue = nodeText({ content: r.cue }).trim()
-    if (cue) out.push(`## ${cue.replace(/\n+/g, ' ')}`)
+    const cue = body(r.cue).trim()
+    if (cue) out.push(r.cue.some((n) => n.type === 'blockMath') ? cue : `## ${cue.replace(/\n+/g, ' ')}`)
     const b = body(r.body)
     if (b) out.push(b)
   }
@@ -143,9 +144,14 @@ export function toMarkdown(
 
 const esc = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
+function mathHtml(latex: string, displayMode: boolean): string {
+  return katex.renderToString(latex, { displayMode, throwOnError: false, trust: false, maxExpand: 1000, output: 'mathml' })
+}
+
 function inlineHtml(nodes: DocNode[] | undefined): string {
   return (nodes ?? [])
     .map((n) => {
+      if (n.type === 'inlineMath') return mathHtml(String(n.attrs?.latex ?? ''), false)
       if (n.type === 'hardBreak') return '<br>'
       if (n.type !== 'text') return ''
       let t = esc(n.text ?? '')
@@ -166,6 +172,8 @@ export function blocksHtml(nodes: DocNode[], embed: (n: DocNode) => string, asse
   return nodes
     .map((n) => {
       switch (n.type) {
+        case 'blockMath':
+          return mathHtml(String(n.attrs?.latex ?? ''), true)
         case 'paragraph':
           return `<p>${inlineHtml(n.content) || '&nbsp;'}</p>`
         case 'heading': {

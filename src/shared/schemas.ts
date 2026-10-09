@@ -1,3 +1,5 @@
+import { CaptureSettingsSchema } from './capture'
+export { InboxCreateSchema, InboxUpdateSchema, InboxAcceptSchema } from './inbox'
 import { z } from 'zod'
 import { AnchorSchema, ContextPacketSchema } from './context'
 
@@ -69,6 +71,7 @@ export const CategoryPatchSchema = z.object({
 })
 
 export const SettingsPatchSchema = z.object({
+  capture: CaptureSettingsSchema.optional(),
   language: z.enum(['zh-CN', 'en']).optional(),
   theme: z.enum(['system', 'light', 'dark']).optional(),
   palette: z.enum(['qinglu', 'celadon', 'dunhuang']).optional(),
@@ -101,6 +104,8 @@ export type SettingsPatch = z.infer<typeof SettingsPatchSchema>
 /* ——— 内容来源 ——— */
 
 export const OriginSchema = z.object({
+  proposalId: z.string().optional(),
+  opIndex: z.number().optional(),
   by: z.literal('ai'),
   model: z.string().max(120).optional(),
   at: z.number().int(),
@@ -113,7 +118,24 @@ export type Origin = z.infer<typeof OriginSchema>
 /* ——— AI 修改提案 ——— */
 
 /** ProseMirror 节点 JSON（宽松校验：结构由编辑器 schema 最终把关） */
-export const DocNodeSchema: z.ZodType<{ type: string; [k: string]: unknown }> = z.looseObject({ type: z.string() })
+export const DocNodeSchema: z.ZodType<{ type: string; [k: string]: unknown }> = z
+  .looseObject({ type: z.string() })
+  .superRefine((node, ctx) => {
+    const visit = (n: unknown, depth: number): void => {
+      if (!n || typeof n !== 'object' || depth > 50) {
+        ctx.addIssue({ code: 'custom', message: 'Invalid document node' })
+        return
+      }
+      const value = n as { type?: string; attrs?: { latex?: unknown }; content?: unknown[] }
+      if (
+        (value.type === 'inlineMath' || value.type === 'blockMath') &&
+        !z.string().trim().min(1).max(10000).safeParse(value.attrs?.latex).success
+      )
+        ctx.addIssue({ code: 'custom', message: 'Math nodes require LaTeX (1–10000 characters)' })
+      if (Array.isArray(value.content)) value.content.forEach((c) => visit(c, depth + 1))
+    }
+    visit(node, 0)
+  })
 
 /** 插入新的富内容块时随附的数据（以占位 ID 关联节点） */
 export const EmbedPayloadSchema = z.object({ kind: z.string().max(40), data: z.unknown() })

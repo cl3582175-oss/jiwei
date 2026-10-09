@@ -1,3 +1,6 @@
+import { useCaptureEvents } from './features/capture/events'
+import { PhoneDialog } from './features/capture/PhoneDialog'
+import { InboxView } from './features/inbox/InboxView'
 import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Toaster } from 'sonner'
@@ -69,6 +72,7 @@ function useMainEvents(): void {
       }),
     []
   )
+  useEffect(() => window.jiweiEvents.on('nav:inbox', () => useApp.getState().setView('inbox')), [])
   // 复盘提醒被点击：每日 → 复盘首页（就地填写）；每周 → 打开本周复盘
   useEffect(
     () =>
@@ -99,6 +103,7 @@ function useMainEvents(): void {
 export function App() {
   const theme = useThemeSync()
   useMainEvents()
+  useCaptureEvents()
   const view = useApp((s) => s.view)
   const browserOpen = useApp((s) => s.browserOpen && s.view === 'notes')
   useBrowserEvents()
@@ -116,6 +121,7 @@ export function App() {
         <NavRail />
         <main className="relative min-w-0 flex-1">
           {view === 'notes' && <NotesView />}
+          {view === 'inbox' && <InboxView />}
           {view === 'library' && <LibraryView />}
           {view === 'chat' && <ChatView />}
           {view === 'review' && <ReviewView />}
@@ -125,6 +131,7 @@ export function App() {
           {view === 'trash' && <TrashView />}
         </main>
       </div>
+      <PhoneDialog />
       <SettingsDialog />
       <CommandPalette />
       <Onboarding />

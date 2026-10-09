@@ -1,4 +1,4 @@
-import { Lexer, type Token, type Tokens } from 'marked'
+import { Marked, type Token, type Tokens } from 'marked'
 import type { DocNode } from '@shared/types'
 
 // Markdown → 编辑器节点。AI 只需写 Markdown（模型最擅长、token 最省），结构由这里保证正确。
@@ -10,6 +10,9 @@ function inline(tokens: Token[] | undefined, marks: Mark[] = []): DocNode[] {
   const out: DocNode[] = []
   for (const t of tokens ?? []) {
     switch (t.type) {
+      case 'inlineMath':
+        out.push({ type: 'inlineMath', attrs: { latex: (t as Token & { latex: string }).latex } })
+        break
       case 'strong':
         out.push(...inline((t as Tokens.Strong).tokens, [...marks, { type: 'bold' }]))
         break
@@ -66,6 +69,9 @@ function blocks(tokens: Token[]): DocNode[] {
   const out: DocNode[] = []
   for (const t of tokens) {
     switch (t.type) {
+      case 'blockMath':
+        out.push({ type: 'blockMath', attrs: { latex: (t as Token & { latex: string }).latex } })
+        break
       case 'paragraph':
         out.push(para(inline((t as Tokens.Paragraph).tokens)))
         break
@@ -136,9 +142,34 @@ function blocks(tokens: Token[]): DocNode[] {
   return out
 }
 
+// 先于 Markdown 转义/强调分词，避免 LaTeX 的反斜杠与下标被吞掉；代码与转义仍由 marked 优先处理。
+const mathMarkdown = new Marked({
+  gfm: true,
+  extensions: [
+    {
+      name: 'blockMath',
+      level: 'block',
+      start: (src) => src.indexOf('$$'),
+      tokenizer(src) {
+        const m = /^\$\$([^]*?)\$\$(?:[ \t]*\n|[ \t]*$)/.exec(src)
+        if (m?.[1].trim()) return { type: 'blockMath', raw: m[0], latex: m[1].trim() }
+      }
+    },
+    {
+      name: 'inlineMath',
+      level: 'inline',
+      start: (src) => src.indexOf('$'),
+      tokenizer(src) {
+        const m = /^\$(?!\$)((?:\\.|[^$\n])+?)\$(?!\$)/.exec(src)
+        if (m?.[1].trim()) return { type: 'inlineMath', raw: m[0], latex: m[1].trim() }
+      }
+    }
+  ]
+})
+
 /** Markdown 文本 → 块级节点数组（至少一个段落） */
 export function markdownToNodes(md: string): (DocNode & { type: string })[] {
-  const nodes = blocks(new Lexer({ gfm: true }).lex(md.replace(/\r\n/g, '\n')))
+  const nodes = blocks(mathMarkdown.lexer(md.replace(/\r\n/g, '\n')))
   return (nodes.length ? nodes : [para([])]) as (DocNode & { type: string })[]
 }
 
@@ -147,6 +178,7 @@ export function markdownToNodes(md: string): (DocNode & { type: string })[] {
 function inlineMd(nodes: DocNode[] | undefined): string {
   return (nodes ?? [])
     .map((n) => {
+      if (n.type === 'inlineMath') return `$${String(n.attrs?.latex ?? '')}$`
       if (n.type === 'hardBreak') return '  \n'
       if (n.type !== 'text') return ''
       let t = n.text ?? ''
@@ -166,6 +198,9 @@ export function nodesToMarkdown(nodes: DocNode[], indent = ''): string {
   const out: string[] = []
   for (const n of nodes) {
     switch (n.type) {
+      case 'blockMath':
+        out.push(`$$\n${String(n.attrs?.latex ?? '')}\n$$`)
+        break
       case 'paragraph':
         out.push(indent + inlineMd(n.content))
         break

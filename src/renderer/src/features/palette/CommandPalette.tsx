@@ -1,3 +1,4 @@
+import { requestPhoneUpload } from '../capture/PhoneDialog'
 import { useState } from 'react'
 import { Command } from 'cmdk'
 import { Dialog as D } from 'radix-ui'
@@ -51,6 +52,9 @@ export function CommandPalette() {
                   heading={t('palette.actions')}
                   className="[&_[cmdk-group-heading]]:px-3 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-2xs [&_[cmdk-group-heading]]:text-subtle"
                 >
+                  <Command.Item className={itemCls} onSelect={run(requestPhoneUpload)}>
+                    {t('capture.phone')}
+                  </Command.Item>
                   <Command.Item className={itemCls} onSelect={run(() => void createNote())}>
                     <PenLine />
                     <span className="flex-1">{t('notes.new')}</span>
@@ -116,7 +120,9 @@ export function CommandPalette() {
                   <Command.Item value={`browser ${q}`} className={itemCls} onSelect={run(() => useApp.getState().openBrowser(q.trim()))}>
                     <Globe />
                     <span className="flex-1 truncate">
-                      {/^(https?:\/\/|[\w-]+(\.[\w-]+)+(\/|$))/i.test(q.trim()) ? t('browser.paletteOpen', { url: q.trim() }) : t('browser.paletteSearch', { q: q.trim() })}
+                      {/^(https?:\/\/|[\w-]+(\.[\w-]+)+(\/|$))/i.test(q.trim())
+                        ? t('browser.paletteOpen', { url: q.trim() })
+                        : t('browser.paletteSearch', { q: q.trim() })}
                     </span>
                   </Command.Item>
                 </Command.Group>

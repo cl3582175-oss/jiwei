@@ -14,5 +14,6 @@ export const ID_TYPES = [
   'horizontalRule',
   'image',
   'embed',
-  'table'
+  'table',
+  'blockMath'
 ]

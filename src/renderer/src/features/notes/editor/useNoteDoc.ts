@@ -1,3 +1,4 @@
+import { takeInboxDocument } from '../../inbox/documents'
 import { useEffect, useRef, useState } from 'react'
 import * as Y from 'yjs'
 import { api } from '@/lib/utils'
@@ -17,7 +18,7 @@ export function useNoteDoc(noteId: string): { ydoc: Y.Doc | null; saving: boolea
 
   useEffect(() => {
     let disposed = false
-    const doc = new Y.Doc()
+    const doc = takeInboxDocument(noteId) ?? new Y.Doc()
 
     const push = async (): Promise<void> => {
       window.clearTimeout(timer.current)
@@ -50,6 +51,7 @@ export function useNoteDoc(noteId: string): { ydoc: Y.Doc | null; saving: boolea
       setYdoc(doc)
     })
 
+    const offRemote = window.jiweiEvents.on('docs:updated', ({ noteId: id, update }) => { if (id === noteId) Y.applyUpdate(doc, update, REMOTE) })
     const offFlush = window.jiweiEvents.on('app:flush', () => {
       void push().finally(() => void api.app.flushDone())
     })
@@ -58,6 +60,7 @@ export function useNoteDoc(noteId: string): { ydoc: Y.Doc | null; saving: boolea
 
     return () => {
       disposed = true
+      offRemote()
       offFlush()
       window.removeEventListener('beforeunload', onUnload)
       void push().finally(() => doc.destroy())

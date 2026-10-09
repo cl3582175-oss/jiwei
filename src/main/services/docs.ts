@@ -3,7 +3,7 @@ import { yDocToProsemirrorJSON } from '@tiptap/y-tiptap'
 import { and, asc, desc, eq, inArray, isNull, lt } from 'drizzle-orm'
 import log from 'electron-log/main'
 import { getDb } from '../db'
-import { blocks, links, noteAssets, noteDocs, noteRevisions, noteUpdates, notes } from '../db/schema'
+import { blocks, links, noteAssetBlocks, noteAssets, noteDocs, noteRevisions, noteUpdates, notes } from '../db/schema'
 import { newId } from '../lib/ids'
 import { jsonToYState } from '../lib/yjson'
 import { countWords, deriveDoc, diffBlocks, type EmbedsData } from '../lib/derive'
@@ -11,6 +11,7 @@ import { syncCards } from './review'
 import { deviceId } from './device'
 import { recordActivity } from './stats'
 import { emit } from '../events'
+import { queueNoteImages } from './noteImages'
 import { requestIndex } from './ai/indexer'
 import { DOC_FIELD, EMBEDS_FIELD, type DocJSON, type Revision, type RevisionInfo } from '@shared/types'
 
@@ -246,6 +247,12 @@ export function derive(noteId: string): void {
     }
     if (diff.removedIds.length) tx.update(blocks).set({ deletedAt: now }).where(inArray(blocks.id, diff.removedIds)).run()
 
+    tx.delete(noteAssetBlocks).where(eq(noteAssetBlocks.noteId, noteId)).run()
+    for (const a of d.assetBlocks)
+      tx.insert(noteAssetBlocks)
+        .values({ ...a, noteId, id: `${noteId}:${a.blockId}:${a.assetId}` })
+        .run()
+
     for (const assetId of d.assetIds) tx.insert(noteAssets).values({ noteId, assetId, createdAt: now }).onConflictDoNothing().run()
 
     // 正文链接：整体替换由正文派生的链接
@@ -292,7 +299,8 @@ export function derive(noteId: string): void {
     maybeAutoRevision(noteId, state, note.title, countWords(d.plainText))
   }
   emit('notes:changed', { ids: [noteId] })
-  if (textChanged) requestIndex()
+  requestIndex()
+  queueNoteImages()
   // 线索行 ↔ 复习卡片
   if (diff.inserted.length || diff.changed.length || diff.revived.length || diff.moved.length || diff.removedIds.length) syncCards(noteId)
 }
@@ -411,5 +419,25 @@ export function purgeDocData(noteId: string): void {
   db.delete(noteUpdates).where(eq(noteUpdates.noteId, noteId)).run()
   db.delete(noteRevisions).where(eq(noteRevisions.noteId, noteId)).run()
   db.delete(blocks).where(eq(blocks.noteId, noteId)).run()
+  db.delete(noteAssetBlocks).where(eq(noteAssetBlocks.noteId, noteId)).run()
   db.delete(noteAssets).where(eq(noteAssets.noteId, noteId)).run()
+}
+
+/** 升级/启动时补齐旧笔记的图片定位，不修改学习统计、正文或历史；分批让出主进程。 */
+export async function rebuildNoteImageReferences(): Promise<void> {
+  const ids = getDb().select({ id: notes.id }).from(notes).where(isNull(notes.deletedAt)).all()
+  for (let i = 0; i < ids.length; i++) {
+    const noteId = ids[i].id
+    const d = deriveDoc(stateToContent(readState(noteId)).doc)
+    getDb().transaction((tx) => {
+      tx.delete(noteAssetBlocks).where(eq(noteAssetBlocks.noteId, noteId)).run()
+      for (const a of d.assetBlocks)
+        tx.insert(noteAssetBlocks)
+          .values({ ...a, noteId, id: `${noteId}:${a.blockId}:${a.assetId}` })
+          .run()
+    })
+    if (i % 25 === 24) await new Promise<void>((resolve) => setImmediate(resolve))
+  }
+  queueNoteImages()
+  requestIndex()
 }

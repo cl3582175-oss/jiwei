@@ -92,6 +92,20 @@
       "when": 1791529992104,
       "tag": "0012_source_page_blocks",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1791549860165,
+      "tag": "0013_capture_content",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1791552634933,
+      "tag": "0014_inbox",
+      "breakpoints": true
     }
   ]
 }

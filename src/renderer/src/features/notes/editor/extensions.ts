@@ -1,6 +1,7 @@
 import { TableKit } from '@tiptap/extension-table'
 import StarterKit from '@tiptap/starter-kit'
-import Image from '@tiptap/extension-image'
+import { NoteImage } from './NoteImage'
+import { EditableBlockMath, EditableInlineMath } from './MathView'
 import UniqueID from '@tiptap/extension-unique-id'
 import type { AnyExtension } from '@tiptap/core'
 import type { Transaction } from '@tiptap/pm/state'
@@ -20,7 +21,7 @@ export interface SchemaLabels {
  * 文档结构相关的扩展（编辑器与只读预览共用，保证同一份 JSON 两边都能解析）。
  * 不含协同、ID 生成等运行时行为。
  */
-export function schemaExtensions(labels: SchemaLabels): AnyExtension[] {
+export function schemaExtensions(labels: SchemaLabels, noteId?: string): AnyExtension[] {
   return [
     StarterKit.configure({
       document: false,
@@ -36,7 +37,9 @@ export function schemaExtensions(labels: SchemaLabels): AnyExtension[] {
     CornellCue,
     CornellBody,
     CornellSummary.configure({ label: labels.summary }),
-    Image.configure({ inline: false, allowBase64: false }),
+    NoteImage.configure({ inline: false, allowBase64: false, noteId }),
+    EditableBlockMath,
+    EditableInlineMath,
     CornellPlaceholder.configure({ cue: labels.cueHint, body: labels.bodyHint, summary: labels.summaryHint })
   ]
 }

@@ -1,6 +1,6 @@
 import { and, eq, inArray, isNull, isNotNull, or } from 'drizzle-orm'
 import { getDb, getSqlite } from '../db'
-import { blocks, chunks, links, notes, sources } from '../db/schema'
+import { assetTexts, noteAssetBlocks, blocks, chunks, links, notes, sources } from '../db/schema'
 import { newId } from '../lib/ids'
 import { emit } from '../events'
 import type { NoteConnections } from '@shared/types'
@@ -44,7 +44,7 @@ function manualLinks(noteId: string, includeDeleted = false) {
 async function relatedByVectors(noteId: string, exclude: Set<string>): Promise<NoteConnections['related']> {
   if (!(await isReady().catch(() => false))) return []
   const mine = getDb()
-    .select({ rowid: chunks.rowid, ownerId: chunks.ownerId })
+    .select({ rowid: chunks.rowid, ownerId: chunks.ownerId, ownerType: chunks.ownerType })
     .from(chunks)
     .where(and(eq(chunks.parentType, 'note'), eq(chunks.parentId, noteId)))
     .limit(16)
@@ -55,7 +55,17 @@ async function relatedByVectors(noteId: string, exclude: Set<string>): Promise<N
   const near = sqlite.prepare('SELECT rowid, distance FROM vec_chunks WHERE embedding MATCH ? AND k = ? ORDER BY distance')
   type Acc = { type: 'note' | 'source'; id: string; score: number; best: number; mine: string; theirs: string }
   const acc = new Map<string, Acc>()
-  const ownerText = (type: 'block' | 'segment', id: string): string => {
+  const ownerText = (type: string, id: string): string => {
+    if (type === 'asset')
+      return (
+        getDb()
+          .select({ text: assetTexts.text })
+          .from(noteAssetBlocks)
+          .innerJoin(assetTexts, eq(assetTexts.assetId, noteAssetBlocks.assetId))
+          .innerJoin(notes, eq(notes.id, noteAssetBlocks.noteId))
+          .where(and(eq(noteAssetBlocks.id, id), isNull(notes.deletedAt), eq(notes.aiExcluded, false)))
+          .get()?.text ?? ''
+      )
     if (type === 'block') return getDb().select({ text: blocks.text }).from(blocks).where(eq(blocks.id, id)).get()?.text ?? ''
     return (sqlite.prepare('SELECT text FROM source_segments WHERE id = ?').get(id) as { text: string } | undefined)?.text ?? ''
   }
@@ -64,9 +74,20 @@ async function relatedByVectors(noteId: string, exclude: Set<string>): Promise<N
     if (!v) continue
     const hits = near.all(v.embedding, 20) as { rowid: number; distance: number }[]
     const meta = getDb()
-      .select({ rowid: chunks.rowid, ownerType: chunks.ownerType, ownerId: chunks.ownerId, parentType: chunks.parentType, parentId: chunks.parentId })
+      .select({
+        rowid: chunks.rowid,
+        ownerType: chunks.ownerType,
+        ownerId: chunks.ownerId,
+        parentType: chunks.parentType,
+        parentId: chunks.parentId
+      })
       .from(chunks)
-      .where(inArray(chunks.rowid, hits.map((h) => Number(h.rowid))))
+      .where(
+        inArray(
+          chunks.rowid,
+          hits.map((h) => Number(h.rowid))
+        )
+      )
       .all()
     const byRow = new Map(meta.map((x) => [x.rowid, x]))
     let rank = 0
@@ -80,7 +101,7 @@ async function relatedByVectors(noteId: string, exclude: Set<string>): Promise<N
       a.score += 1 / (rank + 1)
       if (h.distance < a.best) {
         a.best = h.distance
-        a.mine = m.ownerId
+        a.mine = `${m.ownerType}:${m.ownerId}`
         a.theirs = `${x.ownerType}:${x.ownerId}`
       }
       acc.set(key, a)
@@ -93,14 +114,17 @@ async function relatedByVectors(noteId: string, exclude: Set<string>): Promise<N
     .slice(0, 6)
     .map((a) => {
       const t = titleOf(a.type, a.id)
-      const [ot, oid] = a.theirs.split(':') as ['block' | 'segment', string]
+      const at = a.theirs.indexOf(':')
+      const ot = a.theirs.slice(0, at),
+        oid = a.theirs.slice(at + 1)
+      const mineAt = a.mine.indexOf(':')
       return t.ok
         ? {
             type: a.type,
             id: a.id,
             title: t.title,
             score: Math.round(a.score * 100) / 100,
-            mine: clip(ownerText('block', a.mine), 140),
+            mine: clip(ownerText(a.mine.slice(0, mineAt), a.mine.slice(mineAt + 1)), 140),
             theirs: clip(ownerText(ot, oid), 140)
           }
         : null
@@ -115,12 +139,16 @@ function unlinkedMentions(noteId: string, title: string, exclude: Set<string>): 
   const sqlite = getSqlite()
   const ids =
     [...t].length >= 3
-      ? (sqlite.prepare('SELECT note_id FROM notes_fts WHERE plain_text MATCH ? LIMIT 50').all(`"${t.replace(/"/g, '""')}"`) as { note_id: string }[]).map(
-          (r) => r.note_id
-        )
-      : (sqlite.prepare('SELECT id AS note_id FROM notes WHERE deleted_at IS NULL AND plain_text LIKE ? LIMIT 50').all(`%${t}%`) as { note_id: string }[]).map(
-          (r) => r.note_id
-        )
+      ? (
+          sqlite.prepare('SELECT note_id FROM notes_fts WHERE plain_text MATCH ? LIMIT 50').all(`"${t.replace(/"/g, '""')}"`) as {
+            note_id: string
+          }[]
+        ).map((r) => r.note_id)
+      : (
+          sqlite.prepare('SELECT id AS note_id FROM notes WHERE deleted_at IS NULL AND plain_text LIKE ? LIMIT 50').all(`%${t}%`) as {
+            note_id: string
+          }[]
+        ).map((r) => r.note_id)
   const out: NoteConnections['mentions'] = []
   for (const id of ids) {
     if (id === noteId || exclude.has(`note:${id}`)) continue
@@ -147,7 +175,9 @@ export async function noteConnections(noteId: string): Promise<NoteConnections> 
   const back = db
     .select({ fromId: links.fromId, fromBlockId: links.fromBlockId })
     .from(links)
-    .where(and(eq(links.toType, 'note'), eq(links.toId, noteId), eq(links.fromType, 'note'), eq(links.origin, 'doc'), isNull(links.deletedAt)))
+    .where(
+      and(eq(links.toType, 'note'), eq(links.toId, noteId), eq(links.fromType, 'note'), eq(links.origin, 'doc'), isNull(links.deletedAt))
+    )
     .all()
   const backlinks: NoteConnections['backlinks'] = []
   const seen = new Set<string>()
@@ -173,7 +203,10 @@ export async function noteConnections(noteId: string): Promise<NoteConnections> 
   const related: NoteConnections['linked'] = []
   for (const l of manualAll) {
     if (l.deletedAt) continue
-    const other = l.fromType === 'note' && l.fromId === noteId ? { type: l.toType as 'note' | 'source', id: l.toId } : { type: l.fromType as 'note' | 'source', id: l.fromId }
+    const other =
+      l.fromType === 'note' && l.fromId === noteId
+        ? { type: l.toType as 'note' | 'source', id: l.toId }
+        : { type: l.fromType as 'note' | 'source', id: l.fromId }
     const t = titleOf(other.type, other.id)
     if (t.ok) related.push({ linkId: l.id, type: other.type, id: other.id, title: t.title })
   }
@@ -197,12 +230,24 @@ export function relate(noteId: string, toType: 'note' | 'source', toId: string):
   const db = getDb()
   const now = Date.now()
   const existing = manualLinks(noteId, true).find(
-    (l) => (l.fromId === noteId && l.toType === toType && l.toId === toId) || (l.toId === noteId && l.fromType === toType && l.fromId === toId)
+    (l) =>
+      (l.fromId === noteId && l.toType === toType && l.toId === toId) || (l.toId === noteId && l.fromType === toType && l.fromId === toId)
   )
   if (existing) db.update(links).set({ deletedAt: null, updatedAt: now }).where(eq(links.id, existing.id)).run()
   else
     db.insert(links)
-      .values({ id: newId(), fromType: 'note', fromId: noteId, toType, toId, relation: 'related', origin: 'manual', createdAt: now, updatedAt: now, updatedBy: deviceId() })
+      .values({
+        id: newId(),
+        fromType: 'note',
+        fromId: noteId,
+        toType,
+        toId,
+        relation: 'related',
+        origin: 'manual',
+        createdAt: now,
+        updatedAt: now,
+        updatedBy: deviceId()
+      })
       .run()
   emit('notes:changed', { ids: [noteId, ...(toType === 'note' ? [toId] : [])] })
 }
@@ -212,7 +257,8 @@ export function unrelate(noteId: string, toType: 'note' | 'source', toId: string
   const db = getDb()
   const now = Date.now()
   const existing = manualLinks(noteId, true).find(
-    (l) => (l.fromId === noteId && l.toType === toType && l.toId === toId) || (l.toId === noteId && l.fromType === toType && l.fromId === toId)
+    (l) =>
+      (l.fromId === noteId && l.toType === toType && l.toId === toId) || (l.toId === noteId && l.fromType === toType && l.fromId === toId)
   )
   if (existing) db.update(links).set({ deletedAt: now, updatedAt: now }).where(eq(links.id, existing.id)).run()
   else
@@ -237,7 +283,14 @@ export function unrelate(noteId: string, toType: 'note' | 'source', toId: string
 /** 知识结构图用：全部未删除的笔记间 / 笔记到资料的关系 */
 export function allEdges(): { from: string; to: string; kind: 'reference' | 'related' | 'source' }[] {
   return getDb()
-    .select({ fromType: links.fromType, fromId: links.fromId, toType: links.toType, toId: links.toId, origin: links.origin, relation: links.relation })
+    .select({
+      fromType: links.fromType,
+      fromId: links.fromId,
+      toType: links.toType,
+      toId: links.toId,
+      origin: links.origin,
+      relation: links.relation
+    })
     .from(links)
     .where(and(isNull(links.deletedAt), eq(links.fromType, 'note'), isNotNull(links.toId)))
     .all()
@@ -258,4 +311,3 @@ export function linkMention(noteId: string, mentionNoteId: string, blockId: stri
   if (!me.ok || !me.title.trim()) return false
   return setTextLink(mentionNoteId, blockId, me.title.trim(), undo ? null : `jiwei://note/${noteId}`)
 }
-

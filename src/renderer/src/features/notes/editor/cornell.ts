@@ -161,6 +161,11 @@ export const CornellKeymap = Extension.create({
         if (!empty || $from.parentOffset !== 0) return false
         const row = findRow($from)
         if (!row || row.node.textContent.length > 0) return false
+        let hasContent = false
+        row.node.descendants((n) => {
+          if (n.isAtom && n.type.name !== 'hardBreak') hasContent = true
+        })
+        if (hasContent) return false
         // 整行为空且不是唯一一行：删除该行，光标回到上一行笔记末尾
         let rows = 0
         state.doc.forEach((n) => n.type.name === CORNELL.row && rows++)

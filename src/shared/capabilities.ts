@@ -1,3 +1,7 @@
+import { CaptureRectSchema, BrowserCaptureEntriesSchema, type BrowserCaptureFrame, type BrowserCaptureResult } from './browserCapture'
+import { CaptureActionSchema } from './capture'
+import type { CaptureState, PhoneStatus } from './capture'
+import type { InboxItem } from './inbox'
 import { z } from 'zod'
 import * as S from './schemas'
 import type {
@@ -17,6 +21,8 @@ import type {
   BrowserState,
   CourseQuiz,
   SourceRecognition,
+  RegionRecognition,
+  ScanPageText,
   HeatmapDay,
   ImportResult,
   Job,
@@ -104,6 +110,61 @@ const none = [] as const
 const id = (name = 'id') => [name, S.Id] as const
 
 export const capabilities = {
+  capture: {
+    open: cap<void>()({ description: '打开捕捉小窗', params: [['mode', z.enum(['text', 'screenshot'])]] }),
+    state: cap<CaptureState | null>()({ description: '捕捉状态', params: none }),
+    close: cap<void>()({ description: '关闭捕捉', params: none }),
+    context: cap<void>()({ description: '保留主窗口光标', params: [id(), ['noteId', S.Id.nullable()]] }),
+    delivered: cap<void>()({ description: '主窗口确认处理', params: [id(), ['error', z.string().max(500).nullable()]] }),
+    shortcuts: cap<string[]>()({ description: '快捷键注册冲突', params: none }),
+    paste: cap<string>()({ description: '显式粘贴新剪贴板内容', params: [id()] }),
+    attach: cap<void>()({
+      description: '附加捕捉文件',
+      params: [
+        id(),
+        ['bytes', z.instanceof(Uint8Array).refine((v) => v.byteLength <= 25 * 1024 * 1024)],
+        ['name', z.string().max(260)],
+        ['mime', z.string().max(120)]
+      ]
+    }),
+    crop: cap<void>()({
+      description: '整屏框选',
+      params: [
+        id(),
+        [
+          'rect',
+          z.object({
+            x: z.number().int().min(0),
+            y: z.number().int().min(0),
+            width: z.number().int().positive(),
+            height: z.number().int().positive()
+          })
+        ]
+      ]
+    }),
+    action: cap<void>()({ description: '保存或发送捕捉', params: [['input', CaptureActionSchema]] })
+  },
+  phone: {
+    start: cap<PhoneStatus>()({ description: '开启局域网上传', params: none }),
+    status: cap<PhoneStatus | null>()({ description: '上传进度', params: none }),
+    stop: cap<void>()({ description: '停止指定上传会话', params: [id()] })
+  },
+  inbox: {
+    list: cap<InboxItem[]>()({ description: '收件箱条目', params: [['includeDeleted', z.boolean().optional()]] }),
+    get: cap<InboxItem | null>()({ description: '收件箱原件', params: [id()] }),
+    create: cap<InboxItem>()({ description: '捕捉内容', params: [['input', S.InboxCreateSchema]] }),
+    update: cap<InboxItem>()({ description: '修改或忽略条目', params: [id(), ['patch', S.InboxUpdateSchema]] }),
+    remove: cap<void>()({ description: '删除捕捉', params: [id()] }),
+    restore: cap<void>()({ description: '恢复捕捉', params: [id()] }),
+    retryRecognition: cap<string>()({ description: '重新识别原图片', params: [id()] }),
+    accept: cap<InboxItem>()({ description: '接受或手动归档', params: [id(), ['manual', S.InboxAcceptSchema.optional()]] }),
+    complete: cap<InboxItem[]>()({
+      description: '持久化已应用的收件箱提案',
+      params: [id('proposalId'), ['update', z.instanceof(Uint8Array).refine((v) => v.byteLength <= 20_000_000)]]
+    }),
+    triage: cap<number>()({ description: '整理收件箱', params: [['ids', z.array(S.Id).max(1000).optional()]] }),
+    estimate: cap<number | null>()({ description: '整理费用估算', params: none })
+  },
   app: {
     showInFolder: cap<void>()({ description: '在文件管理器中显示文件', params: [['path', z.string().min(1).max(4096)]] }),
     info: cap<AppInfo>()({ description: '应用版本与数据目录信息', params: none }),
@@ -472,6 +533,21 @@ export const capabilities = {
       description: '网页显示区域（窗口坐标）；null 表示不显示',
       params: [['rect', S.BrowserRectSchema.nullable()]]
     }),
+    captureBegin: cap<BrowserCaptureFrame>()({ description: '冻结当前网页供框选识别', params: none }),
+    captureRecognize: cap<BrowserCaptureResult>()({ description: '识别冻结帧中的区域', params: [id('id'), ['rect', CaptureRectSchema]] }),
+    captureRelease: cap<void>()({ description: '释放框选及摘抄缓存', params: [id('id')] }),
+    capturePrepare: cap<BrowserCaptureResult>()({
+      description: '复核框选身份并可加入连续摘抄',
+      params: [id('id'), ['commit', z.boolean().optional()], ['requireCurrent', z.boolean().optional()]]
+    }),
+    captureSaved: cap<boolean>()({ description: '确认浏览器摘抄已写入持久化笔记', params: [id('proposalId')] }),
+    captureSave: cap<{ noteId: string; created: boolean; proposalId: string }>()({
+      description: '合并框选摘抄并存入笔记',
+      params: [
+        ['entries', BrowserCaptureEntriesSchema],
+        ['noteId', S.Id.nullable()]
+      ]
+    }),
     freeze: cap<string | null>()({ description: '弹出层盖住网页时暂停显示，返回截图', params: [['on', z.boolean()]] }),
     saveSource: cap<string>()({
       description: '把网页存为资料（同一网址复用），返回资料 ID',
@@ -532,6 +608,8 @@ export const capabilities = {
     exportPdf: cap<string | null>()({ description: '导出带批注的 PDF（标准 PDF 批注），返回保存路径', params: [id('sourceId')] })
   },
   recognition: {
+    scanPages: cap<ScanPageText[]>()({ description: '扫描页的可选中文字层', params: [id('sourceId')] }),
+    formula: cap<RegionRecognition | null>()({ description: '本地识别当前笔记图片中的公式', params: [id('noteId'), id('imageId')] }),
     status: cap<RecognizerStatus>()({ description: '文档识别引擎（本地模型）状态', params: none }),
     install: cap<void>()({ description: '下载本地文档识别模型（LightOnOCR-2-1B）', params: none }),
     remove: cap<void>()({ description: '删除本地文档识别模型', params: none }),

@@ -1,3 +1,4 @@
+import { CaptureWindow } from './features/capture/CaptureWindow'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { QueryClientProvider } from '@tanstack/react-query'
@@ -14,7 +15,7 @@ document.documentElement.dataset.os = window.platform.os
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <App />
+      {new URLSearchParams(location.search).has('capture') ? <CaptureWindow /> : <App />}
     </QueryClientProvider>
   </StrictMode>
 )

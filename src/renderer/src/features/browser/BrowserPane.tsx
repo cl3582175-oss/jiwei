@@ -14,6 +14,7 @@ import {
   NotebookText,
   FileText,
   Search,
+  ScanText,
   Loader2
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -24,6 +25,7 @@ import { Button } from '@/components/ui/button'
 import { Tip, Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui/primitives'
 import { activeTab, aiAllowed, useBrowser } from './store'
 import { CoursePanel } from './CoursePanel'
+import { CaptureSelection, useBrowserCapture } from './BrowserCapture'
 
 // 内置浏览器（v0.6.0）：工作区左栏，笔记在右栏。网页是主进程的原生视图（WebContentsView），
 // 叠放在本组件的占位区域上：占位区域的位置、大小随布局同步；弹出层盖住网页时换成截图。
@@ -33,7 +35,7 @@ const OVERLAYS = '[role="dialog"], [role="menu"], [role="listbox"], [data-radix-
 
 const intersects = (a: DOMRect, b: DOMRect): boolean => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top
 
-function useNativeView(slot: React.RefObject<HTMLDivElement | null>, show: boolean): void {
+function useNativeView(slot: React.RefObject<HTMLDivElement | null>, show: boolean, selecting: boolean): void {
   const setFrozen = useBrowser((s) => s.setFrozen)
   // 位置与大小
   useLayoutEffect(() => {
@@ -65,7 +67,8 @@ function useNativeView(slot: React.RefObject<HTMLDivElement | null>, show: boole
   // 弹出层盖住网页：暂停显示，换成截图
   useEffect(() => {
     const el = slot.current
-    if (!el || !show) return
+    if (!el || !show || selecting) return
+    let canceled = false
     let frozen = false
     let busy = false
     let raf = 0
@@ -85,6 +88,7 @@ function useNativeView(slot: React.RefObject<HTMLDivElement | null>, show: boole
         frozen = covered
         busy = true
         void api.browser.freeze(covered).then((img) => {
+          if (canceled) return
           busy = false
           setFrozen(covered ? (img ?? '') : null)
           check()
@@ -92,14 +96,16 @@ function useNativeView(slot: React.RefObject<HTMLDivElement | null>, show: boole
       })
     }
     const mo = new MutationObserver(check)
+    check()
     mo.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'data-state', 'class'] })
     return () => {
+      canceled = true
       mo.disconnect()
       cancelAnimationFrame(raf)
       if (frozen) void api.browser.freeze(false)
       setFrozen(null)
     }
-  }, [slot, show, setFrozen])
+  }, [slot, show, setFrozen, selecting])
 }
 
 function TabStrip({ tabs, activeId }: { tabs: BrowserTab[]; activeId: string | null }) {
@@ -185,7 +191,7 @@ function TabStrip({ tabs, activeId }: { tabs: BrowserTab[]; activeId: string | n
   )
 }
 
-function AddressBar({ tab }: { tab: BrowserTab }) {
+function AddressBar({ tab, capture }: { tab: BrowserTab; capture: () => void }) {
   const { t } = useTranslation()
   const [text, setText] = useState(tab.url === 'about:blank' ? '' : tab.url)
   const [editing, setEditing] = useState(false)
@@ -216,7 +222,7 @@ function AddressBar({ tab }: { tab: BrowserTab }) {
   }
   const btn = 'size-7 [&_svg]:size-4'
   return (
-    <div className="flex h-10 shrink-0 items-center gap-1 border-b border-border/70 bg-surface px-2">
+    <div className="flex min-h-10 shrink-0 flex-wrap items-center gap-1 border-b border-border/70 bg-surface px-2">
       <Tip label={t('browser.back')} side="bottom">
         <Button
           variant="ghost"
@@ -303,6 +309,18 @@ function AddressBar({ tab }: { tab: BrowserTab }) {
           </Tip>
         )
       )}
+      <span title={!aiAllowed(tab) ? t('browserCapture.unavailable') : t('browserCapture.start')}>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className={btn}
+          aria-label={t('browserCapture.start')}
+          disabled={!aiAllowed(tab)}
+          onClick={capture}
+        >
+          <ScanText />
+        </Button>
+      </span>
       <Tip label={t('browser.close')} side="bottom">
         <Button
           variant="ghost"
@@ -383,7 +401,8 @@ export function BrowserPane() {
   const tab = useBrowser(activeTab)
   const slot = useRef<HTMLDivElement>(null)
   const blank = !tab || tab.url === 'about:blank' || tab.url === ''
-  useNativeView(slot, !!tab && !blank)
+  const capture = useBrowserCapture(tab, slot)
+  useNativeView(slot, !!tab && !blank, capture.selecting)
 
   // AI 上下文：当前网页（已存为资料时）
   const setContext = useApp((s) => s.setContext)
@@ -394,20 +413,27 @@ export function BrowserPane() {
   useEffect(() => () => setContext({ sourceId: useApp.getState().sourceId }), [setContext])
 
   return (
-    <div className="flex h-full flex-col bg-sunken/50" data-testid="browser-pane" aria-label={t('browser.title')}>
+    <div className="@container flex h-full flex-col bg-sunken/50" data-testid="browser-pane" aria-label={t('browser.title')}>
       <TabStrip tabs={state.tabs} activeId={state.activeId} />
-      {tab && <AddressBar key={tab.id} tab={tab} />}
+      {tab && <AddressBar key={tab.id} tab={tab} capture={() => void capture.start()} />}
       {tab && <RelatedStrip tab={tab} />}
-      <div ref={slot} className="relative min-h-0 flex-1 bg-white" data-testid="browser-view">
-        {blank && tab && <StartPage tab={tab} />}
-        {!blank &&
-          frozen !== null &&
-          (frozen ? (
-            <img src={frozen} alt="" className="absolute inset-0 size-full object-fill" />
-          ) : (
-            <div className="absolute inset-0 bg-surface" />
-          ))}
+      <div className="flex min-h-0 flex-1 flex-col @min-[640px]:flex-row">
+        <div ref={slot} className="relative min-h-0 min-w-0 flex-1 bg-white" data-testid="browser-view">
+          {blank && tab && <StartPage tab={tab} />}
+          {!blank &&
+            frozen !== null &&
+            (frozen ? (
+              <img src={frozen} alt="" className="absolute inset-0 size-full object-fill" />
+            ) : (
+              <div className="absolute inset-0 bg-surface" />
+            ))}
+          {capture.selecting && (
+            <CaptureSelection frame={capture.frame} busy={capture.busy} onSelect={capture.recognize} onCancel={capture.close} />
+          )}
+        </div>
+        {capture.cardView}
       </div>
+      {capture.panel}
       {tab?.video && aiAllowed(tab) && <CoursePanel key={`${tab.id}:${tab.video.mediaId}`} tab={tab} />}
     </div>
   )

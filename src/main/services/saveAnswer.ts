@@ -21,7 +21,7 @@ export function sourceHref(sourceId: string, a?: SaveAnswer['anchor']): string {
   return `jiwei://source/${sourceId}${qs ? `?${qs}` : ''}`
 }
 
-export function saveAnswer(input: SaveAnswer): { noteId: string; created: boolean } {
+export function saveAnswer(input: SaveAnswer): { noteId: string; created: boolean; proposalId: string } {
   const zh = getSettings().language.startsWith('zh')
   const src = input.sourceId
     ? getDb().select({ title: sources.title }).from(sources).where(eq(sources.id, input.sourceId)).get()
@@ -44,7 +44,7 @@ export function saveAnswer(input: SaveAnswer): { noteId: string; created: boolea
       ]
     })
   }
-  createProposal({
+  const proposal = createProposal({
     noteId,
     title: zh ? '存入笔记' : 'Save to note',
     ops: [{ op: 'insert_row', afterRowId: null, cue: input.cue.trim() ? markdownToNodes(input.cue) : [], body }],
@@ -52,5 +52,5 @@ export function saveAnswer(input: SaveAnswer): { noteId: string; created: boolea
     sources: input.anchor?.ownerId && input.anchor.parentType === 'source' ? [{ type: 'segment', id: input.anchor.ownerId }] : undefined,
     auto: true
   })
-  return { noteId, created }
+  return { noteId, created, proposalId: proposal.id }
 }

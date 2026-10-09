@@ -1,4 +1,6 @@
-import { BrowserWindow, Notification } from 'electron'
+import { getMainWindow } from '../mainWindow'
+import { checkInboxSchedule } from './inbox'
+import { Notification } from 'electron'
 import log from 'electron-log/main'
 import { emit } from '../events'
 import { getSettings } from './settings'
@@ -16,7 +18,7 @@ function notify(kind: 'daily' | 'weekly', title: string, body: string): void {
   if (!Notification.isSupported()) return
   const n = new Notification({ title, body, silent: false })
   n.on('click', () => {
-    const w = BrowserWindow.getAllWindows()[0]
+    const w = getMainWindow()
     if (w) {
       if (w.isMinimized()) w.restore()
       w.show()
@@ -28,6 +30,7 @@ function notify(kind: 'daily' | 'weekly', title: string, body: string): void {
 }
 
 export function checkReminders(now = new Date()): void {
+  checkInboxSchedule(now)
   const s = getSettings()
   const r = s.reflection
   const [h, m] = r.time.split(':').map(Number)

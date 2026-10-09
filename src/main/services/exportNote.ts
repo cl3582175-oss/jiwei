@@ -169,17 +169,22 @@ export async function exportNote(
 const BORDER = { style: BorderStyle.SINGLE, size: 4, color: 'DFE3DF' }
 const ACCENT = '2F6F62'
 
-function runs(nodes: DocNode[] | undefined): ParagraphChild[] {
+function runs(nodes: DocNode[] | undefined, cue = false): ParagraphChild[] {
   const out: ParagraphChild[] = []
   for (const n of nodes ?? []) {
     if (n.type === 'hardBreak') {
       out.push(new TextRun({ text: '', break: 1 }))
       continue
     }
+    if (n.type === 'inlineMath') {
+      out.push(new TextRun({ text: String(n.attrs?.latex ?? ''), font: 'Menlo', ...(cue ? { color: ACCENT } : {}) }))
+      continue
+    }
     if (n.type !== 'text') continue
     const marks = new Set((n.marks ?? []).map((m) => m.type))
     const run = new TextRun({
       text: n.text ?? '',
+      ...(cue ? { color: ACCENT, font: 'KaiTi' } : {}),
       bold: marks.has('bold'),
       italics: marks.has('italic'),
       strike: marks.has('strike'),
@@ -211,6 +216,9 @@ function docxBlocks(
   const out: (Paragraph | Table)[] = []
   for (const n of nodes) {
     switch (n.type) {
+      case 'blockMath':
+        out.push(new Paragraph({ children: [new TextRun({ text: String(n.attrs?.latex ?? ''), font: 'Menlo' })] }))
+        break
       case 'paragraph':
         out.push(new Paragraph({ children: runs(n.content), spacing: { after: 80 } }))
         break
@@ -318,8 +326,18 @@ async function toDocx(content: DocNode[], embeds: EmbedsData, meta: ExportMeta, 
       margins: { top: 100, bottom: 100, left: 140, right: 140 },
       ...(fill ? { shading: { type: ShadingType.CLEAR, color: 'auto', fill } } : {})
     })
-  const cueBlocks = (nodes: DocNode[]): Paragraph[] =>
-    nodes.map((n) => new Paragraph({ children: [new TextRun({ text: nodeText(n), color: ACCENT, font: 'KaiTi' })] }))
+  // 线索保留楷体；数学叶节点不能被 nodeText 合并成普通文字，否则会丢失独立的代码字体。
+  const cueRuns = (node: DocNode): ParagraphChild[] => {
+    if (node.type === 'blockMath') return runs([{ ...node, type: 'inlineMath' }], true)
+    if (!node.content) return runs([node], true)
+    return node.content.flatMap((child, i) => [
+      ...(i && child.type !== 'text' && child.type !== 'inlineMath' && child.type !== 'hardBreak'
+        ? [new TextRun({ text: '', break: 1 })]
+        : []),
+      ...cueRuns(child)
+    ])
+  }
+  const cueBlocks = (nodes: DocNode[]): Paragraph[] => nodes.map((n) => new Paragraph({ children: cueRuns(n) }))
   const table = new Table({
     width: { size: 100, type: WidthType.PERCENTAGE },
     rows: [

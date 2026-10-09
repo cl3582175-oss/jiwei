@@ -3,7 +3,7 @@ import { canonicalUrl } from '@shared/browserUrl'
 import type { NoteSort, WorkspaceContext } from '@shared/types'
 import { toast } from 'sonner'
 
-export type View = 'notes' | 'library' | 'chat' | 'review' | 'reflect' | 'graph' | 'feynman' | 'trash'
+export type View = 'inbox' | 'notes' | 'library' | 'chat' | 'review' | 'reflect' | 'graph' | 'feynman' | 'trash'
 
 /** 笔记列表筛选：全部 / 置顶 / 未分类 / 某分类 / 某标签 */
 export type NoteFilter =

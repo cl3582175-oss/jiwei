@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as pdfjs from 'pdfjs-dist'
 import { EventBus, PDFLinkService, PDFViewer } from 'pdfjs-dist/web/pdf_viewer.mjs'
 import 'pdfjs-dist/web/pdf_viewer.css'
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import { Loader2, ZoomIn, ZoomOut, SquareDashedMousePointer } from 'lucide-react'
+import { scanTextLayout } from '@shared/scanText'
 import type { Anchor } from '@shared/context'
 import type { Annotation, Conversation, Segment, Source } from '@shared/types'
 import { api, cn } from '@/lib/utils'
@@ -28,7 +29,7 @@ function pageSegments(segs: Segment[]): Map<number, string> {
   const m = new Map<number, string>()
   for (const s of segs) {
     const p = String((s.locator as { value?: unknown }).value ?? '').match(/page=(\d+)/)
-    if (p && !m.has(Number(p[1]))) m.set(Number(p[1]), s.id)
+    if (p && (!m.has(Number(p[1])) || s.kind === 'ocr:scan')) m.set(Number(p[1]), s.id)
   }
   return m
 }
@@ -78,6 +79,8 @@ export function PdfViewer({ source }: { source: Source }) {
   const [drag, setDrag] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null)
   const setContext = useApp((s) => s.setContext)
   const highlight = useApp((s) => s.highlight)
+  const qc = useQueryClient()
+  const { data: scanPages = [] } = useQuery({ queryKey: ['scan-pages', source.id], queryFn: () => api.recognition.scanPages(source.id) })
   const { data: segs = [] } = useQuery({ queryKey: ['segments', source.id], queryFn: () => api.segments.list(source.id) })
   const { data: threads = [] } = useQuery({ queryKey: ['threads', source.id], queryFn: () => api.chat.threads(source.id) })
   const segRef = useRef(segs)
@@ -137,6 +140,88 @@ export function PdfViewer({ source }: { source: Source }) {
     }
   }, [source.assetUrl, setContext])
 
+  useEffect(
+    () =>
+      window.jiweiEvents.on('recognition:source', (p) => {
+        if (p.sourceId === source.id) {
+          void qc.invalidateQueries({ queryKey: ['scan-pages', source.id] })
+          void qc.invalidateQueries({ queryKey: ['segments', source.id] })
+        }
+      }),
+    [qc, source.id]
+  )
+
+  // 保留 pdf.js 的文字层结构；页面重绘、缩放和 OCR 更新后按当前尺寸重建。
+  useEffect(() => {
+    const el = container.current
+    if (!el || state !== 'ready') return
+    const place = (): void => {
+      for (const page of scanPages) {
+        const pg = el.querySelector<HTMLElement>(`.page[data-page-number="${page.page}"]`)
+        if (!pg?.querySelector('.canvasWrapper')) continue
+        const w = pg.clientWidth,
+          h = pg.clientHeight
+        const version = `${w}:${h}:${JSON.stringify(page.blocks)}`
+        const old = pg.querySelector<HTMLElement>('.ocrTextLayer')
+        if (old?.dataset.version === version) continue
+        old?.remove()
+        const layer = document.createElement('div')
+        layer.className = 'textLayer ocrTextLayer'
+        layer.dataset.version = version
+        Object.assign(layer.style, { position: 'absolute', inset: '0', zIndex: '2' })
+        const groups = new Map<number, HTMLElement>()
+        for (const line of scanTextLayout(page.blocks, w, h)) {
+          let group = groups.get(line.block)
+          if (!group) {
+            group = document.createElement('div')
+            const box = page.blocks[line.block].box
+            Object.assign(group.style, {
+              position: 'absolute',
+              left: `${(box[0] * w) / 1000}px`,
+              top: `${(box[1] * h) / 1000}px`,
+              width: `${((box[2] - box[0]) * w) / 1000}px`,
+              height: `${((box[3] - box[1]) * h) / 1000}px`,
+              pointerEvents: 'none',
+              transform: 'none'
+            })
+            layer.appendChild(group)
+            groups.set(line.block, group)
+          }
+          const span = document.createElement('span')
+          span.textContent = line.text
+          Object.assign(span.style, {
+            position: 'absolute',
+            color: 'transparent',
+            whiteSpace: 'pre',
+            cursor: 'text',
+            pointerEvents: 'auto',
+            userSelect: 'text',
+            left: '0',
+            top: `${line.top - (page.blocks[line.block].box[1] * h) / 1000}px`,
+            width: `${line.width}px`,
+            height: `${line.height}px`,
+            fontSize: `${line.fontSize}px`,
+            lineHeight: `${line.height}px`,
+            transform: 'none'
+          })
+          group.appendChild(span)
+          group.appendChild(document.createElement('br'))
+        }
+        pg.appendChild(layer)
+      }
+    }
+    place()
+    const observer = new MutationObserver(place)
+    observer.observe(el, { childList: true, subtree: true, attributes: true, attributeFilter: ['style'] })
+    const resize = new ResizeObserver(place)
+    resize.observe(el)
+    return () => {
+      observer.disconnect()
+      resize.disconnect()
+      el.querySelectorAll('.ocrTextLayer').forEach((x) => x.remove())
+    }
+  }, [scanPages, state])
+
   // AI 引用 / 出处链接：跳到对应页并闪烁
   useEffect(() => {
     const v = viewerRef.current
@@ -193,7 +278,8 @@ export function PdfViewer({ source }: { source: Source }) {
     const el = container.current
     if (!el || state !== 'ready') return
     const byPage = new Map<number, Annotation[]>()
-    for (const a of annotations) if (a.selector.page && a.selector.rects?.length) byPage.set(a.selector.page, [...(byPage.get(a.selector.page) ?? []), a])
+    for (const a of annotations)
+      if (a.selector.page && a.selector.rects?.length) byPage.set(a.selector.page, [...(byPage.get(a.selector.page) ?? []), a])
     const fill = (pg: HTMLElement, list: Annotation[]): void => {
       const layer = document.createElement('div')
       layer.className = 'jw-anno-layer'
@@ -221,7 +307,13 @@ export function PdfViewer({ source }: { source: Source }) {
           n.onclick = (e) => {
             e.stopPropagation()
             const b = (e.currentTarget as HTMLElement).getBoundingClientRect()
-            useAnnotate.getState().open({ id: a.id, targetType: 'source', targetId: source.id, rect: { x: b.left, y: b.top, w: b.width, h: b.height }, edit: false })
+            useAnnotate.getState().open({
+              id: a.id,
+              targetType: 'source',
+              targetId: source.id,
+              rect: { x: b.left, y: b.top, w: b.width, h: b.height },
+              edit: false
+            })
           }
           layer.appendChild(n)
         }
@@ -302,7 +394,9 @@ export function PdfViewer({ source }: { source: Source }) {
         ...(pg ? { rect: relRect(pg, b) } : {})
       }
       setContext({ sourceSelection: quote.slice(0, 4000), sourceSegmentId: anchor.ownerId ?? null, sourceLocator: `page=${n}` })
-      useAssist.getState().showToolbar({ anchor, rect: { x: b.left, y: b.top, w: b.width, h: b.height }, ...(pg ? { rects: lineRects(pg, range) } : {}) })
+      useAssist
+        .getState()
+        .showToolbar({ anchor, rect: { x: b.left, y: b.top, w: b.width, h: b.height }, ...(pg ? { rects: lineRects(pg, range) } : {}) })
     })
   }
 

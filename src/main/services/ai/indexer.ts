@@ -1,7 +1,7 @@
 import { and, eq, inArray, isNotNull, isNull, or } from 'drizzle-orm'
 import log from 'electron-log/main'
 import { getDb, getSqlite } from '../../db'
-import { annotations, blocks, chunks, notes, sourceSegments, sources } from '../../db/schema'
+import { annotations, assetTexts, noteAssetBlocks, blocks, chunks, notes, sourceSegments, sources } from '../../db/schema'
 import { hashText } from '../../lib/derive'
 import { enqueue, registerJobKind } from '../jobs'
 import { currentModelId, embed, isReady, setStatus } from './embedding'
@@ -12,7 +12,7 @@ import { currentModelId, embed, isReady, setStatus } from './embedding'
 // - 由后台任务执行，可中断续跑
 
 interface DesiredChunk {
-  ownerType: 'block' | 'segment' | 'annotation'
+  ownerType: 'block' | 'segment' | 'annotation' | 'asset'
   ownerId: string
   parentType: 'note' | 'source'
   parentId: string
@@ -24,7 +24,7 @@ interface DesiredChunk {
 const MIN_TEXT = 6
 
 /** 当前应当被索引的全部分片 */
-function desiredChunks(): DesiredChunk[] {
+export function desiredChunks(): DesiredChunk[] {
   const db = getDb()
   const noteRows = db
     .select({ id: blocks.id, noteId: blocks.noteId, text: blocks.text, title: notes.title })
@@ -47,6 +47,23 @@ function desiredChunks(): DesiredChunk[] {
     .all()
   return [
     ...annotationChunks(),
+    ...db
+      .select({ ref: noteAssetBlocks, text: assetTexts.text, title: notes.title })
+      .from(noteAssetBlocks)
+      .innerJoin(assetTexts, eq(assetTexts.assetId, noteAssetBlocks.assetId))
+      .innerJoin(notes, eq(notes.id, noteAssetBlocks.noteId))
+      .where(and(isNull(notes.deletedAt), eq(notes.aiExcluded, false)))
+      .all()
+      .filter((r) => r.text.trim())
+      .map((r) => ({
+        ownerType: 'asset' as const,
+        ownerId: r.ref.id,
+        parentType: 'note' as const,
+        parentId: r.ref.noteId,
+        title: r.title,
+        text: `［图片文字］${r.text}`,
+        hash: hashText(r.title, r.text)
+      })),
     ...noteRows
       .filter((r) => r.text.trim().length >= MIN_TEXT)
       .map((r) => ({
@@ -105,7 +122,15 @@ function annotationChunks(): DesiredChunk[] {
     if (title === undefined || !r.body?.trim()) continue
     const sel = JSON.parse(r.selector) as { quote?: string }
     const text = annotationText(r.motivation, r.body, sel.quote)
-    out.push({ ownerType: 'annotation', ownerId: r.id, parentType: r.targetType, parentId: r.targetId, title, text, hash: hashText(title, text) })
+    out.push({
+      ownerType: 'annotation',
+      ownerId: r.id,
+      parentType: r.targetType,
+      parentId: r.targetId,
+      title,
+      text,
+      hash: hashText(title, text)
+    })
   }
   return out
 }
@@ -153,7 +178,10 @@ export async function syncIndex(progress: (p: number) => void, canceled: () => b
   let done = 0
   for (let i = 0; i < todo.length; i += BATCH) {
     if (canceled()) break
-    const batch = todo.slice(i, i + BATCH)
+    // 队列与云端向量调用之间可能发生删除/隐私切换，发送前重新核对当前派生状态。
+    const current = new Map(desiredChunks().map((c) => [`${c.ownerType}:${c.ownerId}`, c.hash]))
+    const batch = todo.slice(i, i + BATCH).filter((c) => current.get(`${c.ownerType}:${c.ownerId}`) === c.hash)
+    if (!batch.length) continue
     const vecs = await embed(
       batch.map((c) => c.text),
       'doc',

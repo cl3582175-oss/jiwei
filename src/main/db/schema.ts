@@ -182,6 +182,26 @@ export const noteAssets = sqliteTable(
   (t) => [primaryKey({ columns: [t.noteId, t.assetId] }), index('note_assets_asset_idx').on(t.assetId)]
 )
 
+/** 本地 OCR 缓存，不参加同步；可由同一内容寻址图片复用。 */
+export const assetTexts = sqliteTable('asset_texts', {
+  assetId: text('asset_id').primaryKey(),
+  text: text('text').notNull(),
+  engine: text('engine').notNull(),
+  updatedAt: integer('updated_at').notNull()
+})
+
+/** 当前正文中的图片定位；与历史素材保留表分离，删除图片立即移除此关联。 */
+export const noteAssetBlocks = sqliteTable(
+  'note_asset_blocks',
+  {
+    id: text('id').primaryKey(),
+    noteId: text('note_id').notNull(),
+    assetId: text('asset_id').notNull(),
+    blockId: text('block_id').notNull()
+  },
+  (t) => [index('note_asset_blocks_note_idx').on(t.noteId), index('note_asset_blocks_asset_idx').on(t.assetId)]
+)
+
 export const sources = sqliteTable(
   'sources',
   {
@@ -594,7 +614,7 @@ export const chunks = sqliteTable(
   'chunks',
   {
     rowid: integer('rowid').primaryKey({ autoIncrement: true }),
-    ownerType: text('owner_type', { enum: ['block', 'segment', 'annotation'] }).notNull(),
+    ownerType: text('owner_type', { enum: ['block', 'segment', 'annotation', 'asset'] }).notNull(),
     ownerId: text('owner_id').notNull(),
     /** 所属笔记或资料 */
     parentType: text('parent_type', { enum: ['note', 'source'] }).notNull(),
@@ -607,3 +627,15 @@ export const chunks = sqliteTable(
   },
   (t) => [uniqueIndex('chunks_owner_idx').on(t.ownerType, t.ownerId), index('chunks_parent_idx').on(t.parentType, t.parentId)]
 )
+
+/** 捕捉原件独立保留；删除使用墓碑，归档目的与提案一起记录。 */
+export const inboxItems = sqliteTable('inbox_items', {
+  id: text('id').primaryKey(),
+  kind: text('kind', { enum: ['text', 'screenshot', 'photo', 'file', 'clip'] }).notNull(),
+  text: text('text').notNull().default(''), assetId: text('asset_id'),
+  recognized: text('recognized').notNull().default(''),
+  recognitionStatus: text('recognition_status', { enum: ['pending', 'ready', 'unavailable', 'failed', 'canceled', 'none'] }).notNull().default('none'),
+  origin: text('origin').notNull().default('{}'),
+  status: text('status', { enum: ['new', 'suggested', 'filed', 'dismissed'] }).notNull().default('new'),
+  suggestion: text('suggestion'), filedTo: text('filed_to'), ...syncCols
+}, (t) => [index('inbox_status_idx').on(t.status, t.deletedAt)])

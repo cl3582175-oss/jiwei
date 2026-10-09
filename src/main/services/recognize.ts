@@ -28,7 +28,9 @@ import {
   type GroundBlock,
   type RecognizedNeed
 } from '../lib/recognized'
-import type { RecognizerStatus, SourceRecognition } from '@shared/types'
+import { queueNoteImages, registerNoteImageJob } from './noteImages'
+import { z } from 'zod'
+import type { RegionRecognition, ScanPageText, RecognizerStatus, SourceRecognition } from '@shared/types'
 
 // 文档识别（v0.5.2 起，设计见 docs/design/v0.5.2-document-recognition.md）：
 //   - 解析时按页分流（扫描页 / 表格页 / 图页），只识别文字层不够用的页
@@ -122,7 +124,7 @@ function visionModel(): { providerId: string; model: string } | null {
 
 /* ——— 本地模型：安装与状态 ——— */
 
-const installed = (m: LocalModel = localModel()): boolean => [m.model, m.mmproj].every((f) => existsSync(filePath(f)))
+export const localRecognizerInstalled = (m: LocalModel = localModel()): boolean => [m.model, m.mmproj].every((f) => existsSync(filePath(f)))
 
 let status: RecognizerStatus = { state: 'missing', progress: 0, mirror: null, speed: null, message: null, size: 0, running: false }
 const setStatus = (patch: Partial<RecognizerStatus>): void => {
@@ -132,7 +134,8 @@ const setStatus = (patch: Partial<RecognizerStatus>): void => {
 
 export async function recognizerStatus(): Promise<RecognizerStatus> {
   const m = localModel()
-  if (status.state !== 'downloading' && status.state !== 'error') status = { ...status, state: installed(m) ? 'ready' : 'missing' }
+  if (status.state !== 'downloading' && status.state !== 'error')
+    status = { ...status, state: localRecognizerInstalled(m) ? 'ready' : 'missing' }
   const size = status.state === 'ready' ? 0 : m.model.size + m.mmproj.size + (await runtimeDownloadSize())
   return { ...status, size, running: !!proc, model: m.name }
 }
@@ -346,13 +349,19 @@ async function requestLocalOnce(jpeg: Uint8Array, signal: AbortSignal, grounding
  * 本地模型未下载或已关闭时返回 null。
  */
 export async function recognizeRegion(dataUrl: string): Promise<string | null> {
-  if (recognitionSettings().mode === 'off' || !installed()) return null
-  const m = /^data:image\/[a-z+]+;base64,(.+)$/.exec(dataUrl)
+  return (await recognizeRegionDetailed(dataUrl))?.text ?? null
+}
+
+export async function recognizeRegionDetailed(dataUrl: string): Promise<RegionRecognition | null> {
+  if (recognitionSettings().mode === 'off' || !localRecognizerInstalled()) return null
+  if (dataUrl.length > 36 * 1024 * 1024) return null
+  const m = /^data:image\/(?:png|jpe?g|webp);base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl)
   if (!m) return null
   try {
     const raw = await recognizeLocalRobust(new Uint8Array(Buffer.from(m[1], 'base64')), AbortSignal.timeout(90_000))
     const blocks = parseGrounding(raw)
-    return (blocks.length ? groundedText(blocks, 'scan') : normalizeRecognized(raw)).trim() || null
+    const text = (blocks.length ? groundedText(blocks, 'scan') : normalizeRecognized(raw)).trim()
+    return text ? { text, blocks, engine: localModel().name } : null
   } catch (e) {
     log.warn('[ocr] region failed', e)
     return null
@@ -473,7 +482,7 @@ function engineState(sourceId: string): SourceRecognition['engine'] {
   const r = recognitionSettings()
   if (r.mode === 'off') return 'off'
   if (r.mode === 'cloud' && aiExcluded(sourceId)) return 'excluded'
-  if (r.mode === 'local' && !installed()) return 'needs-install'
+  if (r.mode === 'local' && !localRecognizerInstalled()) return 'needs-install'
   if (r.mode === 'cloud' && !visionModel()) return 'no-vision-model'
   return 'ready'
 }
@@ -526,6 +535,7 @@ export function maybeAutoRecognize(sourceId: string): void {
 
 /** 模型下载完成或设置变化后：为所有有待识别页的资料排队（仅自动识别开启时） */
 export function queuePending(): void {
+  queueNoteImages()
   if (!recognitionSettings().auto) return
   const ids = getDb().selectDistinct({ id: sourcePages.sourceId }).from(sourcePages).where(eq(sourcePages.status, 'pending')).all()
   for (const { id } of ids) maybeAutoRecognize(id)
@@ -545,6 +555,7 @@ function pageText(sourceId: string, page: number): string {
 const activeSources = new Set<string>()
 
 export function registerRecognizeJob(): void {
+  registerNoteImageJob()
   registerJobKind<{ sourceId: string }>('source.recognize', {
     title: ({ sourceId }) =>
       `识别资料：${getDb().select({ title: sources.title }).from(sources).where(eq(sources.id, sourceId)).get()?.title ?? sourceId}`,
@@ -648,4 +659,30 @@ export function removeRecognizer(): void {
   for (const m of Object.values(LOCAL_MODELS)) for (const f of [m.model, m.mmproj]) rmSync(filePath(f), { force: true })
   for (const f of LEGACY_FILES) rmSync(join(dir(), f), { force: true })
   setStatus({ state: 'missing', progress: 0 })
+}
+
+const GroundBlocksSchema = z.array(
+  z.object({
+    label: z.string().max(80),
+    text: z.string().max(100000),
+    box: z.tuple([z.number().min(0).max(1000), z.number().min(0).max(1000), z.number().min(0).max(1000), z.number().min(0).max(1000)])
+  })
+)
+/** 只读投影 OCR 缓存，旧版/损坏的坐标不交给文字层。 */
+export function scanPageTexts(sourceId: string): ScanPageText[] {
+  const source = getDb().select().from(sources).where(eq(sources.id, sourceId)).get()
+  if (!source || source.deletedAt) return []
+  return getDb()
+    .select()
+    .from(sourcePages)
+    .where(and(eq(sourcePages.sourceId, sourceId), eq(sourcePages.need, 'scan'), eq(sourcePages.status, 'done')))
+    .all()
+    .flatMap((r) => {
+      try {
+        const result = GroundBlocksSchema.safeParse(JSON.parse(r.blocks ?? '[]'))
+        return result.success ? [{ page: r.page, blocks: result.data }] : []
+      } catch {
+        return []
+      }
+    })
 }

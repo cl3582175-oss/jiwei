@@ -1,3 +1,8 @@
+import * as browserCapture from './services/browser/capture'
+import * as capture from './services/capture'
+import * as phone from './services/phoneUpload'
+import * as inbox from './services/inbox'
+import { queueNoteImages, recognizeNoteFormula } from './services/noteImages'
 import { BrowserWindow, ipcMain, shell } from 'electron'
 import log from 'electron-log/main'
 import { backupsDir } from './db'
@@ -17,7 +22,7 @@ import * as segments from './services/segments'
 import * as jobs from './services/jobs'
 import * as vaults from './services/vaults'
 import { getProfile, setProfileName } from './services/device'
-import { resolveFlush } from './lifecycle'
+import { requestRendererFlush, resolveFlush } from './lifecycle'
 import * as providers from './services/ai/providers'
 import * as chat from './services/ai/chat'
 import * as embedding from './services/ai/embedding'
@@ -66,12 +71,38 @@ type Handlers = {
 }
 
 const handlers: Handlers = {
+  capture: {
+    open: (_, mode) => capture.open(mode),
+    state: () => capture.current(),
+    close: () => capture.close(),
+    shortcuts: () => capture.shortcutStatus(),
+    context: ({ win }, id, noteId) => capture.context(id, noteId, win),
+    delivered: ({ win }, id, error) => capture.delivered(id, error, win),
+    paste: (_, id) => capture.paste(id),
+    attach: (_, id, bytes, name, mime) => capture.attach(id, bytes, name, mime),
+    crop: (_, id, rect) => capture.crop(id, rect),
+    action: (_, input) => capture.action(input)
+  },
+  phone: { start: () => phone.start(), status: () => phone.status(), stop: (_, id) => phone.stop(id) },
+  inbox: {
+    list: (_, deleted) => inbox.list(deleted),
+    get: (_, id) => inbox.get(id),
+    create: (_, input) => inbox.create(input),
+    update: (_, id, patch) => inbox.update(id, patch),
+    remove: (_, id) => inbox.remove(id),
+    restore: (_, id) => inbox.restore(id),
+    retryRecognition: (_, id) => inbox.retryRecognition(id),
+    accept: (_, id, manual) => inbox.accept(id, manual),
+    complete: (_, id, update) => inbox.complete(id, update),
+    triage: (_, ids) => inbox.triage(ids, undefined, true),
+    estimate: () => inbox.estimate()
+  },
   app: {
     showInFolder: (_, path) => shell.showItemInFolder(path),
     info: () => appSvc.appInfo(),
     openDataDir: () => appSvc.openDataDir(),
     changeDataDir: ({ win }) => appSvc.changeDataDir(win),
-    flushDone: () => resolveFlush()
+    flushDone: ({ win }) => resolveFlush(win)
   },
   vaults: {
     list: () => vaults.listVaults(),
@@ -96,6 +127,7 @@ const handlers: Handlers = {
     set: (_, patch) => {
       const before = JSON.stringify(getSettings().ai.recognition ?? null)
       const r = setSettings(patch)
+      if (patch.capture) capture.refreshShortcuts()
       // 换了识别引擎或开启插图解读：有待识别页的资料按新设置排队
       if (patch.ai && JSON.stringify(patch.ai.recognition ?? null) !== before) recognize.queuePending()
       if (patch.browser) {
@@ -125,10 +157,11 @@ const handlers: Handlers = {
     create: (_, init) => notes.createNote(init),
     export: ({ win }, id, format, images) => exportNote(win, id, format, images),
     createSample: (_, lang) => notes.createSampleNote(lang),
-    update: (_, id, patch) =>
-      patch.aiExcluded !== undefined || patch.status !== undefined
-        ? reindexAfter(notes.updateNote(id, patch))
-        : notes.updateNote(id, patch),
+    update: (_, id, patch) => {
+      const result = notes.updateNote(id, patch)
+      if (patch.aiExcluded === false) queueNoteImages()
+      return patch.aiExcluded !== undefined || patch.status !== undefined ? reindexAfter(result) : result
+    },
     trash: (_, id) => reindexAfter(notes.trashNote(id)),
     loadDoc: (_, id) => docs.loadDoc(id),
     pushUpdate: (_, id, update) => docs.pushUpdate(id, update),
@@ -307,6 +340,12 @@ const handlers: Handlers = {
     activate: (_, id) => browser.activateTab(id),
     close: (_, id) => browser.closeTab(id),
     setBounds: ({ win }, rect) => browser.setBounds(win, rect),
+    captureBegin: () => browserCapture.begin(),
+    captureRecognize: (_, id, rect) => browserCapture.recognize(id, rect),
+    captureRelease: (_, id) => browserCapture.release(id),
+    capturePrepare: (_, id, commit, requireCurrent) => browserCapture.prepare(id, commit, requireCurrent),
+    captureSaved: (_, proposalId) => browserCapture.saved(proposalId),
+    captureSave: (_, entries, noteId) => browserCapture.save(entries, noteId),
     freeze: (_, on) => browser.freeze(on),
     saveSource: (_, id) => pages.saveTab(id),
     recapCheck: (_, id) => pages.shouldRecap(id),
@@ -340,6 +379,12 @@ const handlers: Handlers = {
     exportPdf: ({ win }, id) => annotations.exportAnnotatedPdf(id, win)
   },
   recognition: {
+    scanPages: (_, id) => recognize.scanPageTexts(id),
+    formula: async (_, noteId, imageId) => {
+      await requestRendererFlush()
+      docs.derive(noteId)
+      return recognizeNoteFormula(noteId, imageId)
+    },
     status: () => recognize.recognizerStatus(),
     install: () => {
       void recognize.installRecognizer().catch(() => {})

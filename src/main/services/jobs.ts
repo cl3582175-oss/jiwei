@@ -27,6 +27,10 @@ export interface JobContext {
 export interface JobKind<P = unknown> {
   title(payload: P): string
   run(payload: P, ctx: JobContext): Promise<unknown>
+  /** 同步协调领域状态，排队中和运行中的显式取消都会调用。 */
+  onCancel?(payload: P): void
+  /** 显式重试重新排队时同步领域状态。 */
+  onRetry?(payload: P): void
 }
 
 const kinds = new Map<string, JobKind>()
@@ -100,7 +104,7 @@ function toJob(r: Row): Job {
   }
 }
 
-export function enqueue(kind: string, payload: unknown, opts?: { dedupeKey?: string }): string {
+export function enqueue(kind: string, payload: unknown, opts?: { dedupeKey?: string; runAfter?: number }): string {
   const db = getDb()
   // 去重只合并“排队中”的任务：正在运行的任务不会包含它开始之后的变化
   if (opts?.dedupeKey) {
@@ -118,7 +122,7 @@ export function enqueue(kind: string, payload: unknown, opts?: { dedupeKey?: str
       id,
       kind,
       payload: JSON.stringify(payload),
-      runAfter: now,
+      runAfter: opts?.runAfter ?? now,
       dedupeKey: opts?.dedupeKey ?? null,
       createdAt: now,
       updatedAt: now
@@ -214,13 +218,45 @@ export function listJobs(): Job[] {
 }
 
 export function cancelJob(id: string): void {
+  const db = getDb()
+  const job = db.select().from(jobs).where(eq(jobs.id, id)).get()
+  if (!job || (job.status !== 'queued' && job.status !== 'running')) return
+  db.transaction(() => {
+    setStatus(id, { status: 'canceled' })
+    kinds.get(job.kind)?.onCancel?.(JSON.parse(job.payload))
+  })
   canceled.add(id)
-  setStatus(id, { status: 'canceled' })
 }
 
 export function retryJob(id: string): void {
-  setStatus(id, { status: 'queued', attempts: 0, error: null, runAfter: Date.now() })
+  const db = getDb()
+  const job = db.select().from(jobs).where(eq(jobs.id, id)).get()
+  if (!job) return
+  db.transaction(() => {
+    setStatus(id, { status: 'queued', attempts: 0, error: null, runAfter: Date.now() })
+    kinds.get(job.kind)?.onRetry?.(JSON.parse(job.payload))
+  })
+  // 排队中取消的任务没有 execute.finally 清理标记；运行中的旧尝试则必须继续保持取消，防止迟到写回。
+  if (!running.has(id)) canceled.delete(id)
   setImmediate(tick)
+}
+
+/** 原件恢复使用完整键查找，复用活动任务及取消尝试的迟到结果隔离。 */
+export function retryOrEnqueue(kind: string, payload: unknown, dedupeKey: string): string {
+  const matching = getDb()
+    .select()
+    .from(jobs)
+    .where(and(eq(jobs.kind, kind), eq(jobs.dedupeKey, dedupeKey)))
+    .orderBy(desc(jobs.createdAt))
+    .all()
+  const active = matching.find((job) => job.status === 'queued' || job.status === 'running')
+  if (active) return active.id
+  const previous = matching.find((job) => job.status === 'canceled' || job.status === 'failed')
+  if (previous) {
+    retryJob(previous.id)
+    return previous.id
+  }
+  return enqueue(kind, payload, { dedupeKey })
 }
 
 /** 清理 30 天前已完成 / 已取消的任务记录 */

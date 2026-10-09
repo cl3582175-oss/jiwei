@@ -207,6 +207,7 @@ export interface ReflectionSettings {
 export type Palette = 'qinglu' | 'celadon' | 'dunhuang'
 
 export interface Settings {
+  capture: ReturnType<typeof import('./capture').captureDefaults>
   language: Language
   theme: ThemeMode
   palette: Palette
@@ -263,6 +264,7 @@ export interface CourseQuiz {
 /** 浏览器标签页（v0.6.0） */
 export interface BrowserTab {
   id: string
+  scope: string
   url: string
   title: string
   favicon: string | null
@@ -937,6 +939,10 @@ export interface SourceRecognition {
 
 /** 主进程 → 渲染进程的事件 */
 export interface JiweiEvents {
+  'capture:prepare': { id: string }
+  'capture:deliver': import('./capture').CaptureDelivery
+  'capture:changed': import('./capture').CaptureState
+  'capture:release': { id: string }
   /** 应用即将退出 / 重载：请立即保存未写入的内容，然后调用 app.flushDone() */
   'app:flush': void
   /** 笔记派生数据（标题、字数、段落）已更新 */
@@ -980,9 +986,23 @@ export interface JiweiEvents {
   /** 记忆变化；added 为 AI 新记住的内容（界面提示，可撤销 / 确认） */
   'memory:changed': { added?: Memory; learned?: Memory[] }
   /** 深层链接：jiwei://note/<id> 或 jiwei://source/<id> */
+  'inbox:changed': Record<string, never>
+  'nav:inbox': Record<string, never>
+  'docs:updated': { noteId: string; update: Uint8Array }
   'nav:open': { type: 'note' | 'source'; id: string }
   /** 复盘提醒被点击：打开复盘页 */
   'nav:reflect': { kind: 'daily' | 'weekly' }
   /** 复盘、洞见或行动项变化 */
   'reflection:changed': Record<string, never>
+}
+
+/** 本地 grounding 识别结果；保留版面块供公式与扫描文字层使用。 */
+export interface RegionRecognition {
+  text: string
+  blocks: import('./scanText').ScanBlock[]
+  engine: string
+}
+export interface ScanPageText {
+  page: number
+  blocks: import('./scanText').ScanBlock[]
 }

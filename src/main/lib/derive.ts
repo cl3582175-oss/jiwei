@@ -56,6 +56,9 @@ export interface Derived {
   /** AI 生成且未经审阅的文字（不计入学习统计） */
   aiText: string
   assetIds: string[]
+  assetBlocks: { assetId: string; blockId: string }[]
+  /** 精确图片身份用于用户操作；外层块 ID 继续作为检索定位，不改变缓存表。 */
+  assetImages: { imageId: string; assetId: string; blockId: string }[]
   links: DerivedLink[]
 }
 
@@ -69,11 +72,12 @@ export function hashText(kind: string, text: string): string {
 /** 节点纯文本；块级子节点之间以换行分隔 */
 export function nodeText(node: DocNode): string {
   if (node.type === 'text') return node.text ?? ''
+  if (node.type === 'inlineMath' || node.type === 'blockMath') return String(node.attrs?.latex ?? '')
   if (node.type === 'hardBreak') return '\n'
   if (!node.content) return ''
   // 表格：同一行的单元格以“ | ”分隔，便于检索与模型阅读
   if (node.type === 'tableRow') return node.content.map(nodeText).join(' | ')
-  const inline = node.content.every((c) => c.type === 'text' || c.type === 'hardBreak' || c.type === 'image')
+  const inline = node.content.every((c) => c.type === 'text' || c.type === 'hardBreak' || c.type === 'image' || c.type === 'inlineMath')
   return node.content.map(nodeText).join(inline ? '' : '\n')
 }
 
@@ -95,6 +99,8 @@ export function deriveDoc(doc: DocJSON, embeds: EmbedsData = {}): Derived {
     return nodeText(n)
   }
   const assetIds = new Set<string>()
+  const assetBlocks: Derived['assetBlocks'] = []
+  const assetImages: Derived['assetImages'] = []
   const links: DerivedLink[] = []
   const texts: string[] = []
   let position = 0
@@ -122,7 +128,14 @@ export function deriveDoc(doc: DocJSON, embeds: EmbedsData = {}): Derived {
       walk(child, (n) => {
         if (n.type === 'image' && typeof n.attrs?.src === 'string') {
           const m = ASSET_RE.exec(n.attrs.src)
-          if (m) assetIds.add(m[1].toLowerCase())
+          if (m) {
+            const assetId = m[1].toLowerCase()
+            assetIds.add(assetId)
+            if (typeof id === 'string' && id && typeof n.attrs.id === 'string' && n.attrs.id)
+              assetImages.push({ imageId: n.attrs.id, assetId, blockId: id })
+            if (typeof id === 'string' && id && !assetBlocks.some((a) => a.assetId === assetId && a.blockId === id))
+              assetBlocks.push({ assetId, blockId: id })
+          }
         }
         for (const mark of n.marks ?? []) {
           if (mark.type === 'link' && typeof mark.attrs?.href === 'string') {
@@ -169,6 +182,8 @@ export function deriveDoc(doc: DocJSON, embeds: EmbedsData = {}): Derived {
     plainText: texts.join('\n'),
     aiText: aiTexts.join('\n'),
     assetIds: [...assetIds],
+    assetBlocks,
+    assetImages,
     links
   }
 }

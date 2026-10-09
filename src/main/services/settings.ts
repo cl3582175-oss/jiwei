@@ -1,3 +1,4 @@
+import { mergeCaptureSettings, captureDefaults } from '@shared/capture'
 import { app, nativeTheme } from 'electron'
 import { getDb } from '../db'
 import { settings } from '../db/schema'
@@ -9,6 +10,7 @@ function defaults(): Settings {
     // JIWEI_LANG 便于测试固定界面语言
     language: (process.env.JIWEI_LANG as Settings['language']) || (app.getLocale().toLowerCase().startsWith('zh') ? 'zh-CN' : 'en'),
     theme: 'system',
+    capture: captureDefaults(process.platform === 'darwin'),
     palette: 'qinglu',
     // 测试环境可跳过首次引导
     onboarded: process.env.JIWEI_SKIP_ONBOARDING === '1',
@@ -25,11 +27,12 @@ function defaults(): Settings {
 export function getSettings(): Settings {
   const rows = getDb().select().from(settings).all()
   const stored = Object.fromEntries(rows.map((r) => [r.key, JSON.parse(r.value)]))
-  return { ...defaults(), ...stored }
+  return { ...defaults(), ...stored, capture: mergeCaptureSettings(stored.capture, process.platform === 'darwin') }
 }
 
 export function setSettings(patch: SettingsPatch): Settings {
   const db = getDb()
+  if (patch.capture) patch = { ...patch, capture: { ...getSettings().capture, ...patch.capture } }
   db.transaction((tx) => {
     for (const [key, value] of Object.entries(patch)) {
       if (value === undefined) continue

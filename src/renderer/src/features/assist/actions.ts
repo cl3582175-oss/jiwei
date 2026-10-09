@@ -49,12 +49,14 @@ export async function askInline(
   rect: Rect,
   question?: string,
   image?: string,
-  extra: Anchor[] = []
+  extra: Anchor[] = [],
+  validate?: () => Promise<unknown>
 ): Promise<void> {
   const settings = await api.settings.get()
   const providers = await api.providers.list()
   const p = providers.find((x) => x.id === settings.ai.chat.providerId)
   const text = question?.trim() || actionQuestion(action, anchor.quote ?? '', anchor.kind === 'region')
+  if (validate) await validate()
   const st = useAssist.getState()
   if (!p || !settings.ai.chat.model) {
     // 保留画面和锚点供配置模型后重试，不能让无会话的卡片永远停在加载骨架。
@@ -109,22 +111,43 @@ export async function askInline(
 export const stripCites = (s: string): string => s.replace(/\[(\d{1,2})\]/g, '').replace(/[ \t]+\n/g, '\n')
 
 /** 「存入笔记」：存到工作区当前笔记；没有打开笔记时新建一篇并在资料旁打开 */
-export async function saveToNote(input: { cue: string; answer: string; anchor: Anchor; model: string | null }): Promise<void> {
+export async function saveToNote(input: {
+  cue: string
+  answer: string
+  anchor: Anchor
+  model: string | null
+  browserEntries?: { id: string; text: string }[]
+}): Promise<boolean> {
   const app = useApp.getState()
   try {
-    const r = await api.chat.saveAnswer({
-      noteId: app.noteId,
-      sourceId: input.anchor.parentType === 'source' ? input.anchor.parentId : null,
-      cue: input.cue,
-      answer: stripCites(input.answer),
-      anchor: input.anchor,
-      ...(input.model ? { model: input.model } : {})
-    })
+    const r = input.browserEntries
+      ? await api.browser.captureSave(input.browserEntries, app.noteId)
+      : await api.chat.saveAnswer({
+          noteId: app.noteId,
+          sourceId: input.anchor.parentType === 'source' ? input.anchor.parentId : null,
+          cue: input.cue,
+          answer: stripCites(input.answer),
+          anchor: input.anchor,
+          ...(input.model ? { model: input.model } : {})
+        })
     if (r.created || app.noteId !== r.noteId) app.navigate({ view: 'notes', noteId: r.noteId })
+    if (input.browserEntries && 'proposalId' in r && typeof r.proposalId === 'string') {
+      let persisted = false
+      for (let attempt = 0; attempt < 100; attempt++) {
+        if (await api.browser.captureSaved(r.proposalId)) {
+          persisted = true
+          break
+        }
+        await new Promise<void>((resolve) => window.setTimeout(resolve, 100))
+      }
+      if (!persisted) throw new Error(i18n.t('browserCapture.savePending'))
+    }
     void queryClient.invalidateQueries({ queryKey: ['notes'] })
     toast.success(i18n.t(r.created ? 'assist.savedNew' : 'assist.saved'))
+    return true
   } catch (e) {
     toast.error(errText(e))
+    return false
   }
 }
 

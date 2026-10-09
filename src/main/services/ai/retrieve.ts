@@ -1,6 +1,6 @@
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { getDb, getSqlite } from '../../db'
-import { annotations, blocks, chunks, notes, sourceSegments, sources } from '../../db/schema'
+import { annotations, assetTexts, noteAssetBlocks, blocks, chunks, notes, sourceSegments, sources } from '../../db/schema'
 import type { ChatScope } from '@shared/schemas'
 import type { KnowledgeStatus, SearchHit } from '@shared/types'
 import { embed, isReady } from './embedding'
@@ -20,14 +20,13 @@ type Key = string // `${ownerType}:${ownerId}`
 
 function keywordHits(q: string, limit: number): Key[] {
   const fq = ftsQuery(q)
-  if (!fq) return []
   const sqlite = getSqlite()
-  const b = sqlite.prepare('SELECT block_id FROM blocks_fts WHERE blocks_fts MATCH ? ORDER BY rank LIMIT ?').all(fq, limit * 3) as {
-    block_id: string
-  }[]
-  const s = sqlite.prepare('SELECT segment_id FROM segments_fts WHERE segments_fts MATCH ? ORDER BY rank LIMIT ?').all(fq, limit * 3) as {
-    segment_id: string
-  }[]
+  const b = (
+    fq ? sqlite.prepare('SELECT block_id FROM blocks_fts WHERE blocks_fts MATCH ? ORDER BY rank LIMIT ?').all(fq, limit * 3) : []
+  ) as { block_id: string }[]
+  const s = (
+    fq ? sqlite.prepare('SELECT segment_id FROM segments_fts WHERE segments_fts MATCH ? ORDER BY rank LIMIT ?').all(fq, limit * 3) : []
+  ) as { segment_id: string }[]
   // 段落命中归并到所在的康奈尔行（检索单位），总结段落保持自身
   const rows = b.length
     ? getDb()
@@ -65,6 +64,15 @@ function keywordHits(q: string, limit: number): Key[] {
       .all(like, like, limit) as { id: string }[])
       push(`annotation:${a.id}`)
   }
+  if (q.trim().length >= 2) {
+    const like = `%${q.trim().replace(/[\\%_]/g, (c) => `\\${c}`)}%`
+    for (const r of sqlite
+      .prepare(
+        "SELECT r.id FROM note_asset_blocks r JOIN asset_texts t ON t.asset_id = r.asset_id JOIN notes n ON n.id = r.note_id WHERE n.deleted_at IS NULL AND n.ai_excluded = 0 AND t.text LIKE ? ESCAPE '\\' LIMIT ?"
+      )
+      .all(like, limit) as { id: string }[])
+      push(`asset:${r.id}`)
+  }
   return keys.slice(0, limit * 2)
 }
 
@@ -98,6 +106,32 @@ function hydrate(keys: Key[], scope: ChatScope): Map<Key, SearchHit> {
   const noteScope = scope.type === 'items' ? new Set(scope.notes) : null
   const srcScope = scope.type === 'items' ? new Set(scope.sources) : null
 
+  const assetIds = keys.filter((k) => k.startsWith('asset:')).map((k) => k.slice(6))
+  if (assetIds.length) {
+    const rows = db
+      .select({ ref: noteAssetBlocks, text: assetTexts.text, updatedAt: assetTexts.updatedAt, n: notes })
+      .from(noteAssetBlocks)
+      .innerJoin(assetTexts, eq(assetTexts.assetId, noteAssetBlocks.assetId))
+      .innerJoin(notes, eq(notes.id, noteAssetBlocks.noteId))
+      .where(and(inArray(noteAssetBlocks.id, assetIds), isNull(notes.deletedAt), eq(notes.aiExcluded, false)))
+      .all()
+    for (const r of rows) {
+      if (noteScope && !noteScope.has(r.n.id)) continue
+      out.set(`asset:${r.ref.id}`, {
+        parentType: 'note',
+        parentId: r.n.id,
+        ownerId: r.ref.blockId,
+        title: r.n.title,
+        text: `［图片文字］${r.text}`,
+        locator: null,
+        score: 0,
+        learnedAt: r.n.learnedAt,
+        updatedAt: r.updatedAt,
+        status: r.n.status as KnowledgeStatus,
+        origin: 'user'
+      })
+    }
+  }
   if (blockIds.length) {
     const rows = db
       .select({ b: blocks, n: notes })
@@ -158,7 +192,11 @@ function hydrate(keys: Key[], scope: ChatScope): Map<Key, SearchHit> {
       const sel = JSON.parse(a.selector) as { quote?: string; page?: number; ownerId?: string | null }
       const t =
         a.targetType === 'note'
-          ? db.select({ title: notes.title, d: notes.deletedAt, x: notes.aiExcluded, l: notes.learnedAt }).from(notes).where(eq(notes.id, a.targetId)).get()
+          ? db
+              .select({ title: notes.title, d: notes.deletedAt, x: notes.aiExcluded, l: notes.learnedAt })
+              .from(notes)
+              .where(eq(notes.id, a.targetId))
+              .get()
           : db
               .select({ title: sources.title, d: sources.deletedAt, x: sources.aiExcluded, l: sources.accessedAt })
               .from(sources)
@@ -214,12 +252,47 @@ export async function retrieve(query: string, scope: ChatScope, limit = 8): Prom
  * 与一段文字语义相近的笔记 / 资料片段：只用本地向量，带相似度门槛（余弦相似度），宁缺毋滥。
  * 用于浏览器的“相关笔记”旁注（v0.6.0）——不调用大模型、不花钱。
  */
-export async function similarTo(text: string, scope: ChatScope, limit: number, minSim: number): Promise<(SearchHit & { sim: number })[]> {
+// 收件箱需要不同的可写笔记：先按有效分片筛选，再按整篇笔记聚合距离，避免资料和重复分片挤占名额。
+export const CORNELL_SIMILARITY_SQL = `
+  SELECT rowid, note_distance AS distance FROM (
+  SELECT v.rowid, MIN(vec_distance_cosine(v.embedding, ?)) AS note_distance
+  FROM vec_chunks v
+  JOIN chunks c ON c.rowid = v.rowid
+  JOIN notes n ON n.id = c.parent_id
+  WHERE c.parent_type = 'note' AND n.kind = 'cornell'
+    AND n.deleted_at IS NULL AND n.ai_excluded = 0
+    AND (
+      (c.owner_type = 'block' AND EXISTS (SELECT 1 FROM blocks b WHERE b.id = c.owner_id AND b.deleted_at IS NULL))
+      OR (c.owner_type = 'asset' AND EXISTS (
+        SELECT 1 FROM note_asset_blocks r JOIN asset_texts t ON t.asset_id = r.asset_id WHERE r.id = c.owner_id
+      ))
+      OR (c.owner_type = 'annotation' AND EXISTS (
+        SELECT 1 FROM annotations a WHERE a.id = c.owner_id AND a.deleted_at IS NULL AND TRIM(COALESCE(a.body, '')) != ''
+      ))
+    )
+  GROUP BY c.parent_id
+  ) WHERE note_distance <= ?
+  ORDER BY note_distance
+  LIMIT ?`
+
+export async function similarTo(
+  text: string,
+  scope: ChatScope,
+  limit: number,
+  minSim: number,
+  options?: { distinctCornellNotes?: boolean }
+): Promise<(SearchHit & { sim: number })[]> {
   if (!text.trim() || !(await isReady())) return []
   const [v] = await embed([text.slice(0, 2000)], 'doc')
-  const rows = getSqlite()
-    .prepare('SELECT rowid, distance FROM vec_chunks WHERE embedding MATCH ? AND k = ? ORDER BY distance')
-    .all(vecBuffer(v), limit * 4) as { rowid: number; distance: number }[]
+  const rows = (
+    options?.distinctCornellNotes
+      ? getSqlite()
+          .prepare(CORNELL_SIMILARITY_SQL)
+          .all(vecBuffer(v), 1 - minSim, limit)
+      : getSqlite()
+          .prepare('SELECT rowid, distance FROM vec_chunks WHERE embedding MATCH ? AND k = ? ORDER BY distance')
+          .all(vecBuffer(v), limit * 4)
+  ) as { rowid: number; distance: number }[]
   const good = rows.filter((r) => 1 - r.distance >= minSim)
   if (!good.length) return []
   const meta = getDb()

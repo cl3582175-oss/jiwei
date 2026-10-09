@@ -1,5 +1,6 @@
+import { captureText } from '../capture/messages'
 import { join } from 'path'
-import { app, BrowserWindow, WebContentsView, ipcMain, session, shell, type Session, type WebContents } from 'electron'
+import { app, BrowserWindow, WebContentsView, ipcMain, session, shell, type NativeImage, type Session, type WebContents } from 'electron'
 import log from 'electron-log/main'
 import { newId } from '../../lib/ids'
 import { emit } from '../../events'
@@ -35,6 +36,8 @@ interface Tab {
   video: BrowserVideo | null
   media: string | null
   scope: string
+  /** 框选身份每次主框架导航都失效，不干扰课程的媒体会话。 */
+  captureScope: string
   course: CourseState
   pendingSeek: { t: number; play: boolean; url: string } | null
 }
@@ -56,6 +59,8 @@ let bounds: { x: number; y: number; width: number; height: number } | null = nul
 let visible = false
 let frozen = false
 let freezeRevision = 0
+let captureLease: string | null = null
+let frozenImage: NativeImage | null = null
 let incognitoSeq = 0
 
 /* ——— 会话：浏览器式 UA、权限、下载 ——— */
@@ -101,6 +106,7 @@ function toTab(t: Tab): BrowserTab {
   const wc = t.view.webContents
   return {
     id: t.id,
+    scope: t.captureScope,
     url: wc.getURL(),
     title: wc.getTitle() || wc.getURL(),
     favicon: t.favicon,
@@ -182,6 +188,7 @@ function createTab(url: string, opts: { incognito?: boolean; activate?: boolean 
     video: null,
     media: null,
     scope: newId(),
+    captureScope: newId(),
     course: initialCourse(),
     pendingSeek: null
   }
@@ -202,6 +209,8 @@ function createTab(url: string, opts: { incognito?: boolean; activate?: boolean 
   })
   wc.on('did-start-navigation', (_e, targetUrl, inPlace, isMain) => {
     if (isMain) {
+      t.captureScope = newId()
+      changed()
       if (t.pendingSeek && canonicalUrl(t.pendingSeek.url) !== canonicalUrl(targetUrl)) t.pendingSeek = null
       t.navigationUrl = targetUrl
       if (inPlace && canonicalUrl(t.committedUrl) === canonicalUrl(targetUrl)) return
@@ -439,15 +448,18 @@ export function setBounds(win: BrowserWindow | null, rect: { x: number; y: numbe
 
 /** 弹出层（对话框、卡片）盖住浏览器时：暂停显示网页，返回当前画面截图 */
 export async function freeze(on: boolean): Promise<string | null> {
+  // 显式框选独占冻结帧，普通弹层不能替换或解除它。
+  if (captureLease) return frozenImage?.toDataURL() ?? null
   const t = getTab()
   const revision = ++freezeRevision
   frozen = on
   if (!on) {
+    frozenImage = null
     visible = !!bounds
     layout()
     return null
   }
-  const scope = t?.scope
+  const scope = t?.captureScope
   const img =
     t && !t.incognito && !sensitive(t) && !t.view.webContents.isDestroyed()
       ? await t.view.webContents.capturePage().catch(() => null)
@@ -455,7 +467,25 @@ export async function freeze(on: boolean): Promise<string | null> {
   if (revision !== freezeRevision) return null
   visible = false
   layout()
-  return t && getTab()?.id === t.id && t.scope === scope && !sensitive(t) && img && !img.isEmpty() ? img.toDataURL() : null
+  frozenImage = t && getTab()?.id === t.id && t.captureScope === scope && !sensitive(t) && img && !img.isEmpty() ? img : null
+  return frozenImage?.toDataURL() ?? null
+}
+
+/** 保存完整原始帧，裁剪与占位图来自同一次 capturePage，动画不会导致错帧。 */
+export async function beginCaptureFreeze(id: string): Promise<NativeImage> {
+  await endCaptureFreeze()
+  const result = await freeze(true)
+  if (!result || !frozenImage) {
+    await freeze(false)
+    throw new Error(captureText('pageChanged'))
+  }
+  captureLease = id
+  return frozenImage
+}
+export async function endCaptureFreeze(id?: string): Promise<void> {
+  if (id && captureLease !== id) return
+  captureLease = null
+  await freeze(false)
 }
 
 export function markInteraction(id: string, sourceId?: string): void {

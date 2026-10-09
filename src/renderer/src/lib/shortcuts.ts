@@ -59,6 +59,9 @@ export function useGlobalShortcuts(): void {
       } else if (k === ']') {
         e.preventDefault()
         s.forward()
+      } else if (k === '0') {
+        e.preventDefault()
+        s.setView('inbox')
       } else if (k === '1') {
         e.preventDefault()
         s.setView('notes')

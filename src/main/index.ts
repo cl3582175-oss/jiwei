@@ -1,3 +1,7 @@
+import { getMainWindow, setMainWindow } from './mainWindow'
+import { registerCapture, stopCapture } from './services/capture'
+import { shutdown as stopPhoneUpload } from './services/phoneUpload'
+import { registerInboxJobs } from './services/inbox'
 import { app, BrowserWindow, shell, nativeTheme } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
@@ -9,7 +13,7 @@ import { purgeExpired } from './services/trash'
 import { applyNativeTheme, getSettings } from './services/settings'
 import { registerProtocol, registerSchemePrivileges, collectGarbage } from './services/assets'
 import { autoBackup } from './services/backup'
-import { flushAll, pruneRevisions } from './services/docs'
+import { flushAll, pruneRevisions, rebuildNoteImageReferences } from './services/docs'
 import { requestRendererFlush } from './lifecycle'
 import { ensureIdentity } from './services/device'
 import { registerJobKinds, resegmentEmptyPdfs } from './services/jobKinds'
@@ -35,7 +39,7 @@ let pendingLink: string | null = null
 function handleDeepLink(url: string | undefined): void {
   const m = url ? DEEP_LINK.exec(url) : null
   if (!m) return
-  const win = BrowserWindow.getAllWindows()[0]
+  const win = getMainWindow()
   if (!win) {
     pendingLink = url!
     return
@@ -88,6 +92,10 @@ function createWindow(): void {
     }
   })
 
+  setMainWindow(win)
+  win.on('closed', () => {
+    void stopPhoneUpload()
+  })
   win.on('ready-to-show', () => win.show())
   win.webContents.once('did-finish-load', () => {
     if (pendingLink) setTimeout(() => handleDeepLink(pendingLink!), 500)
@@ -118,7 +126,7 @@ const gotLock = app.requestSingleInstanceLock()
 if (!gotLock) app.quit()
 
 app.on('second-instance', (_, argv) => {
-  const win = BrowserWindow.getAllWindows()[0]
+  const win = getMainWindow()
   if (win) {
     if (win.isMinimized()) win.restore()
     win.focus()
@@ -145,7 +153,9 @@ app.whenReady().then(async () => {
   registerRecognizeJob()
   registerBrowser()
   registerIndexJob()
+  registerInboxJobs()
   startJobs()
+  void rebuildNoteImageReferences().catch((e) => log.warn('[note images] backfill failed', e))
   startMemoryLearning()
   startReminders()
   // 复习卡片：补齐已有笔记的线索（升级到 v0.4 后第一次启动）
@@ -180,8 +190,9 @@ app.whenReady().then(async () => {
   setInterval(() => void maintenance(), HOUR)
 
   createWindow()
+  registerCapture()
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    if (!getMainWindow()) createWindow()
   })
 })
 
@@ -197,7 +208,9 @@ app.on('before-quit', (e) => {
   quitting = true
   void requestRendererFlush()
     .catch(() => undefined)
-    .finally(() => {
+    .finally(async () => {
+      stopCapture()
+      await stopPhoneUpload()
       stopChats()
       stopMemoryLearning()
       stopReminders()

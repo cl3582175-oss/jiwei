@@ -1,3 +1,4 @@
+import { applyInboxToEditor } from '../inbox/documents'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -104,6 +105,7 @@ export function ProposalPanel({ noteId, editor, ydoc }: { noteId: string; editor
   }
 
   const decideAll = async (p: Proposal, decision: 'accepted' | 'rejected'): Promise<void> => {
+    if (p.skill === 'inbox' && decision === 'accepted' && editor && ydoc) { await applyInboxToEditor(editor, ydoc, p); return }
     for (let i = 0; i < p.ops.length; i++) if (p.opStatus[i] === 'pending') await decide(p, i, decision)
   }
 
@@ -126,7 +128,7 @@ export function ProposalPanel({ noteId, editor, ydoc }: { noteId: string; editor
       for (const p of list) {
         if (!p.auto || applying.current.has(p.id)) continue
         applying.current.add(p.id)
-        void decideAll(p, 'accepted')
+        void decideAll(p, 'accepted').catch((e: Error) => { applying.current.delete(p.id); toast.error(e.message) })
       }
     }
     run()
@@ -264,7 +266,7 @@ export function ProposalPanel({ noteId, editor, ydoc }: { noteId: string; editor
               <Button size="sm" variant="ghost" onClick={() => void decideAll(p, 'rejected')}>
                 {t('proposals.rejectAll')}
               </Button>
-              <Button size="sm" variant="primary" onClick={() => void decideAll(p, 'accepted')}>
+              <Button size="sm" variant="primary" onClick={() => void decideAll(p, 'accepted').catch((e: Error) => { applying.current.delete(p.id); toast.error(e.message) })}>
                 <Check />
                 {t('proposals.acceptAll')}
               </Button>

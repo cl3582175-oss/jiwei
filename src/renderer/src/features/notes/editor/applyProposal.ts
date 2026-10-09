@@ -56,7 +56,14 @@ export class ProposalTargetMissing extends Error {}
 function hasLeaf(node: PMNode): boolean {
   let found = false
   node.descendants((n) => {
-    if (n.type.name === 'image' || n.type.name === 'embed' || n.type.name === 'horizontalRule') found = true
+    if (
+      n.type.name === 'image' ||
+      n.type.name === 'embed' ||
+      n.type.name === 'horizontalRule' ||
+      n.type.name === 'inlineMath' ||
+      n.type.name === 'blockMath'
+    )
+      found = true
     return !found
   })
   return found
@@ -66,7 +73,7 @@ function hasLeaf(node: PMNode): boolean {
 export function applyOp(editor: Editor, ydoc: Y.Doc, proposal: Proposal, op: ProposalOp): string[] {
   const { state, view } = editor
   const schema = state.schema
-  const origin: Origin = { by: 'ai', model: proposal.model ?? undefined, at: Date.now(), sources: proposal.sources ?? undefined }
+  const origin: Origin = { proposalId: proposal.id, opIndex: proposal.ops.indexOf(op), by: 'ai', model: proposal.model ?? undefined, at: Date.now(), sources: proposal.sources ?? undefined }
   const originStr = JSON.stringify(origin)
   const tr = state.tr.setMeta(PROPOSAL_META, true)
   const doc = state.doc

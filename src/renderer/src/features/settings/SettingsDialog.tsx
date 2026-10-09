@@ -1,3 +1,4 @@
+import { CaptureSettings } from '../capture/CaptureSettings'
 import { useEffect, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Dialog as D } from 'radix-ui'
@@ -416,7 +417,10 @@ export function SettingsDialog() {
                   <Segmented<string>
                     value={String(s.reflection.weeklyDay)}
                     onChange={(v) => update.mutate({ reflection: { ...s.reflection, weeklyDay: Number(v) } })}
-                    options={[1, 2, 3, 4, 5, 6, 0].map((d) => ({ value: String(d), label: (t('reflect.weekdays', { returnObjects: true }) as string[])[d] }))}
+                    options={[1, 2, 3, 4, 5, 6, 0].map((d) => ({
+                      value: String(d),
+                      label: (t('reflect.weekdays', { returnObjects: true }) as string[])[d]
+                    }))}
                   />
                 </Row>
                 <Row label={t('reflect.time')}>
@@ -430,7 +434,38 @@ export function SettingsDialog() {
                 </Row>
               </>
             )}
-            {tab === 'ai' && <AiSettingsTab />}
+            {tab === 'ai' && (
+              <>
+                <AiSettingsTab />
+                <h3 className="pt-6 font-serif text-md font-semibold">{t('inbox.settings')}</h3>
+                <CaptureSettings settings={s.capture} save={(capture) => update.mutate({ capture })} />
+                <Row label={t('inbox.daily')}>
+                  <Switch
+                    checked={s.capture.daily}
+                    aria-label={t('inbox.daily')}
+                    onCheckedChange={(daily) => update.mutate({ capture: { ...s.capture, daily } })}
+                  />
+                </Row>
+                <Row label={t('inbox.time')}>
+                  <input
+                    type="time"
+                    aria-label={t('inbox.time')}
+                    value={s.capture.time}
+                    onChange={(e) => e.target.value && update.mutate({ capture: { ...s.capture, time: e.target.value } })}
+                    className="rounded-lg border border-border bg-surface p-2"
+                  />
+                </Row>
+                {s.ai.chat.model?.toLowerCase().includes('deepseek') && (
+                  <Row label={t('inbox.offPeak')}>
+                    <Switch
+                      checked={s.capture.offPeak}
+                      aria-label={t('inbox.offPeak')}
+                      onCheckedChange={(offPeak) => update.mutate({ capture: { ...s.capture, offPeak } })}
+                    />
+                  </Row>
+                )}
+              </>
+            )}
             {tab === 'me' && <MemorySettingsTab />}
             {tab === 'skills' && <SkillsSettingsTab />}
             {tab === 'data' && info && <DataTab />}

@@ -15,12 +15,21 @@ export function JobsIndicator() {
 
   const active = jobs.filter((j) => j.status === 'running' || j.status === 'queued')
   const failed = jobs.filter((j) => j.status === 'failed')
-  if (active.length === 0 && failed.length === 0) return null
-  const recent = jobs.filter((j) => j.status !== 'canceled').slice(0, 12)
+  const canceledRecognition = jobs.filter((j) => j.status === 'canceled' && j.kind === 'inbox.recognize')
+  if (active.length === 0 && failed.length === 0 && canceledRecognition.length === 0) return null
+  const recent = jobs.filter((j) => j.status !== 'canceled' || j.kind === 'inbox.recognize').slice(0, 12)
 
   return (
     <Popover.Root>
-      <Tip label={active.length ? t('jobs.running', { count: active.length }) : t('jobs.failed', { count: failed.length })}>
+      <Tip
+        label={
+          active.length
+            ? t('jobs.running', { count: active.length })
+            : failed.length
+              ? t('jobs.failed', { count: failed.length })
+              : t('inbox.recognition.canceled')
+        }
+      >
         <Popover.Trigger asChild>
           <button
             className={cn(
@@ -29,7 +38,13 @@ export function JobsIndicator() {
             )}
             aria-label={t('jobs.title')}
           >
-            {active.length ? <Loader2 className="size-[18px] animate-spin" /> : <CircleAlert className="size-[18px]" />}
+            {active.length ? (
+              <Loader2 className="size-[18px] animate-spin" />
+            ) : failed.length ? (
+              <CircleAlert className="size-[18px]" />
+            ) : (
+              <RotateCw className="size-[18px]" />
+            )}
           </button>
         </Popover.Trigger>
       </Tip>
@@ -48,12 +63,17 @@ export function JobsIndicator() {
                   <Loader2 className="animate-spin text-accent" />
                 ) : j.status === 'failed' ? (
                   <CircleAlert className="text-danger" />
+                ) : j.status === 'canceled' ? (
+                  <X className="text-subtle" />
                 ) : (
                   <Check className="text-subtle" />
                 )}
               </span>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-fg">{t(j.title, { defaultValue: j.title })}</p>
+                {j.status === 'canceled' && j.kind === 'inbox.recognize' && (
+                  <p className="text-2xs text-subtle">{t('inbox.recognition.canceled')}</p>
+                )}
                 {j.status === 'running' && (
                   <div className="mt-1 h-1 overflow-hidden rounded-full bg-sunken">
                     <div className="h-full bg-accent transition-[width]" style={{ width: `${Math.round(j.progress * 100)}%` }} />
@@ -65,7 +85,7 @@ export function JobsIndicator() {
                   </p>
                 )}
               </div>
-              {j.status === 'failed' && (
+              {(j.status === 'failed' || (j.status === 'canceled' && j.kind === 'inbox.recognize')) && (
                 <button
                   onClick={() => void api.jobs.retry(j.id)}
                   className="rounded p-1 text-subtle hover:text-fg"

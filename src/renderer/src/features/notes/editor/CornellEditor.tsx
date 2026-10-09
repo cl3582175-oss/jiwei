@@ -1,3 +1,5 @@
+import { registerCaptureEditor } from '../../capture/editor'
+import { inboxUndoManager } from '../../inbox/documents'
 import { useEffect, useMemo } from 'react'
 import { useEditor, EditorContent, type Editor } from '@tiptap/react'
 import { BubbleMenu } from '@tiptap/react/menus'
@@ -57,13 +59,16 @@ export function CornellEditor({ noteId, ydoc, onReady }: Props) {
 
   const extensions = useMemo(
     () => [
-      ...schemaExtensions({
-        summary: t('notes.summary'),
-        cueHint: t('notes.cueHint'),
-        bodyHint: t('notes.contentHint'),
-        summaryHint: t('notes.summaryHint')
-      }),
-      Collaboration.configure({ document: ydoc, field: DOC_FIELD }),
+      ...schemaExtensions(
+        {
+          summary: t('notes.summary'),
+          cueHint: t('notes.cueHint'),
+          bodyHint: t('notes.contentHint'),
+          summaryHint: t('notes.summaryHint')
+        },
+        noteId
+      ),
+      Collaboration.configure({ document: ydoc, field: DOC_FIELD, yUndoOptions: { undoManager: inboxUndoManager(ydoc) } }),
       // 远端（协同）事务不重新分配 ID，避免多端冲突
       idExtension((tr) => !isChangeOrigin(tr)),
       CornellKeymap,
@@ -124,6 +129,10 @@ export function CornellEditor({ noteId, ydoc, onReady }: Props) {
     },
     [extensions]
   )
+
+  useEffect(() => {
+    if (editor) return registerCaptureEditor(editor, noteId, ydoc)
+  }, [editor, noteId, ydoc])
 
   useEffect(() => {
     if (editor) onReady?.(editor)
