@@ -309,6 +309,28 @@ export const sourceSegments = sqliteTable(
   (t) => [index('segments_source_idx').on(t.sourceId, t.ordinal)]
 )
 
+/**
+ * 需要识别的页（v0.5.2 文档识别）：扫描页、表格页、图页。
+ * 解析时写入待识别的页；识别结果缓存在这里，重新解析资料时不必重算，再并入 source_segments。
+ */
+export const sourcePages = sqliteTable(
+  'source_pages',
+  {
+    sourceId: text('source_id').notNull(),
+    page: integer('page').notNull(),
+    need: text('need', { enum: ['scan', 'table', 'figure'] }).notNull(),
+    status: text('status', { enum: ['pending', 'done', 'failed', 'skipped'] })
+      .notNull()
+      .default('pending'),
+    /** 识别所用引擎：local:<模型> / cloud:<服务商>/<模型> */
+    engine: text('engine'),
+    text: text('text'),
+    error: text('error'),
+    updatedAt: integer('updated_at').notNull()
+  },
+  (t) => [primaryKey({ columns: [t.sourceId, t.page] })]
+)
+
 /* ————————————————— 学习闭环 ————————————————— */
 
 export const goals = sqliteTable('goals', {

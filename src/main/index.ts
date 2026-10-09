@@ -13,6 +13,7 @@ import { flushAll, pruneRevisions } from './services/docs'
 import { requestRendererFlush } from './lifecycle'
 import { ensureIdentity } from './services/device'
 import { registerJobKinds, resegmentEmptyPdfs } from './services/jobKinds'
+import { registerRecognizeJob } from './services/recognize'
 import { registerAsrJob } from './services/asr'
 import { pruneJobs, startJobs, stopJobs } from './services/jobs'
 import { emit } from './events'
@@ -138,6 +139,7 @@ app.whenReady().then(async () => {
   registerIpc()
   registerJobKinds()
   registerAsrJob()
+  registerRecognizeJob()
   registerIndexJob()
   startJobs()
   startMemoryLearning()

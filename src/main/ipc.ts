@@ -33,6 +33,7 @@ import * as progress from './services/progress'
 import * as connections from './services/connections'
 import { knowledgeGraph } from './services/graph'
 import * as asr from './services/asr'
+import * as recognize from './services/recognize'
 import { saveAnswer } from './services/saveAnswer'
 import { exportNote } from './services/exportNote'
 import { registerSandbox } from './services/sandbox'
@@ -85,7 +86,13 @@ const handlers: Handlers = {
   },
   settings: {
     get: () => getSettings(),
-    set: (_, patch) => setSettings(patch)
+    set: (_, patch) => {
+      const before = JSON.stringify(getSettings().ai.recognition ?? null)
+      const r = setSettings(patch)
+      // 换了识别引擎或开启插图解读：有待识别页的资料按新设置排队
+      if (patch.ai && JSON.stringify(patch.ai.recognition ?? null) !== before) recognize.queuePending()
+      return r
+    }
   },
   categories: {
     list: (_, kind) => categories.listCategories(kind),
@@ -269,6 +276,15 @@ const handlers: Handlers = {
     },
     transcribe: (_, id) => asr.enqueueTranscribe(id),
     importSubtitles: ({ win }, id) => sources.importSubtitlesDialog(win, id)
+  },
+  recognition: {
+    status: () => recognize.recognizerStatus(),
+    install: () => {
+      void recognize.installRecognizer().catch(() => {})
+    },
+    remove: () => recognize.removeRecognizer(),
+    source: (_, id) => recognize.sourceRecognition(id),
+    start: (_, id) => recognize.startRecognition(id)
   },
   embedding: {
     status: async () => {

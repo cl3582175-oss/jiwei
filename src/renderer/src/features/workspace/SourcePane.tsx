@@ -13,6 +13,7 @@ import { useAssist, elementRect } from '../assist/store'
 import { textSelectionAnchor } from '../assist/actions'
 import { PdfViewer } from './PdfViewer'
 import { MediaPane } from './MediaPane'
+import { RecognitionBar } from './RecognitionBar'
 
 // 工作区左栏：在应用内查看资料，并把“看到哪里 / 选中了什么”同步到工作区上下文。
 
@@ -133,18 +134,42 @@ function Centered({ icon, text }: { icon: React.ReactNode; text?: string }) {
   )
 }
 
+/** 图片资料：图片 + 识别出的文字（可选中提问） */
+function ImageSource({ source }: { source: Source }) {
+  const { t } = useTranslation()
+  const qc = useQueryClient()
+  const { data: segs = [] } = useQuery({ queryKey: ['segments', source.id], queryFn: () => api.segments.list(source.id) })
+  useEffect(
+    () =>
+      window.jiweiEvents.on('segments:changed', (p) => {
+        if (p.sourceId === source.id) void qc.invalidateQueries({ queryKey: ['segments', source.id] })
+      }),
+    [qc, source.id]
+  )
+  if (!segs.length)
+    return (
+      <div className="flex h-full items-center justify-center p-6">
+        <img src={source.assetUrl!} alt={source.title} className="max-h-full max-w-full rounded-lg object-contain shadow-card" />
+      </div>
+    )
+  return (
+    <div className="space-y-5 p-6">
+      <img src={source.assetUrl!} alt={source.title} className="mx-auto max-h-[60vh] max-w-full rounded-lg object-contain shadow-card" />
+      <section aria-label={t('workspace.recog.imageText')}>
+        <h4 className="mb-2 text-xs font-medium text-muted">{t('workspace.recog.imageText')}</h4>
+        <SegmentList sourceId={source.id} segs={segs} />
+      </section>
+    </div>
+  )
+}
+
 /** 解析为文本分段后在应用内阅读的格式 */
 const TEXT_EXTS = ['md', 'markdown', 'txt', 'docx', 'epub', 'html', 'htm']
 
 function Body({ source }: { source: Source }) {
   const { t } = useTranslation()
   const ext = source.originalName?.split('.').pop()?.toLowerCase() ?? ''
-  if (source.kind === 'image' && source.assetUrl)
-    return (
-      <div className="flex h-full items-center justify-center p-6">
-        <img src={source.assetUrl} alt={source.title} className="max-h-full max-w-full rounded-lg object-contain shadow-card" />
-      </div>
-    )
+  if (source.kind === 'image' && source.assetUrl) return <ImageSource source={source} />
   if ((source.kind === 'video' || source.kind === 'audio') && source.assetUrl) return <MediaPane source={source} />
   if (source.kind === 'pdf' && source.assetUrl) return <PdfViewer source={source} />
   if (TEXT_EXTS.includes(ext) || source.kind === 'web') return <TextSegments source={source} />
@@ -190,6 +215,7 @@ export function SourcePane({ sourceId }: { sourceId: string }) {
           </Tip>
         </div>
       </header>
+      {(source.kind === 'pdf' || source.kind === 'image') && <RecognitionBar sourceId={source.id} />}
       <div className={cn('min-h-0 flex-1 overflow-auto')}>
         <Body source={source} />
       </div>

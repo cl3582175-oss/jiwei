@@ -1,6 +1,6 @@
 import { readFile } from 'fs/promises'
 import { segmentText, type TextSegment } from '../main/lib/segment'
-import { parseDocx, parseEpub, parseHtml, parsePdf } from './parsers'
+import { parseDocx, parseEpub, parseHtml, parsePdf, renderPdfPage } from './parsers'
 import { transcribe } from './transcribe'
 
 // 后台工作进程（Electron utilityProcess）：执行 CPU / IO 密集任务，不阻塞主进程与界面。
@@ -17,6 +17,11 @@ const tasks: Record<string, Task> = {
   },
   async parsePdf(payload, progress) {
     return parsePdf((payload as { path: string }).path, progress)
+  },
+  /** PDF 的一页绘制成 JPEG（文档识别） */
+  async renderPdfPage(payload) {
+    const { path, page, maxSide } = payload as { path: string; page: number; maxSide?: number }
+    return renderPdfPage(path, page, maxSide)
   },
   async parseDocx(payload) {
     return parseDocx((payload as { path: string }).path)

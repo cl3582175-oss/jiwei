@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
   Plus,
@@ -19,7 +19,8 @@ import {
   AudioLines,
   Eye,
   Zap,
-  X
+  X,
+  ScanText
 } from 'lucide-react'
 import { PROVIDER_ORDER, PROVIDER_PRESETS, resolveCaps, type Effort, type ModelCapsOverride, type ProviderKind } from '@shared/ai'
 import type { ProviderInfo } from '@shared/types'
@@ -30,6 +31,8 @@ import { Input, Menu, MenuContent, MenuItem, MenuTrigger, Tip } from '@/componen
 import { confirm } from '@/components/ui/confirm'
 import { EffortPicker } from './EffortPicker'
 import { ModelPicker } from './ModelPicker'
+import { Switch } from '@/components/ui/switch'
+import { useRecognitionEvents } from '../workspace/RecognitionBar'
 
 const errText = (e: unknown): string =>
   String(e instanceof Error ? e.message : e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
@@ -480,6 +483,112 @@ function TranscriptionSection() {
   )
 }
 
+/** 文档识别：本地（LightOnOCR，离线，按需运行）、云端看图模型或关闭；插图解读只用云端 */
+function RecognitionSection() {
+  const { t } = useTranslation()
+  const { data: s } = useSettings()
+  const update = useUpdateSettings()
+  const { data: providers = [] } = useProviders()
+  useRecognitionEvents()
+  const { data: st } = useQuery({ queryKey: ['recognizer'], queryFn: () => api.recognition.status() })
+  if (!s) return null
+  const rc = s.ai.recognition ?? { mode: 'local' as const, providerId: null, model: null, auto: true, figures: false }
+  const set = (patch: Partial<typeof rc>): void => update.mutate({ ai: { ...s.ai, recognition: { ...rc, ...patch } } })
+  // 能看图的模型（服务商 / 模型）
+  const vision = providers.flatMap((p) => p.models.filter((m) => resolveCaps(m, p.modelCaps).vision).map((m) => ({ p, m })))
+  return (
+    <section className="space-y-3" data-testid="recognition-settings">
+      <h4 className="flex items-center gap-2 text-sm font-medium text-fg">
+        <ScanText className="size-4 text-accent" />
+        {t('ai.ocr.title')}
+      </h4>
+      <p className="text-xs leading-relaxed text-muted">{t('ai.ocr.desc')}</p>
+      <div className="flex flex-wrap items-center gap-2" role="radiogroup" aria-label={t('ai.ocr.title')}>
+        {(['local', 'cloud', 'off'] as const).map((m) => (
+          <button
+            key={m}
+            role="radio"
+            aria-checked={rc.mode === m}
+            onClick={() => set({ mode: m })}
+            className={cn(
+              'rounded-lg border px-3 py-1.5 text-xs transition-colors',
+              rc.mode === m ? 'border-accent bg-accent-soft text-accent' : 'border-border text-muted hover:text-fg'
+            )}
+          >
+            {t(`ai.ocr.${m}`)}
+          </button>
+        ))}
+      </div>
+      {rc.mode === 'local' && (
+        <div className="space-y-2 rounded-xl border border-border bg-surface p-3">
+          <p className="text-2xs leading-relaxed text-muted">{t('ai.ocr.localHint')}</p>
+          <div className="flex flex-wrap items-center gap-2">
+            {st?.state === 'ready' ? (
+              <>
+                <span className="flex items-center gap-1.5 text-xs text-fg">
+                  <Check className="size-3.5 text-accent" />
+                  {t('ai.ocr.ready')}
+                </span>
+                <Button size="sm" variant="ghost" onClick={() => void api.recognition.remove()}>
+                  <Trash2 />
+                  {t('ai.ocr.remove')}
+                </Button>
+              </>
+            ) : st?.state === 'downloading' ? (
+              <span className="flex items-center gap-1.5 text-xs text-muted">
+                <Loader2 className="size-3.5 animate-spin" />
+                {t('ai.ocr.downloading', { percent: Math.floor(st.progress * 100) })}
+              </span>
+            ) : (
+              <Button size="sm" variant="outline" onClick={() => void api.recognition.install()}>
+                <Download />
+                {t('ai.ocr.download', { size: formatBytes(st?.size ?? 0) })}
+              </Button>
+            )}
+          </div>
+          {st?.state === 'error' && st.message && <p className="text-2xs text-danger">{st.message}</p>}
+        </div>
+      )}
+      {rc.mode !== 'off' && (
+        <div className="space-y-2.5 rounded-xl border border-border bg-surface p-3">
+          {(rc.mode === 'cloud' || rc.figures) && (
+            <div className="space-y-1.5">
+              <select
+                aria-label={t('ai.ocr.cloud')}
+                value={rc.providerId && rc.model ? `${rc.providerId}\u0000${rc.model}` : ''}
+                onChange={(e) => {
+                  const [providerId, model] = e.target.value ? e.target.value.split('\u0000') : [null, null]
+                  set({ providerId, model })
+                }}
+                className="h-8 max-w-full rounded-lg border border-border bg-surface px-2 text-xs text-fg"
+              >
+                <option value="">{t('ai.ocr.pickModel')}</option>
+                {vision.map(({ p, m }) => (
+                  <option key={`${p.id}:${m}`} value={`${p.id}\u0000${m}`}>
+                    {p.name} · {m}
+                  </option>
+                ))}
+              </select>
+              <p className="text-2xs leading-relaxed text-muted">{t('ai.ocr.cloudHint')}</p>
+            </div>
+          )}
+          <label className="flex items-center justify-between gap-3 text-xs text-fg">
+            {t('ai.ocr.auto')}
+            <Switch checked={rc.auto} aria-label={t('ai.ocr.auto')} onCheckedChange={(auto) => set({ auto })} />
+          </label>
+          <div>
+            <label className="flex items-center justify-between gap-3 text-xs text-fg">
+              {t('ai.ocr.figures')}
+              <Switch checked={rc.figures} aria-label={t('ai.ocr.figures')} onCheckedChange={(figures) => set({ figures })} />
+            </label>
+            <p className="mt-1 text-2xs leading-relaxed text-muted">{t('ai.ocr.figuresHint')}</p>
+          </div>
+        </div>
+      )}
+    </section>
+  )
+}
+
 export function AiSettingsTab() {
   const { t } = useTranslation()
   const qc = useQueryClient()
@@ -557,6 +666,7 @@ export function AiSettingsTab() {
 
       <EmbeddingSection />
       <TranscriptionSection />
+      <RecognitionSection />
     </div>
   )
 }

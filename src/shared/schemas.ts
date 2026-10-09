@@ -208,7 +208,20 @@ export const AiSettingsSchema = z.object({
   /** 停用的技能名称 */
   disabledSkills: z.array(z.string().max(64)).max(200).optional(),
   /** 视频 / 音频转写：本地（SenseVoice，离线）或云端（OpenAI 兼容 /audio/transcriptions） */
-  transcription: z.object({ mode: z.enum(['local', 'cloud']), providerId: Id.nullable(), model: z.string().max(200).nullable() }).optional()
+  transcription: z.object({ mode: z.enum(['local', 'cloud']), providerId: Id.nullable(), model: z.string().max(200).nullable() }).optional(),
+  /**
+   * 文档识别（扫描页、表格、图片资料）：本地（LightOnOCR，离线）、云端看图模型或关闭。
+   * figures：用云端看图模型解读插图（小模型会编造，不用本地）
+   */
+  recognition: z
+    .object({
+      mode: z.enum(['local', 'cloud', 'off']),
+      providerId: Id.nullable(),
+      model: z.string().max(200).nullable(),
+      auto: z.boolean(),
+      figures: z.boolean()
+    })
+    .optional()
 })
 export type AiSettings = z.infer<typeof AiSettingsSchema>
 

@@ -139,6 +139,24 @@ const en: Messages = {
     }
   },
   workspace: {
+    recog: {
+      pending: '{{count}} pages need recognition ({{detail}})',
+      scan: '{{count}} scanned',
+      table: '{{count}} with tables',
+      figure: '{{count}} with figures',
+      start: 'Recognize',
+      running: 'Recognizing {{done}} / {{total}} pages…',
+      done: 'Recognized {{count}} pages ({{detail}}); now in your knowledge base',
+      failed: '{{count}} pages failed',
+      retry: 'Retry',
+      needsInstall: 'Recognition runs on this computer and needs the recognition model.',
+      install: 'Download recognition model ({{size}})',
+      installing: 'Downloading recognition model {{percent}}%',
+      noVision: 'Cloud recognition needs a vision model. Turn on “Vision” for a model in Settings → AI.',
+      excluded: 'This source is marked “don’t send to AI”, so cloud recognition is not used.',
+      figuresOff: '{{count}} more pages have figures; turn on figure explanation in Settings → AI → Document recognition.',
+      imageText: 'Recognized text'
+    },
     openSource: 'Open a source on the left',
     pickSource: 'Choose a source to open',
     openInWorkspace: 'Open in workspace',
@@ -219,6 +237,23 @@ const en: Messages = {
     sample: 'Open the sample note'
   },
   ai: {
+    ocr: {
+      title: 'Document recognition',
+      desc: 'Scans and photos have no text, and tables in e-books are read out of order. Jiwei finds these pages on import (other pages are left alone) and turns them into text and tables for your knowledge base.',
+      local: 'Local (offline, LightOnOCR)',
+      cloud: 'Cloud vision model',
+      off: 'Off',
+      localHint: 'Runs on this computer; nothing is uploaded. Started when needed and stopped after 2 idle minutes (about 2.4 GB while running).',
+      download: 'Download recognition model ({{size}})',
+      downloading: 'Downloading recognition model {{percent}}%',
+      ready: 'Recognition model ready',
+      remove: 'Delete model',
+      cloudHint: 'Uses the vision model below; if none is chosen, the default chat model (or a vision model from the same provider). Page images are uploaded to that provider.',
+      pickModel: 'Follow default chat model',
+      auto: 'Recognize automatically after import',
+      figures: 'Explain figures (cloud vision model describes the structure)',
+      figuresHint: 'Small local models invent things that are not in the figure, so figures are only explained by a cloud model. Results start with “[Figure]”. Sources marked “don’t send to AI” are skipped.'
+    },
     asr: {
       title: 'Video / audio transcription',
       desc: 'Generate timed transcripts for video and audio: ask about selected lines, jump by time, and search them.',

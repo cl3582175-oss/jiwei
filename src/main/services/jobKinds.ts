@@ -8,6 +8,7 @@ import { replaceSegments, type SegmentInput } from './segments'
 import { requestIndex } from './ai/indexer'
 import { deviceId } from './device'
 import type { TextSegment } from '../lib/segment'
+import { applyRecognized, IMAGE_EXTS, maybeAutoRecognize, recordPages } from './recognize'
 
 // 后台任务类型注册：资料解析、网页抓取。解析完成后触发知识库索引更新。
 
@@ -22,9 +23,9 @@ const PARSERS: Record<string, string> = {
   htm: 'parseHtml'
 }
 
-/** 资料是否支持当前版本的解析 */
+/** 资料是否支持当前版本的解析（图片资料由文档识别生成文字） */
 export function canSegment(ext: string): boolean {
-  return ext in PARSERS
+  return ext in PARSERS || IMAGE_EXTS.has(ext)
 }
 
 export function enqueueSegment(sourceId: string): void {
@@ -61,6 +62,13 @@ export function registerJobKinds(): void {
         .where(eq(sources.id, sourceId))
         .get()
       if (!row?.a) return { skipped: 'no file' }
+      // 图片资料：整张图按“扫描页”识别
+      if (IMAGE_EXTS.has(row.a.ext)) {
+        recordPages(sourceId, [{ page: 1, need: 'scan' }])
+        applyRecognized(sourceId)
+        maybeAutoRecognize(sourceId)
+        return { image: true }
+      }
       const task = PARSERS[row.a.ext]
       if (!task) return { skipped: `unsupported: ${row.a.ext}` }
       const result = await ctx.worker<TextSegment[] | SegmentInput[] | { title: string; segments: SegmentInput[] }>(task, {
@@ -70,6 +78,12 @@ export function registerJobKinds(): void {
       if (ctx.isCanceled()) return
       const segs = Array.isArray(result) ? result : result.segments
       const n = replaceSegments(sourceId, segs as SegmentInput[])
+      // PDF：登记需要识别的页，并入已有的识别结果（重新解析不必重算），按设置自动识别
+      if (!Array.isArray(result) && 'pages' in result) {
+        recordPages(sourceId, (result as { pages: { page: number; need: 'scan' | 'table' | 'figure' }[] }).pages)
+        applyRecognized(sourceId)
+        maybeAutoRecognize(sourceId)
+      }
       requestIndex()
       return { segments: n }
     }

@@ -131,6 +131,24 @@ const zhCN = {
     op: { insert_after: '插入', insert_row: '新增一行', append_summary: '补充总结', replace_block: '替换', delete_block: '删除' }
   },
   workspace: {
+    recog: {
+      pending: '有 {{count}} 页需要识别（{{detail}}）',
+      scan: '{{count}} 页扫描',
+      table: '{{count}} 页表格',
+      figure: '{{count}} 页插图',
+      start: '开始识别',
+      running: '正在识别 {{done}} / {{total}} 页…',
+      done: '已识别 {{count}} 页（{{detail}}），内容已进入知识库',
+      failed: '{{count}} 页识别失败',
+      retry: '重试',
+      needsInstall: '识别在本机完成，需要先下载识别模型。',
+      install: '下载识别模型（{{size}}）',
+      installing: '正在下载识别模型 {{percent}}%',
+      noVision: '云端识别需要能看图的模型，请在设置 → AI 中为模型打开“看图”。',
+      excluded: '这份资料设为“不发送给 AI”，云端识别不会使用。',
+      figuresOff: '另有 {{count}} 页插图，可在设置 → AI → 文档识别中开启插图解读。',
+      imageText: '识别出的文字'
+    },
     openSource: '在左侧打开资料',
     pickSource: '选择要打开的资料',
     openInWorkspace: '在工作区打开',
@@ -210,6 +228,23 @@ const zhCN = {
     sample: '打开示例笔记'
   },
   ai: {
+    ocr: {
+      title: '文档识别',
+      desc: '扫描件、拍照资料没有文字，电子书里的表格会被读乱。导入时自动找出这些页（其余页面不处理），识别成文字和表格后进入知识库。',
+      local: '本地（离线，LightOnOCR）',
+      cloud: '云端看图模型',
+      off: '关闭',
+      localHint: '在本机识别，资料不出电脑。需要时启动、空闲 2 分钟后退出，不常驻内存（运行时约 2.4 GB）。',
+      download: '下载识别模型（{{size}}）',
+      downloading: '正在下载识别模型 {{percent}}%',
+      ready: '识别模型已就绪',
+      remove: '删除模型',
+      cloudHint: '使用下方的看图模型；未指定时使用默认对话模型（或同一服务商中能看图的模型）。页面图像会上传到该服务商。',
+      pickModel: '跟随默认对话模型',
+      auto: '导入后自动识别',
+      figures: '解读插图（用云端看图模型说明图的结构）',
+      figuresHint: '本地小模型会编造图中没有的内容，因此插图只用云端模型解读，结果以“［图解］”开头。资料设为“不发送给 AI”时不会解读。'
+    },
     asr: {
       title: '视频 / 音频转写',
       desc: '为视频、音频生成带时间的转写稿，用于选中提问、按时间跳转和知识库检索。',

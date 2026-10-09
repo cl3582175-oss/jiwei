@@ -10,6 +10,8 @@ import type {
   ChatMessage,
   Conversation,
   EmbeddingStatus,
+  RecognizerStatus,
+  SourceRecognition,
   HeatmapDay,
   ImportResult,
   Job,
@@ -424,6 +426,13 @@ export const capabilities = {
     install: cap<void>()({ description: '下载并安装语音转写引擎（sherpa-onnx + SenseVoice）', params: none }),
     transcribe: cap<void>()({ description: '为视频 / 音频生成转写稿（后台任务）', params: [id('sourceId')] }),
     importSubtitles: cap<number | null>()({ description: '为视频 / 音频导入字幕文件', params: [id('sourceId')] })
+  },
+  recognition: {
+    status: cap<RecognizerStatus>()({ description: '文档识别引擎（本地模型）状态', params: none }),
+    install: cap<void>()({ description: '下载本地文档识别模型（LightOnOCR-2-1B）', params: none }),
+    remove: cap<void>()({ description: '删除本地文档识别模型', params: none }),
+    source: cap<SourceRecognition>()({ description: '资料的识别情况（扫描页、表格页、图页）', params: [id('sourceId')], ai: { effect: 'read' } }),
+    start: cap<void>()({ description: '识别资料中的扫描页、表格（后台任务）', params: [id('sourceId')] })
   },
   embedding: {
     status: cap<EmbeddingStatus>()({ description: '向量模型与索引状态', params: none }),

@@ -72,7 +72,7 @@ async function findFile(dir: string, name: string): Promise<string | null> {
   return null
 }
 
-async function serverBinary(): Promise<string | null> {
+export async function serverBinary(): Promise<string | null> {
   const name = process.platform === 'win32' ? 'llama-server.exe' : 'llama-server'
   return stat(runtimeDir()).then(
     () => findFile(runtimeDir(), name),
@@ -91,16 +91,22 @@ export async function isInstalled(): Promise<boolean> {
   return !!bin && model
 }
 
-/** 下载并安装运行时与模型（已存在且校验通过则跳过） */
-export async function install(onProgress: (p: DownloadProgress & { stage: 'runtime' | 'model' }) => void): Promise<void> {
+/** 平台是否有 llama.cpp 运行时 */
+export const llamaSupported = (): boolean => `${process.platform}-${process.arch}` in RUNTIMES
+
+/** 运行时（llama-server）的下载大小；已安装时为 0 */
+export async function runtimeDownloadSize(): Promise<number> {
+  return (await serverBinary()) ? 0 : (RUNTIMES[`${process.platform}-${process.arch}`]?.size ?? 0)
+}
+
+/** 下载并安装 llama.cpp 运行时（向量模型与文档识别共用；已安装则跳过） */
+export async function ensureRuntime(onProgress: (p: DownloadProgress) => void): Promise<string> {
   const key = `${process.platform}-${process.arch}`
   const rt = RUNTIMES[key]
-  if (!rt) throw new Error(`暂不支持此平台的本地向量模型：${key}，请在设置中改用云端向量服务`)
+  if (!rt) throw new Error(`暂不支持此平台的本地模型：${key}`)
   if (!(await serverBinary())) {
     const archive = join(modelsDir(), rt.file)
-    await download({ name: 'llama.cpp', size: rt.size, sha256: rt.sha256, urls: GH_MIRRORS(rt.file), dest: archive }, (p) =>
-      onProgress({ ...p, stage: 'runtime' })
-    )
+    await download({ name: 'llama.cpp', size: rt.size, sha256: rt.sha256, urls: GH_MIRRORS(rt.file), dest: archive }, onProgress)
     await rm(runtimeDir(), { recursive: true, force: true })
     await mkdir(runtimeDir(), { recursive: true })
     if (rt.file.endsWith('.zip')) {
@@ -119,6 +125,15 @@ export async function install(onProgress: (p: DownloadProgress & { stage: 'runti
     if (!bin) throw new Error('运行时解压后未找到 llama-server')
     if (process.platform !== 'win32') await chmod(bin, 0o755)
   }
+  const bin = await serverBinary()
+  if (!bin) throw new Error('运行时解压后未找到 llama-server')
+  return bin
+}
+
+/** 下载并安装运行时与模型（已存在且校验通过则跳过） */
+export async function install(onProgress: (p: DownloadProgress & { stage: 'runtime' | 'model' }) => void): Promise<void> {
+  if (!llamaSupported()) throw new Error(`暂不支持此平台的本地向量模型：${process.platform}-${process.arch}，请在设置中改用云端向量服务`)
+  await ensureRuntime((p) => onProgress({ ...p, stage: 'runtime' }))
   await download({ name: 'EmbeddingGemma 2', size: MODEL.size, sha256: MODEL.sha256, urls: MODEL.urls, dest: modelPath() }, (p) =>
     onProgress({ ...p, stage: 'model' })
   )
@@ -130,7 +145,7 @@ let proc: ChildProcess | null = null
 let port = 0
 let starting: Promise<void> | null = null
 
-function freePort(): Promise<number> {
+export function freePort(): Promise<number> {
   return new Promise((resolve, reject) => {
     const srv = createServer()
     srv.listen(0, '127.0.0.1', () => {

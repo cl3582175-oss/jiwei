@@ -780,6 +780,34 @@ export interface AsrStatus {
   message: string | null
 }
 
+/** 文档识别引擎（本地模型）状态 */
+export interface RecognizerStatus {
+  /** 本地模型：未下载 / 下载中 / 已就绪 / 出错 */
+  state: 'missing' | 'downloading' | 'ready' | 'error'
+  progress: number
+  mirror: string | null
+  speed: number | null
+  message: string | null
+  /** 需要下载的总大小（字节，含运行时） */
+  size: number
+  /** 本地模型是否正在运行（按需加载，空闲后退出） */
+  running: boolean
+}
+
+/** 一份资料的识别情况 */
+export interface SourceRecognition {
+  /** 需要识别的页数，按类型 */
+  needs: { scan: number; table: number; figure: number }
+  /** 本次设置下会处理的页数（插图解读未开启时不含图页） */
+  total: number
+  done: number
+  failed: number
+  /** 正在识别（后台任务排队或运行中） */
+  running: boolean
+  /** 当前设置能否识别：local 需要先下载模型，cloud 需要能看图的模型，off 已关闭，excluded 资料不发送给 AI */
+  engine: 'ready' | 'needs-install' | 'no-vision-model' | 'off' | 'excluded'
+}
+
 /** 主进程 → 渲染进程的事件 */
 export interface JiweiEvents {
   /** 应用即将退出 / 重载：请立即保存未写入的内容，然后调用 app.flushDone() */
@@ -794,6 +822,10 @@ export interface JiweiEvents {
   'review:changed': Record<string, never>
   /** 资料分段已更新 */
   'segments:changed': { sourceId: string }
+  /** 文档识别引擎状态 */
+  'recognition:status': RecognizerStatus
+  /** 某份资料的识别进度 */
+  'recognition:source': { sourceId: string }
   /** AI 回答的流式增量 */
   'chat:delta': { messageId: string; conversationId: string; text?: string; reasoning?: string }
   /** AI 回答完成 / 出错 / 停止（携带完整消息） */

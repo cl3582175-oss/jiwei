@@ -1,4 +1,8 @@
 import { readFile } from 'fs/promises'
+import { createRequire } from 'module'
+import { dirname, join } from 'path'
+import { createCanvas, DOMMatrix, ImageData, Path2D, type Canvas, type SKRSContext2D } from '@napi-rs/canvas'
+import { classifyPage, drawingSignals, type PageNeed } from './pdfTriage'
 import { segmentText, type TextSegment } from '../main/lib/segment'
 
 // 资料解析（在工作进程中运行）。输出统一的分段，定位使用 W3C 选择器：
@@ -32,15 +36,29 @@ function splitWithLocator(text: string, locator: Record<string, unknown>, kind: 
   return segmentText(clean, 'plain').map((s: TextSegment) => ({ kind, locator, text: s.text }))
 }
 
-export async function parsePdf(path: string, progress: (p: number) => void): Promise<Segment[]> {
+type PdfJs = typeof import('pdfjs-dist/legacy/build/pdf.mjs')
+
+async function loadPdfJs(): Promise<PdfJs> {
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs')
   // Electron 工作进程（process.type = 'utility'）不被 pdf.js 视为 Node，不会自动加载解析器：
   // 预先放到 globalThis.pdfjsWorker，pdf.js 会在当前进程内直接使用
   const g = globalThis as { pdfjsWorker?: unknown }
   g.pdfjsWorker ??= await import('pdfjs-dist/legacy/build/pdf.worker.mjs')
+  return pdfjs
+}
+
+export interface PdfParse {
+  segments: Segment[]
+  /** 需要识别的页（扫描页、表格页、图页），见 pdfTriage.ts */
+  pages: { page: number; need: PageNeed }[]
+}
+
+export async function parsePdf(path: string, progress: (p: number) => void): Promise<PdfParse> {
+  const pdfjs = await loadPdfJs()
   const data = new Uint8Array(await readFile(path))
   const doc = await pdfjs.getDocument({ data, useSystemFonts: true }).promise
   const out: Segment[] = []
+  const pages: PdfParse['pages'] = []
   for (let p = 1; p <= doc.numPages; p++) {
     const page = await doc.getPage(p)
     const content = await page.getTextContent()
@@ -56,10 +74,75 @@ export async function parsePdf(path: string, progress: (p: number) => void): Pro
     out.push(
       ...splitWithLocator(text, { type: 'FragmentSelector', conformsTo: 'http://tools.ietf.org/rfc/rfc3778', value: `page=${p}` }, 'page')
     )
+    try {
+      const ops = await page.getOperatorList()
+      const [x0, y0, x1, y1] = page.view
+      const need = classifyPage({
+        chars: text.replace(/\s/g, '').length,
+        lines: text.split('\n'),
+        ...drawingSignals(ops.fnArray, ops.argsArray, (x1 - x0) * (y1 - y0))
+      })
+      if (need) pages.push({ page: p, need })
+    } catch {
+      // 分流失败不影响文字层
+    }
+    page.cleanup()
     progress(p / doc.numPages)
   }
   await doc.cleanup()
-  return out
+  return { segments: out, pages }
+}
+
+/** pdf.js 在工作进程中用 @napi-rs/canvas 绘制（随 pdfjs-dist 安装） */
+class CanvasFactory {
+  create(width: number, height: number): { canvas: Canvas; context: SKRSContext2D } {
+    const canvas = createCanvas(width, height)
+    return { canvas, context: canvas.getContext('2d') }
+  }
+  reset(cc: { canvas: Canvas }, width: number, height: number): void {
+    cc.canvas.width = width
+    cc.canvas.height = height
+  }
+  destroy(cc: { canvas: Canvas }): void {
+    cc.canvas.width = 0
+    cc.canvas.height = 0
+  }
+}
+
+/** 把 PDF 的一页绘制成 JPEG（长边约 maxSide 像素），供看图识别 */
+export async function renderPdfPage(path: string, pageNo: number, maxSide = 1600): Promise<Uint8Array> {
+  // pdf.js 只在它认定的 Node 环境里自动补齐这些画布类型；工作进程中手动补齐
+  const g = globalThis as Record<string, unknown>
+  g.Path2D ??= Path2D
+  g.DOMMatrix ??= DOMMatrix
+  g.ImageData ??= ImageData
+  const pdfjs = await loadPdfJs()
+  const root = dirname(createRequire(import.meta.url).resolve('pdfjs-dist/package.json'))
+  const task = pdfjs.getDocument({
+    data: new Uint8Array(await readFile(path)),
+    // 工作进程没有 FontFace：字形按路径绘制
+    disableFontFace: true,
+    CanvasFactory,
+    cMapUrl: join(root, 'cmaps') + '/',
+    cMapPacked: true,
+    standardFontDataUrl: join(root, 'standard_fonts') + '/',
+    verbosity: 0
+  } as Parameters<PdfJs['getDocument']>[0])
+  const doc = await task.promise
+  try {
+    const page = await doc.getPage(pageNo)
+    const base = page.getViewport({ scale: 1 })
+    const viewport = page.getViewport({ scale: Math.min(4, maxSide / Math.max(base.width, base.height)) })
+    const canvas = createCanvas(Math.ceil(viewport.width), Math.ceil(viewport.height))
+    const ctx = canvas.getContext('2d')
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, canvas.width, canvas.height)
+    type RenderParams = Parameters<typeof page.render>[0]
+    await page.render({ canvas, canvasContext: ctx, viewport } as unknown as RenderParams).promise
+    return new Uint8Array(await canvas.encode('jpeg', 88))
+  } finally {
+    await task.destroy()
+  }
 }
 
 export async function parseDocx(path: string): Promise<Segment[]> {
