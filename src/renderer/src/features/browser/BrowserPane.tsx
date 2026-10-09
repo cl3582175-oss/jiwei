@@ -57,7 +57,10 @@ function useNativeView(slot: React.RefObject<HTMLDivElement | null>, show: boole
       cancelAnimationFrame(raf)
       raf = requestAnimationFrame(() => {
         const box = el.getBoundingClientRect()
-        const covered = [...document.querySelectorAll<HTMLElement>(OVERLAYS)].some((o) => !el.contains(o) && o.offsetParent !== null && intersects(o.getBoundingClientRect(), box))
+        // 注意：浮动卡片是 position: fixed，offsetParent 恒为 null，不能用它判断是否显示
+        const covered = [...document.querySelectorAll<HTMLElement>(OVERLAYS)].some(
+          (o) => !el.contains(o) && o.getClientRects().length > 0 && getComputedStyle(o).visibility !== 'hidden' && intersects(o.getBoundingClientRect(), box)
+        )
         if (covered === frozen || busy) return
         frozen = covered
         busy = true

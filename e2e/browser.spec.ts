@@ -111,11 +111,20 @@ test('ask AI from the page: the answer card docks beside the browser; overlays f
   await expect(card).toBeVisible()
   const [cb, vb] = await Promise.all([card.boundingBox(), page.getByTestId('browser-view').boundingBox()])
   const room = (await page.evaluate(() => window.innerWidth)) - (vb!.x + vb!.width)
-  // 浏览器右侧放得下卡片：停靠在右侧，网页照常显示；放不下（小屏幕）：卡片盖住网页时网页换成截图
+  // 浏览器右侧放得下卡片：停靠在右侧，网页照常显示
   if (room >= 432) expect(cb!.x).toBeGreaterThanOrEqual(vb!.x + vb!.width - 1)
-  else await expect(page.getByTestId('browser-view').locator('img, div.absolute')).toHaveCount(1)
+  else await expect(page.getByTestId('browser-view').locator('img')).toBeVisible()
   if (shots) await page.screenshot({ path: join(shots, '201-browser-ask.png') })
   await page.keyboard.press('Escape')
+  // 窗口较窄（右侧放不下卡片）：卡片盖住网页时，网页换成截图，卡片照常可见
+  const size = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getSize())
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1000, 700))
+  await pageAction('提取练习', 'ask')
+  await expect(card).toBeVisible()
+  await expect(page.getByTestId('browser-view').locator('img')).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(page.getByTestId('browser-view').locator('img')).toHaveCount(0)
+  await app.evaluate(({ BrowserWindow }, [w, h]) => BrowserWindow.getAllWindows()[0].setSize(w, h), size)
   // 命令面板盖住网页：网页换成截图，关闭后恢复
   await page.keyboard.press('ControlOrMeta+k')
   await expect(page.getByTestId('browser-view').locator('img')).toBeVisible()
