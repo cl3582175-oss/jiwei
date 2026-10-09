@@ -16,6 +16,13 @@ import type {
   Memory,
   Concept,
   FeynmanReport,
+  Reflection,
+  ReflectionOverview,
+  ReflectionMaterial,
+  ReflectionHarvest,
+  Insight,
+  InsightVersion,
+  ActionItem,
   ReviewCard,
   ReviewStats,
   AnswerCheck,
@@ -310,6 +317,29 @@ export const capabilities = {
       description: '立即执行记忆维护：检查 AI 内容是否被修改、归纳技能偏好、淡出久未使用的记忆',
       params: [['opts', z.object({ force: z.boolean().optional() })]]
     })
+  },
+  reflection: {
+    overview: cap<ReflectionOverview>()({ description: '复盘概览：今天 / 本周的复盘、最近的复盘、未完成的行动项', params: none }),
+    start: cap<Reflection>()({ description: '开始一次复盘（每日 / 每周按时间段只有一份）', params: [['input', S.ReflectionStartSchema]] }),
+    get: cap<Reflection | null>()({ description: '读取一次复盘', params: [id()] }),
+    remove: cap<void>()({ description: '删除一次复盘（复盘笔记进入最近删除）', params: [id()] }),
+    answers: cap<string[]>()({ description: '各引导问题下的回答', params: [id()] }),
+    material: cap<ReflectionMaterial>()({ description: '复盘素材包（由数据统计生成）', params: [id()] }),
+    saveDaily: cap<Reflection>()({ description: '保存每日微复盘的三个回答', params: [['answers', z.array(z.string().max(2000)).length(3)]] }),
+    harvest: cap<ReflectionHarvest>()({ description: 'AI 从复盘中提炼洞见、修正与行动项（供确认）', params: [id()] }),
+    commit: cap<Reflection>()({ description: '保存确认的洞见、修正与行动项，复盘完成', params: [id(), ['input', S.HarvestCommitSchema]] })
+  },
+  insights: {
+    list: cap<Insight[]>()({ description: '列出洞见', params: none }),
+    history: cap<InsightVersion[]>()({ description: '洞见的版本历史（认知成长轨迹）', params: [id()] }),
+    update: cap<Insight>()({ description: '修改洞见（新版本，记录原因）', params: [id(), ['patch', S.InsightUpdateSchema]] }),
+    remove: cap<void>()({ description: '删除洞见', params: [id()] })
+  },
+  actions: {
+    list: cap<ActionItem[]>()({ description: '列出行动项', params: [['status', z.enum(['open', 'done', 'dropped']).optional()]] }),
+    create: cap<ActionItem>()({ description: '新建行动项', params: [['title', z.string().min(1).max(300)], ['dueAt', z.number().int().nullable()]] }),
+    update: cap<ActionItem>()({ description: '修改行动项（完成 / 放弃 / 改期）', params: [id(), ['patch', S.ActionUpdateSchema]] }),
+    remove: cap<void>()({ description: '删除行动项', params: [id()] })
   },
   feynman: {
     get: cap<Conversation | null>()({ description: '读取一次费曼练习（含诊断报告）', params: [id()] }),

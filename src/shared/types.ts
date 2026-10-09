@@ -335,13 +335,103 @@ export interface Conversation {
   pinned: boolean
   /** 无痕：不使用、不形成记忆 */
   incognito: boolean
-  kind: 'chat' | 'workspace' | 'inline' | 'feynman'
+  kind: 'chat' | 'workspace' | 'inline' | 'feynman' | 'reflection'
   /** 就地提问的锚点 */
   anchor: Anchor | null
   /** 费曼练习的信息（kind = feynman） */
   feynman: FeynmanInfo | null
+  /** 复盘追问所属的复盘（kind = reflection） */
+  reflectionId: string | null
   createdAt: number
   updatedAt: number
+}
+
+/* ——— 复盘（v0.4.2） ——— */
+
+/** daily 每日微复盘；weekly 每周复盘（GRAI）；topic 主题；practice 实践；belief 认知变化 */
+export type ReflectionKind = 'daily' | 'weekly' | 'topic' | 'practice' | 'belief'
+
+export interface Reflection {
+  id: string
+  kind: ReflectionKind
+  /** 复盘正文：一篇 kind = review 的康奈尔笔记（线索栏是引导问题，笔记栏是你的回答） */
+  noteId: string | null
+  title: string
+  periodStart: number | null
+  periodEnd: number | null
+  /** 专题复盘的范围（主题文字 / 分类 / 标签） */
+  scope: { topic?: string; categoryId?: string; tagId?: string } | null
+  status: 'draft' | 'done'
+  completedAt: number | null
+  createdAt: number
+}
+
+/** 复盘素材包：由数据统计生成（不经过 AI），既给你看，也作为 AI 追问的依据 */
+export interface ReflectionMaterial {
+  period: { start: number; end: number }
+  notes: { id: string; title: string; editedAt: number; created: boolean }[]
+  episodes: { content: string; at: number; conversationId: string | null }[]
+  review: { reviewed: number; forgot: number; hardest: { question: string; noteId: string; lapses: number }[] }
+  /** 有线索、笔记栏还空着的行 */
+  unanswered: { question: string; noteId: string; noteTitle: string }[]
+  concepts: { name: string; level: 'weak' | 'learning' | 'solid'; change: 'up' | 'down' | 'new' }[]
+  feynman: { concept: string; level: 'weak' | 'learning' | 'solid' | null; conversationId: string }[]
+  /** 到期或期间完成的行动项（闭环检查） */
+  actions: ActionItem[]
+  /** 供 AI 使用的文字版 */
+  text: string
+}
+
+export type InsightConfidence = 'hypothesis' | 'believed' | 'verified'
+
+export interface Insight {
+  id: string
+  statement: string
+  confidence: InsightConfidence
+  status: 'active' | 'revised' | 'refuted'
+  version: number
+  /** 首次提出它的复盘 */
+  reviewId: string | null
+  createdAt: number
+  updatedAt: number
+}
+
+export interface InsightVersion {
+  version: number
+  statement: string
+  confidence: InsightConfidence
+  /** 为什么这样改（第一版为依据） */
+  reason: string | null
+  createdAt: number
+}
+
+export interface ActionItem {
+  id: string
+  title: string
+  status: 'open' | 'done' | 'dropped'
+  dueAt: number | null
+  doneAt: number | null
+  reviewId: string | null
+  createdAt: number
+}
+
+/** 复盘完成时 AI 从正文中提炼的候选（由用户确认后保存） */
+export interface ReflectionHarvest {
+  insights: { statement: string; confidence: InsightConfidence; evidence: string }[]
+  /** 对已有洞见的修正（认知变化） */
+  revisions: { insightId: string; current: string; statement: string; confidence: InsightConfidence; reason: string }[]
+  actions: { title: string; dueInDays: number | null }[]
+}
+
+export interface ReflectionOverview {
+  today: Reflection | null
+  week: Reflection | null
+  /** 本周复盘的时间范围 */
+  weekStart: number
+  weekEnd: number
+  recent: Reflection[]
+  openActions: ActionItem[]
+  insights: number
 }
 
 /* ——— 费曼练习（v0.4.1） ——— */
@@ -613,4 +703,8 @@ export interface JiweiEvents {
   'memory:changed': { added?: Memory; learned?: Memory[] }
   /** 深层链接：jiwei://note/<id> 或 jiwei://source/<id> */
   'nav:open': { type: 'note' | 'source'; id: string }
+  /** 复盘提醒被点击：打开复盘页 */
+  'nav:reflect': { kind: 'daily' | 'weekly' }
+  /** 复盘、洞见或行动项变化 */
+  'reflection:changed': Record<string, never>
 }

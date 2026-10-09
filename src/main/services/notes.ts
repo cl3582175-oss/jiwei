@@ -106,8 +106,8 @@ export function getNote(id: string): Note | null {
 
 export function createNote(init?: { categoryId?: string | null; title?: string; kind?: NoteKind }): Note {
   const kind = init?.kind ?? 'cornell'
-  // 其他笔记类型的文档结构在对应版本实现（复盘：v0.4）
-  if (kind !== 'cornell') throw new Error(`Note kind "${kind}" is not available yet`)
+  // 复盘笔记（review）沿用康奈尔结构：线索栏是引导问题，笔记栏是回答；其他类型在对应版本实现
+  if (kind !== 'cornell' && kind !== 'review') throw new Error(`Note kind "${kind}" is not available yet`)
   const now = Date.now()
   const id = newId()
   getDb()

@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import type { NoteSort, WorkspaceContext } from '@shared/types'
 
-export type View = 'notes' | 'library' | 'chat' | 'review' | 'feynman' | 'trash'
+export type View = 'notes' | 'library' | 'chat' | 'review' | 'reflect' | 'feynman' | 'trash'
 
 /** 笔记列表筛选：全部 / 置顶 / 未分类 / 某分类 / 某标签 */
 export type NoteFilter =
@@ -46,6 +46,10 @@ interface AppState extends Location {
 
   context: WorkspaceContext
   setContext: (patch: Partial<WorkspaceContext>) => void
+
+  /** 复盘页中打开的复盘（null 为复盘首页） */
+  reflectionId: string | null
+  openReflection: (id: string | null) => void
 
   /** 当前的费曼练习：conversationId 为 null 表示还没开始讲 */
   feynman: { conversationId: string | null; concept: string; noteId: string | null; cardId: string | null } | null
@@ -129,6 +133,12 @@ export const useApp = create<AppState>((set, get) => {
 
     context: emptyContext,
     setContext: (patch) => set((s) => ({ context: { ...s.context, ...patch } })),
+
+    reflectionId: null,
+    openReflection: (reflectionId) => {
+      set({ reflectionId })
+      get().navigate({ view: 'reflect' })
+    },
 
     feynman: null,
     startFeynman: (f) => {

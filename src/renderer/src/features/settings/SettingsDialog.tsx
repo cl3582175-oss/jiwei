@@ -32,6 +32,7 @@ import { useAppInfo, useSettings, useUpdateSettings } from '@/lib/queries'
 import { useApp } from '@/store/app'
 import { api, cn, formatDateTime } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { Switch } from '@/components/ui/switch'
 import { Logo } from '@/components/Logo'
 
 type Tab = 'general' | 'me' | 'learning' | 'ai' | 'skills' | 'appearance' | 'data' | 'about'
@@ -394,6 +395,37 @@ export function SettingsDialog() {
                     value={String(Math.round(s.review.retention * 100))}
                     onChange={(v) => update.mutate({ review: { ...s.review, retention: Number(v) / 100 } })}
                     options={['85', '90', '95'].map((v) => ({ value: v, label: `${v}%` }))}
+                  />
+                </Row>
+                <h3 className="pt-6 font-serif text-md font-semibold text-fg">{t('reflect.settingsTitle')}</h3>
+                <Row label={t('reflect.daily')} desc={t('reflect.dailyDesc')}>
+                  <Switch
+                    checked={s.reflection.daily}
+                    aria-label={t('reflect.daily')}
+                    onCheckedChange={(daily) => update.mutate({ reflection: { ...s.reflection, daily } })}
+                  />
+                </Row>
+                <Row label={t('reflect.weekly')} desc={t('reflect.weeklyDesc')}>
+                  <Switch
+                    checked={s.reflection.weekly}
+                    aria-label={t('reflect.weekly')}
+                    onCheckedChange={(weekly) => update.mutate({ reflection: { ...s.reflection, weekly } })}
+                  />
+                </Row>
+                <Row label={t('reflect.weekday')}>
+                  <Segmented<string>
+                    value={String(s.reflection.weeklyDay)}
+                    onChange={(v) => update.mutate({ reflection: { ...s.reflection, weeklyDay: Number(v) } })}
+                    options={[1, 2, 3, 4, 5, 6, 0].map((d) => ({ value: String(d), label: (t('reflect.weekdays', { returnObjects: true }) as string[])[d] }))}
+                  />
+                </Row>
+                <Row label={t('reflect.time')}>
+                  <input
+                    type="time"
+                    value={s.reflection.time}
+                    aria-label={t('reflect.time')}
+                    onChange={(e) => e.target.value && update.mutate({ reflection: { ...s.reflection, time: e.target.value } })}
+                    className="h-8 rounded-lg border border-border bg-surface px-2.5 text-sm text-fg outline-none focus:border-accent"
                   />
                 </Row>
               </>

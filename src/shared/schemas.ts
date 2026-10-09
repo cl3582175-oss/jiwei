@@ -185,7 +185,9 @@ export const ChatSendSchema = z.object({
   /** 无痕：不读取、不形成记忆（仅新建对话时生效） */
   incognito: z.boolean().optional(),
   /** 对话类型（仅新建时生效）：chat 对话页；workspace 工作区面板；inline 选区就地提问 */
-  kind: z.enum(['chat', 'workspace', 'inline', 'feynman']).optional(),
+  kind: z.enum(['chat', 'workspace', 'inline', 'feynman', 'reflection']).optional(),
+  /** 复盘追问（仅新建时生效）：所属的复盘 */
+  reflectionId: Id.optional(),
   /** 费曼练习（仅新建时生效）：要讲的概念、关联笔记 / 卡片 */
   feynman: z.object({ concept: z.string().min(1).max(200), noteId: Id.nullable().optional(), cardId: Id.nullable().optional() }).optional(),
   /** 就地提问的锚点（仅新建时生效） */
@@ -254,3 +256,40 @@ export const SaveAnswerSchema = z.object({
   model: z.string().max(200).optional()
 })
 export type SaveAnswer = z.infer<typeof SaveAnswerSchema>
+
+/* ——— 复盘 ——— */
+
+export const ReflectionKindSchema = z.enum(['daily', 'weekly', 'topic', 'practice', 'belief'])
+export const ReflectionStartSchema = z.object({
+  kind: ReflectionKindSchema,
+  /** 专题复盘：主题、分类或标签 */
+  topic: z.string().max(200).optional(),
+  categoryId: Id.optional(),
+  tagId: Id.optional()
+})
+export type ReflectionStart = z.infer<typeof ReflectionStartSchema>
+
+export const InsightConfidenceSchema = z.enum(['hypothesis', 'believed', 'verified'])
+export const HarvestCommitSchema = z.object({
+  insights: z.array(z.object({ statement: z.string().min(1).max(500), confidence: InsightConfidenceSchema, evidence: z.string().max(500).optional() })).max(20),
+  revisions: z
+    .array(z.object({ insightId: Id, statement: z.string().min(1).max(500), confidence: InsightConfidenceSchema, reason: z.string().max(500) }))
+    .max(20),
+  actions: z.array(z.object({ title: z.string().min(1).max(300), dueAt: z.number().int().nullable() })).max(20)
+})
+export type HarvestCommit = z.infer<typeof HarvestCommitSchema>
+
+export const InsightUpdateSchema = z.object({
+  statement: z.string().min(1).max(500).optional(),
+  confidence: InsightConfidenceSchema.optional(),
+  status: z.enum(['active', 'refuted']).optional(),
+  /** 为什么改（记入版本历史） */
+  reason: z.string().max(500).optional()
+})
+
+export const ActionUpdateSchema = z.object({
+  title: z.string().min(1).max(300).optional(),
+  status: z.enum(['open', 'done', 'dropped']).optional(),
+  dueAt: z.number().int().nullable().optional()
+})
+

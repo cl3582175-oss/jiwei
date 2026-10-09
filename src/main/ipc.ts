@@ -28,6 +28,7 @@ import * as learner from './services/learner'
 import * as memoryLearn from './services/memoryLearn'
 import * as review from './services/review'
 import * as feynman from './services/feynman'
+import * as reflection from './services/reflection'
 import * as asr from './services/asr'
 import { saveAnswer } from './services/saveAnswer'
 import { exportNote } from './services/exportNote'
@@ -173,6 +174,29 @@ const handlers: Handlers = {
     saveAnswer: (_, input) => saveAnswer(input),
     update: (_, id, patch) => chat.updateConversation(id, patch),
     remove: (_, id) => chat.deleteConversation(id)
+  },
+  reflection: {
+    overview: () => reflection.reflectionOverview(),
+    start: (_, input) => reflection.startReflection(input),
+    get: (_, id) => reflection.getReflection(id),
+    remove: (_, id) => reflection.removeReflection(id),
+    answers: (_, id) => reflection.reflectionAnswers(id),
+    material: (_, id) => reflection.reflectionMaterial(id),
+    saveDaily: (_, answers) => reflection.saveDaily(answers),
+    harvest: (_, id) => reflection.harvestReflection(id),
+    commit: (_, id, input) => reflection.commitReflection(id, input)
+  },
+  insights: {
+    list: () => reflection.listInsights(),
+    history: (_, id) => reflection.insightHistory(id),
+    update: (_, id, patch) => reflection.updateInsight(id, patch),
+    remove: (_, id) => reflection.removeInsight(id)
+  },
+  actions: {
+    list: (_, status) => reflection.listActions(status),
+    create: (_, title, dueAt) => reflection.createAction(title, dueAt),
+    update: (_, id, patch) => reflection.updateAction(id, patch),
+    remove: (_, id) => reflection.removeAction(id)
   },
   feynman: {
     get: (_, id) => chat.getConversation(id),

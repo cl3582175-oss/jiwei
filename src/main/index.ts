@@ -21,6 +21,7 @@ import { refreshStatus, shutdown as shutdownEmbedding } from './services/ai/embe
 import { stopAll as stopChats } from './services/ai/chat'
 import { startMemoryLearning, stopMemoryLearning } from './services/memoryLearn'
 import { syncAllCards } from './services/review'
+import { startReminders, stopReminders } from './services/reminders'
 import { importProvidersForTest } from './services/ai/providers'
 
 const HOUR = 3_600_000
@@ -140,6 +141,7 @@ app.whenReady().then(async () => {
   registerIndexJob()
   startJobs()
   startMemoryLearning()
+  startReminders()
   // 复习卡片：补齐已有笔记的线索（升级到 v0.4 后第一次启动）
   setTimeout(() => {
     try {
@@ -186,6 +188,7 @@ app.on('before-quit', (e) => {
     .finally(() => {
       stopChats()
       stopMemoryLearning()
+      stopReminders()
       shutdownEmbedding()
       stopJobs()
       flushAll()

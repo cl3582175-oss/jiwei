@@ -172,8 +172,11 @@ function CitationCard({ c }: { c: Citation }) {
   )
 }
 
-/** compact：就地卡片中使用，隐藏用量信息 */
-export function MessageItem({ m, compact }: { m: ChatMessage; compact?: boolean }) {
+/**
+ * compact：就地卡片中使用，隐藏用量信息。
+ * plain：不是知识库问答（费曼练习、复盘追问），不显示“没有引用知识库”的提示。
+ */
+export function MessageItem({ m, compact, plain }: { m: ChatMessage; compact?: boolean; plain?: boolean }) {
   const { t } = useTranslation()
   const [copied, setCopied] = useState(false)
   const byN = useMemo(() => new Map(m.citations.map((c) => [c.n, c])), [m.citations])
@@ -246,7 +249,7 @@ export function MessageItem({ m, compact }: { m: ChatMessage; compact?: boolean 
           ))}
         </div>
       )}
-      {m.status === 'done' && m.citations.length === 0 && m.content && <p className="mt-2 text-2xs text-subtle">{t('chat.generalOnly')}</p>}
+      {!plain && m.status === 'done' && m.citations.length === 0 && m.content && <p className="mt-2 text-2xs text-subtle">{t('chat.generalOnly')}</p>}
 
       {!streaming && m.content && !compact && (
         <div className="mt-2 flex items-center gap-2 text-2xs text-subtle opacity-0 transition-opacity group-hover/msg:opacity-100">

@@ -13,6 +13,7 @@ import { TrashView } from './features/trash/TrashView'
 import { ChatView } from './features/chat/ChatView'
 import { ReviewView } from './features/review/ReviewView'
 import { FeynmanView } from './features/feynman/FeynmanView'
+import { ReflectView } from './features/reflect/ReflectView'
 import { SettingsDialog } from './features/settings/SettingsDialog'
 import { CommandPalette } from './features/palette/CommandPalette'
 import { Onboarding } from './features/onboarding/Onboarding'
@@ -65,6 +66,15 @@ function useMainEvents(): void {
       }),
     []
   )
+  // 复盘提醒被点击：每日 → 复盘首页（就地填写）；每周 → 打开本周复盘
+  useEffect(
+    () =>
+      window.jiweiEvents.on('nav:reflect', ({ kind }) => {
+        if (kind === 'weekly') void window.jiwei.reflection.start({ kind: 'weekly' }).then((r) => useApp.getState().openReflection(r.id))
+        else useApp.getState().openReflection(null)
+      }),
+    []
+  )
   useEffect(() => {
     let timer: number | undefined
     const ids = new Set<string>()
@@ -105,6 +115,7 @@ export function App() {
           {view === 'chat' && <ChatView />}
           {view === 'review' && <ReviewView />}
           {view === 'feynman' && <FeynmanView />}
+          {view === 'reflect' && <ReflectView />}
           {view === 'trash' && <TrashView />}
         </main>
       </div>

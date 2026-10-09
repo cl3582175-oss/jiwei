@@ -229,7 +229,7 @@ export function FeynmanView() {
           </div>
           <div className="mt-6 space-y-6">
             {msgs.map((m) => (
-              <MessageItem key={m.id} m={m} />
+              <MessageItem key={m.id} m={m} plain />
             ))}
           </div>
           {finishing && (

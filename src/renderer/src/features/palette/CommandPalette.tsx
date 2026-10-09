@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Command } from 'cmdk'
 import { Dialog as D } from 'radix-ui'
 import { useTranslation } from 'react-i18next'
-import { NotebookText, PenLine, Library, Settings, Trash2, Search, Home, Layers, GraduationCap } from 'lucide-react'
+import { NotebookText, PenLine, Library, Settings, Trash2, Search, Home, Layers, GraduationCap, Sprout } from 'lucide-react'
 import { useApp } from '@/store/app'
 import { useNotes } from '@/lib/queries'
 import { useCreateNote } from '@/lib/shortcuts'
@@ -70,6 +70,11 @@ export function CommandPalette() {
                     <Layers />
                     <span className="flex-1">{t('nav.review')}</span>
                     <Kbd>{modKey}4</Kbd>
+                  </Command.Item>
+                  <Command.Item className={itemCls} onSelect={run(() => setView('reflect'))}>
+                    <Sprout />
+                    <span className="flex-1">{t('nav.reflect')}</span>
+                    <Kbd>{modKey}5</Kbd>
                   </Command.Item>
                   <Command.Item className={itemCls} onSelect={run(() => setView('trash'))}>
                     <Trash2 />

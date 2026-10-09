@@ -517,7 +517,7 @@ export const conversations = sqliteTable(
     /** 无痕：不使用、不形成记忆 */
     incognito: integer('incognito', { mode: 'boolean' }).notNull().default(false),
     /** chat 对话页；workspace 工作区面板；inline 选区就地提问 */
-    kind: text('kind', { enum: ['chat', 'workspace', 'inline', 'feynman'] })
+    kind: text('kind', { enum: ['chat', 'workspace', 'inline', 'feynman', 'reflection'] })
       .notNull()
       .default('chat'),
     /** 就地提问的锚点（JSON Anchor） */
