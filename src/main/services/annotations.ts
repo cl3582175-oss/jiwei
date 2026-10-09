@@ -10,6 +10,7 @@ import { emit } from '../events'
 import { deviceId } from './device'
 import { assetPath } from './assets'
 import { requestIndex } from './ai/indexer'
+import { getSettings } from './settings'
 import type { Annotation, AnnotationInput, AnnotationPatch, AnnotationWithTarget } from '@shared/types'
 
 // 批注（v0.5.3，设计见 docs/design/v0.5-knowledge-structure.md §4）：
@@ -194,7 +195,8 @@ export async function annotatedPdfBytes(sourceId: string): Promise<Uint8Array> {
 export async function exportAnnotatedPdf(sourceId: string, win: BrowserWindow | null): Promise<string | null> {
   const s = getDb().select({ title: sources.title, name: sources.originalName }).from(sources).where(eq(sources.id, sourceId)).get()
   if (!s) throw new Error('Source not found')
-  const zh = app.getLocale().startsWith('zh')
+  // 按积微的界面语言（而非系统语言）命名
+  const zh = getSettings().language.startsWith('zh')
   const base = (s.name ? basename(s.name, extname(s.name)) : s.title).replace(/[\\/:*?"<>|]/g, '_').slice(0, 120)
   const defaultPath = join(app.getPath('documents'), `${base}${zh ? '（批注）' : ' (annotated)'}.pdf`)
   const testDir = !app.isPackaged ? process.env.JIWEI_EXPORT_DIR : undefined
