@@ -149,12 +149,15 @@ test('images reach models that can see them; capability can be overridden', asyn
   }
   // 默认：deepseek-flash 能看图
   expect(await look()).toContain('742')
-  // 设为“不能看图”：只发送文字，模型如实说看不到
+  // 设为“不能看图”：图片本身不发送给模型。
+  // v0.5.4 起，本地识别模型已安装时先读出图中文字再交给模型（应答出 742）；未安装时模型如实说看不到
   await page.evaluate(({ id, kind, model }) => window.jiwei.providers.save({ id, kind, modelCaps: { [model]: { vision: false } } }), {
     id: pid,
     kind,
     model: s.ai.chat.model!
   })
-  expect(await look()).not.toContain('742')
+  const ocr = (await page.evaluate(() => window.jiwei.recognition.status())).state === 'ready'
+  if (ocr) expect(await look()).toContain('742')
+  else expect(await look()).not.toContain('742')
   await page.evaluate(({ id, kind }) => window.jiwei.providers.save({ id, kind, modelCaps: {} }), { id: pid, kind })
 })

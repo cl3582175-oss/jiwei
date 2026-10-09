@@ -9,7 +9,9 @@ import {
   normalizeRecognized,
   pageLocator,
   splitRecognized,
-  withCaptions
+  withCaptions,
+  parseGrounding,
+  groundedText
 } from '../recognized'
 import { classifyPage } from '../../../worker/pdfTriage'
 
@@ -106,5 +108,40 @@ describe('pdf triage', () => {
     expect(page(['表 2-1 项目管理关注领域与绩效域映射 . . . . . . . . . 114'])).toBeNull()
     expect(page([body, body, body], { imageCover: 1 })).toBeNull()
     expect(page([body])).toBeNull()
+  })
+})
+
+// LightOnOCR-3 grounding 输出（格式与模型实测一致，内容自拟）
+const GROUNDED = `![title](80,60,920,110) 第三章 记忆
+![image](107,140,895,520) 三层同心圆：外层为长期记忆，中层为工作记忆，内层为注意。
+![caption](107,540,437,560) 图3-1 记忆系统
+![text](80,600,920,660) 编码越深，之后越容易提取。
+![text+](80,665,920,700) 睡眠有助于巩固。
+![table](80,720,920,860)
+<table><tr><th>方法</th><th>效果</th></tr><tr><td>重读</td><td>弱</td></tr></table>
+![caption](80,870,500,890) 表3-1 学习方法对比
+![page_number](890,953,917,972) 42`
+
+describe('grounding output (LightOnOCR-3)', () => {
+  it('parses blocks with boxes and merges continuations', () => {
+    const b = parseGrounding(GROUNDED)
+    expect(b.map((x) => x.label)).toEqual(['title', 'image', 'caption', 'text', 'table', 'caption', 'page_number'])
+    expect(b[1].box).toEqual([107, 140, 895, 520])
+    expect(b[3].text).toBe('编码越深，之后越容易提取。\n睡眠有助于巩固。')
+    expect(b[4].text).toContain('<table>')
+  })
+
+  it('scan page: full content without page furniture, figure as ［图解］, table as Markdown', () => {
+    const t = groundedText(parseGrounding(GROUNDED), 'scan')
+    expect(t).toContain('## 第三章 记忆')
+    expect(t).toContain('［图解］图3-1 记忆系统：三层同心圆')
+    expect(t).toContain('| 方法 | 效果 |')
+    expect(t).not.toContain('42')
+  })
+
+  it('table page keeps tables with captions; figure page keeps figure descriptions', () => {
+    const blocks = parseGrounding(GROUNDED)
+    expect(groundedText(blocks, 'table')).toBe('表3-1 学习方法对比\n\n| 方法 | 效果 |\n| --- | --- |\n| 重读 | 弱 |')
+    expect(groundedText(blocks, 'figure')).toBe('图3-1 记忆系统：三层同心圆：外层为长期记忆，中层为工作记忆，内层为注意。')
   })
 })

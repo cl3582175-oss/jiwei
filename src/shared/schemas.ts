@@ -211,7 +211,7 @@ export const AiSettingsSchema = z.object({
   transcription: z.object({ mode: z.enum(['local', 'cloud']), providerId: Id.nullable(), model: z.string().max(200).nullable() }).optional(),
   /**
    * 文档识别（扫描页、表格、图片资料）：本地（LightOnOCR，离线）、云端看图模型或关闭。
-   * figures：用云端看图模型解读插图（小模型会编造，不用本地）
+   * figures：解读插图（本地 LightOnOCR-3 给出简短描述；云端看图模型给出结构说明）
    */
   recognition: z
     .object({
@@ -219,7 +219,9 @@ export const AiSettingsSchema = z.object({
       providerId: Id.nullable(),
       model: z.string().max(200).nullable(),
       auto: z.boolean(),
-      figures: z.boolean()
+      figures: z.boolean(),
+      /** 本地模型：fast = LightOnOCR-3-0.8B，accurate = LightOnOCR-3-4B */
+      localModel: z.enum(['fast', 'accurate']).optional()
     })
     .optional()
 })

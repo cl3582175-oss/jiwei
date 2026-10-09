@@ -12,6 +12,7 @@ import type { ChatScope, ChatSend } from '@shared/schemas'
 import type { Anchor } from '@shared/context'
 import type { AgentStep, ChatMessage, Citation, Conversation } from '@shared/types'
 import { buildModel } from './model'
+import { recognizeRegion } from '../recognize'
 import { capsFor } from './providers'
 import { retrieve } from './retrieve'
 import { resolveContext } from './context'
@@ -389,11 +390,17 @@ async function generate(conversationId: string, messageId: string, input: ChatSe
     if (last?.role === 'user' && coach) last.content = coachTurn(coach, input.text, zh)
     else if (last?.role === 'user' && !feynman) {
       const vision = capsFor(input.providerId, input.model).vision
+      // 模型看不到图像：先用本地识别模型读出框选区域的内容（文字、表格、插图描述）
+      const regionText = input.images?.length && !vision ? await recognizeRegion(input.images[0]) : null
       const imageNote =
         input.images?.length && !vision
-          ? zh
-            ? '（用户框选了一块图像区域，但当前模型看不到图像；请依据区域中的文字和上下文回答，并在开头提示用户：换用能看图的模型可以得到更准确的解释。）'
-            : '(The user selected an image region, but this model cannot see images; answer from the region text and context, and mention that a vision model would do better.)'
+          ? regionText
+            ? zh
+              ? `（用户框选了一块图像区域。当前模型看不到图像，下面是本地识别模型读出的区域内容，请据此回答：\n${regionText.slice(0, 6000)}\n）`
+              : `(The user selected an image region. This model cannot see images; below is what the local recognition model read from the region. Answer from it:\n${regionText.slice(0, 6000)}\n)`
+            : zh
+              ? '（用户框选了一块图像区域，但当前模型看不到图像；请依据区域中的文字和上下文回答，并在开头提示用户：换用能看图的模型可以得到更准确的解释。）'
+              : '(The user selected an image region, but this model cannot see images; answer from the region text and context, and mention that a vision model would do better.)'
           : ''
       const learner = session.incognito ? null : learnerNote(query, zh)
       const text = turnMessage(zh, input.text, [ctx.text, learner, imageNote].filter(Boolean).join('\n\n'), kb, skillBody)

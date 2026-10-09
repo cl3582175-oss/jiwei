@@ -266,19 +266,24 @@ const en: Messages = {
     ocr: {
       title: 'Document recognition',
       desc: 'Scans and photos have no text, and tables in e-books are read out of order. Jiwei finds these pages on import (other pages are left alone) and turns them into text and tables for your knowledge base.',
-      local: 'Local (offline, LightOnOCR)',
+      local: 'Local (offline, LightOnOCR-3)',
       cloud: 'Cloud vision model',
       off: 'Off',
-      localHint: 'Runs on this computer; nothing is uploaded. Started when needed and stopped after 2 idle minutes (about 2.4 GB while running).',
+      localHint: 'Runs on this computer; nothing is uploaded. Started when needed and stopped after 2 idle minutes.',
+      localModel: 'Local model',
+      models: {
+        fast: { name: 'Fast (0.8B, recommended)', desc: 'About 0.9 GB download, 1.5 GB memory, 3–10 s per page. Accurate on Chinese, handwriting and tables' },
+        accurate: { name: 'High accuracy (4B)', desc: 'About 3.1 GB download, 3.6 GB memory, 8–35 s per page. Steadier on complex tables and badly blurred scans' }
+      },
       download: 'Download recognition model ({{size}})',
       downloading: 'Downloading recognition model {{percent}}%',
-      ready: 'Recognition model ready',
+      ready: '{{model}} ready',
       remove: 'Delete model',
       cloudHint: 'Uses the vision model below; if none is chosen, the default chat model (or a vision model from the same provider). Page images are uploaded to that provider.',
       pickModel: 'Follow default chat model',
       auto: 'Recognize automatically after import',
-      figures: 'Explain figures (cloud vision model describes the structure)',
-      figuresHint: 'Small local models invent things that are not in the figure, so figures are only explained by a cloud model. Results start with “[Figure]”. Sources marked “don’t send to AI” are skipped.'
+      figures: 'Explain figures and charts',
+      figuresHint: 'The local model gives a short description of each figure and turns charts into data tables; a cloud vision model gives a fuller structural explanation. Results start with “［图解］”. Sources marked “don’t send to AI” are never uploaded.'
     },
     asr: {
       title: 'Video / audio transcription',

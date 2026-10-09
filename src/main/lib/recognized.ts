@@ -182,3 +182,86 @@ export function mergeRecognized(segments: SegmentLike[], recs: { page: number; n
   }
   return out
 }
+
+/* ——— LightOnOCR-3 的 grounding 输出 ——— */
+
+/** 一个版面块：类型、坐标（页面归一化到 0–1000：左、上、右、下）、内容 */
+export interface GroundBlock {
+  label: string
+  box: [number, number, number, number]
+  text: string
+}
+
+const BLOCK_HEAD = /^!\[([a-z_]+)(\+?)\]\((\d+),(\d+),(\d+),(\d+)\)[ \t]*(.*)$/
+
+/** 解析 grounding 输出：每块以 ![类型](x0,y0,x1,y1) 开头，内容在同一行或随后几行；“+”表示接续上一块 */
+export function parseGrounding(text: string): GroundBlock[] {
+  const out: GroundBlock[] = []
+  let cur: (GroundBlock & { lines: string[] }) | null = null
+  const flush = (): void => {
+    if (!cur) return
+    const t = cur.lines.join('\n').trim()
+    out.push({ label: cur.label, box: cur.box, text: t })
+    cur = null
+  }
+  for (const line of text.replace(/\r/g, '').split('\n')) {
+    const m = BLOCK_HEAD.exec(line.trim())
+    if (m) {
+      flush()
+      const box = [m[3], m[4], m[5], m[6]].map(Number) as GroundBlock['box']
+      // 接续块：并入上一个同类块
+      const prev = out[out.length - 1]
+      if (m[2] === '+' && prev && prev.label === m[1]) {
+        out.pop()
+        cur = { label: prev.label, box: prev.box, text: '', lines: [prev.text, m[7]] }
+      } else cur = { label: m[1], box, text: '', lines: m[7] ? [m[7]] : [] }
+    } else if (cur) cur.lines.push(line)
+  }
+  flush()
+  return out
+}
+
+const PAGE_FURNITURE = new Set(['header', 'footer', 'page_number', 'header_image', 'footer_image'])
+const FIGURE_CAPTION_TEXT = /^\s*(?:图\s*\d|Fig(?:ure|\.)\s*\d)/
+const TABLE_CAPTION_TEXT = /^\s*(?:表\s*\d|Table\s+\d)/
+
+/** 图 / 表块的标题：紧邻的 caption 块（前后各看一块） */
+function captionFor(blocks: GroundBlock[], i: number, re: RegExp): string | null {
+  for (const j of [i + 1, i - 1]) {
+    const b = blocks[j]
+    if (b?.label === 'caption' && re.test(b.text)) return b.text.trim()
+  }
+  return null
+}
+
+/**
+ * 按页面类型整理 grounding 结果：
+ * - scan：整页内容（去掉页眉、页脚、页码），插图为“［图解］描述”，图表为数据表
+ * - table：只取表格及其标题
+ * - figure：只取插图描述与图表数据（带图号标题）
+ */
+export function groundedText(blocks: GroundBlock[], need: RecognizedNeed): string {
+  const parts: string[] = []
+  blocks.forEach((b, i) => {
+    if (!b.text || PAGE_FURNITURE.has(b.label)) return
+    if (b.label === 'image' || b.label === 'chart') {
+      if (need === 'table') return
+      const cap = captionFor(blocks, i, FIGURE_CAPTION_TEXT)
+      const body = b.label === 'image' ? b.text : `${b.text}`
+      parts.push(need === 'figure' ? `${cap ? `${cap}：` : ''}${body}` : `${FIGURE_PREFIX}${cap ? `${cap}：` : ''}${body}`)
+      return
+    }
+    if (b.label === 'table') {
+      if (need === 'figure') return
+      const cap = captionFor(blocks, i, TABLE_CAPTION_TEXT)
+      parts.push(need === 'table' && cap ? `${cap}\n\n${b.text}` : b.text)
+      return
+    }
+    if (need !== 'scan') return
+    // 图 / 表的标题已随图表输出
+    if (b.label === 'caption' && (blocks[i - 1]?.label === 'image' || blocks[i - 1]?.label === 'chart' || blocks[i + 1]?.label === 'table' || blocks[i - 1]?.label === 'table'))
+      return
+    parts.push(b.label === 'title' && !b.text.startsWith('#') ? `## ${b.text}` : b.text)
+  })
+  return normalizeRecognized(parts.join('\n\n'))
+}

@@ -1,0 +1,1 @@
+ALTER TABLE `source_pages` ADD `blocks` text;

@@ -77,7 +77,7 @@ test('settings: engine choice, local model download, figures', async () => {
   await sec.scrollIntoViewIfNeeded()
   await expect(sec.getByRole('radio', { name: '云端看图模型' })).toHaveAttribute('aria-checked', 'true')
   await sec.getByRole('radio', { name: /本地/ }).click()
-  await expect(sec).toContainText(/识别模型已就绪|下载识别模型/)
+  await expect(sec).toContainText(/已就绪|下载识别模型/)
   await expect(sec.getByRole('switch', { name: '导入后自动识别' })).toBeChecked()
   await expect(sec.getByRole('switch', { name: /解读插图/ })).not.toBeChecked()
   if (shots) await sec.screenshot({ path: join(shots, '180-recognition-settings.png') })

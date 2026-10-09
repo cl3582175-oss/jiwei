@@ -831,6 +831,8 @@ export interface RecognizerStatus {
   size: number
   /** 本地模型是否正在运行（按需加载，空闲后退出） */
   running: boolean
+  /** 当前选择的本地模型名称 */
+  model?: string
 }
 
 /** 一份资料的识别情况 */

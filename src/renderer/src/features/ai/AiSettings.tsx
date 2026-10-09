@@ -492,7 +492,7 @@ function RecognitionSection() {
   useRecognitionEvents()
   const { data: st } = useQuery({ queryKey: ['recognizer'], queryFn: () => api.recognition.status() })
   if (!s) return null
-  const rc = s.ai.recognition ?? { mode: 'local' as const, providerId: null, model: null, auto: true, figures: false }
+  const rc = s.ai.recognition ?? { mode: 'local' as const, providerId: null, model: null, auto: true, figures: true, localModel: 'fast' as const }
   const set = (patch: Partial<typeof rc>): void => update.mutate({ ai: { ...s.ai, recognition: { ...rc, ...patch } } })
   // 能看图的模型（服务商 / 模型）
   const vision = providers.flatMap((p) => p.models.filter((m) => resolveCaps(m, p.modelCaps).vision).map((m) => ({ p, m })))
@@ -522,12 +522,29 @@ function RecognitionSection() {
       {rc.mode === 'local' && (
         <div className="space-y-2 rounded-xl border border-border bg-surface p-3">
           <p className="text-2xs leading-relaxed text-muted">{t('ai.ocr.localHint')}</p>
+          <div className="grid gap-1.5 sm:grid-cols-2" role="radiogroup" aria-label={t('ai.ocr.localModel')}>
+            {(['fast', 'accurate'] as const).map((m) => (
+              <button
+                key={m}
+                role="radio"
+                aria-checked={(rc.localModel ?? 'fast') === m}
+                onClick={() => set({ localModel: m })}
+                className={cn(
+                  'rounded-lg border px-3 py-2 text-left transition-colors',
+                  (rc.localModel ?? 'fast') === m ? 'border-accent bg-accent-soft' : 'border-border hover:border-border-strong'
+                )}
+              >
+                <span className={cn('block text-xs font-medium', (rc.localModel ?? 'fast') === m ? 'text-accent' : 'text-fg')}>{t(`ai.ocr.models.${m}.name`)}</span>
+                <span className="mt-0.5 block text-2xs leading-relaxed text-muted">{t(`ai.ocr.models.${m}.desc`)}</span>
+              </button>
+            ))}
+          </div>
           <div className="flex flex-wrap items-center gap-2">
             {st?.state === 'ready' ? (
               <>
                 <span className="flex items-center gap-1.5 text-xs text-fg">
                   <Check className="size-3.5 text-accent" />
-                  {t('ai.ocr.ready')}
+                  {t('ai.ocr.ready', { model: st.model ?? '' })}
                 </span>
                 <Button size="sm" variant="ghost" onClick={() => void api.recognition.remove()}>
                   <Trash2 />
@@ -551,7 +568,7 @@ function RecognitionSection() {
       )}
       {rc.mode !== 'off' && (
         <div className="space-y-2.5 rounded-xl border border-border bg-surface p-3">
-          {(rc.mode === 'cloud' || rc.figures) && (
+          {rc.mode === 'cloud' && (
             <div className="space-y-1.5">
               <select
                 aria-label={t('ai.ocr.cloud')}

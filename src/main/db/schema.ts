@@ -325,6 +325,8 @@ export const sourcePages = sqliteTable(
     /** 识别所用引擎：local:<模型> / cloud:<服务商>/<模型> */
     engine: text('engine'),
     text: text('text'),
+    /** 版面块（LightOnOCR-3 grounding）：类型、坐标（0–1000）、内容，JSON；用于扫描页文字层 */
+    blocks: text('blocks'),
     error: text('error'),
     updatedAt: integer('updated_at').notNull()
   },
