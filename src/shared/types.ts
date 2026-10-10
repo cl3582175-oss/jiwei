@@ -129,9 +129,10 @@ export interface BlockInfo {
 
 export type NoteSort = NonNullable<NoteQuery['sort']>
 
-export type SourceKind = 'book' | 'pdf' | 'video' | 'audio' | 'image' | 'document' | 'web' | 'other'
+export type SourceKind = 'book' | 'pdf' | 'video' | 'audio' | 'recording' | 'image' | 'document' | 'web' | 'other'
 
 export interface Source {
+  recordingScene?: import('./recording').Scene
   id: string
   title: string
   kind: SourceKind
@@ -165,7 +166,7 @@ export interface AssetRef {
   size: number
 }
 
-export type TrashType = 'note' | 'source' | 'category'
+export type TrashType = 'note' | 'source' | 'category' | 'recording'
 
 export interface TrashItem {
   type: TrashType
@@ -207,6 +208,7 @@ export interface ReflectionSettings {
 export type Palette = 'qinglu' | 'celadon' | 'dunhuang'
 
 export interface Settings {
+  recordingScene?: 'meeting' | 'lecture' | 'thought'
   capture: ReturnType<typeof import('./capture').captureDefaults>
   language: Language
   theme: ThemeMode
@@ -939,6 +941,11 @@ export interface SourceRecognition {
 
 /** 主进程 → 渲染进程的事件 */
 export interface JiweiEvents {
+  'recording:changed': { id: string }
+  'recording:open': undefined
+  'voiceprint:status': import('./recording').VoiceStatus
+  'people:changed': undefined
+  'sources:changed': { id: string }
   'capture:prepare': { id: string }
   'capture:deliver': import('./capture').CaptureDelivery
   'capture:changed': import('./capture').CaptureState

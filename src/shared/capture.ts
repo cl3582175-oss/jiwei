@@ -8,6 +8,7 @@ export const CaptureSettingsSchema = z.object({
     .regex(/^([01]\d|2[0-3]):[0-5]\d$/)
     .optional(),
   offPeak: z.boolean().optional(),
+  recordingShortcut: z.string().max(100).optional(),
   quickShortcut: z.string().max(100).optional(),
   screenshotShortcut: z.string().max(100).optional(),
   sourceInfo: z.boolean().optional()
@@ -52,6 +53,7 @@ export const captureDefaults = (mac: boolean) => ({
   daily: true,
   time: '21:00',
   offPeak: false,
+  recordingShortcut: mac ? 'Alt+Command+R' : 'Ctrl+Alt+R',
   quickShortcut: mac ? 'Alt+Command+N' : 'Ctrl+Alt+N',
   screenshotShortcut: mac ? 'Alt+Command+S' : 'Ctrl+Alt+S',
   sourceInfo: false

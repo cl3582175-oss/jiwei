@@ -1,9 +1,11 @@
 import { sandboxResponse } from './sandbox'
 import { createHash } from 'crypto'
 import { createReadStream } from 'fs'
+import { Readable } from 'stream'
 import { copyFile, mkdir, rename, rm, stat, writeFile } from 'fs/promises'
 import { extname, join } from 'path'
 import { net, protocol } from 'electron'
+import { recordingAudio } from './recording'
 import { pathToFileURL } from 'url'
 import { eq, inArray, notInArray } from 'drizzle-orm'
 import log from 'electron-log/main'
@@ -126,7 +128,11 @@ export async function importBytes(name: string, mime: string, bytes: Uint8Array)
 export async function collectGarbage(): Promise<number> {
   const db = getDb()
   const used = new Set<string>([
-    ...db.select({ id: inboxItems.assetId }).from(inboxItems).all().flatMap((r) => r.id ? [r.id] : []),
+    ...db
+      .select({ id: inboxItems.assetId })
+      .from(inboxItems)
+      .all()
+      .flatMap((r) => (r.id ? [r.id] : [])),
     ...db
       .select({ id: sources.assetId })
       .from(sources)
@@ -181,6 +187,35 @@ export function registerProtocol(): void {
   protocol.handle('jiwei', async (req) => {
     const url = new URL(req.url)
     if (url.hostname === 'sandbox') return sandboxResponse(url.pathname.slice(1))
+    if (url.hostname === 'recording') {
+      const id = url.pathname.slice(1)
+      if (!/^[0-9a-f-]{36}$/.test(id)) return new Response('Bad request', { status: 400 })
+      const file = recordingAudio(id)
+      if (!file) return new Response('Not found', { status: 404 })
+      const { size } = await stat(file)
+      const headers = new Headers({
+        'Content-Type': 'audio/webm',
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'no-store',
+        'Accept-Ranges': 'bytes'
+      })
+      let start = 0,
+        end = size - 1
+      const range = req.headers.get('range')
+      if (range) {
+        const match = /^bytes=(\d*)-(\d*)$/.exec(range)
+        if (!match || (!match[1] && !match[2])) return new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${size}` } })
+        start = match[1] ? Number(match[1]) : Math.max(0, size - Number(match[2]))
+        end = match[1] && match[2] ? Math.min(size - 1, Number(match[2])) : size - 1
+        if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || start > end || start >= size)
+          return new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${size}` } })
+        headers.set('Content-Range', `bytes ${start}-${end}/${size}`)
+      }
+      headers.set('Content-Length', String(end - start + 1))
+      const stream = createReadStream(file, { start, end })
+      const body = Readable.toWeb(stream) as ReadableStream<Uint8Array>
+      return new Response(body, { status: range ? 206 : 200, headers })
+    }
     if (url.hostname !== 'asset') return new Response('Not found', { status: 404 })
     const m = /^\/([0-9a-f]{64})\.([a-z0-9]{1,10})$/.exec(url.pathname)
     if (!m) return new Response('Bad request', { status: 400 })

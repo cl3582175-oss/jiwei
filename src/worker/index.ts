@@ -2,13 +2,15 @@ import { readFile } from 'fs/promises'
 import { segmentText, type TextSegment } from '../main/lib/segment'
 import { parseDocx, parseEpub, parseHtml, parsePdf, renderPdfPage } from './parsers'
 import { transcribe } from './transcribe'
+import { extractVoiceprints, type VoiceprintInput } from './voiceprint'
 
 // 后台工作进程（Electron utilityProcess）：执行 CPU / IO 密集任务，不阻塞主进程与界面。
-// 协议：主进程发送 { id, task, payload }；本进程回复 { id, progress } 或 { id, ok, result | error }。
+// 协议：{ id, task, payload } 启动，{ cancel: id } 取消单项；只在任务实际退出后回复终态。
 
-type Task = (payload: unknown, progress: (p: number) => void) => Promise<unknown>
+type Task = (payload: unknown, progress: (p: number) => void, signal: AbortSignal) => Promise<unknown>
 
 const tasks: Record<string, Task> = {
+  voiceprint: (payload, progress, signal) => extractVoiceprints(payload as VoiceprintInput, progress, signal),
   /** 读取文本类文件并分段 */
   async segmentTextFile(payload) {
     const { path, ext } = payload as { path: string; ext: string }
@@ -47,14 +49,31 @@ const tasks: Record<string, Task> = {
   }
 }
 
+const active = new Map<string, AbortController>()
 process.parentPort.on('message', (e) => {
+  if (typeof e.data.cancel === 'string') {
+    active.get(e.data.cancel)?.abort()
+    return
+  }
   const { id, task, payload } = e.data as { id: string; task: string; payload: unknown }
   const fn = tasks[task]
   if (!fn) {
     process.parentPort.postMessage({ id, ok: false, error: `Unknown task: ${task}` })
     return
   }
-  fn(payload, (p) => process.parentPort.postMessage({ id, progress: p }))
-    .then((result) => process.parentPort.postMessage({ id, ok: true, result }))
+  const abort = new AbortController()
+  active.set(id, abort)
+  fn(
+    payload,
+    (p) => {
+      if (!abort.signal.aborted) process.parentPort.postMessage({ id, progress: p })
+    },
+    abort.signal
+  )
+    .then((result) => {
+      abort.signal.throwIfAborted()
+      process.parentPort.postMessage({ id, ok: true, result })
+    })
     .catch((err: unknown) => process.parentPort.postMessage({ id, ok: false, error: err instanceof Error ? err.message : String(err) }))
+    .finally(() => active.delete(id))
 })

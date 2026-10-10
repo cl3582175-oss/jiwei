@@ -2,6 +2,12 @@ import * as browserCapture from './services/browser/capture'
 import * as capture from './services/capture'
 import * as phone from './services/phoneUpload'
 import * as inbox from './services/inbox'
+import * as recording from './services/recording'
+import * as people from './services/people'
+import * as voiceprint from './services/voiceprint'
+import { voiceErrorText } from './services/voiceMessages'
+import { VoiceValidationError } from '@shared/recording'
+import { getMainWindow } from './mainWindow'
 import { queueNoteImages, recognizeNoteFormula } from './services/noteImages'
 import { BrowserWindow, ipcMain, shell } from 'electron'
 import log from 'electron-log/main'
@@ -71,6 +77,43 @@ type Handlers = {
 }
 
 const handlers: Handlers = {
+  recording: {
+    list: () => recording.listRecordings(),
+    get: (_, id) => recording.getRecording(id),
+    begin: (_, input) => recording.beginRecording(input),
+    chunk: (_, input) => recording.writeRecordingChunk(input),
+    pause: (_, id, paused) => recording.pauseRecording(id, paused),
+    finish: (_, id) => recording.finishRecording(id),
+    discard: (_, id) => recording.discardRecording(id),
+    restore: (_, id) => recording.restoreRecording(id),
+    mark: (_, id, marker) => recording.markRecording(id, marker),
+    summarize: (_, id) => recording.summarizeRecent(id),
+    permissions: () => recording.recordingPermissions(),
+    requestMic: () => recording.requestMicrophone(),
+    openMicSettings: () => recording.openMicrophoneSettings(),
+    storage: () => recording.recordingStorage(),
+    deleteAudio: (_, id) => recording.deleteRecordingAudio(id),
+    speakers: (_, id) => people.listSpeakers(id),
+    confirm: (_, input) => people.confirmSpeaker(input),
+    export: ({ win }, id, format) => people.exportTranscript(win, id, format)
+  },
+  people: {
+    list: () => people.listPeople(),
+    save: (_, input, id) => people.savePerson(input, id),
+    remove: (_, id) => people.removePerson(id),
+    merge: (_, from, to) => people.mergePeople(from, to),
+    clear: (_, names, id) => people.clearVoiceprints(names, id),
+    corrections: () => people.listCorrections(),
+    removeCorrection: (_, id) => people.removeCorrection(id)
+  },
+  voiceprint: {
+    status: () => voiceprint.voiceprintStatus(),
+    install: () => {
+      void voiceprint.installVoiceprint().catch(() => {})
+    },
+    remove: () => voiceprint.removeVoiceprint(),
+    enroll: (_, bytes) => voiceprint.enrollVoiceprint(bytes)
+  },
   capture: {
     open: (_, mode) => capture.open(mode),
     state: () => capture.current(),
@@ -319,7 +362,7 @@ const handlers: Handlers = {
     install: () => {
       void asr.installAsr().catch(() => {})
     },
-    transcribe: (_, id) => asr.enqueueTranscribe(id),
+    transcribe: (_, id, overwrite) => asr.enqueueTranscribe(id, overwrite),
     importSubtitles: ({ win }, id) => sources.importSubtitlesDialog(win, id)
   },
   browser: {
@@ -367,7 +410,7 @@ const handlers: Handlers = {
       void moss.installMoss().catch(() => {})
     },
     remove: () => moss.removeMoss(),
-    refine: (_, sourceId) => moss.enqueueMoss(sourceId)
+    refine: (_, sourceId, overwrite) => moss.enqueueMoss(sourceId, overwrite)
   },
   annotations: {
     list: (_, type, id) => annotations.listAnnotations(type, id),
@@ -422,11 +465,17 @@ export function registerIpc(): void {
     ipcMain.handle(`${ns}:${name}`, async (e, ...raw) => {
       // 内置浏览器中的网页不得调用积微的接口（内容脚本只走 jw-page:* 消息）
       if (browser.isBrowserContents(e.sender)) throw new Error('Forbidden')
+      if (
+        ['recording', 'people', 'voiceprint'].includes(ns) &&
+        (e.sender !== getMainWindow()?.webContents || e.senderFrame !== e.sender.mainFrame)
+      )
+        throw new Error('Forbidden')
       try {
         const args = parseArgs(def, raw)
         return await fn({ win: BrowserWindow.fromWebContents(e.sender) }, ...args)
       } catch (err) {
         log.error(`[ipc] ${ns}:${name} failed`, err)
+        if (err instanceof VoiceValidationError) throw new Error(voiceErrorText(err), { cause: err })
         throw err
       }
     })

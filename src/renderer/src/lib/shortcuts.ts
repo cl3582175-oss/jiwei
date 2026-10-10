@@ -1,3 +1,4 @@
+import { useRecording } from '@/features/recording/store'
 import { useEffect, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useApp } from '@/store/app'
@@ -35,7 +36,7 @@ export function useGlobalShortcuts(): void {
       if (k === 'k') {
         e.preventDefault()
         s.setPaletteOpen(!s.paletteOpen)
-      } else if (k === 't' && e.shiftKey && s.browserOpen) {
+      } else if (k === 't' && e.shiftKey && (s.browserOpen || !!useRecording.getState().current)) {
         e.preventDefault()
         requestTimestamp()
       } else if (k === 'n' && e.shiftKey && s.browserOpen) {
@@ -77,6 +78,9 @@ export function useGlobalShortcuts(): void {
       } else if (k === '5') {
         e.preventDefault()
         s.setView('reflect')
+      } else if (k === '7') {
+        e.preventDefault()
+        s.setView('recording')
       } else if (k === '6') {
         e.preventDefault()
         s.openGraph(null)

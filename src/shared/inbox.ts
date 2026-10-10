@@ -19,6 +19,7 @@ export const InboxSuggestionSchema = z.object({
 })
 export type InboxSuggestion = z.infer<typeof InboxSuggestionSchema>
 export const InboxOriginSchema = z.object({
+  recordingSourceId: z.uuid().optional(),
   app: z.string().max(200).optional(),
   windowTitle: z.string().max(500).optional(),
   url: z

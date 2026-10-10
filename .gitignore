@@ -1,4 +1,4 @@
-node_modules/
+node_modules
 out/
 dist/
 release/
@@ -12,3 +12,6 @@ release/
 *.tsbuildinfo
 test-results/
 playwright-report/
+
+# Codex / superpowers 本地证据
+.superpowers/

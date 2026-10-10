@@ -1,3 +1,4 @@
+import { useRecording, recordingElapsed } from '../recording/store'
 import type { Editor } from '@tiptap/react'
 import type { Transaction } from '@tiptap/pm/state'
 import { TextSelection } from '@tiptap/pm/state'
@@ -8,7 +9,12 @@ import { useApp } from '@/store/app'
 import { aiAllowed } from './store'
 
 /** 捕获按下按钮或新增行那一刻的时间，异步保存网页不能把时间点漂移到后来。 */
-async function timestamp(automatic: boolean): Promise<{ href: string; text: string } | null> {
+async function timestamp(automatic: boolean, noteId: string): Promise<{ href: string; text: string } | null> {
+  const recording = useRecording.getState().current
+  if (recording?.noteId === noteId && (!automatic || recording.status === 'recording')) {
+    const at = Math.floor(recordingElapsed() / 1000)
+    return { href: `jiwei://source/${recording.sourceId ?? recording.id}?t=${at}`, text: `▶ ${fmtTime(at)}` }
+  }
   if (!useApp.getState().browserOpen) return null
   // browser:state 向界面广播有50ms节流，快捷键必须读主进程的新状态，不能误用刚跳转前的时间。
   const state = await api.browser.state()
@@ -34,7 +40,7 @@ export async function insertCourseTimestamp(editor: Editor, noteId: string, rowI
   }
   editor.on('transaction', map)
   try {
-    const link = await timestamp(!!rowId)
+    const link = await timestamp(!!rowId, noteId)
     if (!link || editor.isDestroyed || useApp.getState().noteId !== noteId) return
     const { state } = editor
     const text = state.schema.text(link.text, [state.schema.marks.link.create({ href: link.href })])

@@ -61,14 +61,14 @@ export function NotesHome() {
   const today = new Intl.DateTimeFormat(i18n.language, { month: 'long', day: 'numeric', weekday: 'long' }).format(new Date())
 
   return (
-    <div className="h-full overflow-y-auto">
+    <div className="@container h-full overflow-y-auto">
       <div className="drag h-[52px]" />
-      <div className="mx-auto max-w-[960px] px-10 pb-16 animate-[rise-in_360ms_cubic-bezier(0.2,0.9,0.3,1)]">
+      <div className="mx-auto max-w-[960px] px-6 pb-16 @min-[640px]:px-10 animate-[rise-in_360ms_cubic-bezier(0.2,0.9,0.3,1)]">
         {/* 问候 */}
-        <div className="flex items-end justify-between gap-6">
+        <div className="flex flex-wrap items-end justify-between gap-6">
           <div>
             <p className="font-kai text-md text-subtle">{today}</p>
-            <h1 className="mt-2 font-display text-[52px] leading-[1.15] font-semibold tracking-[0.06em] text-fg">
+            <h1 className="mt-2 font-display text-[34px] leading-[1.15] @min-[640px]:text-[52px] font-semibold tracking-[0.06em] text-fg">
               {t(`home.greeting.${greetingKey()}`)}
             </h1>
             <p className="mt-3 font-kai text-md tracking-wide text-muted">{t('app.slogan')}</p>
@@ -81,7 +81,7 @@ export function NotesHome() {
         </div>
 
         {/* 统计 */}
-        <div className="mt-10 grid grid-cols-3 gap-4">
+        <div className="mt-10 grid grid-cols-1 gap-4 @min-[560px]:grid-cols-3">
           <Stat
             icon={<NotebookText />}
             label={t('home.stats.notes')}
@@ -137,7 +137,7 @@ export function NotesHome() {
             </div>
           ) : (
             // 卡片宽高比取黄金比例
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 gap-4 @min-[420px]:grid-cols-2 @min-[640px]:grid-cols-3">
               {notes.slice(0, 6).map((n) => (
                 <button
                   key={n.id}

@@ -1,6 +1,7 @@
 import { and, eq, isNotNull, or } from 'drizzle-orm'
 import { getDb } from '../db'
-import { annotations, categories, links, notes, sources } from '../db/schema'
+import { annotations, categories, links, notes, sources, recordings } from '../db/schema'
+import { purgeRecording, restoreRecording } from './recording'
 import { deleteNoteRow } from './notes'
 import { purgeDocData } from './docs'
 import { deleteProposalsForNote } from './proposals'
@@ -36,6 +37,13 @@ export function listTrash(): TrashItem[] {
   const c = db.select().from(categories).where(isNotNull(categories.deletedAt)).all()
   const cTop = c.filter((x) => !c.some((p) => p.id === x.parentId && p.deletedAt === x.deletedAt))
   return [
+    ...db
+      .select()
+      .from(recordings)
+      .where(eq(recordings.status, 'discarded'))
+      .all()
+      .filter((r) => !r.sourceId)
+      .map((r) => item('recording')({ id: r.id, title: new Date(r.startedAt).toLocaleString(), deletedAt: r.updatedAt })),
     ...n.map(item('note')),
     ...s.map(item('source')),
     ...cTop.map((r) => item('category')({ id: r.id, title: r.name, deletedAt: r.deletedAt }))
@@ -44,6 +52,11 @@ export function listTrash(): TrashItem[] {
 
 export function restore(type: TrashType, id: string): void {
   if (type === 'category') return restoreCategory(id)
+  if (type === 'recording') return restoreRecording(id)
+  if (type === 'source') {
+    const r = getDb().select().from(recordings).where(eq(recordings.sourceId, id)).get()
+    if (r?.status === 'discarded') restoreRecording(r.id)
+  }
   const table = type === 'note' ? notes : sources
   getDb().update(table).set({ deletedAt: null, updatedAt: Date.now() }).where(eq(table.id, id)).run()
 }
@@ -51,6 +64,7 @@ export function restore(type: TrashType, id: string): void {
 export async function purge(type: TrashType, id: string): Promise<void> {
   const db = getDb()
   if (type === 'category') return purgeCategory(id)
+  if (type === 'recording') return purgeRecording(id)
   // 清理指向 / 来自该对象的关联与批注
   db.delete(links)
     .where(or(and(eq(links.fromType, type), eq(links.fromId, id)), and(eq(links.toType, type), eq(links.toId, id))))

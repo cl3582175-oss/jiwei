@@ -12,8 +12,8 @@ export const CategoryKindSchema = z.enum(['note', 'source'])
 export const KnowledgeStatusSchema = z.enum(['active', 'outdated', 'disputed'])
 export const NoteKindSchema = z.enum(['cornell', 'review', 'reading', 'free'])
 export const NoteSortSchema = z.enum(['edited', 'created', 'learned', 'title'])
-export const SourceKindSchema = z.enum(['book', 'pdf', 'video', 'audio', 'image', 'document', 'web', 'other'])
-export const TrashTypeSchema = z.enum(['note', 'source', 'category'])
+export const SourceKindSchema = z.enum(['book', 'pdf', 'video', 'audio', 'recording', 'image', 'document', 'web', 'other'])
+export const TrashTypeSchema = z.enum(['note', 'source', 'category', 'recording'])
 export const EntityTypeSchema = z.enum(['note', 'source'])
 
 export const NoteQuerySchema = z.object({
@@ -71,6 +71,7 @@ export const CategoryPatchSchema = z.object({
 })
 
 export const SettingsPatchSchema = z.object({
+  recordingScene: z.enum(['meeting', 'lecture', 'thought']).optional(),
   capture: CaptureSettingsSchema.optional(),
   language: z.enum(['zh-CN', 'en']).optional(),
   theme: z.enum(['system', 'light', 'dark']).optional(),

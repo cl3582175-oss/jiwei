@@ -1,4 +1,7 @@
 import log from 'electron-log/main'
+import { recordingAudio, recordingForSource, purgeRecording } from './recording'
+import { recordings } from '../db/schema'
+import { enqueueMoss, mossStatus } from './moss'
 import { basename, extname } from 'path'
 import { stat } from 'fs/promises'
 import { BrowserWindow, dialog, shell } from 'electron'
@@ -71,7 +74,8 @@ function query(conds: SQL[]): Source[] {
     id: s.id,
     title: s.title,
     kind: s.kind as SourceKind,
-    assetUrl: a ? assetUrl(a.id, a.ext) : null,
+    assetUrl: s.kind === 'recording' ? (recordingAudio(s.id) ? `jiwei://recording/${s.id}` : null) : a ? assetUrl(a.id, a.ext) : null,
+    recordingScene: s.kind === 'recording' ? recordingForSource(s.id)?.scene : undefined,
     originalName: s.originalName,
     mime: a?.mime ?? null,
     size: a?.size ?? 0,
@@ -98,7 +102,7 @@ export function listSources(q: SourceQuery): Source[] {
       conds.push(inArray(sources.categoryId, q.includeDescendants ? descendantIds(q.categoryId) : [q.categoryId]))
     }
   }
-  if (q.kind) conds.push(eq(sources.kind, q.kind))
+  if (q.kind) conds.push(q.kind === 'audio' ? inArray(sources.kind, ['audio', 'recording']) : eq(sources.kind, q.kind))
   if (q.tagId) conds.push(inArray(sources.id, entitiesWithTag('source', q.tagId)))
   if (q.search?.trim()) {
     const pat = `%${q.search.trim()}%`
@@ -154,7 +158,8 @@ export async function importPaths(paths: string[], categoryId?: string | null): 
         } catch (e) {
           log.warn('[sources] subtitles', e)
         }
-      } else if (canAutoTranscribe()) enqueueTranscribe(id)
+      } else if (mossStatus().state === 'ready') enqueueMoss(id)
+      else if (canAutoTranscribe()) enqueueTranscribe(id)
     }
   }
   return out
@@ -236,6 +241,8 @@ export function addUrl(url: string, title?: string, categoryId?: string | null):
 }
 
 export function updateSource(id: string, patch: SourceUpdate): void {
+  if (patch.aiExcluded !== undefined)
+    getDb().update(recordings).set({ localOnly: patch.aiExcluded }).where(eq(recordings.sourceId, id)).run()
   getDb()
     .update(sources)
     .set({ ...patch, updatedAt: Date.now(), updatedBy: deviceId() })
@@ -275,6 +282,8 @@ export function trashSource(id: string): void {
 /** 永久删除：移除记录；素材文件仅在无其他引用时删除 */
 export async function purgeSource(id: string): Promise<void> {
   const db = getDb()
+  const recording = recordingForSource(id)
+  if (recording) await purgeRecording(recording.id)
   db.delete(taggings)
     .where(and(eq(taggings.entityType, 'source'), eq(taggings.entityId, id)))
     .run()

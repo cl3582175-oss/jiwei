@@ -215,6 +215,13 @@ async function acceptOne(id: string, manual?: z.infer<typeof import('@shared/inb
     dest.sourceIds ??= []
     getDb().transaction(() => finish(false))
     for (const member of members.slice(dest.sourceIds.length)) {
+      if (member.origin.recordingSourceId) {
+        const recording = getDb().select().from(sources).where(eq(sources.id, member.origin.recordingSourceId)).get()
+        if (!recording || recording.deletedAt) throw new Error(captureText('assetMissing'))
+        dest.sourceIds.push(recording.id)
+        getDb().transaction(() => finish(false))
+        continue
+      }
       if (!member.assetId && member.origin.url) {
         getDb().transaction(() => {
           dest.sourceIds!.push(addUrl(member.origin.url!, member.text.slice(0, 200) || undefined).id)
@@ -296,9 +303,15 @@ export function triage(ids?: string[], canceled = (): boolean => false, followUp
   return run
 }
 async function runTriage(ids: string[] | undefined, canceled: () => boolean, followUp: boolean): Promise<number> {
+  const db = getDb()
+  const allowed = (i: InboxItem): boolean => {
+    if (!i.origin.recordingSourceId) return true
+    const source = getDb().select().from(sources).where(eq(sources.id, i.origin.recordingSourceId)).get()
+    return !!source && !source.deletedAt && !source.aiExcluded
+  }
   const chat = getSettings().ai.chat
   if (!chat.providerId || !chat.model) throw new Error(captureText('configureModel'))
-  const all = list().filter((i) => i.status === 'new' && !i.filedTo && (!ids || ids.includes(i.id)))
+  const all = list().filter((i) => i.status === 'new' && !i.filedTo && (!ids || ids.includes(i.id)) && allowed(i))
   // 手动整理时，仍在识别的条目不跳过不管：识别完成后自动补做整理，避免“点了整理却没反应”。
   if (followUp) for (const i of all) if (i.recognitionStatus === 'pending') afterRecognition.add(i.id)
   const items = all.filter((i) => i.recognitionStatus !== 'pending')
@@ -309,11 +322,13 @@ async function runTriage(ids: string[] | undefined, canceled: () => boolean, fol
     .all()
   let count = 0
   for (let offset = 0; offset < items.length; offset += 10) {
-    if (canceled()) break
+    if (canceled() || getDb() !== db) break
     const batch = items.slice(offset, offset + 10)
     const groups = phoneGroups(batch)
-    const material = await Promise.all(
+    const prepared = await Promise.all(
       batch.map(async (i) => {
+        // 上一批等待模型时可能已切换隐私；候选嵌入本身也可能走云端。
+        if (canceled() || getDb() !== db || !allowed(i)) return null
         const hits = await similarTo(
           [i.text.slice(0, 4000), i.recognized.slice(0, 4000)].filter(Boolean).join('\n\n'),
           { type: 'all' },
@@ -342,6 +357,22 @@ async function runTriage(ids: string[] | undefined, canceled: () => boolean, fol
         }
       })
     )
+    if (getDb() !== db || canceled()) break
+    // 候选检索会等待本地嵌入；在真正发往模型前再检查隐私开关。
+    const material = prepared
+      .filter((m): m is NonNullable<typeof m> => {
+        if (!m) return false
+        const current = get(m.id)
+        return !!current && !current.deletedAt && allowed(current)
+      })
+      .map((m) => ({
+        ...m,
+        groupCandidates: m.groupCandidates.filter((id) => {
+          const current = get(id)
+          return !!current && !current.deletedAt && allowed(current)
+        })
+      }))
+    if (!material.length) continue
     const result = await structured({
       providerId: chat.providerId,
       model: chat.model,
@@ -350,7 +381,7 @@ async function runTriage(ids: string[] | undefined, canceled: () => boolean, fol
       prompt: JSON.stringify({ items: material, goals: activeGoals }),
       schema: z.object({ suggestions: z.array(z.object({ id: z.string(), suggestion: InboxSuggestionSchema })).max(10) })
     })
-    if (canceled()) break
+    if (canceled() || getDb() !== db) break
     const seen = new Set<string>()
     for (const resultItem of result.suggestions) {
       const input = material.find((i) => i.id === resultItem.id),
@@ -361,6 +392,7 @@ async function runTriage(ids: string[] | undefined, canceled: () => boolean, fol
         !original ||
         !current ||
         current.deletedAt ||
+        !allowed(current) ||
         current.status !== 'new' ||
         current.updatedAt !== original.updatedAt ||
         current.recognized !== original.recognized ||

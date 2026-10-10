@@ -1,5 +1,5 @@
 import { app } from 'electron'
-import { spawn } from 'child_process'
+import { execFile } from 'child_process'
 import { createHash } from 'crypto'
 import { existsSync, readFileSync, statSync } from 'fs'
 import { chmod, copyFile, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from 'fs/promises'
@@ -10,7 +10,13 @@ import { x as untar } from 'tar'
 import JSZip from 'jszip'
 import log from 'electron-log/main'
 import { getDb } from '../db'
-import { jobs, sources } from '../db/schema'
+import { jobs, sources, assets } from '../db/schema'
+import { assetPath } from './assets'
+import { recordingAudio, recordingForSource, recordingDir } from './recording'
+import { extractRecordingVoiceprints, voiceprintStatus } from './voiceprint'
+import { alignSpeakers, reviewSpeakers, type VoiceCue } from '../lib/voiceprint'
+import { identifySpeakers, saveRecordingSpeakers, listPeople, listCorrections, voiceprintEpoch } from './people'
+import { voiceText } from './voiceMessages'
 import { emit } from '../events'
 import {
   buildMossHotwords,
@@ -150,12 +156,12 @@ const active = new Set<AbortController>()
 function command(file: string, args: string[], signal: AbortSignal, cwd = dirname(file)): Promise<string> {
   if (signal.aborted) return Promise.reject(new Error('精修已取消'))
   return new Promise((resolveCommand, reject) => {
-    const child = spawn(file, args, { cwd, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
+    const child = execFile(file, args, { cwd, windowsHide: true, maxBuffer: 1024 * 1024 })
     let stderr = ''
     let stdout = ''
     let killTimer: NodeJS.Timeout | undefined
-    child.stderr.on('data', (data: Buffer) => (stderr = (stderr + data.toString()).slice(-4000)))
-    child.stdout.on('data', (data: Buffer) => (stdout = (stdout + data.toString()).slice(-8000)))
+    child.stderr!.on('data', (data: Buffer) => (stderr = (stderr + data.toString()).slice(-4000)))
+    child.stdout!.on('data', (data: Buffer) => (stdout = (stdout + data.toString()).slice(-8000)))
     const abort = (): void => {
       child.kill()
       // 原生进程若没有响应终止信号，仍要确保取消后不再持续占用模型内存。
@@ -316,7 +322,7 @@ export async function removeMoss(): Promise<void> {
 }
 
 interface RecordingSnapshot {
-  recording: MossRecording
+  recording: MossRecording | null
   hash: string
   file: string
   size: number
@@ -329,10 +335,26 @@ interface MossJobPayload {
   audioSize: number
   audioMtime: number
   transcriptHash: string
+  voiceEpoch: string
 }
 
 function readRecording(sourceId: string): RecordingSnapshot {
   if (!/^[\w-]{1,128}$/.test(sourceId)) throw new Error('资料 ID 无效')
+  const source = getDb().select().from(sources).where(eq(sources.id, sourceId)).get()
+  if (source && ['recording', 'audio', 'video'].includes(source.kind)) {
+    const asset = source.assetId ? getDb().select().from(assets).where(eq(assets.id, source.assetId)).get() : null
+    const file = source.kind === 'recording' ? recordingAudio(sourceId) : asset ? assetPath(asset.id, asset.ext) : null
+    if (!file) throw new Error(voiceText('missingAudio'))
+    const info = statSync(file)
+    if (!info.isFile() || !info.size) throw new Error(voiceText('emptyAudio'))
+    return {
+      recording: null,
+      hash: createHash('sha256').update(`${sourceId}:${info.size}:${info.mtimeMs}`).digest('hex'),
+      file,
+      size: info.size,
+      mtime: info.mtimeMs
+    }
+  }
   const root = join(app.getPath('userData'), 'course-audio')
   const manifestPath = join(root, `${sourceId}.json`)
   const file = join(root, `${sourceId}.webm`)
@@ -349,10 +371,13 @@ function sameRecording(snapshot: RecordingSnapshot, payload: MossJobPayload): bo
   return snapshot.hash === payload.recordingHash && snapshot.size === payload.audioSize && snapshot.mtime === payload.audioMtime
 }
 
-export function enqueueMoss(sourceId: string): void {
-  if (removing || mossStatus().state !== 'ready') throw new Error('请先在设置中安装精修引擎')
+export function enqueueMoss(sourceId: string, overwrite = false): void {
   const source = getDb().select().from(sources).where(eq(sources.id, sourceId)).get()
-  if (!source || source.deletedAt || source.kind !== 'web') throw new Error('在线课程资料不存在')
+  if (!source || source.deletedAt || !['web', 'recording', 'audio', 'video'].includes(source.kind))
+    throw new Error(voiceText('missingAvSource'))
+  if (!overwrite && listSegments(sourceId).some((s) => s.kind === 'transcript' && s.locator.edited))
+    throw new Error(voiceText('overwriteConfirm'))
+  if (removing || mossStatus().state !== 'ready') throw new Error('请先在设置中安装精修引擎')
   const snapshot = readRecording(sourceId)
   const dedupeKey = `moss:${sourceId}`
   if (
@@ -370,7 +395,8 @@ export function enqueueMoss(sourceId: string): void {
       recordingHash: snapshot.hash,
       audioSize: snapshot.size,
       audioMtime: snapshot.mtime,
-      transcriptHash: transcriptHash(sourceId)
+      transcriptHash: transcriptHash(sourceId),
+      voiceEpoch: voiceprintEpoch()
     },
     { dedupeKey }
   )
@@ -435,13 +461,21 @@ async function refineRecording(payload: MossJobPayload, ctx: JobContext): Promis
     )
     const durations = [...decoded.matchAll(/out_time_(?:us|ms)=(\d+)/g)]
     const duration = Number(durations.at(-1)?.[1] ?? 0) / 1_000_000
-    const recordedDuration = snapshot.recording.chunks.at(-1)!.audioEnd
-    if (!duration || Math.abs(duration - recordedDuration) > 2) throw new Error('录音解码时长与完整清单不符，原文字稿已保留')
+    const recordedDuration = snapshot.recording?.chunks.at(-1)!.audioEnd
+    if (!duration || (recordedDuration !== undefined && Math.abs(duration - recordedDuration) > 2))
+      throw new Error('录音解码时长与完整清单不符，原文字稿已保留')
     const chunks = planMossChunks(duration)
+    const recordingRow = recordingForSource(source.id)
+    const participants = recordingRow ? (JSON.parse(recordingRow.participants) as string[]) : undefined
     const terms = buildMossHotwords(
       listConcepts().map((concept) => concept.name),
       source.title,
-      listSegments(source.id).map((segment) => segment.text)
+      listSegments(source.id).map((segment) => segment.text),
+      {
+        extra: recordingRow?.extraHotwords.split(/[,，]/),
+        people: listPeople().map((p) => p.name),
+        corrections: listCorrections().map((c) => c.to)
+      }
     )
     const parts: { chunk: MossChunk; cues: MossCue[] }[] = []
     ctx.progress(0.05)
@@ -487,7 +521,24 @@ async function refineRecording(payload: MossJobPayload, ctx: JobContext): Promis
       ctx.progress(0.05 + 0.9 * ((index + 1) / chunks.length))
       if (audio !== wav) await rm(audio, { force: true })
     }
-    const cues = mapMossToVideo(mergeMossChunks(parts), snapshot.recording)
+    let cues: VoiceCue[] = mergeMossChunks(parts)
+    if (voiceprintStatus().state === 'ready' && payload.voiceEpoch === voiceprintEpoch()) {
+      const tracks = recordingRow
+        ? Object.fromEntries(
+            (JSON.parse(recordingRow.tracks) as string[])
+              .map((t) => [t, join(recordingDir(recordingRow.id), `${t}.webm`)])
+              .filter(([, p]) => existsSync(p))
+          )
+        : undefined
+      cues = reviewSpeakers(await extractRecordingVoiceprints(wav, cues, ctx, tracks, abort.signal))
+    }
+    // 清除完成后可交付文字，但旧任务的中心/认人结果不能重新写回个人库。
+    if (payload.voiceEpoch !== voiceprintEpoch()) cues = cues.map(({ embedding: _embedding, ...cue }) => cue)
+    // 无 CAM++ 时也把每个块的局部标签独立编号，不能把不同块的 S01 当作同一个人。
+    cues = alignSpeakers(cues).cues
+    const identified = identifySpeakers(cues, participants)
+    cues = identified.cues
+    if (snapshot.recording) cues = cues.map((c) => ({ ...c, ...mapMossToVideo([c], snapshot.recording!)[0] }))
     if (!cues.length) throw new Error('精修没有得到有效语音，原文字稿已保留')
     if (abort.signal.aborted || ctx.isCanceled()) throw new Error('精修已取消')
     if (getDb() !== db || !sameRecording(readRecording(source.id), payload)) throw new Error('资料库或录音已改变，请重新发起精修')
@@ -495,7 +546,11 @@ async function refineRecording(payload: MossJobPayload, ctx: JobContext): Promis
       throw new Error('课程资料已删除，精修结果未写入')
     if (transcriptHash(source.id) !== payload.transcriptHash) throw new Error('文字稿在精修期间已修改，请重新发起精修')
     // 推理期间可能新添幻灯片或正文，因此在最后一次同步写入前重新读取，避免旧快照覆盖它们。
-    const segments = replaceSegments(source.id, mergeMossSegments(listSegments(source.id), cues))
+    const segments = db.transaction(() => {
+      const count = replaceSegments(source.id, mergeMossSegments(listSegments(source.id), cues))
+      saveRecordingSpeakers(source.id, identified.speakers)
+      return count
+    })
     requestIndex()
     ctx.progress(1)
     return { segments, parts: chunks.length }

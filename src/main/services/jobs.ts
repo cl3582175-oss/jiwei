@@ -7,6 +7,7 @@ import { jobs } from '../db/schema'
 import { newId } from '../lib/ids'
 import { emit } from '../events'
 import type { Job } from '@shared/types'
+import { voiceErrorText } from './voiceMessages'
 
 // 持久化后台任务：
 //   - 任务写入 jobs 表，崩溃 / 重启后自动续跑（running → queued）
@@ -20,7 +21,7 @@ const TICK_MS = 1000
 export interface JobContext {
   progress(p: number): void
   /** 在工作进程中执行任务 */
-  worker<T>(task: string, payload: unknown): Promise<T>
+  worker<T>(task: string, payload: unknown, signal?: AbortSignal): Promise<T>
   isCanceled(): boolean
 }
 
@@ -36,6 +37,7 @@ export interface JobKind<P = unknown> {
 const kinds = new Map<string, JobKind>()
 const running = new Set<string>()
 const canceled = new Set<string>()
+const controllers = new Map<string, AbortController>()
 let timer: NodeJS.Timeout | null = null
 /** 退出时置位：之后不再调度任何任务、不再写库 */
 let stopped = false
@@ -47,7 +49,10 @@ export function registerJobKind<P>(kind: string, def: JobKind<P>): void {
 /* ——— 工作进程 ——— */
 
 let child: UtilityProcess | null = null
-const pending = new Map<string, { resolve: (v: unknown) => void; reject: (e: Error) => void; onProgress?: (p: number) => void }>()
+const pending = new Map<
+  string,
+  { resolve: (v: unknown) => void; reject: (e: Error) => void; onProgress?: (p: number) => void; cleanup: () => void }
+>()
 
 function worker(): UtilityProcess {
   if (child) return child
@@ -57,6 +62,7 @@ function worker(): UtilityProcess {
     if (!p) return
     if (msg.progress !== undefined) return p.onProgress?.(msg.progress)
     pending.delete(msg.id)
+    p.cleanup()
     if (msg.ok) p.resolve(msg.result)
     else p.reject(new Error(msg.error))
   })
@@ -64,6 +70,7 @@ function worker(): UtilityProcess {
     log.warn('[jobs] worker exited', code)
     child = null
     for (const [id, p] of pending) {
+      p.cleanup()
       p.reject(new Error('Worker exited'))
       pending.delete(id)
     }
@@ -71,11 +78,29 @@ function worker(): UtilityProcess {
   return child
 }
 
-function runInWorker<T>(task: string, payload: unknown, onProgress?: (p: number) => void): Promise<T> {
+export function runInWorker<T>(task: string, payload: unknown, onProgress?: (p: number) => void, signal?: AbortSignal): Promise<T> {
   const id = newId()
   return new Promise<T>((resolve, reject) => {
-    pending.set(id, { resolve: resolve as (v: unknown) => void, reject, onProgress })
-    worker().postMessage({ id, task, payload })
+    signal?.throwIfAborted()
+    const process = worker(),
+      cancel = (): void => process.postMessage({ cancel: id }),
+      cleanup = (): void => signal?.removeEventListener('abort', cancel)
+    pending.set(id, {
+      resolve: (v) => (signal?.aborted ? reject(new Error('Worker task canceled')) : resolve(v as T)),
+      reject,
+      cleanup,
+      onProgress: (p) => {
+        if (!signal?.aborted) onProgress?.(p)
+      }
+    })
+    signal?.addEventListener('abort', cancel, { once: true })
+    try {
+      process.postMessage({ id, task, payload })
+    } catch (error) {
+      pending.delete(id)
+      cleanup()
+      reject(error)
+    }
   })
 }
 
@@ -150,6 +175,8 @@ async function execute(r: Row): Promise<void> {
     return
   }
   running.add(r.id)
+  const abort = new AbortController()
+  controllers.set(r.id, abort)
   setStatus(r.id, { status: 'running', attempts: r.attempts + 1, progress: 0 })
   let lastEmit = 0
   const ctx: JobContext = {
@@ -159,7 +186,8 @@ async function execute(r: Row): Promise<void> {
       lastEmit = Date.now()
       setStatus(r.id, { progress: Math.max(0, Math.min(1, p)) })
     },
-    worker: (task, payload) => runInWorker(task, payload, ctx.progress),
+    worker: (task, payload, signal) =>
+      runInWorker(task, payload, ctx.progress, signal ? AbortSignal.any([abort.signal, signal]) : abort.signal),
     isCanceled: () => canceled.has(r.id)
   }
   try {
@@ -169,12 +197,13 @@ async function execute(r: Row): Promise<void> {
   } catch (e) {
     if (canceled.has(r.id)) return
     const attempts = r.attempts + 1
-    const msg = e instanceof Error ? e.message : String(e)
+    const msg = voiceErrorText(e)
     log.warn('[jobs]', r.kind, r.id, 'failed', attempts, msg)
     if (attempts < MAX_ATTEMPTS) setStatus(r.id, { status: 'queued', error: msg, runAfter: Date.now() + 5000 * 2 ** attempts })
     else setStatus(r.id, { status: 'failed', error: msg })
   } finally {
     running.delete(r.id)
+    controllers.delete(r.id)
     canceled.delete(r.id)
     setImmediate(tick)
   }
@@ -207,6 +236,7 @@ export function stopJobs(): void {
   stopped = true
   // 正在运行的任务标记为取消：它们的后续结果不会再写入
   running.forEach((id) => canceled.add(id))
+  for (const abort of controllers.values()) abort.abort()
   if (timer) clearInterval(timer)
   timer = null
   child?.kill()
@@ -226,6 +256,7 @@ export function cancelJob(id: string): void {
     kinds.get(job.kind)?.onCancel?.(JSON.parse(job.payload))
   })
   canceled.add(id)
+  controllers.get(id)?.abort()
 }
 
 export function retryJob(id: string): void {

@@ -1,6 +1,7 @@
+import { correctionPair, speakerBody } from '@shared/recording'
 import { and, asc, eq, inArray, isNull, like } from 'drizzle-orm'
 import { getDb, getSqlite } from '../db'
-import { sourceSegments, sources } from '../db/schema'
+import { sourceSegments, sources, hotwordCorrections } from '../db/schema'
 import { newId } from '../lib/ids'
 import { hashText } from '../lib/derive'
 import { emit } from '../events'
@@ -121,12 +122,37 @@ export function updateSegmentText(id: string, text: string): Segment | null {
   const db = getDb()
   const row = db.select().from(sourceSegments).where(eq(sourceSegments.id, id)).get()
   if (!row) return null
-  const clean = text.replace(/\s+/g, ' ').trim()
+  let clean = text.replace(/\s+/g, ' ').trim()
   if (!clean) throw new Error('内容不能为空')
-  db.update(sourceSegments)
-    .set({ text: clean, hash: hashText(row.kind, clean), updatedAt: Date.now() })
-    .where(eq(sourceSegments.id, id))
-    .run()
+  const locator = JSON.parse(row.locator) as Record<string, unknown>
+  db.transaction(() => {
+    if (row.kind === 'transcript') {
+      const prefix = locator.speaker ? /^［[^］]+］/.exec(row.text)?.[0] : null
+      if (prefix && !clean.startsWith(prefix)) clean = prefix + clean
+      locator.edited = true
+      const pair = correctionPair(speakerBody(row.text), speakerBody(clean))
+      if (pair) {
+        const existing = db
+          .select()
+          .from(hotwordCorrections)
+          .where(and(eq(hotwordCorrections.from, pair.from), eq(hotwordCorrections.to, pair.to)))
+          .get()
+        if (existing)
+          db.update(hotwordCorrections)
+            .set({ count: existing.count + 1, lastUsedAt: Date.now() })
+            .where(eq(hotwordCorrections.id, existing.id))
+            .run()
+        else
+          db.insert(hotwordCorrections)
+            .values({ id: newId(), ...pair, count: 1, lastUsedAt: Date.now() })
+            .run()
+      }
+    }
+    db.update(sourceSegments)
+      .set({ text: clean, hash: hashText(row.kind, clean), locator: JSON.stringify(locator), updatedAt: Date.now() })
+      .where(eq(sourceSegments.id, id))
+      .run()
+  })
   emit('segments:changed', { sourceId: row.sourceId })
   return listSegments(row.sourceId).find((s) => s.id === id) ?? null
 }

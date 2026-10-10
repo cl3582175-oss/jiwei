@@ -169,6 +169,9 @@ test('clipboard detects new copy and settings retain scheduler preferences', asy
   const capture = await open('text')
   await capture.getByRole('button', { name: '粘贴剪贴板内容？' }).click()
   await expect(capture.getByRole('textbox', { name: '捕捉内容' })).toHaveValue(copied)
+  // 非输入区域有焦点时 Escape 仍须关闭整个捕捉窗。
+  await capture.getByTestId('capture-window').click({ position: { x: 5, y: 80 } })
+  await expect.poll(() => capture.evaluate(() => document.activeElement === document.body)).toBe(true)
   await capture.keyboard.press('Escape').catch((e) => {
     if (!capture.isClosed()) throw e
   })

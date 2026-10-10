@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { TranscriptView } from '../recording/TranscriptView'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -135,7 +136,11 @@ export function MediaPane({ source }: { source: Source }) {
   const [duration, setDuration] = useState(0)
   const [range, setRange] = useState<{ a: number; b: number | null } | null>(null)
   const [editing, setEditing] = useState<string | null>(null)
-  const follow = useRef(true)
+  const follow = useRef(0)
+  const followed = useRef<string | null>(null)
+  const [structureVersion, setStructureVersion] = useState(0)
+  const structureChanged = useCallback(() => setStructureVersion((v) => v + 1), [])
+  const sampleUntil = useRef<number | null>(null)
   const setContext = useApp((s) => s.setContext)
   const highlight = useApp((s) => s.highlight)
   const onSelect = useSourceSelection(source.id)
@@ -144,7 +149,7 @@ export function MediaPane({ source }: { source: Source }) {
   const { data: segs = [] } = useQuery({ queryKey: ['segments', source.id], queryFn: () => api.segments.list(source.id) })
   // 转写稿上的批注高亮
   const annotations = useAnnotations('source', source.id)
-  const hlVersion = useMemo(() => ({ segs, editing }), [segs, editing])
+  const hlVersion = useMemo(() => ({ segs, editing, structureVersion }), [segs, editing, structureVersion])
   useTextHighlights(`media:${source.id}`, list, annotations, hlVersion)
   const { data: threads = [] } = useQuery({ queryKey: ['threads', source.id], queryFn: () => api.chat.threads(source.id) })
   useEffect(
@@ -160,9 +165,10 @@ export function MediaPane({ source }: { source: Source }) {
   )
   const current = timed.find((x) => time >= x.t[0] && time < x.t[1] + 0.5)?.s.id ?? null
 
-  const seek = (sec: number, play = false): void => {
+  const seek = (sec: number, play = false, until?: number): void => {
     const m = media.current
     if (!m) return
+    sampleUntil.current = until ?? null
     m.currentTime = Math.max(0, sec)
     if (play) void m.play().catch(() => {})
   }
@@ -175,18 +181,23 @@ export function MediaPane({ source }: { source: Source }) {
     const at = tm ? Number(tm[1]) : seg?.t[0]
     if (at === undefined) return
     seek(at, true)
-    follow.current = true
+    follow.current = 0
     useApp.getState().setHighlight(null)
   }, [highlight, timed])
 
   // 跟随播放滚动转写稿
   useEffect(() => {
-    if (!current || !follow.current) return
+    if (!current || Date.now() < follow.current || followed.current === current) return
+    followed.current = current
     list.current?.querySelector<HTMLElement>(`[data-segment="${current}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' })
-  }, [current])
+  }, [current, time])
 
   const onTime = (): void => {
     const now = media.current?.currentTime ?? 0
+    if (sampleUntil.current !== null && now >= sampleUntil.current) {
+      media.current?.pause()
+      sampleUntil.current = null
+    }
     setTime(now)
     const cur = timed.find((x) => now >= x.t[0] && now < x.t[1] + 0.5)
     setContext({ sourceLocator: `t=${Math.floor(now)}`, ...(cur ? { sourceSegmentId: cur.s.id } : {}) })
@@ -261,7 +272,9 @@ export function MediaPane({ source }: { source: Source }) {
 
   return (
     <div className="flex h-full flex-col">
-      {isVideo ? (
+      {!source.assetUrl ? (
+        <p className="shrink-0 px-5 py-4 text-xs text-muted">{t('recording.audioRemoved')}</p>
+      ) : isVideo ? (
         <div className="flex max-h-[48%] shrink-0 items-center justify-center bg-black">
           <video {...props} className="max-h-full w-full" data-testid="media" />
         </div>
@@ -354,12 +367,29 @@ export function MediaPane({ source }: { source: Source }) {
       <div
         ref={list}
         className="min-h-0 flex-1 overflow-y-auto"
-        onWheel={() => (follow.current = false)}
+        onWheel={() => {
+          follow.current = Date.now() + 5000
+          followed.current = null
+        }}
+        onTouchMove={() => {
+          follow.current = Date.now() + 5000
+          followed.current = null
+        }}
         onMouseUp={onSelect}
         onKeyUp={onSelect}
       >
         {segs.length === 0 ? (
           <TranscriptEmpty source={source} />
+        ) : source.kind === 'recording' || segs.some((s) => s.locator.speaker) ? (
+          <TranscriptView
+            source={source}
+            segments={segs.filter((s) => s.kind === 'transcript')}
+            time={time}
+            seek={seek}
+            threads={threads}
+            onThread={openThread}
+            onStructureChange={structureChanged}
+          />
         ) : (
           <article className="source-text transcript select-text" aria-label={t('media.transcript')}>
             {timed.map(({ s, t: tt }) => (
@@ -389,7 +419,7 @@ export function MediaPane({ source }: { source: Source }) {
                   className="transcript-time"
                   onMouseUp={(e) => e.stopPropagation()}
                   onClick={() => {
-                    follow.current = true
+                    follow.current = 0
                     seek(tt[0], true)
                   }}
                 >

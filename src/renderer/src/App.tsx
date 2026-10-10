@@ -1,3 +1,5 @@
+import { RecordingView, RecordingDialog, RecorderBar } from './features/recording/RecordingView'
+import { useRecording } from './features/recording/store'
 import { useCaptureEvents } from './features/capture/events'
 import { PhoneDialog } from './features/capture/PhoneDialog'
 import { InboxView } from './features/inbox/InboxView'
@@ -62,6 +64,14 @@ function useThemeSync(): 'light' | 'dark' {
 /** 主进程派生数据更新后刷新列表与当前笔记 */
 function useMainEvents(): void {
   const qc = useQueryClient()
+  useEffect(
+    () =>
+      window.jiweiEvents.on('sources:changed', ({ id }) => {
+        invalidate(qc, 'sources')
+        void qc.invalidateQueries({ queryKey: ['source', id] })
+      }),
+    [qc]
+  )
   // 深层链接：jiwei://note/<id>、jiwei://source/<id>
   useEffect(
     () =>
@@ -104,6 +114,15 @@ export function App() {
   const theme = useThemeSync()
   useMainEvents()
   useCaptureEvents()
+  const recording = useRecording((s) => s.current)
+  useEffect(
+    () =>
+      window.jiweiEvents.on('recording:open', () => {
+        useApp.getState().setView('recording')
+        useRecording.getState().open()
+      }),
+    []
+  )
   const view = useApp((s) => s.view)
   const browserOpen = useApp((s) => s.browserOpen && s.view === 'notes')
   useBrowserEvents()
@@ -122,6 +141,12 @@ export function App() {
         <main className="relative min-w-0 flex-1">
           {view === 'notes' && <NotesView />}
           {view === 'inbox' && <InboxView />}
+          {view === 'recording' && <RecordingView />}
+          {view === 'notes' && recording?.noteId && (
+            <div className="absolute inset-x-0 bottom-2 z-20">
+              <RecorderBar compact />
+            </div>
+          )}
           {view === 'library' && <LibraryView />}
           {view === 'chat' && <ChatView />}
           {view === 'review' && <ReviewView />}
@@ -131,6 +156,7 @@ export function App() {
           {view === 'trash' && <TrashView />}
         </main>
       </div>
+      <RecordingDialog />
       <PhoneDialog />
       <SettingsDialog />
       <CommandPalette />

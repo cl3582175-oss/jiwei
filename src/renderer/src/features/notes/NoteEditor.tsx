@@ -1,3 +1,5 @@
+import { useRecording } from '../recording/store'
+import { Mic } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -278,8 +280,8 @@ function EditorBody({ note: initial }: { note: NoteSummary }) {
   return (
     <div className="@container flex h-full flex-col">
       {/* 顶栏 */}
-      <header className="drag flex h-[52px] shrink-0 items-center justify-between gap-4 border-b border-border/70 pr-[calc(var(--tb-right)+12px)] pl-4">
-        <div className="no-drag flex min-w-0 items-center gap-0.5">
+      <header className="drag flex min-h-[52px] shrink-0 flex-wrap items-center justify-between gap-x-2 gap-y-1 border-b border-border/70 py-2 pr-[calc(var(--tb-right)+12px)] pl-4">
+        <div className="no-drag flex min-w-0 max-w-full flex-wrap items-center gap-0.5">
           <Tip label={`${t('nav.back')}  ${modKey}[`} side="bottom">
             <Button variant="ghost" size="icon-sm" disabled={historyIndex <= 0} onClick={back} aria-label={t('nav.back')}>
               <ChevronLeft />
@@ -304,7 +306,7 @@ function EditorBody({ note: initial }: { note: NoteSummary }) {
           <span className="mx-1 h-4 w-px bg-border" />
           <CategoryPicker value={note.categoryId} onChange={(categoryId) => void update({ categoryId })} />
         </div>
-        <div className="no-drag flex items-center gap-1">
+        <div className="no-drag flex min-w-0 max-w-full flex-wrap items-center gap-1">
           <Tip label={`${t('notes.createdAt')} ${formatDateTime(note.createdAt, i18n.language)}`} side="bottom">
             <span className="mr-2 hidden cursor-default text-2xs whitespace-nowrap text-subtle tabular-nums @[560px]:inline">
               {saving
@@ -330,6 +332,11 @@ function EditorBody({ note: initial }: { note: NoteSummary }) {
             </Tip>
           )}
           {/* 内置浏览器（v0.6.0）：在笔记旁边打开，边看网页边记 */}
+          <Tip label={t('recording.noteStart')} side="bottom">
+            <Button size="icon" variant="ghost" aria-label={t('recording.noteStart')} onClick={() => useRecording.getState().open(note.id)}>
+              <Mic />
+            </Button>
+          </Tip>
           <Tip label={browserOpen ? t('browser.close') : t('browser.openBeside')} side="bottom">
             <Button
               variant="ghost"
@@ -351,7 +358,12 @@ function EditorBody({ note: initial }: { note: NoteSummary }) {
           )}
           {note.kind === 'cornell' && (
             <Tip label={t('graph.local')} side="bottom">
-              <Button variant="ghost" size="icon-sm" onClick={() => useApp.getState().openGraph(`note:${note.id}`)} aria-label={t('graph.local')}>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => useApp.getState().openGraph(`note:${note.id}`)}
+                aria-label={t('graph.local')}
+              >
                 <Network />
               </Button>
             </Tip>

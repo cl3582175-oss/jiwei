@@ -3,7 +3,19 @@ const text = (key: CaptureMessageKey): string => captureMessage('zh-CN', key)
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import { phonePage } from './phonePage'
+import { mkdtemp, open, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 export const MAX_BYTES = 25 * 1024 * 1024
+export const MAX_AUDIO_BYTES = 300 * 1024 * 1024
+export interface ReceivedAudio {
+  path: string
+  mime: string
+  ext: string
+  name: string
+  note: string
+  sessionId: string
+}
 export interface ReceivedFile {
   bytes: Buffer
   mime: string
@@ -18,10 +30,26 @@ interface Options {
   limit?: number
   decode: (bytes: Buffer, mime: string) => Promise<boolean>
   receive: (file: ReceivedFile) => Promise<void>
+  decodeAudio?: (path: string, mime: string) => Promise<boolean>
+  receiveAudio?: (file: ReceivedAudio) => Promise<void>
   changed?: (received: number) => void
 }
-const formats = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp', 'image/heic': 'heic', 'application/pdf': 'pdf' } as const
-function signature(b: Buffer, mime: string): boolean {
+const formats = {
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/webp': 'webp',
+  'image/heic': 'heic',
+  'application/pdf': 'pdf',
+  'audio/mp4': 'm4a',
+  'audio/mpeg': 'mp3',
+  'audio/wav': 'wav',
+  'audio/webm': 'webm'
+} as const
+export function signature(b: Buffer, mime: string): boolean {
+  if (mime === 'audio/mp4') return b.toString('ascii', 4, 8) === 'ftyp'
+  if (mime === 'audio/mpeg') return b.toString('ascii', 0, 3) === 'ID3' || (b[0] === 255 && (b[1] & 224) === 224)
+  if (mime === 'audio/wav') return b.toString('ascii', 0, 4) === 'RIFF' && b.toString('ascii', 8, 12) === 'WAVE'
+  if (mime === 'audio/webm') return b.subarray(0, 4).equals(Buffer.from('1a45dfa3', 'hex'))
   if (mime === 'image/png') return b.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex'))
   if (mime === 'image/jpeg') return b[0] === 255 && b[1] === 216 && b[2] === 255
   if (mime === 'image/webp') return b.toString('ascii', 0, 4) === 'RIFF' && b.toString('ascii', 8, 12) === 'WEBP'
@@ -90,7 +118,9 @@ export async function startPhoneServer(options: Options) {
       req.resume()
       return
     }
-    if (Number(req.headers['content-length']) > MAX_BYTES) {
+    const audio = typeof req.headers['content-type'] === 'string' && req.headers['content-type'].startsWith('audio/')
+    const maxBytes = audio ? MAX_AUDIO_BYTES : MAX_BYTES
+    if (Number(req.headers['content-length']) > maxBytes) {
       reply(res, 413, text('phoneTooLarge'))
       req.resume()
       return
@@ -107,7 +137,51 @@ export async function startPhoneServer(options: Options) {
     }
     reserved++
     const operation = (async () => {
+      let temp: string | null = null
       try {
+        if (audio) {
+          if (!options.decodeAudio || !options.receiveAudio) {
+            reply(res, 415, text('phoneUnsupported'))
+            req.resume()
+            return
+          }
+          temp = await mkdtemp(join(tmpdir(), 'jiwei-phone-audio-'))
+          const path = join(temp, `audio.${ext}`),
+            file = await open(path, 'wx', 0o600)
+          let head = Buffer.alloc(0),
+            size = 0
+          try {
+            for await (const chunk of req) {
+              const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array)
+              size += bytes.length
+              if (size > maxBytes) {
+                reply(res, 413, text('phoneTooLarge'))
+                return
+              }
+              if (head.length < 64) head = Buffer.concat([head, bytes.subarray(0, 64 - head.length)])
+              await file.writeFile(bytes)
+            }
+          } finally {
+            await file.close()
+          }
+          if (stopped || Date.now() >= expiresAt) {
+            reply(res, 404, text('phoneNotFound'))
+            return
+          }
+          if (!signature(head, mime) || !(await options.decodeAudio(path, mime))) {
+            reply(res, 415, text('phoneDecode'))
+            return
+          }
+          if (stopped || Date.now() >= expiresAt) {
+            reply(res, 404, text('phoneNotFound'))
+            return
+          }
+          await options.receiveAudio({ path, mime, ext, name, note, sessionId })
+          count++
+          options.changed?.(count)
+          reply(res, 201, text('phoneReceived'))
+          return
+        }
         const chunks: Buffer[] = []
         let size = 0
         for await (const chunk of req) {
@@ -139,6 +213,7 @@ export async function startPhoneServer(options: Options) {
       } catch {
         if (!res.headersSent && !res.destroyed) reply(res, 400, text('phoneIncomplete'))
       } finally {
+        if (temp) await rm(temp, { recursive: true, force: true })
         reserved--
       }
     })()

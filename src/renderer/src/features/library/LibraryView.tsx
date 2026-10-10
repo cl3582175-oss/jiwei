@@ -1,3 +1,4 @@
+import { Mic } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQueryClient } from '@tanstack/react-query'
@@ -59,6 +60,7 @@ export const KIND_ICON: Record<SourceKind, ReactNode> = {
   pdf: <FileType2 />,
   video: <Film />,
   audio: <Music />,
+  recording: <Mic />,
   image: <Image />,
   document: <FileText />,
   web: <Globe />,
@@ -273,8 +275,9 @@ function SourceCard({ s }: { s: Source }) {
         {s.title}
       </p>
       <p className="mt-auto truncate pt-2 text-2xs text-subtle">
-        {t(`library.kinds.${s.kind}`)} · {s.kind === 'web' ? new URL(s.url!).hostname : formatBytes(s.size)} ·{' '}
-        {formatRelative(s.createdAt, i18n.language)}
+        {t(`library.kinds.${s.kind}`)}
+        {s.recordingScene && ` · ${t(`recording.scene.${s.recordingScene}`)}`} ·{' '}
+        {s.kind === 'web' ? new URL(s.url!).hostname : formatBytes(s.size)} · {formatRelative(s.createdAt, i18n.language)}
       </p>
       <SourceInfoDialog source={s} open={infoOpen} onOpenChange={setInfoOpen} />
     </div>

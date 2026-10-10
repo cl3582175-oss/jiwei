@@ -3,12 +3,16 @@ import { join } from 'path'
 import { mkdirSync } from 'fs'
 import Database from 'better-sqlite3'
 import log from 'electron-log/main'
+import { drizzle, type BetterSQLite3Database } from 'drizzle-orm/better-sqlite3'
+import { migrate } from 'drizzle-orm/better-sqlite3/migrator'
+import * as schema from './personalSchema'
 
 // 个人数据库：记忆属于“人”，不属于某个知识库。
 // 位于应用用户目录（不随知识库切换、迁移、共享），切换知识库后仍然“认识你”。
-// 结构简单、独立演进，用 user_version 管理迁移。
+// 保留历史记忆 user_version 迁移；新声纹表使用从 schema.ts 生成的 Drizzle 迁移。
 
 let conn: Database.Database | null = null
+let typed: BetterSQLite3Database<typeof schema> | null = null
 
 const MIGRATIONS: string[] = [
   // 1：记忆
@@ -102,7 +106,25 @@ export function profileDb(): Database.Database {
       conn!.pragma(`user_version = ${v + 1}`)
     })()
   }
+  try {
+    typed = drizzle(conn, { schema })
+    migrate(typed, {
+      migrationsFolder: app.isPackaged
+        ? join(process.resourcesPath, 'profile-migrations')
+        : join(app.getAppPath(), 'resources/profile-migrations')
+    })
+  } catch (error) {
+    conn.close()
+    conn = null
+    typed = null
+    throw error
+  }
   return conn
+}
+
+export function getProfileDb(): BetterSQLite3Database<typeof schema> {
+  profileDb()
+  return typed!
 }
 
 export function closeProfileDb(): void {
@@ -114,4 +136,5 @@ export function closeProfileDb(): void {
     /* 已关闭 */
   }
   conn = null
+  typed = null
 }

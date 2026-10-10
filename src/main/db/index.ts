@@ -6,7 +6,7 @@ import { getLoadablePath } from 'sqlite-vec'
 import { drizzle, type BetterSQLite3Database } from 'drizzle-orm/better-sqlite3'
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator'
 import log from 'electron-log/main'
-import * as schema from './schema'
+import * as schema from './knowledgeSchema'
 import { defaultDataDir, readBootConfig } from '../lib/config'
 
 export type DB = BetterSQLite3Database<typeof schema>

@@ -7,6 +7,7 @@ export function CaptureSettings({ settings, save }: { settings: Settings['captur
   const { t } = useTranslation(),
     [quick, setQuick] = useState(settings.quickShortcut),
     [shot, setShot] = useState(settings.screenshotShortcut),
+    [recording, setRecording] = useState(settings.recordingShortcut),
     [errors, setErrors] = useState<string[]>([])
   useEffect(() => {
     void api.capture.shortcuts().then(setErrors)
@@ -33,7 +34,18 @@ export function CaptureSettings({ settings, save }: { settings: Settings['captur
           className="rounded border border-border p-2"
         />
       </label>
-      <Button onClick={() => save({ ...settings, quickShortcut: quick, screenshotShortcut: shot })}>{t('capture.apply')}</Button>
+      <label className="flex flex-wrap items-center justify-between gap-2">
+        {t('recording.shortcut')}
+        <input
+          aria-label={t('recording.shortcut')}
+          value={recording}
+          onChange={(e) => setRecording(e.target.value)}
+          className="rounded border border-border p-2"
+        />
+      </label>
+      <Button onClick={() => save({ ...settings, quickShortcut: quick, screenshotShortcut: shot, recordingShortcut: recording })}>
+        {t('capture.apply')}
+      </Button>
       {errors.length > 0 && <p role="alert">{t('capture.conflict', { keys: errors.join(', ') })}</p>}
       <label className="flex items-center gap-2">
         <input type="checkbox" checked={settings.sourceInfo} onChange={(e) => save({ ...settings, sourceInfo: e.target.checked })} />

@@ -21,7 +21,10 @@ import { registerRecognizeJob } from './services/recognize'
 import { registerBrowser } from './services/browser'
 import { registerAsrJob } from './services/asr'
 import { registerMossJob, stopMoss } from './services/moss'
+import { registerRecording } from './services/recording'
+import { stopVoiceprint } from './services/voiceprint'
 import { pruneJobs, startJobs, stopJobs } from './services/jobs'
+import { reconcilePeopleReferences } from './services/people'
 import { emit } from './events'
 import { registerIndexJob, requestIndex } from './services/ai/indexer'
 import { refreshStatus, shutdown as shutdownEmbedding } from './services/ai/embedding'
@@ -150,10 +153,12 @@ app.whenReady().then(async () => {
   registerJobKinds()
   registerAsrJob()
   registerMossJob()
+  registerRecording()
   registerRecognizeJob()
   registerBrowser()
   registerIndexJob()
   registerInboxJobs()
+  reconcilePeopleReferences()
   startJobs()
   void rebuildNoteImageReferences().catch((e) => log.warn('[note images] backfill failed', e))
   startMemoryLearning()
@@ -217,6 +222,7 @@ app.on('before-quit', (e) => {
       shutdownEmbedding()
       stopJobs()
       stopMoss()
+      stopVoiceprint()
       flushAll()
       closeDatabase()
       closeProfileDb()

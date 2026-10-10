@@ -1,3 +1,4 @@
+import { emit } from '../events'
 import { captureText } from './capture/messages'
 import { screenPermissionAction } from './capture/permissions'
 import { ClipboardRecency } from './capture/clipboardRecency'
@@ -95,13 +96,20 @@ export function refreshShortcuts(): void {
   const settings = getSettings().capture
   for (const [key, mode] of [
     [settings.quickShortcut, 'text'],
-    [settings.screenshotShortcut, 'screenshot']
+    [settings.screenshotShortcut, 'screenshot'],
+    [settings.recordingShortcut, 'recording']
   ] as const) {
     if (!key.trim()) continue
     try {
       if (
         globalShortcut.register(key, () => {
-          void open(mode).catch(() => undefined)
+          if (mode === 'recording') {
+            const main = getMainWindow()
+            if (main?.isMinimized()) main.restore()
+            main?.show()
+            main?.focus()
+            emit('recording:open', undefined)
+          } else void open(mode).catch(() => undefined)
         })
       )
         shortcuts.push(key)

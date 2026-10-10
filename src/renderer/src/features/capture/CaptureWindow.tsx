@@ -15,6 +15,16 @@ export function CaptureWindow() {
     start = useRef<{ x: number; y: number } | null>(null),
     [box, setBox] = useState<{ x: number; y: number; width: number; height: number } | null>(null)
   useEffect(() => {
+    const escape = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        void api.capture.close()
+      }
+    }
+    window.addEventListener('keydown', escape)
+    return () => window.removeEventListener('keydown', escape)
+  }, [])
+  useEffect(() => {
     const update = (s: CaptureState | null): void => {
       setState(s)
       if ((s?.asset?.id ?? null) !== assetId.current) {
@@ -77,7 +87,6 @@ export function CaptureWindow() {
       data-testid="capture-window"
       className="flex h-full flex-col gap-3 overflow-y-auto bg-surface p-5 text-fg"
       onKeyDown={(e) => {
-        if (e.key === 'Escape') void api.capture.close()
         if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
           e.preventDefault()
           action('save')

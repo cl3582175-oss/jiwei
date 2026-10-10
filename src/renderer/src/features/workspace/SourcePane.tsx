@@ -176,7 +176,11 @@ function Body({ source }: { source: Source }) {
   const { t } = useTranslation()
   const ext = source.originalName?.split('.').pop()?.toLowerCase() ?? ''
   if (source.kind === 'image' && source.assetUrl) return <ImageSource source={source} />
-  if ((source.kind === 'video' || source.kind === 'audio') && source.assetUrl) return <MediaPane source={source} />
+  if (
+    (source.kind === 'video' || source.kind === 'audio' || source.kind === 'recording') &&
+    (source.assetUrl || source.kind === 'recording')
+  )
+    return <MediaPane source={source} />
   if (source.kind === 'pdf' && source.assetUrl) return <PdfViewer source={source} />
   if (TEXT_EXTS.includes(ext) || source.kind === 'web') return <TextSegments source={source} />
   return <Centered icon={<FileQuestion />} text={t('workspace.unsupported')} />
@@ -208,7 +212,12 @@ export function SourcePane({ sourceId }: { sourceId: string }) {
         <div className="no-drag flex items-center gap-0.5">
           {source.kind === 'web' && source.url && (
             <Tip label={t('browser.openOriginal')} side="bottom">
-              <Button variant="ghost" size="icon-sm" aria-label={t('browser.openOriginal')} onClick={() => useApp.getState().openBrowser(source.url!)}>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label={t('browser.openOriginal')}
+                onClick={() => useApp.getState().openBrowser(source.url!)}
+              >
                 <Globe />
               </Button>
             </Tip>
@@ -248,7 +257,9 @@ export function SourcePane({ sourceId }: { sourceId: string }) {
         <div className={cn('h-full overflow-auto')}>
           <Body source={source} />
         </div>
-        {showAnnotations && <AnnotationsPanel sourceId={source.id} isPdf={source.kind === 'pdf'} onClose={() => setShowAnnotations(false)} />}
+        {showAnnotations && (
+          <AnnotationsPanel sourceId={source.id} isPdf={source.kind === 'pdf'} onClose={() => setShowAnnotations(false)} />
+        )}
       </div>
     </div>
   )

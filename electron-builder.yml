@@ -11,6 +11,7 @@ files:
   - '!docs/*'
   - '!electron.vite.config.{js,ts,mjs,cjs}'
   - '!drizzle.config.ts'
+  - '!drizzle.profile.config.ts'
   - '!{.gitignore,.editorconfig,.prettierrc,README*.md,CHANGELOG.md}'
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
 asarUnpack:
@@ -19,6 +20,8 @@ asarUnpack:
 extraResources:
   - from: resources/migrations
     to: migrations
+  - from: resources/profile-migrations
+    to: profile-migrations
 protocols:
   - name: Jiwei
     schemes: [jiwei]

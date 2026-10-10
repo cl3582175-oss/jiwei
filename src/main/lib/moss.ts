@@ -1,9 +1,14 @@
+import { rewriteSpeakerText } from '@shared/recording'
 export interface MossCue {
   start: number
   end: number
   text: string
   speaker: string | null
   part?: number
+  personId?: string
+  personName?: string
+  track?: 'mic' | 'system'
+  uncertain?: boolean
 }
 
 export interface MossChunk {
@@ -175,9 +180,12 @@ export function mergeMossSegments(current: MossSegment[], cues: MossCue[]): Moss
           conformsTo: 'http://www.w3.org/TR/media-frags/',
           value: `t=${round(cue.start)},${round(cue.end)}`,
           ...(cue.speaker ? { speaker: cue.speaker } : {}),
-          ...(cue.part ? { speakerPart: cue.part } : {})
+          ...(cue.part ? { speakerPart: cue.part } : {}),
+          ...(cue.personId ? { personId: cue.personId } : {}),
+          ...(cue.track ? { track: cue.track } : {}),
+          ...(cue.uncertain ? { uncertain: true } : {})
         },
-        text: `${cue.speaker ? `［说话人 ${Number(cue.speaker.slice(1))}］` : ''}${cue.text}`
+        text: cue.speaker ? rewriteSpeakerText(cue.text, cue.speaker, cue.personName ?? null) : cue.text
       }))
   ]
 }
@@ -215,8 +223,15 @@ const STOP_WORDS = new Set([
   'are'
 ])
 
-/** 热词只提供词汇提示；限制数量和长度，防止长资料挤占模型的上下文。 */
-export function buildMossHotwords(concepts: string[], title: string, texts: string[]): string {
+/** 0.8.42 实测可传入 4096 字节；采用已验证的 1024 字节预算和 30 词限制，
+ * 避免冗长提示降低转写质量。这是应用预算，不是后端的固定硬上限。 */
+export const MOSS_HOTWORD_MAX_BYTES = 1024
+export function buildMossHotwords(
+  concepts: string[],
+  title: string,
+  texts: string[],
+  options: { extra?: string[]; people?: string[]; corrections?: string[] } = {}
+): string {
   const segmenter = new Intl.Segmenter('zh', { granularity: 'word' })
   const words = (text: string): string[] => [...segmenter.segment(text)].filter((s) => s.isWordLike).map((s) => s.segment)
   const frequency = new Map<string, number>()
@@ -232,7 +247,15 @@ export function buildMossHotwords(concepts: string[], title: string, texts: stri
     .sort((a, b) => b[1] - a[1])
     .map(([word]) => word)
   const result = new Map<string, string>()
-  for (const candidate of [...concepts, ...words(title), ...frequent]) {
+  let bytes = 0
+  for (const candidate of [
+    ...(options.extra ?? []),
+    ...(options.people ?? []),
+    ...(options.corrections ?? []),
+    ...concepts,
+    ...words(title),
+    ...frequent
+  ]) {
     const word = candidate
       .replace(/[,，\r\n\t]/g, ' ')
       .replace(/\s+/g, ' ')
@@ -240,6 +263,9 @@ export function buildMossHotwords(concepts: string[], title: string, texts: stri
       .slice(0, 40)
     const key = word.normalize('NFKC').toLocaleLowerCase()
     if (word.length < 2 || !/[\p{L}]/u.test(word) || STOP_WORDS.has(key) || result.has(key)) continue
+    const size = new TextEncoder().encode(word).length + (result.size ? 1 : 0)
+    if (bytes + size > MOSS_HOTWORD_MAX_BYTES) continue
+    bytes += size
     result.set(key, word)
     if (result.size === 30) break
   }

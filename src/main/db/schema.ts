@@ -629,13 +629,98 @@ export const chunks = sqliteTable(
 )
 
 /** 捕捉原件独立保留；删除使用墓碑，归档目的与提案一起记录。 */
-export const inboxItems = sqliteTable('inbox_items', {
+export const inboxItems = sqliteTable(
+  'inbox_items',
+  {
+    id: text('id').primaryKey(),
+    kind: text('kind', { enum: ['text', 'screenshot', 'photo', 'file', 'clip'] }).notNull(),
+    text: text('text').notNull().default(''),
+    assetId: text('asset_id'),
+    recognized: text('recognized').notNull().default(''),
+    recognitionStatus: text('recognition_status', { enum: ['pending', 'ready', 'unavailable', 'failed', 'canceled', 'none'] })
+      .notNull()
+      .default('none'),
+    origin: text('origin').notNull().default('{}'),
+    status: text('status', { enum: ['new', 'suggested', 'filed', 'dismissed'] })
+      .notNull()
+      .default('new'),
+    suggestion: text('suggestion'),
+    filedTo: text('filed_to'),
+    ...syncCols
+  },
+  (t) => [index('inbox_status_idx').on(t.status, t.deletedAt)]
+)
+
+/** 音频仅在本机 recordings 目录；资料与转写分段沿用知识库的既有生命周期。 */
+export const recordings = sqliteTable(
+  'recordings',
+  {
+    id: text('id').primaryKey(),
+    sourceId: text('source_id'),
+    noteId: text('note_id'),
+    scene: text('scene', { enum: ['meeting', 'lecture', 'thought', 'unspecified'] }).notNull(),
+    status: text('status', { enum: ['recording', 'paused', 'finalizing', 'ready', 'failed', 'discarded'] }).notNull(),
+    tracks: text('tracks').notNull(),
+    startedAt: integer('started_at').notNull(),
+    durationMs: integer('duration_ms').notNull().default(0),
+    markers: text('markers').notNull().default('[]'),
+    participants: text('participants').notNull().default('[]'),
+    extraHotwords: text('extra_hotwords').notNull().default(''),
+    localOnly: integer('local_only', { mode: 'boolean' }).notNull().default(false),
+    preview: text('preview').notNull().default('[]'),
+    error: text('error'),
+    ...syncCols
+  },
+  (t) => [index('recordings_source_idx').on(t.sourceId)]
+)
+
+/** 仅由 personalSchema 导出到个人数据库；知识库只保存 personId 引用。 */
+export const people = sqliteTable('people', {
   id: text('id').primaryKey(),
-  kind: text('kind', { enum: ['text', 'screenshot', 'photo', 'file', 'clip'] }).notNull(),
-  text: text('text').notNull().default(''), assetId: text('asset_id'),
-  recognized: text('recognized').notNull().default(''),
-  recognitionStatus: text('recognition_status', { enum: ['pending', 'ready', 'unavailable', 'failed', 'canceled', 'none'] }).notNull().default('none'),
-  origin: text('origin').notNull().default('{}'),
-  status: text('status', { enum: ['new', 'suggested', 'filed', 'dismissed'] }).notNull().default('new'),
-  suggestion: text('suggestion'), filedTo: text('filed_to'), ...syncCols
-}, (t) => [index('inbox_status_idx').on(t.status, t.deletedAt)])
+  name: text('name').notNull(),
+  isMe: integer('is_me', { mode: 'boolean' }).notNull().default(false),
+  note: text('note').notNull().default(''),
+  mergedInto: text('merged_into'),
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull(),
+  deletedAt: integer('deleted_at')
+})
+export const voiceprints = sqliteTable(
+  'voiceprints',
+  {
+    id: text('id').primaryKey(),
+    personId: text('person_id').notNull(),
+    embedding: blob('embedding', { mode: 'buffer' }).notNull(),
+    dim: integer('dim').notNull(),
+    model: text('model').notNull(),
+    sourceId: text('source_id'),
+    createdAt: integer('created_at').notNull()
+  },
+  (t) => [index('voiceprints_person_idx').on(t.personId)]
+)
+export const recordingSpeakers = sqliteTable(
+  'recording_speakers',
+  {
+    sourceId: text('source_id').notNull(),
+    label: text('label').notNull(),
+    personId: text('person_id'),
+    origin: text('origin', { enum: ['auto', 'user'] })
+      .notNull()
+      .default('auto'),
+    centroid: blob('centroid', { mode: 'buffer' }),
+    confidence: real('confidence'),
+    skipped: integer('skipped', { mode: 'boolean' }).notNull().default(false)
+  },
+  (t) => [primaryKey({ columns: [t.sourceId, t.label] })]
+)
+export const hotwordCorrections = sqliteTable(
+  'hotword_corrections',
+  {
+    id: text('id').primaryKey(),
+    from: text('from').notNull(),
+    to: text('to').notNull(),
+    count: integer('count').notNull().default(1),
+    lastUsedAt: integer('last_used_at').notNull()
+  },
+  (t) => [uniqueIndex('hotword_pair_idx').on(t.from, t.to)]
+)

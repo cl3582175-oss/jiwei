@@ -2,6 +2,19 @@ import { CaptureRectSchema, BrowserCaptureEntriesSchema, type BrowserCaptureFram
 import { CaptureActionSchema } from './capture'
 import type { CaptureState, PhoneStatus } from './capture'
 import type { InboxItem } from './inbox'
+import {
+  RecordingBegin,
+  RecordingChunk,
+  RecordingId,
+  RecordingMarker,
+  PersonInput,
+  SpeakerChoice,
+  TranscriptFormat,
+  type Recording,
+  type Person,
+  type RecordingSpeaker,
+  type VoiceStatus
+} from './recording'
 import { z } from 'zod'
 import * as S from './schemas'
 import type {
@@ -110,6 +123,74 @@ const none = [] as const
 const id = (name = 'id') => [name, S.Id] as const
 
 export const capabilities = {
+  recording: {
+    list: cap<Recording[]>()({ description: '本机录音', params: none }),
+    get: cap<Recording>()({ description: '录音状态', params: [['id', RecordingId]] }),
+    begin: cap<Recording>()({ description: '开始录音', params: [['input', RecordingBegin]] }),
+    chunk: cap<void>()({ description: '持久化音轨分块', params: [['input', RecordingChunk]] }),
+    pause: cap<void>()({
+      description: '暂停或继续录音',
+      params: [
+        ['id', RecordingId],
+        ['paused', z.boolean()]
+      ]
+    }),
+    finish: cap<Recording>()({ description: '结束或恢复录音', params: [['id', RecordingId]] }),
+    discard: cap<void>()({ description: '丢弃录音（可撤销）', params: [['id', RecordingId]] }),
+    restore: cap<void>()({ description: '撤销丢弃', params: [['id', RecordingId]] }),
+    mark: cap<void>()({
+      description: '录音打点',
+      params: [
+        ['id', RecordingId],
+        ['marker', RecordingMarker]
+      ]
+    }),
+    summarize: cap<string>()({ description: '最近一分钟摘要', params: [['id', RecordingId]] }),
+    permissions: cap<{ mic: string; system: boolean }>()({ description: '音频权限状态', params: none }),
+    requestMic: cap<boolean>()({ description: '首次请求麦克风权限', params: none }),
+    openMicSettings: cap<void>()({ description: '打开系统麦克风权限', params: none }),
+    storage: cap<{ bytes: number; recordings: { id: string; sourceId: string | null; bytes: number }[] }>()({
+      description: '本机音频占用',
+      params: none
+    }),
+    deleteAudio: cap<void>()({ description: '删除音频保留转写稿', params: [['id', RecordingId]] }),
+    speakers: cap<RecordingSpeaker[]>()({ description: '说话人确认状态', params: [id('sourceId')] }),
+    confirm: cap<void>()({ description: '确认说话人或只改一句', params: [['input', SpeakerChoice]] }),
+    export: cap<string | null>()({ description: '导出转写稿', params: [id('sourceId'), ['format', TranscriptFormat]] })
+  },
+  people: {
+    list: cap<Person[]>()({ description: '登记的人', params: none }),
+    save: cap<Person>()({
+      description: '新建或改名',
+      params: [
+        ['input', PersonInput],
+        ['id', S.Id.optional()]
+      ]
+    }),
+    remove: cap<void>()({ description: '删除人员与声纹', params: [id()] }),
+    merge: cap<void>()({ description: '合并人员与关联', params: [id('from'), id('to')] }),
+    clear: cap<void>()({
+      description: '清除声纹向量',
+      params: [
+        ['removeNames', z.boolean()],
+        ['personId', S.Id.optional()]
+      ]
+    }),
+    corrections: cap<{ id: string; from: string; to: string; count: number; lastUsedAt: number }[]>()({
+      description: '热词纠错',
+      params: none
+    }),
+    removeCorrection: cap<void>()({ description: '删除热词纠错', params: [id()] })
+  },
+  voiceprint: {
+    status: cap<VoiceStatus>()({ description: '说话人识别组件', params: none }),
+    install: cap<void>()({ description: '下载 CAM++', params: none }),
+    remove: cap<void>()({ description: '删除 CAM++', params: none }),
+    enroll: cap<void>()({
+      description: '登记我的声音',
+      params: [['bytes', z.instanceof(Uint8Array).refine((b) => b.length > 0 && b.length <= 8 * 1024 * 1024)]]
+    })
+  },
   capture: {
     open: cap<void>()({ description: '打开捕捉小窗', params: [['mode', z.enum(['text', 'screenshot'])]] }),
     state: cap<CaptureState | null>()({ description: '捕捉状态', params: none }),
@@ -505,7 +586,10 @@ export const capabilities = {
   asr: {
     status: cap<AsrStatus>()({ description: '语音转写引擎状态', params: none }),
     install: cap<void>()({ description: '下载并安装语音转写引擎（sherpa-onnx + SenseVoice）', params: none }),
-    transcribe: cap<void>()({ description: '为视频 / 音频生成转写稿（后台任务）', params: [id('sourceId')] }),
+    transcribe: cap<void>()({
+      description: '为视频 / 音频生成转写稿（后台任务）',
+      params: [id('sourceId'), ['overwrite', z.boolean().optional()]]
+    }),
     importSubtitles: cap<number | null>()({ description: '为视频 / 音频导入字幕文件', params: [id('sourceId')] })
   },
   browser: {
@@ -570,7 +654,7 @@ export const capabilities = {
     status: cap<MossStatus>()({ description: '精修转写引擎的安装与运行状态', params: none }),
     install: cap<void>()({ description: '下载并校验可选 MOSS 精修引擎', params: none }),
     remove: cap<void>()({ description: '删除 MOSS 精修引擎与模型', params: none }),
-    refine: cap<void>()({ description: '精修完整课程录音并区分说话人', params: [id('sourceId')] })
+    refine: cap<void>()({ description: '精修音视频并区分说话人', params: [id('sourceId'), ['overwrite', z.boolean().optional()]] })
   },
   course: {
     configure: cap<void>()({ description: '设置当前网课的转写、幻灯片和练习', params: [id('tabId'), ['patch', S.CourseOptionsSchema]] }),

@@ -1,5 +1,9 @@
-import { chmod, mkdir, mkdtemp, readdir, readFile, rm, stat } from 'fs/promises'
-import { spawn } from 'child_process'
+import { recordingAudio } from './recording'
+import { enqueueMoss, mossStatus } from './moss'
+import { mossTranscriptRevision } from '../lib/moss'
+import { voiceText } from './voiceMessages'
+import { chmod, mkdir, mkdtemp, readdir, readFile, rename, rm, stat } from 'fs/promises'
+import { execFile } from 'child_process'
 import { tmpdir } from 'os'
 import { net } from 'electron'
 import { existsSync, readFileSync } from 'fs'
@@ -126,7 +130,11 @@ export const asrPaths = (): AsrPaths => ({
 
 const installed = (): boolean => {
   const p = asrPaths()
-  return [join(p.runtime, 'node_modules/sherpa-onnx-node/package.json'), p.ffmpeg, p.vad, p.model, p.tokens].every((f) => existsSync(f))
+  return sherpaRuntimeReady() && [p.ffmpeg, p.vad, p.model, p.tokens].every((f) => existsSync(f))
+}
+export const sherpaRuntimeReady = (): boolean => {
+  const pkg = SHERPA_PKG[PLATFORM]
+  return !!pkg && ['sherpa-onnx-node', pkg.name].every((name) => existsSync(join(runtimeDir(), 'node_modules', name, 'package.json')))
 }
 
 let status: AsrStatus = { state: 'missing', progress: 0, mirror: null, speed: null, message: null }
@@ -174,33 +182,9 @@ export function installAsr(): Promise<void> {
       await mkdir(tmp, { recursive: true })
 
       // 引擎：sherpa-onnx-node（JS）+ 平台原生包，按 node_modules 结构解压，供 require 解析
-      const rt = runtimeDir()
-      if (!existsSync(join(rt, 'node_modules/sherpa-onnx-node/package.json'))) {
-        const jsTgz = join(tmp, `sherpa-onnx-node-${SHERPA}.tgz`)
-        const nativeTgz = join(tmp, `${pkg.name}-${SHERPA}.tgz`)
-        await download(
-          { name: 'sherpa-onnx-node', ...SHERPA_JS, urls: NPM('sherpa-onnx-node', `sherpa-onnx-node-${SHERPA}.tgz`), dest: jsTgz },
-          report('js')
-        )
-        await download(
-          { name: pkg.name, size: pkg.size, sha256: pkg.sha256, urls: NPM(pkg.name, `${pkg.name}-${SHERPA}.tgz`), dest: nativeTgz },
-          report('native')
-        )
-        await rm(rt, { recursive: true, force: true })
-        for (const [tgz, name] of [
-          [nativeTgz, pkg.name],
-          [jsTgz, 'sherpa-onnx-node']
-        ]) {
-          const dir = join(rt, 'node_modules', name)
-          await mkdir(dir, { recursive: true })
-          await untar({ file: tgz, cwd: dir, strip: 1 })
-        }
-        await rm(jsTgz, { force: true })
-        await rm(nativeTgz, { force: true })
-      } else {
-        done.set('js', SHERPA_JS.size)
-        done.set('native', pkg.size)
-      }
+      await ensureSherpaRuntime()
+      done.set('js', SHERPA_JS.size)
+      done.set('native', pkg.size)
 
       if (!existsSync(ffmpegPath())) await ensureFfmpeg(report('ffmpeg'))
       else done.set('ffmpeg', ff.size)
@@ -226,6 +210,41 @@ export function installAsr(): Promise<void> {
   return installing
 }
 
+let runtimeInstall: Promise<void> | null = null
+/** CAM++ 与 SenseVoice 共用固定版本运行时，单独安装声纹不下载识别模型。 */
+export function ensureSherpaRuntime(): Promise<void> {
+  if (runtimeInstall) return runtimeInstall
+  runtimeInstall = (async () => {
+    const pkg = SHERPA_PKG[PLATFORM],
+      rt = runtimeDir()
+    if (!pkg) throw new Error(`暂不支持此平台：${PLATFORM}`)
+    if (sherpaRuntimeReady()) return
+    await mkdir(modelsDir(), { recursive: true })
+    // 同一文件系统中暂存完整运行时，下载/解包失败不能留下假 ready 的 JS 半成品。
+    const tmp = await mkdtemp(join(modelsDir(), '.jiwei-sherpa-'))
+    const stage = join(tmp, 'runtime')
+    try {
+      for (const [name, meta] of [
+        ['sherpa-onnx-node', SHERPA_JS],
+        [pkg.name, pkg]
+      ] as const) {
+        const tgz = join(tmp, `${name}.tgz`)
+        await download({ name, size: meta.size, sha256: meta.sha256, urls: NPM(name, `${name}-${SHERPA}.tgz`), dest: tgz }, () => {})
+        const dir = join(stage, 'node_modules', name)
+        await mkdir(dir, { recursive: true })
+        await untar({ file: tgz, cwd: dir, strip: 1 })
+      }
+      await rm(rt, { recursive: true, force: true })
+      await rename(stage, rt)
+    } finally {
+      await rm(tmp, { recursive: true, force: true })
+    }
+  })().finally(() => {
+    runtimeInstall = null
+  })
+  return runtimeInstall
+}
+
 /** 只安装 ffmpeg（云端转写只需要它来切分音频） */
 export async function ensureFfmpeg(onProgress?: (p: { received: number; speed: number; mirror: string }) => void): Promise<void> {
   if (existsSync(ffmpegPath())) return
@@ -247,9 +266,9 @@ const CHUNK_SEC = 600
 
 function run(cmd: string, args: string[]): Promise<void> {
   return new Promise((resolve, reject) => {
-    const p = spawn(cmd, args)
+    const p = execFile(cmd, args, { windowsHide: true, maxBuffer: 1024 * 1024 })
     let err = ''
-    p.stderr.on('data', (d: Buffer) => (err = (err + d.toString()).slice(-2000)))
+    p.stderr!.on('data', (d: Buffer) => (err = (err + d.toString()).slice(-2000)))
     p.on('error', reject)
     p.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`ffmpeg 失败（${code}）：${err.split('\n').slice(-3).join(' ')}`))))
   })
@@ -259,7 +278,13 @@ function run(cmd: string, args: string[]): Promise<void> {
  * 云端转写：ffmpeg 切成 10 分钟的低码率单声道片段（远小于接口的 25 MB 限制），逐段上传，
  * 取 verbose_json 的分句时间，按片段偏移拼回完整时间轴。音频会上传到所选服务商。
  */
-export async function transcribeCloud(file: string, providerId: string, model: string, progress: (p: number) => void): Promise<Cue[]> {
+export async function transcribeCloud(
+  file: string,
+  providerId: string,
+  model: string,
+  progress: (p: number) => void,
+  allowed: () => boolean = () => true
+): Promise<Cue[]> {
   const row = getProviderRow(providerId)
   const key = decryptKey(row)
   const base = row.baseUrl.replace(/\/+$/, '')
@@ -294,6 +319,7 @@ export async function transcribeCloud(file: string, providerId: string, model: s
       form.append('model', model)
       form.append('response_format', 'verbose_json')
       form.append('timestamp_granularities[]', 'segment')
+      if (!allowed()) throw new Error(voiceText('privacyChanged'))
       const res = await net.fetch(`${base}/audio/transcriptions`, {
         method: 'POST',
         headers: key ? { Authorization: `Bearer ${key}` } : {},
@@ -349,36 +375,58 @@ export function applySubtitleFile(sourceId: string, path: string): number {
   return applySubtitles(sourceId, readFileSync(path, 'utf8'))
 }
 
-export function enqueueTranscribe(sourceId: string): void {
-  enqueue('source.transcribe', { sourceId }, { dedupeKey: `transcribe:${sourceId}` })
+export function enqueueTranscribe(sourceId: string, overwrite = false): void {
+  if (!overwrite && listSegments(sourceId).some((s) => s.kind === 'transcript' && s.locator.edited))
+    throw new Error(voiceText('overwriteConfirm'))
+  if (mossStatus().state === 'ready') return enqueueMoss(sourceId, overwrite)
+  enqueue(
+    'source.transcribe',
+    { sourceId, transcriptRevision: mossTranscriptRevision(listSegments(sourceId)) },
+    { dedupeKey: `transcribe:${sourceId}` }
+  )
 }
 
 const sourceTitle = (id: string): string =>
   getDb().select({ title: sources.title }).from(sources).where(eq(sources.id, id)).get()?.title ?? id
 
 export function registerAsrJob(): void {
-  registerJobKind<{ sourceId: string }>('source.transcribe', {
+  registerJobKind<{ sourceId: string; transcriptRevision?: string }>('source.transcribe', {
     title: ({ sourceId }) => `转写：${sourceTitle(sourceId)}`,
-    async run({ sourceId }, ctx) {
+    async run({ sourceId, transcriptRevision }, ctx) {
       const row = getDb()
-        .select({ a: assets })
+        .select({ a: assets, s: sources })
         .from(sources)
         .leftJoin(assets, eq(sources.assetId, assets.id))
         .where(eq(sources.id, sourceId))
         .get()
-      if (!row?.a) return { skipped: 'no file' }
-      const file = assetPath(row.a.id, row.a.ext)
+      if (!row || row.s.deletedAt) return { skipped: 'no source' }
+      const db = getDb(),
+        revision = transcriptRevision ?? mossTranscriptRevision(listSegments(sourceId))
+      if (mossTranscriptRevision(listSegments(sourceId)) !== revision) throw new Error(voiceText('transcriptChanged'))
+      const file = row.s.kind === 'recording' ? recordingAudio(sourceId) : row.a ? assetPath(row.a.id, row.a.ext) : null
+      if (!file) throw new Error(voiceText('missingAudio'))
       await stat(file)
       const t = getSettings().ai.transcription
       let cues: Cue[]
-      if (t?.mode === 'cloud' && t.providerId && t.model) cues = await transcribeCloud(file, t.providerId, t.model, (p) => ctx.progress(p))
+      if (!row.s.aiExcluded && t?.mode === 'cloud' && t.providerId && t.model)
+        cues = await transcribeCloud(
+          file,
+          t.providerId,
+          t.model,
+          (p) => ctx.progress(p),
+          () => {
+            const current = getDb().select().from(sources).where(eq(sources.id, sourceId)).get()
+            return getDb() === db && !ctx.isCanceled() && !!current && !current.deletedAt && !current.aiExcluded
+          }
+        )
       else {
         if (!installed()) await installAsr()
         cues = await ctx.worker<Cue[]>('transcribe', { file, ...asrPaths() })
       }
       if (ctx.isCanceled()) return
+      if (getDb() !== db || mossTranscriptRevision(listSegments(sourceId)) !== revision) throw new Error(voiceText('transcriptChanged'))
       if (!cues.length) return { segments: 0, note: 'no speech' }
-      const n = replaceSegments(sourceId, cuesToSegments(cues))
+      const n = replaceSegments(sourceId, [...listSegments(sourceId).filter((s) => s.kind !== 'transcript'), ...cuesToSegments(cues)])
       requestIndex()
       return { segments: n, cues: cues.length }
     }

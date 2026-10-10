@@ -18,6 +18,7 @@ export const KIND_TINT: Record<SourceKind, Tint> = {
   pdf: 'sakura',
   video: 'lotus',
   audio: 'sky',
+  recording: 'sky',
   image: 'gosling',
   document: 'moon',
   web: 'bamboo',

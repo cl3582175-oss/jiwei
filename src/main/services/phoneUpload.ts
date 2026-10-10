@@ -6,6 +6,10 @@ import { startPhoneServer } from './capture/phoneServer'
 import { importBytes } from './assets'
 import { create } from './inbox'
 import type { PhoneStatus } from '@shared/capture'
+import { importPhoneRecording } from './recording'
+import { ensureFfmpeg, ffmpegPath } from './asr'
+import { runAudio } from './browser/courseAudio'
+import { voiceText } from './voiceMessages'
 let session: Awaited<ReturnType<typeof startPhoneServer>> | null = null
 const stopping = new Set<Promise<void>>()
 let qr = '',
@@ -47,6 +51,28 @@ export async function start(): Promise<PhoneStatus> {
       if (!host) throw new Error('capture.noNetwork')
       const next = await startPhoneServer({
         host,
+        decodeAudio: async (file) => {
+          try {
+            await ensureFfmpeg()
+            await runAudio(
+              ffmpegPath(),
+              ['-nostdin', '-v', 'error', '-xerror', '-i', file, '-map', '0:a:0', '-vn', '-f', 'null', '-'],
+              undefined,
+              30 * 60_000
+            )
+            return true
+          } catch {
+            return false
+          }
+        },
+        receiveAudio: async ({ path, note, name, sessionId }) => {
+          const r = await importPhoneRecording(path, [note, name].filter(Boolean).join(' · '))
+          create({
+            kind: 'file',
+            text: [note, name || voiceText('unspecified')].filter(Boolean).join('\n'),
+            origin: { device: 'phone', sessionId, recordingSourceId: r.sourceId! }
+          })
+        },
         decode: async (bytes, mime) => {
           try {
             if (mime === 'application/pdf') {

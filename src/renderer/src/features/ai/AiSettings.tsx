@@ -1,3 +1,4 @@
+import { VoiceSettings } from '../recording/VoiceSettings'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -856,6 +857,7 @@ export function AiSettingsTab() {
 
       <EmbeddingSection />
       <TranscriptionSection />
+      <VoiceSettings />
       <RecognitionSection />
       <BrowserSection />
     </div>

@@ -20,6 +20,7 @@ import { buildTools, numberHits, stepLabel, type AgentSession } from './tools'
 import { loadSkill, skillCatalog } from './skills'
 import { userCard } from '../memory'
 import { learnerNote } from '../learner'
+import { requireRecordingCloudAccess, filterCloudHits } from './recordingPrivacy'
 import { activeGoalsText } from '../progress'
 import { noteExplainRequest, scheduleExtract } from '../memoryLearn'
 import { ensureReference, feynmanSystem, parseMeta, toInfo as feynmanInfo, type FeynmanMeta } from '../feynman'
@@ -223,6 +224,10 @@ export interface SendResult {
 
 export function send(input: ChatSend): SendResult {
   const db = getDb()
+  const anchor = input.conversationId
+    ? db.select().from(conversations).where(eq(conversations.id, input.conversationId)).get()?.anchor
+    : null
+  requireRecordingCloudAccess({ ...input, ...(anchor ? { anchor: JSON.parse(anchor) as Anchor } : {}) })
   const now = Date.now()
   let convId = input.conversationId
   if (!convId) {
@@ -319,6 +324,7 @@ async function generate(conversationId: string, messageId: string, input: ChatSe
   let citations: Citation[] = []
   const steps: AgentStep[] = []
   const conv = db.select().from(conversations).where(eq(conversations.id, conversationId)).get()!
+  const privacyInput = { ...input, ...(conv.anchor ? { anchor: JSON.parse(conv.anchor) as Anchor } : {}) }
   const zh = getSettings().language.startsWith('zh')
   const session: AgentSession = {
     zh,
@@ -372,18 +378,20 @@ async function generate(conversationId: string, messageId: string, input: ChatSe
   // 复盘追问：素材包固定在系统提示中，当前复盘正文随本轮消息发送
   let coach = conv.kind === 'reflection' && conv.meta ? (JSON.parse(conv.meta) as CoachMeta) : null
   try {
+    requireRecordingCloudAccess(privacyInput)
     if (feynman) feynman = await ensureReference(conversationId, feynman)
     if (coach) coach = ensureCoachMaterial(conversationId, coach)
-    const ctx = feynman || coach ? { text: '', query: '' } : resolveContext(input.context, zh)
+    let ctx = feynman || coach ? { text: '', query: '' } : resolveContext(input.context, zh)
     // 检索：问题本身 + 用户指着的文字
     const query = [input.text, ctx.query].filter(Boolean).join('\n').slice(0, 2000)
     const retrieved = feynman || coach || input.scope.type === 'none' ? [] : await retrieve(query, input.scope, 8)
+    requireRecordingCloudAccess(privacyInput)
+    ctx = feynman || coach ? { text: '', query: '' } : resolveContext(input.context, zh)
     const explicit = feynman || coach ? [] : contextSourceEvidence(input.context)
     const hits = [
       ...explicit,
       ...retrieved.filter((hit) => !explicit.some((item) => item.parentId === hit.parentId && item.ownerId === hit.ownerId))
     ]
-    const kb = hits.length ? numberHits(session, hits) : null
     const skillBody = input.skill && !feynman && !coach ? loadSkill(input.skill, zh) : null
 
     // 历史只带原话（不重复带旧的上下文与片段，省 token）
@@ -404,6 +412,8 @@ async function generate(conversationId: string, messageId: string, input: ChatSe
       const vision = capsFor(input.providerId, input.model).vision
       // 模型看不到图像：先用本地识别模型读出框选区域的内容（文字、表格、插图描述）
       const regionText = input.images?.length && !vision ? await recognizeRegion(input.images[0]) : null
+      requireRecordingCloudAccess(privacyInput)
+      ctx = resolveContext(input.context, zh)
       const imageNote =
         input.images?.length && !vision
           ? regionText
@@ -415,6 +425,8 @@ async function generate(conversationId: string, messageId: string, input: ChatSe
               : '(The user selected an image region, but this model cannot see images; answer from the region text and context, and mention that a vision model would do better.)'
           : ''
       const learner = session.incognito ? null : learnerNote(query, zh)
+      const currentHits = filterCloudHits(hits)
+      const kb = currentHits.length ? numberHits(session, currentHits) : null
       const text = turnMessage(zh, input.text, [ctx.text, learner, imageNote].filter(Boolean).join('\n\n'), kb, skillBody)
       if (input.images?.length && vision)
         msgs[msgs.length - 1] = {

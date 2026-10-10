@@ -6,6 +6,7 @@ import type { JobKind } from '../../services/jobs'
 type Row = typeof inboxItems.$inferSelect
 const state = vi.hoisted(() => ({
   rows: [] as Row[],
+  recordingSources: [] as { id: string; aiExcluded: boolean; deletedAt: number | null }[],
   goals: [{ id: 'goal', title: '学习目标' }],
   settings: {
     language: 'zh-CN',
@@ -30,8 +31,9 @@ function params(sql: unknown): unknown[] {
   return []
 }
 // 仅模拟存储适配与模型边界，真实 SQLite/Yjs 归档由 Electron 用例覆盖。
-vi.mock('../../db', () => ({
-  getDb: () => ({
+vi.mock('../../db', () => {
+  // 与真实 DB 服务保持相同连接身份，允许异步任务检测知识库切换。
+  const db = {
     select: () => ({
       from: (table: Parameters<typeof getTableName>[0]) => {
         const name = getTableName(table)
@@ -47,7 +49,9 @@ vi.mock('../../db', () => ({
           get: () =>
             name === 'assets'
               ? { id: params(condition)[0], ext: 'png', mime: 'image/png' }
-              : state.rows.find((r) => r.id === params(condition)[0])
+              : name === 'sources'
+                ? state.recordingSources.find((r) => r.id === params(condition)[0])
+                : state.rows.find((r) => r.id === params(condition)[0])
         }
         return query
       }
@@ -63,8 +67,9 @@ vi.mock('../../db', () => ({
       })
     }),
     transaction: (fn: () => unknown) => fn()
-  })
-}))
+  }
+  return { getDb: () => db }
+})
 vi.mock('electron', () => ({
   BrowserWindow: { getAllWindows: () => [] },
   nativeImage: {
@@ -131,6 +136,7 @@ const row = (id: string): Row => ({
 })
 beforeEach(() => {
   state.rows = [row('item')]
+  state.recordingSources = []
   state.meta = null
   state.settings.capture = { daily: true, time: '21:00', offPeak: false }
   state.settings.ai.chat = { providerId: 'test-provider', model: 'deepseek-flash' }
@@ -146,6 +152,42 @@ beforeEach(() => {
   state.recognize.mockReset().mockResolvedValue({ text: '新识别原文', blocks: [], engine: 'test' })
 })
 describe('inbox service boundaries', () => {
+  it('上一批处理期间切换仅本地，下一批连候选嵌入也不调用', async () => {
+    state.rows = Array.from({ length: 11 }, (_, i) => row(`item-${i}`))
+    state.rows[10].origin = JSON.stringify({ recordingSourceId: 'voice-source' })
+    state.recordingSources = [{ id: 'voice-source', aiExcluded: false, deletedAt: null }]
+    state.structured.mockImplementation(async ({ prompt }) => {
+      state.recordingSources[0].aiExcluded = true
+      const material = JSON.parse(prompt) as { items: { id: string }[] }
+      return { suggestions: material.items.map((i) => ({ id: i.id, suggestion: { type: 'idea', action: 'keep', reason: 'reason' } })) }
+    })
+    expect(await triage()).toBe(10)
+    expect(state.similar).toHaveBeenCalledTimes(10)
+    expect(state.structured).toHaveBeenCalledTimes(1)
+    expect(state.rows[10].status).toBe('new')
+  })
+  it('切换仅本地发生在候选检索期间时，不把录音材料发送给模型', async () => {
+    state.rows[0].origin = JSON.stringify({ recordingSourceId: 'voice-source' })
+    state.recordingSources = [{ id: 'voice-source', aiExcluded: false, deletedAt: null }]
+    state.similar.mockImplementation(async () => {
+      state.recordingSources[0].aiExcluded = true
+      return []
+    })
+    expect(await triage()).toBe(0)
+    expect(state.similar).toHaveBeenCalledTimes(1)
+    expect(state.structured).not.toHaveBeenCalled()
+    expect(state.rows[0].status).toBe('new')
+  })
+  it('模型返回前录音切换仅本地时不落盘迟到的整理建议', async () => {
+    state.rows[0].origin = JSON.stringify({ recordingSourceId: 'voice-source' })
+    state.recordingSources = [{ id: 'voice-source', aiExcluded: false, deletedAt: null }]
+    state.structured.mockImplementation(async () => {
+      state.recordingSources[0].aiExcluded = true
+      return { suggestions: [{ id: 'item', suggestion: { type: 'idea', action: 'keep', reason: 'reason' } }] }
+    })
+    expect(await triage()).toBe(0)
+    expect(state.rows[0].suggestion).toBeNull()
+  })
   it('batches ten, truncates each input, allows only three unique notes and validates returned ids/dates', async () => {
     state.rows = Array.from({ length: 12 }, (_, i) => row(`item-${i}`))
     state.similar.mockResolvedValue(

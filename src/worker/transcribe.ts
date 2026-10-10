@@ -1,4 +1,4 @@
-import { spawn } from 'child_process'
+import { execFile } from 'child_process'
 import { join } from 'path'
 import { createRequire } from 'module'
 import type { Cue } from '../main/lib/subtitles'
@@ -18,10 +18,51 @@ interface Paths {
   tokens: string
 }
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
+interface OfflineStream {
+  acceptWaveform(input: { sampleRate: number; samples: Float32Array }): void
+}
+interface OfflineRecognizer {
+  createStream(): OfflineStream
+  decode(stream: OfflineStream): void
+  getResult(stream: OfflineStream): { text: string }
+}
+interface Vad {
+  isEmpty(): boolean
+  front(external: boolean): { start: number; samples: Float32Array }
+  pop(): void
+  acceptWaveform(samples: Float32Array): void
+  flush(): void
+}
+interface Sherpa {
+  Vad: new (
+    config: {
+      sileroVad: {
+        model: string
+        threshold: number
+        minSpeechDuration: number
+        minSilenceDuration: number
+        maxSpeechDuration: number
+        windowSize: number
+      }
+      sampleRate: number
+      numThreads: number
+      debug: boolean
+    },
+    seconds: number
+  ) => Vad
+  OfflineRecognizer: new (config: {
+    featConfig: { sampleRate: number; featureDim: number }
+    modelConfig: {
+      senseVoice: { model: string; language: string; useInverseTextNormalization: number }
+      tokens: string
+      numThreads: number
+      debug: boolean
+    }
+  }) => OfflineRecognizer
+}
 export async function transcribe(p: Paths, progress: (n: number) => void): Promise<Cue[]> {
   const req = createRequire(join(p.runtime, 'index.js'))
-  const sherpa = req(join(p.runtime, 'node_modules/sherpa-onnx-node')) as any
+  const sherpa = req(join(p.runtime, 'node_modules/sherpa-onnx-node')) as Sherpa
   const vad = new sherpa.Vad(
     {
       sileroVad: {
@@ -63,11 +104,19 @@ export async function transcribe(p: Paths, progress: (n: number) => void): Promi
   }
 
   await new Promise<void>((resolve, reject) => {
-    const ff = spawn(p.ffmpeg, ['-hide_banner', '-nostdin', '-i', p.file, '-vn', '-ac', '1', '-ar', String(SR), '-f', 'f32le', 'pipe:1'])
+    const ff = execFile(
+      p.ffmpeg,
+      ['-hide_banner', '-nostdin', '-i', p.file, '-vn', '-ac', '1', '-ar', String(SR), '-f', 'f32le', 'pipe:1'],
+      { windowsHide: true, encoding: 'buffer' }
+    )
+    // PCM 必须是 Buffer，不能让 execFile 默认 UTF-8 解码破坏采样。
+    // 默认收集器不适用于数小时 PCM；只保留下面的有界流式处理。
+    ff.stdout!.removeAllListeners('data')
+    ff.stderr!.removeAllListeners('data')
     let duration = 0
     let processed = 0
     let err = ''
-    ff.stderr.on('data', (d: Buffer) => {
+    ff.stderr!.on('data', (d: Buffer) => {
       const s = d.toString()
       err = (err + s).slice(-2000)
       const m = /Duration: (\d+):(\d+):([\d.]+)/.exec(s)
@@ -75,7 +124,7 @@ export async function transcribe(p: Paths, progress: (n: number) => void): Promi
     })
     let pending = Buffer.alloc(0)
     let buf = new Float32Array(0)
-    ff.stdout.on('data', (chunk: Buffer) => {
+    ff.stdout!.on('data', (chunk: Buffer) => {
       pending = Buffer.concat([pending, chunk])
       const n = Math.floor(pending.length / 4)
       const f = new Float32Array(pending.buffer.slice(pending.byteOffset, pending.byteOffset + n * 4))

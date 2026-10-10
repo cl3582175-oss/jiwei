@@ -75,6 +75,7 @@
   --accent-fg: #ffffff;
   --accent-soft: color-mix(in oklab, var(--accent) 12%, transparent);
   --danger: #c0473a;
+  --warning: #b07a1e;
   --danger-soft: color-mix(in oklab, var(--danger) 10%, transparent);
 
   --radius: 12px;
@@ -109,6 +110,7 @@
   --heat-0: #23272a;
   --accent-fg: #0f1110;
   --danger: #e0685a;
+  --warning: #e0aa4f;
 
   --desk: #121416;
   --desk-glass: rgb(18 20 22 / 0.8);
@@ -281,6 +283,7 @@
   --color-accent-soft: var(--accent-soft);
   --color-danger: var(--danger);
   --color-danger-soft: var(--danger-soft);
+  --color-warning: var(--warning);
   --font-sans: var(--font-sans);
   --font-serif: var(--font-serif);
   --font-mono: var(--font-mono);
@@ -1446,4 +1449,105 @@
 [data-testid='course-panel'] .transcript {
   padding-top: 8px;
   font-size: var(--text-sm, 13px);
+}
+
+/* 声纹标签在同一录音内稳定，沿用批注柔和色，深浅主题都保留文字对比。 */
+.speaker-block {
+  --speaker: var(--accent);
+  margin: 10px 8px 0 4px;
+  padding-left: 8px;
+  border-left: 2px solid color-mix(in oklab, var(--speaker) 55%, transparent);
+}
+.speaker-color-0 {
+  --speaker: var(--accent);
+}
+.speaker-color-1 {
+  --speaker: var(--p-bamboo-ink);
+}
+.speaker-color-2 {
+  --speaker: var(--p-apricot-ink);
+}
+.speaker-color-3 {
+  --speaker: var(--danger);
+}
+/* 首句显示“名字 · 时间”，正文占满整行；同一说话人的后续句只在悬停时浮出时间与改人按钮。 */
+.dialogue-line {
+  position: relative;
+  display: block;
+  padding: 2px 4px;
+  margin-left: 0;
+}
+.dialogue-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  user-select: none;
+}
+.dialogue-meta .speaker-name {
+  display: block;
+  flex-shrink: 1;
+  height: 22px;
+  min-width: 0;
+  overflow: hidden;
+  line-height: 22px;
+  text-overflow: ellipsis;
+  padding: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg);
+  background: none;
+}
+.dialogue-meta .speaker-name::before {
+  content: '';
+  display: inline-block;
+  vertical-align: 1px;
+  width: 6px;
+  height: 6px;
+  margin-right: 6px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: var(--speaker);
+}
+.dialogue-meta .speaker-name:hover {
+  color: var(--accent);
+  background: none;
+}
+.dialogue-meta .transcript-time {
+  height: 22px;
+  margin: 0;
+  padding: 0 4px;
+}
+.dialogue-line .transcript-body {
+  display: block;
+  overflow-wrap: anywhere;
+  line-height: 1.75;
+}
+.dialogue-line:not(.is-first) .dialogue-meta {
+  position: absolute;
+  top: -12px;
+  right: 4px;
+  z-index: 1;
+  padding: 0 4px;
+  border-radius: 6px;
+  background: var(--surface);
+  box-shadow: var(--shadow-1);
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.dialogue-line:not(.is-first):hover .dialogue-meta,
+.dialogue-line:not(.is-first) .dialogue-meta:focus-within {
+  opacity: 1;
+}
+.speaker-avatar {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--speaker);
+  background: color-mix(in oklab, var(--speaker) 14%, transparent);
 }

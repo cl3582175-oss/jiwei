@@ -1,6 +1,21 @@
 import { useInbox } from '@/features/inbox/InboxView'
 import { useTranslation } from 'react-i18next'
-import { Inbox, NotebookPen, Library, Trash2, Settings, Search, PanelLeftClose, PanelLeftOpen, Sparkles, Layers, Sprout, Network, Globe } from 'lucide-react'
+import {
+  Mic,
+  Inbox,
+  NotebookPen,
+  Library,
+  Trash2,
+  Settings,
+  Search,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Sparkles,
+  Layers,
+  Sprout,
+  Network,
+  Globe
+} from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useApp, type View } from '@/store/app'
 import { cn, isMac, modKey } from '@/lib/utils'
@@ -62,6 +77,7 @@ export function NavRail() {
     { id: 'chat', label: `${t('nav.chat')}  ${modKey}3`, icon: <Sparkles /> },
     { id: 'review', label: `${t('nav.review')}  ${modKey}4`, icon: <Layers /> },
     { id: 'reflect', label: `${t('nav.reflect')}  ${modKey}5`, icon: <Sprout /> },
+    { id: 'recording', label: `${t('recording.title')}  ${modKey}7`, icon: <Mic /> },
     { id: 'graph', label: `${t('nav.graph')}  ${modKey}6`, icon: <Network /> }
   ]
 
@@ -92,7 +108,13 @@ export function NavRail() {
           onClick={() =>
             it.id === 'notes' && view === 'notes' ? openNote(null) : it.id === 'graph' ? useApp.getState().openGraph(null) : setView(it.id)
           }
-          badge={it.id === 'review' ? stats?.due : it.id === 'inbox' ? inbox.filter((i) => i.status === 'new' || i.status === 'suggested').length : undefined}
+          badge={
+            it.id === 'review'
+              ? stats?.due
+              : it.id === 'inbox'
+                ? inbox.filter((i) => i.status === 'new' || i.status === 'suggested').length
+                : undefined
+          }
         >
           {it.icon}
         </RailButton>

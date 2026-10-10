@@ -18,7 +18,8 @@ const SPEECH = '大家好，今天我们讲间隔重复。学习后一天，大�
 function makeAudio(name: string): string {
   const aiff = join(dir, `${name}.aiff`)
   const m4a = join(dir, `${name}.m4a`)
-  execFileSync('say', ['-v', 'Tingting', '-o', aiff, SPEECH])
+  // 按内容哈希去重是产品行为。不同测试资料必须有不同音频内容。
+  execFileSync('say', ['-v', 'Tingting', '-o', aiff, `${SPEECH}这是${name}。`])
   execFileSync('afconvert', ['-f', 'm4af', '-d', 'aac', aiff, m4a])
   return m4a
 }

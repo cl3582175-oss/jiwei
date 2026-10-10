@@ -1,5 +1,5 @@
 import { app } from 'electron'
-import { spawn } from 'child_process'
+import { execFile } from 'child_process'
 import { mkdir, writeFile, appendFile, readFile, rename, stat, rm } from 'fs/promises'
 import { join } from 'path'
 import { eq } from 'drizzle-orm'
@@ -62,12 +62,16 @@ function serial<T>(queue: Map<string, Promise<void>>, key: string, action: () =>
   return work
 }
 
-export function runAudio(cmd: string, args: string[], signal?: AbortSignal): Promise<void> {
-  const abort = AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(120_000)])
+export function runAudio(cmd: string, args: string[], signal?: AbortSignal, timeoutMs = 120_000): Promise<string> {
+  const abort = AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(timeoutMs)])
   if (abort.aborted) return Promise.reject(new Error('音频处理已取消'))
   return new Promise((resolve, reject) => {
-    const child = spawn(cmd, args, { windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] })
+    const child = execFile(cmd, args, { windowsHide: true, maxBuffer: 1024 * 1024 })
     let error = ''
+    let output = ''
+    child.stdout!.on('data', (b: Buffer) => {
+      output = (output + b.toString()).slice(-8000)
+    })
     let killTimer: NodeJS.Timeout | undefined
     const stop = (): void => {
       child.kill()
@@ -78,7 +82,7 @@ export function runAudio(cmd: string, args: string[], signal?: AbortSignal): Pro
       abort.removeEventListener('abort', stop)
       if (killTimer) clearTimeout(killTimer)
     }
-    child.stderr.on('data', (b: Buffer) => {
+    child.stderr!.on('data', (b: Buffer) => {
       error = (error + b.toString()).slice(-2000)
     })
     child.on('error', (e) => {
@@ -88,7 +92,7 @@ export function runAudio(cmd: string, args: string[], signal?: AbortSignal): Pro
     child.on('close', (code) => {
       cleanup()
       if (abort.aborted) reject(new Error('音频处理已取消或超时'))
-      else if (code === 0) resolve()
+      else if (code === 0) resolve(output)
       else reject(new Error(`音频解码失败（${code}）：${error.slice(-600)}`))
     })
     abort.addEventListener('abort', stop, { once: true })
