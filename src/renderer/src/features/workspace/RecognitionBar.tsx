@@ -59,7 +59,7 @@ export function RecognitionBar({ sourceId }: { sourceId: string }) {
   } else if (r.engine === 'needs-install') {
     text = (
       <>
-        {t('workspace.recog.pending', { count: r.needs.scan + r.needs.table, detail: detail(r.needs, false) })}
+        {t('workspace.recog.pending', { count: any, detail: detail(r.needs, true) })}
         <span className="text-subtle"> · {t('workspace.recog.needsInstall')}</span>
       </>
     )

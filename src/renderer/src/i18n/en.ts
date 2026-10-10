@@ -1,6 +1,27 @@
 import type { Messages } from './zh-CN'
+import { mistakesEn } from '../features/mistakes/messages'
+import { readingEn } from '../features/reading/messages'
 const en: Messages = {
+  mistakes: mistakesEn,
+  reading: readingEn,
+  learning: {
+    pendingProposal: 'Complete this reviewed proposal from the mistake or reading view.',
+    returnReading: 'Return to reading source',
+    weekly: 'Mistakes this week',
+    causeDistribution: 'Mistake causes',
+    statisticsHint: 'Computed from actual mistake records, without AI.',
+    summary: '{{count}} mistakes · {{verified}}% verified',
+    causes: {
+      concept: 'Concept',
+      calculation: 'Calculation',
+      reading: 'Reading',
+      method: 'Method',
+      careless: 'Careless',
+      unknown: 'Unknown'
+    }
+  },
   recordingMain: {
+    sourceNoCloud: 'This material is missing, deleted, or local only and cannot be sent to a cloud model.',
     invalidVector: 'Invalid voiceprint vector',
     vectorDimension: 'Voiceprint dimensions do not match',
     invalidCenter: 'Invalid speaker centroid input',
@@ -298,6 +319,7 @@ const en: Messages = {
       new_note: 'New note',
       save_source: 'Save as source',
       action_item: 'Action item',
+      mistake: 'Add to mistakes',
       keep: 'Keep only'
     }
   },

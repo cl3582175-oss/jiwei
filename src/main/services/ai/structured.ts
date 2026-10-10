@@ -1,7 +1,7 @@
-import { generateText, tool } from 'ai'
+import { generateText, tool, type LanguageModelUsage, type ModelMessage } from 'ai'
 import { z } from 'zod'
 import log from 'electron-log/main'
-import { resolveCaps } from '@shared/ai'
+import { resolveCaps, type Effort } from '@shared/ai'
 import { extractJson } from '../../lib/learner'
 import { buildModel } from './model'
 import { getProviderRow } from './providers'
@@ -31,15 +31,21 @@ export async function structured<T>(opts: {
   system: string
   prompt: string
   schema: z.ZodType<T>
+  effort?: Effort
+  images?: { data: Uint8Array; mediaType: string }[]
+  onUsage?: (usage: LanguageModelUsage) => void
   signal?: AbortSignal
   /** 长流程每次发请求（含回退）前重读隐私与取消状态。 */
   guard?: () => void
 }): Promise<T> {
-  const built = buildModel({ providerId: opts.providerId, model: opts.model, effort: 'off' })
+  const built = buildModel({ providerId: opts.providerId, model: opts.model, effort: opts.effort ?? 'off' })
+  const input = opts.images?.length
+    ? { messages: [{ role: 'user', content: [...opts.images.map((i) => ({ type: 'image' as const, image: i.data, mediaType: i.mediaType })), { type: 'text', text: opts.prompt }] }] as ModelMessage[] }
+    : { prompt: opts.prompt }
   const base = {
     model: built.model,
     providerOptions: built.providerOptions as never,
-    maxOutputTokens: 4096,
+    maxOutputTokens: opts.effort && opts.effort !== 'off' ? (built.maxOutputTokens ?? 32768) : 4096,
     abortSignal: opts.signal ?? AbortSignal.timeout(90_000)
   }
   try {
@@ -47,10 +53,12 @@ export async function structured<T>(opts: {
     const r = await generateText({
       ...base,
       system: opts.system,
-      prompt: opts.prompt,
+      ...input,
       tools: { submit: tool({ description: 'Submit the result', inputSchema: opts.schema }) },
       toolChoice: { type: 'tool', toolName: 'submit' }
     })
+    opts.onUsage?.(r.usage)
+    opts.guard?.()
     const call = r.toolCalls.find((c) => c.toolName === 'submit')
     if (call) return opts.schema.parse(call.input)
     log.warn('[structured] no tool call, falling back to JSON text')
@@ -62,7 +70,9 @@ export async function structured<T>(opts: {
   const r = await generateText({
     ...base,
     system: `${opts.system}\n\nOutput only one JSON object matching this JSON Schema, with no other text:\n${JSON.stringify(z.toJSONSchema(opts.schema))}`,
-    prompt: opts.prompt
+    ...input
   })
+  opts.onUsage?.(r.usage)
+  opts.guard?.()
   return opts.schema.parse(extractJson(r.text))
 }

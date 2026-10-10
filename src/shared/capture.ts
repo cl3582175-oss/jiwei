@@ -15,7 +15,7 @@ export const CaptureSettingsSchema = z.object({
 })
 export const CaptureActionSchema = z.object({
   id: z.uuid(),
-  action: z.enum(['save', 'ask', 'insert']),
+  action: z.enum(['save', 'ask', 'insert', 'mistake']),
   text: z.string().max(100000),
   formulas: z.array(z.string().max(10000)).max(100).default([])
 })

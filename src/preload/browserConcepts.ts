@@ -1,6 +1,7 @@
 /// <reference lib="dom.iterable" />
 /// <reference lib="dom" />
 import { ipcRenderer } from 'electron'
+import { visibleReadingPassword } from '../shared/readingText'
 import { findConceptMatches } from '@shared/conceptMatch'
 
 interface Hit {
@@ -16,7 +17,7 @@ interface TextIndex {
 }
 
 const SKIP =
-  'script,style,noscript,template,form,input,textarea,select,button,nav,[hidden],[aria-hidden="true"],[contenteditable]:not([contenteditable="false"]),jiwei-toolbar,jiwei-concept'
+  'script,style,noscript,template,form,input,textarea,select,button,nav,[hidden],[aria-hidden="true"],[data-jiwei-ui],[contenteditable]:not([contenteditable="false"]),jiwei-toolbar,jiwei-concept'
 const BLOCK = 'p,h1,h2,h3,h4,h5,h6,li,blockquote,td,th,pre,section,div'
 
 /** 只索引正文；块之间加边界，避免把相邻段落尾首拼成一个不存在的概念。 */
@@ -72,7 +73,8 @@ export function startConcepts(allowed: () => boolean, askLabel: () => string): {
   let style: HTMLStyleElement | null = null
 
   const registry = (): Map<string, unknown> | undefined => (CSS as unknown as { highlights?: Map<string, unknown> }).highlights
-  const eligible = (): boolean => allowed() && !document.querySelector('input[type=password]') && pageUrl === location.href
+  const hasPassword = (): boolean => [...document.querySelectorAll('input[type=password]')].some(visibleReadingPassword)
+  const eligible = (): boolean => allowed() && !hasPassword() && pageUrl === location.href
 
   const hide = (): void => {
     clearTimeout(hoverTimer)
@@ -126,6 +128,7 @@ export function startConcepts(allowed: () => boolean, askLabel: () => string): {
     if (!eligible() || current !== hit || !hit.range.startContainer.isConnected) return
     host?.remove()
     host = document.createElement('jiwei-concept')
+    host.setAttribute('data-jiwei-ui', 'concept')
     host.style.cssText = 'all: initial; position: fixed; z-index: 2147483647; top: 0; left: 0; color-scheme: light dark;'
     const shadow = host.attachShadow({ mode: 'closed' })
     const css = document.createElement('style')
@@ -194,7 +197,7 @@ export function startConcepts(allowed: () => boolean, askLabel: () => string): {
   }
 
   const refresh = (): void => {
-    if (!allowed() || document.querySelector('input[type=password]')) return clear()
+    if (!allowed() || hasPassword()) return clear()
     ipcRenderer.send('jw-page:concepts-ready', { url: location.href })
   }
 
@@ -220,7 +223,7 @@ export function startConcepts(allowed: () => boolean, askLabel: () => string): {
 
   const start = (): void => {
     new MutationObserver((records) => {
-      if (document.querySelector('input[type=password]')) {
+      if (hasPassword()) {
         clear()
         if (!passwordReported) {
           passwordReported = true
@@ -240,7 +243,7 @@ export function startConcepts(allowed: () => boolean, askLabel: () => string): {
       characterData: true,
       // 登录组件可把既有文本框改成密码框；只监听新增节点会错过这次隐私边界变化。
       attributes: true,
-      attributeFilter: ['type', 'hidden', 'aria-hidden', 'contenteditable']
+      attributeFilter: ['type', 'hidden', 'aria-hidden', 'class', 'style', 'contenteditable']
     })
     document.addEventListener(
       'mousemove',

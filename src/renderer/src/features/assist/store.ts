@@ -3,7 +3,7 @@ import type { Anchor } from '@shared/context'
 
 // 阅读辅助的界面状态：选区浮条、就地答复卡片、工作区 AI 面板。
 
-export type AskAction = 'explain' | 'clarify' | 'translate' | 'ask' | ReviseAction
+export type AskAction = 'explain' | 'clarify' | 'translate' | 'grammar' | 'ask' | ReviseAction
 /** 修改笔记的快捷操作 */
 export type ReviseAction = 'shorten' | 'expand' | 'simplify' | 'fix' | 'list' | 'revise' | 'remap'
 export const REVISE_ACTIONS: ReviseAction[] = ['shorten', 'expand', 'simplify', 'fix', 'list']

@@ -1,0 +1,38 @@
+export const mistakesZh = {
+  title: '错题本', add: '添加错题', edit: '编辑', more: '更多操作', all: '全部', moreFilters: '更多筛选', noMatch: '没有符合条件的错题', emptyLong: '拍下做错的题，AI 会拆出题干和你的答案，找出错在哪一步，并在复习时出同类变式题。', saveAs: '存为错题', join: '加入错题本', addHint: '粘贴、拖入或选择题图，也可以直接输入题目（支持 LaTeX）。',
+  addText: '题目原文', addPlaceholder: '题干、我的答案、已知答案和解析……', selectImage: '选择题图', dropHint: '拖入或粘贴图片',
+  selectedImage: '已选题图', create: '保存并拆分', saving: '保存中', empty: '认真对待每一道错题', emptyHint: '从收件箱、截图或浏览器框选加入，也可以直接添加',
+  allSubjects: '全部学科', allCauses: '全部错因', allConcepts: '全部知识点', allVerified: '全部核对状态', verified: '已核对', unverified: 'AI 解答，待核对',
+  fromDate: '开始日期', toDate: '结束日期', search: '搜索题目', processing: '正在拆分和诊断', progress: '识别进度', cancel: '取消任务', retry: '重新识别',
+  recognitionUncertain: '识别可能有误，请核对', needsRecognition: '下载识别模型或设置支持图片的模型后可自动拆分', noModel: '未设置模型，已保存原题，可手动编辑',
+  canceled: '任务已取消，原件已保留', failed: '识别失败，原件已保留，请重试或手动编辑', localOnly: '仅本地保存，自动解答与变式已关闭',
+  back: '返回列表', details: '错题详情', question: '题干', myAnswer: '我的答案', correctAnswer: '正确答案', solution: '解析', subject: '学科',
+  cause: '错因', causeReason: '错因说明', concepts: '知识点', conceptsHint: '最多 3 个，用逗号分隔', save: '保存修改', confirm: '确认无误',
+  confirmed: '答案已核对', land: '加入错题笔记', landed: '已写入错题笔记', openNote: '打开错题笔记', practice: '现在练一题', delete: '删除错题',
+  originalImage: '原图', image: '题图', source: '来源', preview: '题目预览', selectHint: '选择一道错题查看详情', noQuestion: '题图等待识别',
+  saved: '修改已保存', removed: '错题已删除', landFirst: '写入错题笔记后可进行调度复习', generated: '变式题', seeOriginal: '看原题', flag: '这题有误', flagged: '已标记，后续不会出现',
+  flagHint: '这道题的知识点可能不适合自动出题，已改为出原题。', originalOnly: '本次练习原题', preparing: '变式题正在后台准备，本次先显示原题。',
+  fallback: { empty: '暂时没有未用的变式题，本次显示原题。', 'no-model': '未设置 AI 模型，本次显示原题。', 'local-only': '来源或笔记仅本地，本次显示原题。', flagged: '这道题的知识点可能不适合自动出题，已改为出原题。', unverified: '请先核对 AI 答案，本次显示原题。' },
+  prepareVariant: '后台生成变式', answer: '你的作答', answerHint: '写下关键步骤和结果，AI 会对照检查', reveal: '查看答案', check: '对照检查', checking: '正在对照', donePractice: '本次练习已评分',
+  subjectNames: { math: '数学', physics: '物理', chemistry: '化学', english: '英语', other: '其他' },
+  causeNames: { concept: '概念不清', calculation: '计算失误', reading: '审题错误', method: '方法不会', careless: '粗心', unknown: '无法判断' }
+}
+export const mistakesEn = {
+  title: 'Mistakes', add: 'Add mistake', edit: 'Edit', more: 'More actions', all: 'All', moreFilters: 'More filters', noMatch: 'No mistakes match these filters', emptyLong: 'Snap a question you got wrong. AI splits out the question and your answer, finds the faulty step, and quizzes you with variants during review.', saveAs: 'Save as mistake', join: 'Add to mistakes', addHint: 'Paste, drop, or choose a question image, or type the question (LaTeX supported).',
+  addText: 'Original question', addPlaceholder: 'Question, my answer, known answer and solution…', selectImage: 'Choose image', dropHint: 'Drop or paste an image',
+  selectedImage: 'Selected image', create: 'Save and split', saving: 'Saving', empty: 'Learn from each mistake', emptyHint: 'Add from Inbox, a capture, browser selection, or enter a question.',
+  allSubjects: 'All subjects', allCauses: 'All causes', allConcepts: 'All concepts', allVerified: 'Any verification status', verified: 'Verified', unverified: 'AI answer · unverified',
+  fromDate: 'From date', toDate: 'Until date', search: 'Search questions', processing: 'Splitting and diagnosing', progress: 'Recognition progress', cancel: 'Cancel task', retry: 'Retry recognition',
+  recognitionUncertain: 'Recognition may be inaccurate; please check', needsRecognition: 'Install an OCR model or configure a vision model to split automatically', noModel: 'No model configured; original saved for manual editing',
+  canceled: 'Task canceled; original retained', failed: 'Recognition failed; original retained. Retry or edit manually.', localOnly: 'Local only; automatic solutions and variants are disabled',
+  back: 'Back to list', details: 'Mistake details', question: 'Question', myAnswer: 'My answer', correctAnswer: 'Correct answer', solution: 'Solution', subject: 'Subject',
+  cause: 'Cause', causeReason: 'Reason (quote the incorrect step)', concepts: 'Concepts', conceptsHint: 'Up to 3, separated by commas', save: 'Save changes', confirm: 'Confirm correct',
+  confirmed: 'Answer verified', land: 'Add to mistake notebook', landed: 'Saved to mistake notebook', openNote: 'Open mistake notebook', practice: 'Practise now', delete: 'Delete mistake',
+  originalImage: 'Original image', image: 'Question image', source: 'Source', preview: 'Question preview', selectHint: 'Select a mistake to see details', noQuestion: 'Image waiting for recognition',
+  saved: 'Changes saved', removed: 'Mistake deleted', landFirst: 'Add to a notebook to use scheduled review', generated: 'Variant', seeOriginal: 'View original', flag: 'This question is wrong', flagged: 'Flagged; it will not appear again',
+  flagHint: 'These concepts may be unsuitable for automatic variants. Showing the original.', originalOnly: 'Practising the original', preparing: 'Variants are being prepared in the background; showing the original for now.',
+  fallback: { empty: 'No unused variant is ready; showing the original.', 'no-model': 'No AI model configured; showing the original.', 'local-only': 'The source or note is local only; showing the original.', flagged: 'These concepts may be unsuitable for automatic variants. Showing the original.', unverified: 'Verify the AI answer first; showing the original.' },
+  prepareVariant: 'Prepare a variant', answer: 'Your answer', answerHint: 'Write the key steps and result; AI will check them', reveal: 'Show answer', check: 'Check answer', checking: 'Checking', donePractice: 'Practice rated',
+  subjectNames: { math: 'Mathematics', physics: 'Physics', chemistry: 'Chemistry', english: 'English', other: 'Other' },
+  causeNames: { concept: 'Concept', calculation: 'Calculation', reading: 'Reading', method: 'Method', careless: 'Carelessness', unknown: 'Unknown' }
+}

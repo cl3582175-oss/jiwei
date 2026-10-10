@@ -3,7 +3,7 @@ import { isDeepSeekPeak } from './ai'
 
 export const InboxSuggestionSchema = z.object({
   type: z.enum(['textbook_page', 'board', 'handwritten_note', 'wrong_question', 'article', 'idea', 'todo', 'other']),
-  action: z.enum(['append_note', 'new_note', 'save_source', 'action_item', 'keep']),
+  action: z.enum(['append_note', 'new_note', 'save_source', 'action_item', 'mistake', 'keep']),
   noteId: z.string().max(64).optional(),
   newNoteTitle: z.string().max(200).optional(),
   rows: z
@@ -47,7 +47,7 @@ export const InboxCreateSchema = z
   .refine((v) => !!v.text.trim() || !!v.assetId, 'Content required')
 export const InboxUpdateSchema = z.object({ text: z.string().max(100000).optional(), status: z.enum(['new', 'dismissed']).optional() })
 export const InboxAcceptSchema = z.object({
-  action: z.enum(['append_note', 'new_note', 'save_source', 'keep']),
+  action: z.enum(['append_note', 'new_note', 'save_source', 'mistake', 'keep']),
   noteId: z.uuid().optional(),
   newNoteTitle: z.string().max(200).optional()
 })
@@ -58,6 +58,7 @@ export interface InboxDestination {
   proposalId?: string
   sourceIds?: string[]
   actionId?: string
+  mistakeIds?: string[]
   members: string[]
   blockIds?: string[]
 }
@@ -101,6 +102,7 @@ export function normalizeSuggestion(
   groupIds: string[] = []
 ): InboxSuggestion {
   const s = { ...input }
+  if (s.type === 'wrong_question') s.action = 'mistake'
   if (s.action === 'append_note' && (!s.noteId || !noteIds.includes(s.noteId))) {
     s.action = 'new_note'
     delete s.noteId

@@ -49,12 +49,12 @@ async function saveCurrentTab(tabId: string): Promise<string> {
   if (!/^https?:/i.test(url)) throw new Error(zh() ? '这个页面不能存为资料' : 'This page cannot be saved')
   const scope = t.scope
   const valid = (): boolean =>
-    m.getTab(t.id) === t && t.scope === scope && !t.incognito && !m.isSensitive(t.id) && t.view.webContents.getURL() === url
+    m.getTab(t.id) === t && t.scope === scope && !t.incognito && !m.isSensitive(t.id) && canonicalUrl(t.view.webContents.getURL()) === canonicalUrl(url)
   if (t.sourceId) {
     const existing = getDb().select().from(sources).where(eq(sources.id, t.sourceId)).get()
     if (existing && !existing.deletedAt && !existing.aiExcluded && existing.url === canonicalUrl(url)) return existing.id
   }
-  const html = await m.inPage<string>(t.id, 'document.documentElement.outerHTML')
+  const html = await m.inPage<string>(t.id, `(() => { const copy=document.documentElement.cloneNode(true); copy.querySelectorAll('[data-jiwei-ui]').forEach(n=>n.remove()); return copy.outerHTML; })()`)
   if (!valid()) throw new Error('Page changed')
   const src = await saveWebPage({ url: canonicalUrl(url), title: t.view.webContents.getTitle(), html }, valid)
   if (!valid()) throw new Error('Page changed')
@@ -102,8 +102,33 @@ export function onAnnotationsChanged(targetType: string, targetId: string): void
 
 const READ_PAGE = `(() => {
   const root = document.querySelector('article, main, [role=main]') || document.body
-  const text = (root ? root.innerText : '').replace(/\\n{3,}/g, '\\n\\n').trim()
-  return { url: location.href, title: document.title, text, selection: String(getSelection() || '').trim() }
+  const excluded = '[data-jiwei-ui],script,style,noscript,template,[hidden],[aria-hidden="true"]'
+  const readingOriginal = element => element.matches('p,li,blockquote,h1,h2,h3,h4,h5,h6,td,figcaption') && element.nextElementSibling?.matches('jiwei-reading[data-jiwei-ui][data-mode="translation"]')
+  const styles = new WeakMap(), hidden = new WeakMap()
+  const style = element => { if(!styles.has(element))styles.set(element,getComputedStyle(element)); return styles.get(element); }
+  const unrendered = element => {
+    if(!element)return false
+    if(!hidden.has(element))hidden.set(element,element.matches(excluded) || (style(element).display==='none' && !readingOriginal(element)) || unrendered(element.parentElement))
+    return hidden.get(element)
+  }
+  const blocks = new Set(['block','flow-root','flex','grid','list-item','table','table-row','table-caption'])
+  const cleanText = (node, range) => {
+    if(range && !range.intersectsNode(node))return ''
+    if(node.nodeType===Node.TEXT_NODE) {
+      const parent=node.parentElement
+      if(parent && (unrendered(parent) || ['hidden','collapse'].includes(style(parent).visibility)))return ''
+      return node.data.slice(range?.startContainer===node?range.startOffset:0,range?.endContainer===node?range.endOffset:node.length)
+    }
+    if(node.nodeType===Node.ELEMENT_NODE && unrendered(node))return ''
+    if(node.nodeName==='BR')return '\\n'
+    const text=[...node.childNodes].map(child=>cleanText(child,range)).join('')
+    const display=node.nodeType===Node.ELEMENT_NODE?(readingOriginal(node)?node.nodeName==='TD'?'table-cell':'block':style(node).display):''
+    return blocks.has(display)?'\\n'+text+'\\n':display==='table-cell'?text+'\\t':text
+  }
+  const text = (root ? cleanText(root) : '').replace(/\\n{3,}/g, '\\n\\n').trim()
+  const selection=getSelection(); const range=selection?.rangeCount?selection.getRangeAt(0):null
+  const selected=range?cleanText(range.commonAncestorContainer,range).replace(/\\n{3,}/g, '\\n\\n').trim():''
+  return { url: location.href, title: document.title, text, selection:selected }
 })()`
 
 export interface PageText {
@@ -117,7 +142,9 @@ export async function readPage(tabId?: string | null, max = 20000): Promise<Page
   const t = m.getTab(tabId)
   if (!t) throw new Error('没有打开的网页')
   if (m.isSensitive(t.id) || t.incognito) throw new Error(zh() ? '这个网页设为不发送给 AI（敏感页面或无痕标签）' : 'AI is off on this page')
+  const url=canonicalUrl(t.view.webContents.getURL()),scope=t.scope
   const r = await m.inPage<PageText>(t.id, READ_PAGE)
+  if(m.getTab(t.id)!==t || m.isSensitive(t.id) || t.incognito || t.scope!==scope || canonicalUrl(t.view.webContents.getURL())!==url)throw new Error('Page changed')
   return { ...r, text: r.text.slice(0, max) }
 }
 

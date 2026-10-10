@@ -45,8 +45,9 @@ export const clickInPage = (app: ElectronApplication, x: number, y: number): Pro
   app.evaluate(
     async ({ webContents }, { x, y }) => {
       const wc = webContents.getAllWebContents().find((w) => w.getURL().startsWith('http://127.0.0.1'))!
-      wc.sendInputEvent({ type: 'mouseDown', x: Math.round(x), y: Math.round(y), button: 'left', clickCount: 1 })
-      wc.sendInputEvent({ type: 'mouseUp', x: Math.round(x), y: Math.round(y), button: 'left', clickCount: 1 })
+      const zoom=wc.getZoomFactor()
+      wc.sendInputEvent({ type: 'mouseDown', x: Math.round(x*zoom), y: Math.round(y*zoom), button: 'left', clickCount: 1 })
+      wc.sendInputEvent({ type: 'mouseUp', x: Math.round(x*zoom), y: Math.round(y*zoom), button: 'left', clickCount: 1 })
     },
     { x, y }
   )

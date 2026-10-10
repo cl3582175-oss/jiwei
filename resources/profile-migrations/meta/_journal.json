@@ -8,6 +8,13 @@
       "when": 1791575651282,
       "tag": "0000_personal_voice",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1791613366212,
+      "tag": "0001_vocabulary",
+      "breakpoints": true
     }
   ]
 }

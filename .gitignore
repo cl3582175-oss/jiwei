@@ -15,3 +15,6 @@ playwright-report/
 
 # Codex / superpowers 本地证据
 .superpowers/
+
+# 测试运行时生成的错题图
+e2e/fixtures/mistakes-*.png

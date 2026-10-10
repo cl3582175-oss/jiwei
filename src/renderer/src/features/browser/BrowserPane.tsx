@@ -26,6 +26,7 @@ import { Tip, Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui/p
 import { activeTab, aiAllowed, useBrowser } from './store'
 import { CoursePanel } from './CoursePanel'
 import { CaptureSelection, useBrowserCapture } from './BrowserCapture'
+import { ReadingControls } from '../reading/ReadingControls'
 
 // 内置浏览器（v0.6.0）：工作区左栏，笔记在右栏。网页是主进程的原生视图（WebContentsView），
 // 叠放在本组件的占位区域上：占位区域的位置、大小随布局同步；弹出层盖住网页时换成截图。
@@ -321,6 +322,7 @@ function AddressBar({ tab, capture }: { tab: BrowserTab; capture: () => void }) 
           <ScanText />
         </Button>
       </span>
+      {aiAllowed(tab)&&<ReadingControls target={{kind:'browser',id:tab.id}} state={tab.reading} />}
       <Tip label={t('browser.close')} side="bottom">
         <Button
           variant="ghost"

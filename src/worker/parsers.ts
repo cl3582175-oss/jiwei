@@ -4,6 +4,7 @@ import { dirname, join } from 'path'
 import { createCanvas, DOMMatrix, ImageData, Path2D, type Canvas, type SKRSContext2D } from '@napi-rs/canvas'
 import { classifyPage, drawingSignals, type PageNeed } from './pdfTriage'
 import { segmentText, type TextSegment } from '../main/lib/segment'
+import { readingHtmlText } from '../main/lib/reading'
 
 // 资料解析（在工作进程中运行）。输出统一的分段，定位使用 W3C 选择器：
 //   PDF  → page=N（可在内置 PDF 查看器中跳转到页）
@@ -156,8 +157,8 @@ async function htmlToText(html: string): Promise<{ title: string; text: string }
   const { Readability } = await import('@mozilla/readability')
   const { document } = parseHTML(html) as unknown as { document: DomDoc }
   const article = new Readability(document as never).parse()
-  if (article?.textContent) return { title: article.title ?? '', text: article.textContent }
-  return { title: document.title ?? '', text: document.body?.textContent ?? '' }
+  if (article?.content) return { title: article.title ?? '', text: readingHtmlText(article.content) }
+  return { title: document.title ?? '', text: readingHtmlText(html) }
 }
 
 export async function parseHtml(path: string): Promise<{ title: string; segments: Segment[] }> {

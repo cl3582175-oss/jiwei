@@ -10,7 +10,7 @@ import { pathToFileURL } from 'url'
 import { eq, inArray, notInArray } from 'drizzle-orm'
 import log from 'electron-log/main'
 import { assetsDir, getDb } from '../db'
-import { assets, noteAssets, sources, sourceSegments, inboxItems } from '../db/schema'
+import { assets, noteAssets, sources, sourceSegments, inboxItems, mistakes } from '../db/schema'
 import type { AssetRef } from '@shared/types'
 
 // 内容寻址素材仓库：文件以 sha256 命名，相同内容只存一份。
@@ -128,6 +128,7 @@ export async function importBytes(name: string, mime: string, bytes: Uint8Array)
 export async function collectGarbage(): Promise<number> {
   const db = getDb()
   const used = new Set<string>([
+    ...db.select({ assetId: mistakes.assetId, cropAssetId: mistakes.cropAssetId }).from(mistakes).all().flatMap((r) => [r.assetId, r.cropAssetId].filter((id): id is string => !!id)),
     ...db
       .select({ id: inboxItems.assetId })
       .from(inboxItems)

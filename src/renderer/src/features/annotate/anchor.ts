@@ -3,7 +3,10 @@ import type { AnnotationSelector } from '@shared/types'
 // 文字批注的定位（W3C TextQuote）：资料重新解析或笔记修改后，凭原文与前后文重新找到位置。
 
 /** 在 text 中找到选择器指向的位置；找不到返回 null（批注“失去定位”） */
-export function locateQuote(text: string, sel: Pick<AnnotationSelector, 'quote' | 'prefix' | 'suffix' | 'start' | 'end'>): { start: number; end: number } | null {
+export function locateQuote(
+  text: string,
+  sel: Pick<AnnotationSelector, 'quote' | 'prefix' | 'suffix' | 'start' | 'end'>
+): { start: number; end: number } | null {
   const q = sel.quote
   if (!q) return null
   // 1. 原位置未变
@@ -33,7 +36,9 @@ function common(a: string, b: string, fromEnd: boolean): number {
 
 /** 元素内按字符偏移构造 Range（偏移与 Range.toString() 的计数一致） */
 export function rangeIn(el: Element, start: number, end: number): Range | null {
-  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, {
+    acceptNode: (node) => (node.parentElement?.closest('[data-jiwei-ui]') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT)
+  })
   const r = document.createRange()
   let pos = 0
   let started = false

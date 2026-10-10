@@ -15,6 +15,9 @@ import { Button } from '@/components/ui/button'
 import { Tip } from '@/components/ui/primitives'
 import { useAssist, type Rect } from '../assist/store'
 import { useAnnotate, useAnnotations } from '../annotate/store'
+import { useReadingState } from '../reading/ReadingControls'
+import { ReadingSourceText } from '../reading/ReadingText'
+import { originalRangeText } from '@shared/reading'
 
 // PDF 阅读：pdf.js 自带的查看器（文字层可选中、可定位）。
 //   - 翻页 → 工作区上下文（page=N）；AI 引用 / 出处链接 → 跳到对应页并闪烁
@@ -82,6 +85,8 @@ export function PdfViewer({ source }: { source: Source }) {
   const qc = useQueryClient()
   const { data: scanPages = [] } = useQuery({ queryKey: ['scan-pages', source.id], queryFn: () => api.recognition.scanPages(source.id) })
   const { data: segs = [] } = useQuery({ queryKey: ['segments', source.id], queryFn: () => api.segments.list(source.id) })
+  const {data:reading}=useReadingState({kind:'source',id:source.id})
+  const readingActive=!!reading?.foreign&&(reading.mode!=='original'||reading.annotations)
   const { data: threads = [] } = useQuery({ queryKey: ['threads', source.id], queryFn: () => api.chat.threads(source.id) })
   const segRef = useRef(segs)
   segRef.current = segs
@@ -373,7 +378,7 @@ export function PdfViewer({ source }: { source: Source }) {
     const { clientX, clientY } = e
     requestAnimationFrame(() => {
       const sel = window.getSelection()
-      const quote = sel?.toString().replace(/\s+/g, ' ').trim() ?? ''
+      const quote = sel?.rangeCount ? originalRangeText(sel.getRangeAt(0)).replace(/\s+/g,' ').trim() : ''
       if (!sel || !quote || !sel.rangeCount) {
         setContext({ sourceSelection: null })
         useAssist.getState().showToolbar(null)
@@ -475,9 +480,10 @@ export function PdfViewer({ source }: { source: Source }) {
         </Button>
       </div>
       <div className="relative min-h-0 flex-1">
-        <div ref={container} onMouseUp={onMouseUp} className="pdf-container absolute inset-0 overflow-auto" data-testid="pdf-viewer">
+        <div ref={container} onMouseUp={onMouseUp} className={cn('pdf-container absolute inset-0 overflow-auto',readingActive&&'invisible pointer-events-none')} data-testid="pdf-viewer">
           <div className="pdfViewer" />
         </div>
+        {readingActive&&<div className="absolute inset-0 min-w-0 overflow-auto" data-reading-scroll><ReadingSourceText sourceId={source.id} segments={segs} pdf /></div>}
         {regionMode && (
           <div
             className="absolute inset-0 z-10 cursor-crosshair"

@@ -1,4 +1,5 @@
 import { resolve } from 'path'
+import { execFileSync } from 'node:child_process'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
@@ -7,7 +8,15 @@ const shared = { '@shared': resolve('src/shared') }
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin()],
+    plugins: [
+      externalizeDepsPlugin(),
+      {
+        name: 'verified-word-frequency',
+        buildStart: () => {
+          execFileSync(process.execPath, [resolve('scripts/build-wordfreq.mjs')], { stdio: 'inherit' })
+        }
+      }
+    ],
     resolve: { alias: shared },
     build: {
       rollupOptions: {

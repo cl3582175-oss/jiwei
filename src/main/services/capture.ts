@@ -415,6 +415,18 @@ export async function action(input: z.infer<typeof CaptureActionSchema>): Promis
     close()
     return
   }
+  if (input.action === 'mistake') {
+    const item = create({ kind: s.image ? 'screenshot' : 'text', text: input.text.slice(0, 12000), assetId: s.asset?.id, origin: s.origin })
+    const { fromInbox } = await import('./mistakeEntries')
+    fromInbox(item.id, 'capture')
+    const main = getMainWindow()
+    emit('mistakes:open', {})
+    close()
+    main?.show()
+    if (main?.isMinimized()) main.restore()
+    main?.focus()
+    return
+  }
   const main = getMainWindow()
   if (!main) throw new Error('capture.noNote')
   let sourceId: string | null = null

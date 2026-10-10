@@ -2,6 +2,8 @@ import { getMainWindow, setMainWindow } from './mainWindow'
 import { registerCapture, stopCapture } from './services/capture'
 import { shutdown as stopPhoneUpload } from './services/phoneUpload'
 import { registerInboxJobs } from './services/inbox'
+import { registerMistakeJobs } from './services/mistakes'
+import { registerMistakeEntryGuards } from './services/mistakeEntries'
 import { app, BrowserWindow, shell, nativeTheme } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
@@ -160,6 +162,8 @@ app.whenReady().then(async () => {
   registerBrowser()
   registerIndexJob()
   registerInboxJobs()
+  registerMistakeEntryGuards()
+  registerMistakeJobs()
   reconcilePeopleReferences()
   startJobs()
   void rebuildNoteImageReferences().catch((e) => log.warn('[note images] backfill failed', e))

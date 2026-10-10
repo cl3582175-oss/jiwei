@@ -1,0 +1,8 @@
+{
+  "source": "https://raw.githubusercontent.com/hermitdave/FrequencyWords/072bbed282316a23651aa7068c7173aa7898cf80/content/2018/en/en_50k.txt",
+  "commit": "072bbed282316a23651aa7068c7173aa7898cf80",
+  "sourceSha256": "5351ff405b1126ef555791dd4d9798a48e3e9a501a9fc481a9da957752cfb458",
+  "outputSha256": "7a1efa44248f17a32b4b647899dea7110aa7d371ec52b952e0a5c593b2abebe6",
+  "license": "MIT",
+  "entries": 50000
+}

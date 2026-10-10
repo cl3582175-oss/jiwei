@@ -49,6 +49,10 @@ export function InboxView() {
     const item = await api.inbox.accept(id, manual)
     if (item.filedTo?.noteId && item.filedTo.proposalId && item.status !== 'filed')
       await applyInboxDocument(item.filedTo.noteId, item.filedTo.proposalId)
+    if (item.filedTo?.mistakeIds?.length) {
+      useApp.getState().setReviewTab('mistakes')
+      useApp.getState().setView('review')
+    }
   }
   const remove = async (item: InboxItem): Promise<void> => {
     await api.inbox.remove(item.id)
@@ -208,12 +212,12 @@ export function InboxView() {
                             onChange={(e) => {
                               const value = e.target.value
                               if (value === 'append_note') setPick(i.id)
-                              else if (value === 'new_note' || value === 'save_source' || value === 'keep')
+                              else if (value === 'new_note' || value === 'save_source' || value === 'mistake' || value === 'keep')
                                 void run(() => accept(i.id, { action: value }))
                             }}
                           >
                             <option value="">{t('inbox.change')}</option>
-                            {(['append_note', 'new_note', 'save_source', 'keep'] as const).map((action) => (
+                            {(['append_note', 'new_note', 'save_source', 'mistake', 'keep'] as const).map((action) => (
                               <option key={action} value={action}>
                                 {t(`inbox.action.${action}`)}
                               </option>
@@ -224,7 +228,7 @@ export function InboxView() {
                       {!done && (i.suggestion || i.filedTo) && (
                         <Button size="sm" variant="primary" disabled={busy} onClick={() => void run(() => accept(i.id))}>
                           <Check />
-                          {t(i.filedTo ? 'inbox.retry' : 'inbox.accept')}
+                          {t(i.filedTo ? 'inbox.retry' : i.suggestion?.action === 'mistake' ? 'mistakes.join' : 'inbox.accept')}
                         </Button>
                       )}
                       {i.status === 'filed' && i.filedTo?.noteId && (

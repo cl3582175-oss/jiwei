@@ -36,6 +36,13 @@ export const CornellRow = Node.create({
   content: `${CORNELL.cue} ${CORNELL.body}`,
   isolating: true,
   defining: true,
+  addAttributes: () => ({
+    mistakeId: {
+      default: null,
+      parseHTML: (el) => el.getAttribute('data-mistake-id'),
+      renderHTML: (attrs) => (attrs.mistakeId ? { 'data-mistake-id': attrs.mistakeId } : {})
+    }
+  }),
   parseHTML: () => [{ tag: 'div[data-cornell="row"]' }],
   renderHTML: ({ HTMLAttributes }) => ['div', { ...HTMLAttributes, 'data-cornell': 'row', class: 'cornell-row' }, 0]
 })

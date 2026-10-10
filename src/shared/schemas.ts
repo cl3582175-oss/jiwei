@@ -150,6 +150,7 @@ export const ProposalOpSchema = z.discriminatedUnion('op', [
   }),
   z.object({
     op: z.literal('insert_row'),
+    mistakeId: Id.optional(),
     afterRowId: Id.nullable().describe('在此行之后插入新行；null 表示追加到末尾'),
     cue: z.array(DocNodeSchema),
     body: z.array(DocNodeSchema)

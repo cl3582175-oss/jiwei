@@ -22,6 +22,8 @@ extraResources:
     to: migrations
   - from: resources/profile-migrations
     to: profile-migrations
+  - from: resources/wordfreq
+    to: wordfreq
 protocols:
   - name: Jiwei
     schemes: [jiwei]

@@ -114,9 +114,15 @@ test('weak concepts are highlighted; hover waits before a closed-shadow hint and
     app,
     `(() => { const r = [...CSS.highlights.get('jw-concept')][0].getClientRects()[0]; return { x: r.left + Math.min(2, r.width / 2), y: r.top + r.height / 2 } })()`
   )
+  const geometry = await app.evaluate(async ({ webContents }, point) => {
+    const wc = webContents.getAllWebContents().find((contents) => contents.getURL().endsWith('/a'))!
+    return { point, zoom: wc.getZoomFactor(), viewport: await wc.executeJavaScript('({width:innerWidth,height:innerHeight})') }
+  }, point)
+  await test.info().attach('native-hover-geometry', { body: Buffer.from(JSON.stringify(geometry)), contentType: 'application/json' })
   await app.evaluate(({ webContents }, point) => {
     const wc = webContents.getAllWebContents().find((contents) => contents.getURL().endsWith('/a'))!
-    wc.sendInputEvent({ type: 'mouseMove', x: Math.round(point.x), y: Math.round(point.y) })
+    const zoom = wc.getZoomFactor()
+    wc.sendInputEvent({ type: 'mouseMove', x: Math.round(point.x * zoom), y: Math.round(point.y * zoom) })
   }, point)
   await page.waitForTimeout(150)
   expect(await inPage<boolean>(app, `!!document.querySelector('jiwei-concept')`)).toBe(false)
@@ -166,8 +172,9 @@ test('a pending hover cannot restore a tooltip after quiet mode is enabled', asy
   )
   await app.evaluate(({ webContents }, point) => {
     const contents = webContents.getAllWebContents().find((item) => item.getURL().endsWith('/a'))!
+    const zoom = contents.getZoomFactor()
     contents.sendInputEvent({ type: 'mouseMove', x: 0, y: 0 })
-    contents.sendInputEvent({ type: 'mouseMove', x: Math.round(point.x), y: Math.round(point.y) })
+    contents.sendInputEvent({ type: 'mouseMove', x: Math.round(point.x * zoom), y: Math.round(point.y * zoom) })
   }, point)
   await page.waitForTimeout(100)
   await page.evaluate(async () => {

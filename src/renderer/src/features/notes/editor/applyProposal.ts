@@ -109,7 +109,7 @@ export function applyOp(editor: Editor, ydoc: Y.Doc, proposal: Proposal, op: Pro
       const body = prepare(op.body.length ? op.body : [para], originStr, proposal, ydoc)
       const row = schema.nodeFromJSON({
         type: CORNELL.row,
-        attrs: { origin: originStr },
+        attrs: { origin: originStr, ...(op.mistakeId ? { mistakeId: op.mistakeId } : {}) },
         content: [
           { type: CORNELL.cue, content: cue },
           { type: CORNELL.body, content: body }

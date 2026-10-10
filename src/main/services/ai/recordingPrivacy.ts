@@ -11,7 +11,7 @@ export function requireRecordingCloudAccess(input: ChatSend): void {
   const ids = new Set([input.context?.sourceId, ...anchors.map((a) => a?.parentId)].filter((id): id is string => !!id))
   for (const id of ids) {
     const source = getDb().select().from(sources).where(eq(sources.id, id)).get()
-    if (source?.kind === 'recording' && (source.aiExcluded || source.deletedAt)) throw new Error(voiceText('localOnly'))
+    if (!source || source.aiExcluded || source.deletedAt) throw new Error(voiceText('sourceNoCloud'))
   }
 }
 export function filterCloudHits(hits: SearchHit[]): SearchHit[] {

@@ -65,6 +65,10 @@ function useThemeSync(): 'light' | 'dark' {
 /** 主进程派生数据更新后刷新列表与当前笔记 */
 function useMainEvents(): void {
   const qc = useQueryClient()
+  useEffect(() => window.jiweiEvents.on('mistakes:open', () => {
+    useApp.getState().setReviewTab('mistakes')
+    useApp.getState().setView('review')
+  }), [])
   useEffect(
     () =>
       window.jiweiEvents.on('sources:changed', ({ id }) => {

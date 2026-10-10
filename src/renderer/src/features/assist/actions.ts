@@ -9,6 +9,7 @@ import { useApp } from '@/store/app'
 import { queryClient } from '@/lib/queryClient'
 import { errText, sendChat } from '../chat/useChat'
 import { useAssist, type AskAction, type Rect } from './store'
+import { originalRangeText, originalReadingText } from '@shared/reading'
 
 // 就地提问：选区快捷操作 → 预加载技能 + 上下文包 → 新的就地对话（挂在原文上）。
 
@@ -16,6 +17,7 @@ export const ACTION_SKILL: Record<AskAction, string | undefined> = {
   explain: 'explain-concept',
   clarify: 'clarify-passage',
   translate: 'translate-passage',
+  grammar: 'explain-grammar',
   ask: undefined,
   shorten: 'revise-text',
   expand: 'revise-text',
@@ -28,6 +30,7 @@ export const ACTION_SKILL: Record<AskAction, string | undefined> = {
 
 /** 快捷操作默认的提问文字 */
 export function actionQuestion(action: AskAction, quote: string, region = false): string {
+  if(action==='grammar')return i18n.t('reading.grammarQuestion')
   if (region && action !== 'ask') return i18n.t(`assist.qRegion.${action}`)
   const q = quote.length > 24 ? quote.slice(0, 24) + '…' : quote
   return i18n.t(`assist.q.${action}`, { q })
@@ -53,6 +56,12 @@ export async function askInline(
   validate?: () => Promise<unknown>
 ): Promise<void> {
   const settings = await api.settings.get()
+  if((action==='translate'||action==='grammar')&&anchor.parentType==='source') {
+    const source=await api.sources.get(anchor.parentId)
+    if(!source||source.aiExcluded){toast.error(i18n.t('reading.privacy'));return}
+    const word=anchor.quote?.trim() ?? ''
+    if(/^[A-Za-z]+(?:['’][A-Za-z]+)?$/.test(word))await api.reading.query(word)
+  }
   const providers = await api.providers.list()
   const p = providers.find((x) => x.id === settings.ai.chat.providerId)
   const text = question?.trim() || actionQuestion(action, anchor.quote ?? '', anchor.kind === 'region')
@@ -179,7 +188,7 @@ export function textSelectionAnchor(sourceId: string): { anchor: Anchor; rect: R
   const sel = window.getSelection()
   if (!sel || sel.isCollapsed || !sel.rangeCount) return null
   const range = sel.getRangeAt(0)
-  const quote = sel.toString().replace(/\s+/g, ' ').trim()
+  const quote = originalRangeText(range).replace(/\s+/g, ' ').trim()
   if (!quote) return null
   const node = range.startContainer
   const el = node instanceof Element ? node : node.parentElement
@@ -191,8 +200,8 @@ export function textSelectionAnchor(sourceId: string): { anchor: Anchor; rect: R
     const pre = document.createRange()
     pre.setStart(seg, 0)
     pre.setEnd(range.startContainer, range.startOffset)
-    start = pre.toString().length
-    const full = seg.textContent ?? ''
+    start = originalRangeText(pre).length
+    const full = originalReadingText(seg)
     prefix = full.slice(Math.max(0, start - 60), start)
     suffix = full.slice(start + quote.length, start + quote.length + 60)
   }

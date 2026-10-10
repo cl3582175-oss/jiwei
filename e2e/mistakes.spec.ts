@@ -1,0 +1,358 @@
+import { test, expect } from '@playwright/test'
+import { createServer } from 'http'
+import type { Mistake } from '../src/shared/mistakes'
+import { makeMistakeImages } from './fixtures/mistakes-images'
+import { addImage, mistakeShot, mistakeJobEvidence, openMistakes, semanticEvidence, startMistakesApp, waitMistake, type MistakesApp } from './fixtures/mistakes-app'
+
+test.describe.configure({ mode: 'serial' })
+test.setTimeout(process.env.JIWEI_OCR ? 240000 : 90000)
+let env: MistakesApp, math: Mistake, files: ReturnType<typeof makeMistakeImages>, noteId = '', cardId = ''
+test.beforeAll(async () => { files = makeMistakeImages(); env = await startMistakesApp() })
+test.afterAll(async () => env?.close())
+async function select(id: string): Promise<void> {
+  await openMistakes(env)
+  const back = env.page.getByRole('button', { name: '返回列表', exact: true })
+  if (await back.isVisible()) await back.click()
+  await env.page.locator(`[data-mistake-id="${id}"]`).click()
+  await expect(env.page.getByTestId('mistake-details')).toBeVisible()
+}
+async function setTheme(theme: 'light' | 'dark'): Promise<void> {
+  await env.page.getByRole('button', { name: /^设置/ }).click()
+  const settings = env.page.getByRole('dialog')
+  await settings.getByRole('button', { name: '外观', exact: true }).click()
+  await settings.getByRole('button', { name: theme === 'dark' ? '深色' : '浅色', exact: true }).click()
+  await env.page.keyboard.press('Escape')
+  await expect(settings).not.toBeVisible()
+  await expect(env.page.locator('html')).toHaveAttribute('data-theme', theme)
+}
+test('收件箱题图→拆分诊断→待核对→renderer/Yjs行→mistake卡片；确认重试幂等', async () => {
+  ;[math] = await addImage(env, 'math', files)
+  expect(math.myAnswer).toContain('25 - 24 = 9')
+  expect(math.cause).toBe('calculation')
+  expect(math.causeReason).toContain('25 - 24 = 9')
+  expect(math.answerOrigin).toBe('ai'); expect(math.verified).toBe(false)
+  const unverifiedStats = await env.page.evaluate(() => window.jiwei.mistakes.statistics())
+  expect(unverifiedStats.total).toBe(1); expect(unverifiedStats.verifiedRatio).toBe(0)
+  await select(math.id)
+  const details = env.page.getByTestId('mistake-details')
+  await expect(details.getByText('AI 解答，待核对', { exact: true })).toBeVisible()
+  await details.getByRole('button', { name: '确认无误', exact: true }).click()
+  await expect.poll(() => env.page.evaluate((id) => window.jiwei.mistakes.get(id).then((m) => m?.verified), math.id)).toBe(true)
+  const landing = await env.page.evaluate((id) => window.jiwei.mistakes.prepare(id), math.id)
+  const toastResult = env.page.locator('[data-sonner-toast][data-type="error"]').first().textContent({ timeout: 6000 }).catch(() => null)
+  await details.getByRole('button', { name: '加入错题笔记', exact: true }).click()
+  try {
+    await expect.poll(() => env.page.evaluate((id) => window.jiwei.mistakes.get(id).then((m) => m?.landed), math.id)).toBe(true)
+  } catch (error) {
+    const diagnostics = { ...await env.page.evaluate(async (id) => ({ mistake: await window.jiwei.mistakes.get(id), toasts: [...document.querySelectorAll('[data-sonner-toast]')].map((el) => el.textContent) }), math.id), errorToast: await toastResult }
+    semanticEvidence('mistakes-landing-failure.json', diagnostics)
+    console.log(JSON.stringify({ landingFailure: diagnostics }))
+    throw error
+  }
+  math = (await env.page.evaluate((id) => window.jiwei.mistakes.get(id), math.id))!
+  noteId = math.noteId!
+  await expect.poll(() => env.page.evaluate((noteId) => window.jiwei.review.forNote(noteId).then((c) => c.length), noteId)).toBe(1)
+  const cards = await env.page.evaluate((noteId) => window.jiwei.review.forNote(noteId), noteId)
+  expect(cards).toHaveLength(1); cardId = cards[0].id
+  const card = await env.page.evaluate((id) => window.jiwei.review.get(id), cardId)
+  expect(card?.kind).toBe('mistake'); expect(card?.mistakeId).toBe(math.id)
+  const repeated = await env.page.evaluate(async ({ id, proposalId, noteId }) => {
+    await window.jiwei.mistakes.complete(id, proposalId, await window.jiwei.notes.loadDoc(noteId))
+    return window.jiwei.review.forNote(noteId)
+  }, { id: math.id, proposalId: landing.proposalId!, noteId })
+  expect(repeated).toHaveLength(1)
+  const concepts = await env.page.evaluate(() => window.jiwei.memory.concepts())
+  expect(concepts.find((c) => c.name === '一元二次方程')?.confused).toBe(1)
+  const statistics = await env.page.evaluate(() => window.jiwei.mistakes.statistics())
+  expect(statistics.total).toBe(1); expect(statistics.verifiedRatio).toBe(1)
+  expect(statistics.causes).toContainEqual({ cause: 'calculation', count: 1, percentage: 100 })
+  expect(statistics.concepts).toContainEqual({ name: '一元二次方程', count: 1 })
+  const material = await env.page.evaluate(async () => {
+    const weekly = await window.jiwei.reflection.start({ kind: 'weekly' })
+    return window.jiwei.reflection.material(weekly.id)
+  })
+  expect(material.mistakes).toEqual(statistics)
+  expect(material.text).toContain('本周错题：1；已核对 100%')
+  expect(material.text).toContain('计算失误 100%')
+  semanticEvidence('mistakes-statistics-live.json', { statistics, weekly: { mistakes: material.mistakes, text: material.text } })
+  for (const theme of ['light', 'dark'] as const) {
+    await setTheme(theme)
+    const back = env.page.getByRole('button', { name: '返回列表', exact: true })
+    if (await back.isVisible()) await back.click()
+    await env.page.getByRole('heading', { name: '错题本', exact: true }).scrollIntoViewIfNeeded()
+    await mistakeShot(env, `mistakes-list-${theme}-${process.env.JIWEI_TEST_WINDOW ?? 'wide'}.png`)
+    if (await back.isVisible() === false && await env.page.getByTestId('mistake-details').count() === 0) await env.page.locator(`[data-mistake-id="${math.id}"]`).click()
+    await env.page.getByRole('heading', { name: '错题本', exact: true }).scrollIntoViewIfNeeded()
+    await mistakeShot(env, `mistakes-details-top-${theme}-${process.env.JIWEI_TEST_WINDOW ?? 'wide'}.png`)
+    await expect(details.locator('.katex').first()).toBeVisible()
+    await mistakeShot(env, `mistakes-formula-preview-${theme}-${process.env.JIWEI_TEST_WINDOW ?? 'wide'}.png`)
+    const inlineLayout = await details.locator('.chat-md').first().evaluate((el) => {
+      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT), text: DOMRect[] = []
+      while (walker.nextNode()) {
+        const node = walker.currentNode as Text
+        if (!node.textContent?.trim() || node.parentElement?.closest('.katex')) continue
+        const range = document.createRange(); range.selectNode(node); text.push(range.getBoundingClientRect())
+      }
+      const rect = (r: DOMRect) => ({ x: r.x, y: r.y, width: r.width, height: r.height })
+      return { prefix: rect(text[0]), suffix: rect(text[text.length - 1]), math: rect(el.querySelector('.katex')!.getBoundingClientRect()) }
+    })
+    semanticEvidence(`mistakes-inline-layout-${theme}.json`, inlineLayout)
+    expect(Math.abs(inlineLayout.prefix.y - inlineLayout.suffix.y)).toBeLessThan(2)
+    expect(inlineLayout.math.y).toBeLessThan(inlineLayout.prefix.y + inlineLayout.prefix.height)
+    expect(inlineLayout.math.y + inlineLayout.math.height).toBeGreaterThan(inlineLayout.prefix.y)
+  }
+})
+test('一图两题保留同一原图；有grounding时分别裁图、按学科写入', async () => {
+  const items = await addImage(env, 'multi', files)
+  expect(items).toHaveLength(2)
+  expect(new Set(items.map((m) => m.assetId)).size).toBe(1)
+  if (process.env.JIWEI_OCR) {
+    expect(items.every((m) => !!m.cropAssetId)).toBe(true)
+    expect(new Set(items.map((m) => m.cropAssetId)).size).toBe(2)
+  } else expect(items.every((m) => m.imageUrl === m.originalImageUrl)).toBe(true)
+  const physics = items.find((m) => m.subject === 'physics')!
+  expect(physics.answerOrigin).toBe('image'); expect(physics.correctAnswer).toContain('6 N'); expect(physics.verified).toBe(true)
+  await select(physics.id)
+  await env.page.getByTestId('mistake-details').getByRole('button', { name: '加入错题笔记', exact: true }).click()
+  await expect.poll(() => env.page.evaluate((id) => window.jiwei.mistakes.get(id).then((m) => m?.landed), physics.id)).toBe(true)
+  const notes = await env.page.evaluate(() => window.jiwei.notes.list({ search: '错题本 ·' }))
+  expect(notes.map((n) => n.title)).toEqual(expect.arrayContaining(['错题本 · 数学', '错题本 · 物理']))
+  expect(new Set(notes.map((n) => n.categoryId)).size).toBe(1)
+  semanticEvidence('mistakes-controlled-split.json', { evidenceType: 'controlled-flow-only', items })
+})
+test('数值变式独立求解不看候选答案；今日复习默认变式、作答打分；三次有误回退', async () => {
+  await expect.poll(() => env.page.evaluate(() => window.jiwei.jobs.list().then((jobs) => jobs.filter((j) => j.kind === 'mistake-variants').every((j) => j.status === 'done'))), { timeout: 45000 }).toBe(true)
+  env.state.mismatch = 1
+  env.state.failAfterIndependent = 2
+  const [candidate] = await addImage(env, 'math', files)
+  await env.page.evaluate((id) => window.jiwei.mistakes.update(id, { verified: true }), candidate.id)
+  await expect.poll(() => env.page.evaluate((id) => window.jiwei.jobs.list().then((jobs) => jobs.find((j) => j.key === `mistake-variants:${id}` && j.attempts === 1)?.status), candidate.id), { timeout: 45000 }).toBe('queued')
+  const partialJobs = await mistakeJobEvidence(env)
+  expect(partialJobs).toEqual(expect.arrayContaining([expect.objectContaining({
+    dedupe_key: `mistake-variants:${candidate.id}`, attempts: 1, status: 'queued',
+    result: expect.objectContaining({ generated: 2, discarded: 1, accepted: 1, validations: expect.arrayContaining([expect.objectContaining({ status: 'discarded', rejections: ['answer-mismatch'], independent: expect.objectContaining({ answer: 'x=2,999' }) })]) })
+  })]))
+  expect(await env.page.evaluate((id) => window.jiwei.mistakes.variants(id).then((v) => v.length), candidate.id)).toBe(1)
+  env.state.fail = false
+  await expect.poll(() => env.page.evaluate((id) => window.jiwei.mistakes.variants(id).then((v) => v.filter((v) => !v.flagged && v.usedAt === null).length), candidate.id), { timeout: 45000 }).toBe(2)
+  await expect.poll(() => env.page.evaluate((id) => window.jiwei.jobs.list().then((jobs) => jobs.find((j) => j.key === `mistake-variants:${id}`)?.status), candidate.id), { timeout: 45000 }).toBe('done')
+  const completedJobs = await mistakeJobEvidence(env)
+  expect(completedJobs).toEqual(expect.arrayContaining([expect.objectContaining({
+    dedupe_key: `mistake-variants:${candidate.id}`, attempts: 2, status: 'done',
+    result: expect.objectContaining({ generated: 3, discarded: 1, accepted: 2 })
+  })]))
+  semanticEvidence('mistakes-variant-retry-counts.json', { partialJobs, completedJobs, stats: await env.page.evaluate(() => window.jiwei.mistakes.variantStats()) })
+  await expect.poll(() => env.page.evaluate(() => window.jiwei.mistakes.variantStats().then((s) => s.discarded)), { timeout: 45000 }).toBeGreaterThanOrEqual(1)
+  const independent = env.requests.filter((r) => r.kind === 'independent')
+  expect(independent.length).toBeGreaterThan(0)
+  expect(independent.every((r) => Object.keys(r.data).join() === 'question')).toBe(true)
+  await select(math.id)
+  await expect.poll(() => env.page.evaluate((id) => window.jiwei.mistakes.practice(id).then((p) => p.variantId), math.id), { timeout: 45000 }).toBeTruthy()
+  const practice = await env.page.evaluate((id) => window.jiwei.mistakes.practice(id), math.id)
+  for (const theme of ['light', 'dark'] as const) {
+    await setTheme(theme)
+    await env.page.getByTestId('mistake-details').getByRole('button', { name: '现在练一题', exact: true }).click()
+    await expect(env.page.getByTestId('mistake-practice')).toContainText('变式题')
+    await env.page.getByLabel('你的作答', { exact: true }).fill(practice.answer)
+    await env.page.getByRole('button', { name: '对照检查', exact: true }).click()
+    await expect.poll(() => env.page.getByTestId('mistake-practice-check').textContent()).toContain('本题答案正确')
+    await env.page.getByTestId('mistake-practice').scrollIntoViewIfNeeded()
+    await mistakeShot(env, `mistakes-variant-${theme}-${process.env.JIWEI_TEST_WINDOW ?? 'wide'}.png`)
+    if (theme === 'light') {
+      await env.page.keyboard.press('Escape')
+      await expect(env.page.getByTestId('mistake-practice')).not.toBeVisible()
+    }
+  }
+  await env.page.keyboard.press('Escape')
+  await expect(env.page.getByTestId('mistake-practice')).not.toBeVisible()
+  const beforeReview = await env.page.evaluate((id) => window.jiwei.review.get(id), cardId)
+  expect(beforeReview).toMatchObject({ id: cardId, kind: 'mistake', mistakeId: math.id, variantId: practice.variantId, reps: 0 })
+  expect((await env.page.evaluate(() => window.jiwei.review.next([])))?.id).toBe(cardId)
+  const beforeUsed = (await env.page.evaluate((id) => window.jiwei.mistakes.variants(id), math.id)).filter((v) => v.usedAt !== null).map((v) => v.id)
+  await env.page.getByRole('tab', { name: '今日复习', exact: true }).click()
+  const todayCard = env.page.getByTestId('review-card')
+  await expect(todayCard).toBeVisible()
+  await expect(todayCard).toContainText('变式题')
+  const displayedFormula = await env.page.getByTestId('review-question').locator('.katex annotation').textContent()
+  expect(displayedFormula).toBe(practice.question.match(/\$([^$]+)\$/)![1])
+  const original = todayCard.locator('details')
+  await original.getByText('看原题', { exact: true }).click()
+  await expect(original).toHaveAttribute('open', '')
+  await expect(original.locator('.katex annotation').first()).toHaveText(math.question.match(/\$([^$]+)\$/)![1])
+  await expect(original).toContainText('25 - 24 = 9')
+  await original.getByText('看原题', { exact: true }).click()
+  const priorChecks = env.requests.length
+  await todayCard.getByRole('textbox').fill(practice.answer)
+  await todayCard.getByRole('button', { name: 'AI 检查我的回答', exact: true }).click()
+  await expect(env.page.getByTestId('answer-check')).toContainText('本题答案正确')
+  const todayCheck = env.requests.slice(priorChecks).filter((r) => r.kind === 'check')
+  expect(todayCheck).toHaveLength(1)
+  expect(todayCheck[0].data).toMatchObject({ question: practice.question, answer: practice.answer, solution: practice.solution, userAnswer: practice.answer })
+  expect((await env.page.evaluate((id) => window.jiwei.mistakes.variants(id), math.id)).find((v) => v.id === practice.variantId)?.usedAt).toBeNull()
+  await todayCard.getByRole('group', { name: '评分', exact: true }).getByRole('button', { name: /^记得/ }).click()
+  await expect.poll(() => env.page.evaluate((id) => window.jiwei.review.get(id).then((c) => c?.reps), cardId)).toBe(1)
+  const afterReview = await env.page.evaluate((id) => window.jiwei.review.get(id), cardId)
+  const afterVariants = await env.page.evaluate((id) => window.jiwei.mistakes.variants(id), math.id)
+  expect(afterVariants.filter((v) => v.usedAt !== null && !beforeUsed.includes(v.id)).map((v) => v.id)).toEqual([practice.variantId])
+  semanticEvidence('mistakes-today-review.json', { entry: '今日复习', beforeReview, displayedFormula, originalQuestion: math.question, checkPayload: todayCheck[0].data, afterReview, consumedVariant: afterVariants.find((v) => v.id === practice.variantId) })
+  for (let i = 0; i < 3; i++) {
+    await expect.poll(() => env.page.evaluate((id) => window.jiwei.mistakes.practice(id).then((p) => p.variantId), math.id), { timeout: 45000 }).toBeTruthy()
+    const p = await env.page.evaluate((id) => window.jiwei.mistakes.practice(id), math.id)
+    await env.page.evaluate((id) => window.jiwei.mistakes.flag(id), p.variantId!)
+  }
+  const fallback = await env.page.evaluate((id) => window.jiwei.mistakes.practice(id), math.id)
+  expect(fallback.variantId).toBeNull(); expect(fallback.fallback).toBe('flagged')
+  const flagged = (await env.page.evaluate((id) => window.jiwei.mistakes.variants(id), math.id)).filter((v) => v.flagged)
+  expect(flagged).toHaveLength(3)
+  await env.page.evaluate((id) => window.jiwei.mistakes.flag(id), flagged[0].id)
+  expect((await env.page.evaluate((id) => window.jiwei.mistakes.variants(id), math.id)).filter((v) => v.flagged)).toHaveLength(3)
+})
+test('取消隔离迟到回复，重试沿用原身份；无学生答案不能猜错因', async () => {
+  env.state.blocked = 'split'
+  const prior = env.requests.length
+  const created = await env.page.evaluate(() => window.jiwei.mistakes.create({ sourceKind: 'manual', text: 'Solve x² - 5x + 6 = 0. My answer: D = 25 - 24 = 9.' }))
+  await expect.poll(() => env.requests.slice(prior).filter((r) => r.kind === 'split').length).toBe(1)
+  await env.page.evaluate((id) => window.jiwei.jobs.cancel(id), created.jobId!)
+  env.state.blocked = null; env.state.release.splice(0).forEach((release) => release())
+  await expect.poll(() => env.page.evaluate((id) => window.jiwei.mistakes.get(id).then((m) => m?.flags), created.items[0].id)).toContain('canceled')
+  expect(env.requests.slice(prior).filter((r) => ['solve', 'diagnose'].includes(r.kind))).toHaveLength(0)
+  await env.page.evaluate((id) => window.jiwei.mistakes.retry(id), created.items[0].id)
+  await waitMistake(env, created.items[0].id)
+  const all = await env.page.evaluate((key) => window.jiwei.mistakes.list().then((m) => m.filter((m) => m.ingestKey?.startsWith(key))), created.items[0].ingestKey!.replace(/:0$/, ':'))
+  expect(all).toHaveLength(1)
+  const changed = await env.page.evaluate((id) => window.jiwei.mistakes.update(id, { myAnswer: '', cause: 'calculation', causeReason: '不应该猜测' }), created.items[0].id)
+  expect(changed.cause).toBe('unknown'); expect(changed.causeReason).toBe('')
+})
+test('无模型与仅本地保留原题；手动录入、筛选和窄窗可操作', async () => {
+  const settings = await env.page.evaluate(() => window.jiwei.settings.get())
+  await env.page.evaluate(async () => { const s = await window.jiwei.settings.get(); await window.jiwei.settings.set({ ai: { ...s.ai, chat: { providerId: null, model: null } } }) })
+  const card = await env.page.evaluate((id) => window.jiwei.review.get(id), cardId)
+  expect(card?.variantId).toBeNull(); expect(card?.question).toContain('5x')
+  await openMistakes(env)
+  await env.page.getByRole('button', { name: '添加错题', exact: true }).click()
+  await env.page.getByRole('textbox', { name: '题目原文', exact: true }).fill('只用本地：求 $2+2$，我的答案 5。')
+  await env.page.getByRole('button', { name: '保存并拆分', exact: true }).click()
+  await expect(env.page.getByTestId('mistake-details')).toContainText('只用本地')
+  await expect(env.page.getByText('未设置模型，已保存原题，可手动编辑', { exact: true })).toBeVisible()
+  await env.page.getByTestId('mistake-details').getByRole('button', { name: '编辑', exact: true }).click()
+  await expect(env.page.getByTestId('mistake-details').getByLabel('题干', { exact: true })).toHaveValue(/只用本地/)
+  await env.page.getByTestId('mistake-details').getByLabel('正确答案', { exact: true }).fill('4')
+  await env.page.getByTestId('mistake-details').getByLabel('解析', { exact: true }).fill('$2+2=4$')
+  await env.page.getByTestId('mistake-details').getByRole('button', { name: '保存修改', exact: true }).click()
+  await env.page.getByTestId('mistake-details').getByRole('button', { name: '加入错题笔记', exact: true }).click()
+  const local = await env.page.evaluate(() => window.jiwei.mistakes.list({ search: '只用本地' }).then((m) => m[0]))
+  await expect.poll(() => env.page.evaluate((id) => window.jiwei.mistakes.get(id).then((m) => m?.landed), local.id)).toBe(true)
+  expect((await env.page.evaluate((id) => window.jiwei.mistakes.practice(id), local.id)).fallback).toBe('no-model')
+  await env.page.evaluate((ai) => window.jiwei.settings.set({ ai }), settings.ai)
+  const count = env.requests.length
+  const limited = await env.page.evaluate(() => window.jiwei.mistakes.create({ sourceKind: 'manual', text: 'Private question $7+4$', localOnly: true }))
+  await waitMistake(env, limited.items[0].id)
+  expect((await env.page.evaluate((id) => window.jiwei.mistakes.practice(id), limited.items[0].id)).fallback).toBe('local-only')
+  expect(env.requests.length).toBe(count)
+  const restricted = await env.page.evaluate(async ({ publicId, localId, limitedId }) => {
+    const publicMistake = (await window.jiwei.mistakes.get(publicId))!
+    await window.jiwei.mistakes.update(publicId, { cause: publicMistake.cause, causeReason: publicMistake.causeReason })
+    const localMistake = (await window.jiwei.mistakes.get(localId))!
+    await window.jiwei.notes.update(localMistake.noteId!, { aiExcluded: true })
+    return [await window.jiwei.mistakes.update(localId, { cause: 'unknown' }), await window.jiwei.mistakes.update(limitedId, { cause: 'unknown' })]
+  }, { publicId: math.id, localId: local.id, limitedId: limited.items[0].id })
+  expect(restricted.every((m) => m.diagnosisCorrection)).toBe(true)
+  expect((await env.page.evaluate((id) => window.jiwei.notes.get(id), restricted[0].noteId!))?.aiExcluded).toBe(true)
+  const beforePublic = env.requests.length
+  const publicInput = await env.page.evaluate(() => window.jiwei.mistakes.create({ sourceKind: 'manual', text: 'Solve x² - 5x + 6 = 0. My answer: D = 25 - 24 = 9.' }))
+  const publicMistake = await waitMistake(env, publicInput.items[0].id)
+  expect(publicMistake.cause).toBe('calculation')
+  const payloads = env.requests.slice(beforePublic).filter((request) => request.kind === 'diagnose')
+  expect(payloads).toHaveLength(1)
+  const corrections = payloads[0].data.corrections as { question: string }[]
+  expect(corrections.some((correction) => correction.question === math.question)).toBe(true)
+  expect(corrections.every((correction) => restricted.every((record) => record.question !== correction.question))).toBe(true)
+  expect(corrections.length).toBeLessThanOrEqual(5)
+  semanticEvidence('mistakes-correction-privacy.json', { evidenceType: 'controlled-flow-only', restricted: restricted.map((m) => ({ id: m.id, question: m.question, flags: m.flags, noteId: m.noteId, diagnosisCorrection: m.diagnosisCorrection })), excludedNote: { id: restricted[0].noteId, aiExcluded: true }, publicMistake: { id: publicMistake.id, cause: publicMistake.cause }, diagnosisPayload: payloads[0].data })
+  await select(local.id)
+  expect(await env.page.getByTestId('mistakes-view').evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true)
+  expect(await env.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true)
+  await mistakeShot(env, `mistakes-narrow-${process.env.JIWEI_TEST_WINDOW ?? 'wide'}.png`)
+  const back = env.page.getByRole('button', { name: '返回列表', exact: true }); if (await back.isVisible()) await back.click()
+  await env.page.getByRole('radiogroup', { name: '全部学科', exact: true }).getByRole('radio', { name: '物理', exact: true }).click()
+  await expect.poll(() => env.page.getByTestId('mistake-item').count()).toBe(1)
+  await env.page.getByRole('radiogroup', { name: '全部学科', exact: true }).getByRole('radio', { name: '全部', exact: true }).click()
+})
+test('浏览器框选识别卡的存为错题绑定真实网页与原图', async () => {
+  const server = createServer((request, response) => {
+    if (request.url === '/math.png') response.writeHead(200, { 'content-type': 'image/png' }).end(files.math.bytes)
+    else response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }).end('<!doctype html><meta charset="utf-8"><title>错题题图</title><style>body{margin:0}img{max-width:100%;width:1000px}</style><img src="/math.png" alt="数学题原图">')
+  })
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const url = `http://127.0.0.1:${(server.address() as { port: number }).port}/`
+  try {
+    await env.page.keyboard.press('ControlOrMeta+n')
+    await env.page.getByPlaceholder('笔记标题').fill('浏览器错题入口')
+    await env.page.getByRole('button', { name: '在笔记旁打开浏览器', exact: true }).click()
+    await env.page.getByTestId('browser-start').getByRole('textbox').fill(url)
+    await env.page.keyboard.press('Enter')
+    await expect.poll(() => env.page.evaluate(() => window.jiwei.browser.state().then((s) => s.tabs[0]?.loading))).toBe(false)
+    await env.page.getByRole('button', { name: '框选识别', exact: true }).click()
+    const selection = env.page.getByTestId('browser-capture-selection')
+    await expect(selection.locator('img')).toBeVisible()
+    const bounds = (await selection.boundingBox())!
+    await env.page.mouse.move(bounds.x + bounds.width * 0.03, bounds.y + bounds.height * 0.03)
+    await env.page.mouse.down()
+    await env.page.mouse.move(bounds.x + bounds.width * 0.95, bounds.y + bounds.height * 0.7, { steps: 8 })
+    await env.page.mouse.up()
+    await expect(env.page.getByTestId('browser-recognition-card')).toBeVisible({ timeout: 180000 })
+    await env.page.getByTestId('browser-recognition-card').getByRole('button', { name: '存为错题', exact: true }).click()
+    await expect.poll(() => env.page.evaluate(() => window.jiwei.mistakes.list().then((m) => m.filter((m) => m.sourceKind === 'browser').length))).toBe(1)
+    const [m] = await env.page.evaluate(() => window.jiwei.mistakes.list().then((m) => m.filter((m) => m.sourceKind === 'browser')))
+    expect(m.assetId).toBeTruthy(); expect(m.sourceRef).toMatch(/^jiwei:\/\/source\//)
+    await waitMistake(env, m.id, process.env.JIWEI_OCR ? 180000 : 30000)
+    await select(m.id)
+    await mistakeShot(env, 'mistakes-browser-capture-entry.png')
+  } finally { await new Promise<void>((resolve) => server.close(() => resolve())) }
+})
+test('打开实际错题笔记保留公式/图片，Yjs撤销重做同步卡片；移学科与删除回执可重试', async () => {
+  await select(math.id)
+  await env.page.getByRole('button', { name: '打开错题笔记', exact: true }).click()
+  await expect(env.page.locator('.cornell-doc')).toContainText('25 - 24 = 9')
+  await expect(env.page.locator('.cornell-doc img').first()).toBeVisible()
+  await expect(env.page.locator('.cornell-doc .katex').first()).toBeVisible()
+  await env.page.locator('.cornell-body').first().click()
+  await env.page.keyboard.press('ControlOrMeta+z')
+  await expect.poll(() => env.page.evaluate((id) => window.jiwei.mistakes.get(id).then((m) => m?.landed), math.id)).toBe(false)
+  await expect.poll(() => env.page.evaluate((id) => window.jiwei.review.forNote(id).then((c) => c.length), noteId)).toBe(0)
+  await env.page.keyboard.press('ControlOrMeta+Shift+z')
+  await expect.poll(() => env.page.evaluate((id) => window.jiwei.review.forNote(id).then((c) => c.length), noteId)).toBe(1)
+  await select(math.id)
+  await env.page.getByTestId('mistake-details').getByRole('button', { name: '编辑', exact: true }).click()
+  await env.page.getByTestId('mistake-details').getByLabel('学科', { exact: true }).selectOption('chemistry')
+  await env.page.getByRole('button', { name: '保存修改', exact: true }).click()
+  await expect.poll(() => env.page.evaluate((id) => window.jiwei.mistakes.get(id).then(async (m) => m?.noteId ? (await window.jiwei.notes.get(m.noteId))?.title : ''), math.id)).toBe('错题本 · 化学')
+  await expect.poll(() => env.page.evaluate((id) => window.jiwei.mistakes.get(id).then((m) => m?.landed), math.id)).toBe(true)
+  await expect.poll(() => env.page.evaluate((id) => window.jiwei.review.forNote(id).then((c) => c.length), noteId)).toBe(0)
+  await expect.poll(() => env.page.evaluate((id) => window.jiwei.review.get(id).then((c) => ({ id: c?.id, reps: c?.reps, title: c?.noteTitle })), cardId)).toEqual({ id: cardId, reps: 1, title: '错题本 · 化学' })
+  const remove = await env.page.evaluate((id) => window.jiwei.mistakes.remove(id), math.id)
+  await env.page.getByTestId('mistake-details').getByRole('button', { name: '更多操作', exact: true }).click()
+  await env.page.getByRole('menuitem', { name: '删除错题', exact: true }).click()
+  await expect.poll(() => env.page.evaluate((id) => window.jiwei.mistakes.get(id), math.id)).toBeNull()
+  await env.page.evaluate(async ({ id, proposalId, noteId }) => window.jiwei.mistakes.removeComplete(id, proposalId, await window.jiwei.notes.loadDoc(noteId)), { id: math.id, proposalId: remove!.proposalId!, noteId: remove!.noteId })
+  expect(await env.page.evaluate((id) => window.jiwei.review.forNote(id).then((c) => c.length), remove!.noteId)).toBe(0)
+})
+test('截图小窗粘贴题图→存为错题走受信来源；重启后的领域和真实文档仍可读回', async () => {
+  const next = env.app.waitForEvent('window')
+  await env.page.evaluate(() => window.jiwei.capture.open('text'))
+  const capture = await next; await capture.waitForSelector('[data-testid="capture-window"]')
+  await capture.evaluate((bytes) => {
+    const file = new File([new Uint8Array(bytes)], 'mistakes-physics.png', { type: 'image/png' }), data = new DataTransfer(); data.items.add(file)
+    document.querySelector('textarea')!.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }))
+  }, [...files.physics.bytes])
+  await expect(capture.getByRole('button', { name: '存为错题', exact: true })).toBeVisible()
+  await capture.getByRole('button', { name: '存为错题', exact: true }).click()
+  await expect.poll(() => env.page.evaluate(() => window.jiwei.mistakes.list().then((m) => m.filter((m) => m.sourceKind === 'capture').length)), { timeout: process.env.JIWEI_OCR ? 180000 : 30000 }).toBe(1)
+  const old = await env.page.evaluate(() => window.jiwei.mistakes.list()), userData = env.userData
+  await env.close(); env = await startMistakesApp({ userData })
+  const persisted = await env.page.evaluate(() => window.jiwei.mistakes.list())
+  expect(persisted.map((m) => m.id).sort()).toEqual(old.map((m) => m.id).sort())
+  expect(persisted.filter((m) => m.landed).length).toBeGreaterThanOrEqual(2)
+  await openMistakes(env)
+  semanticEvidence('mistakes-controlled-summary.json', { evidenceType: 'controlled-flow-only', persisted: persisted.map((m) => ({ id: m.id, sourceKind: m.sourceKind, subject: m.subject, landed: m.landed })), variantStats: await env.page.evaluate(() => window.jiwei.mistakes.variantStats()) })
+})

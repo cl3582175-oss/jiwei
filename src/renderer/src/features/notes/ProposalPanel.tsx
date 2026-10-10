@@ -17,6 +17,7 @@ import { diffKey, DIFF_DECISION, type DiffDecision, type DiffItem } from './edit
 import { embedViews } from './editor/embeds/registry'
 import { embedsMap, writeEmbed } from './editor/embeds/ydata'
 import { previewExtensions } from './editor/preview'
+import { PendingVocabulary } from '../reading/PendingVocabulary'
 
 /** AI 修改提案面板：逐条预览、接受或拒绝；接受的内容以 AI 来源写入，可撤销 */
 /** 富内容块预览：用真正的显示组件渲染（导图、图表、图示……），数据放在临时的 Yjs 文档中 */
@@ -55,8 +56,10 @@ export function ProposalPanel({ noteId, editor, ydoc }: { noteId: string; editor
   const key = ['proposals', noteId]
   // 打开笔记时总是重新读取：笔记没打开期间（如费曼练习、存入笔记）新增的提案不会经过下面的事件监听
   const { data: stored = [] } = useQuery({ queryKey: key, queryFn: () => api.proposals.list(noteId), staleTime: 0 })
-  const list = useMemo(() => stored.filter((p) => p.skill !== 'lens-landing'), [stored])
+  const domain = (p: Proposal): boolean => /^(mistake-(?:landing|move|delete):|vocabulary-landing)/.test(p.skill ?? '')
+  const list = useMemo(() => stored.filter((p) => p.skill !== 'lens-landing' && !domain(p)), [stored])
   const lensProposals = stored.filter((p) => p.skill === 'lens-landing')
+  const domainProposals = stored.filter(domain)
 
   useEffect(
     () =>
@@ -201,7 +204,7 @@ export function ProposalPanel({ noteId, editor, ydoc }: { noteId: string; editor
   const inlineKeys = new Set(inline.map((x) => `${x.proposalId}:${x.opIndex}`))
   // 所有待定操作都已在原文处显示的提案，不再出现在面板中
   const visible = list.filter((p) => !p.auto && p.ops.some((_, i) => p.opStatus[i] === 'pending' && !inlineKeys.has(`${p.id}:${i}`)))
-  if (visible.length === 0 && lensProposals.length === 0) return null
+  if (visible.length === 0 && lensProposals.length === 0 && domainProposals.length === 0) return null
 
   const opLabel = (op: ProposalOp): string => t(`proposals.op.${op.op}`)
   const preview = (p: Proposal, op: ProposalOp): React.ReactNode => {
@@ -226,6 +229,31 @@ export function ProposalPanel({ noteId, editor, ydoc }: { noteId: string; editor
 
   return (
     <div className="mb-6 space-y-3">
+      {domainProposals.map((p) =>
+        p.skill === 'vocabulary-landing' ? (
+          <PendingVocabulary key={p.id} proposal={p} editor={editor} ydoc={ydoc} />
+        ) : (
+          <section key={p.id} className="rounded-xl border border-border p-3 text-xs" data-testid="learning-proposal-notice">
+            <p>{t('learning.pendingProposal')}</p>
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-2"
+              onClick={() => {
+                if (p.skill?.startsWith('mistake-')) {
+                  useApp.getState().setReviewTab('mistakes')
+                  useApp.getState().setView('review')
+                } else {
+                  const source = p.sources?.find((s) => s.type === 'source')
+                  if (source) useApp.getState().openSource(source.id)
+                }
+              }}
+            >
+              {p.skill?.startsWith('mistake-') ? t('inbox.action.mistake') : t('learning.returnReading')}
+            </Button>
+          </section>
+        )
+      )}
       {lensProposals.map((p) => (
         <section key={p.id} className="rounded-xl border border-border p-3 text-xs" data-testid="lens-proposal-notice">
           <p>{t('lens.errors.reviewInSource')}</p>

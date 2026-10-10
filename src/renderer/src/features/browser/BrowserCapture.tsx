@@ -208,6 +208,15 @@ export function useBrowserCapture(tab: BrowserTab | null, slot: React.RefObject<
         <Button size="sm" variant="primary" disabled={!card.text.trim() || saving} onClick={() => void save([card])}>
           {t('browserCapture.save')}
         </Button>
+        <Button size="sm" disabled={saving} onClick={() => {
+          setSaving(true)
+          void api.mistakes.fromBrowserCapture(card.result.id).then(() => {
+            const state = useApp.getState()
+            state.setReviewTab('mistakes')
+            state.setView('review')
+            close()
+          }).catch((e) => toast.error(errorText(e))).finally(() => setSaving(false))
+        }}>{t('mistakes.saveAs')}</Button>
         <Button size="sm" onClick={() => void navigator.clipboard.writeText(card.text).catch((e) => toast.error(errorText(e)))}>
           {t('browserCapture.copy')}
         </Button>

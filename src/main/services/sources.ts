@@ -7,6 +7,7 @@ import { stat } from 'fs/promises'
 import { BrowserWindow, dialog, shell } from 'electron'
 import { and, desc, eq, inArray, isNull, like, or, type SQL } from 'drizzle-orm'
 import { getDb } from '../db'
+import { emit } from '../events'
 import { assets, sources, taggings } from '../db/schema'
 import { newId } from '../lib/ids'
 import { deviceId } from './device'
@@ -260,6 +261,7 @@ export function updateSource(id: string, patch: SourceUpdate): void {
     .set({ ...patch, updatedAt: Date.now(), updatedBy: deviceId() })
     .where(eq(sources.id, id))
     .run()
+  emit('sources:changed', { id })
 }
 
 function row(id: string) {

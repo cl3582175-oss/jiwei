@@ -30,6 +30,8 @@ import {
   type VoiceStatus
 } from './recording'
 import { z } from 'zod'
+import * as M from './mistakes'
+import * as R from './reading'
 import * as S from './schemas'
 import type {
   AppInfo,
@@ -137,6 +139,48 @@ const none = [] as const
 const id = (name = 'id') => [name, S.Id] as const
 
 export const capabilities = {
+  mistakes: {
+    create: cap<M.MistakeIngestion>()({ description: '录入手动错题', params: [['input', M.MistakeCreateSchema]] }),
+    fromInbox: cap<M.MistakeIngestion>()({ description: '从收件箱原件加入错题本', params: [id()] }),
+    fromBrowserCapture: cap<M.MistakeIngestion>()({ description: '从已验证的浏览器框选加入错题本', params: [id()] }),
+    get: cap<M.Mistake | null>()({ description: '错题详情', params: [id()] }),
+    list: cap<M.Mistake[]>()({ description: '筛选错题本', params: [['filters', M.MistakeFiltersSchema]] }),
+    update: cap<M.Mistake>()({ description: '编辑或核对错题', params: [id(), ['patch', M.MistakePatchSchema]] }),
+    retry: cap<M.MistakeIngestion>()({ description: '重试错题拆分', params: [id()] }),
+    prepare: cap<M.MistakeLanding>()({ description: '准备错题康奈尔行提案', params: [id()] }),
+    complete: cap<M.Mistake>()({ description: '确认错题提案已在renderer应用', params: [id(), id('proposalId'), ['update', S.Bytes]] }),
+    remove: cap<M.MistakeLanding | null>()({ description: '准备移除错题及对应行', params: [id()] }),
+    removeComplete: cap<void>()({ description: '确认错题删除提案', params: [id(), id('proposalId'), ['update', S.Bytes]] }),
+    practice: cap<M.MistakePractice>()({ description: '选择已预生成的变式或原题', params: [id()] }),
+    replenish: cap<string | null>()({ description: '后台补足变式池', params: [id(), ['immediate', z.boolean().optional()]] }),
+    flag: cap<M.MistakePractice>()({ description: '标记变式题有误并换题', params: [id('variantId')] }),
+    check: cap<AnswerCheck>()({
+      description: '对照变式或原题检查作答',
+      params: [id(), ['variantId', M.MistakeId.nullable()], ['answer', M.MistakePracticeAnswerSchema]]
+    }),
+    useVariant: cap<void>()({ description: '记录本次已用变式并补池', params: [id('variantId')] }),
+    variants: cap<M.MistakeVariant[]>()({ description: '变式题记录', params: [id()] }),
+    variantStats: cap<M.MistakeVariantStats>()({ description: '独立校验丢弃统计', params: none }),
+    statistics: cap<import('./learningStats').MistakeStatistics>()({ description: '学习者错因分布', params: none })
+  },
+  reading: {
+    state: cap<R.ReadingState>()({ description: '资料或网页的阅读模式', params: [['target', R.ReadingTargetSchema]] }),
+    configure: cap<R.ReadingState>()({ description: '设置对照阅读与按水平注释', params: [['input', R.ReadingConfigureSchema]] }),
+    estimate: cap<R.ReadingEstimate>()({ description: '首次阅读费用估计', params: [['target', R.ReadingTargetSchema]] }),
+    translate: cap<R.ReadingBatchResult>()({ description: '翻译视口附近的段落并注释', params: [['input', R.ReadingBatchSchema]] }),
+    profile: cap<R.VocabularyProfile>()({ description: '个人词汇水平和已知词', params: none }),
+    setThreshold: cap<R.VocabularyProfile>()({ description: '调整个人词频阈值', params: [['threshold', R.ThresholdSchema]] }),
+    recognize: cap<R.VocabularyProfile>()({ description: '记录认识超纲词', params: [['word', R.WordSchema]] }),
+    query: cap<R.VocabularyProfile>()({ description: '记录主动查词', params: [['word', R.WordSchema]] }),
+    prepare: cap<R.VocabularyLanding>()({ description: '准备生词本康奈尔行提案', params: [['input', R.VocabularyInputSchema]] }),
+    complete: cap<R.VocabularyLanding>()({ description: '确认生词本renderer落地', params: [id('proposalId'), ['update', S.Bytes]] }),
+    clearCache: cap<{ removed: number }>()({ description: '清空本机翻译缓存', params: none }),
+    cacheStats: cap<{ bytes: number; entries: number }>()({ description: '本机翻译缓存占用', params: none }),
+    usage: cap<{ calls: number; inputTokens: number; outputTokens: number; cost: number | null }>()({
+      description: '本次阅读实际模型费用',
+      params: [['target', R.ReadingTargetSchema]]
+    })
+  },
   lenses: {
     list: cap<LensInfo[]>()({ description: '整理视角', params: none }),
     save: cap<LensInfo>()({
@@ -613,7 +657,8 @@ export const capabilities = {
       params: [
         id(),
         ['rating', z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)])],
-        ['durationMs', z.number().int().min(0).optional()]
+        ['durationMs', z.number().int().min(0).optional()],
+        ['variantId', M.MistakeId.nullable().optional()]
       ]
     }),
     undo: cap<ReviewCard | null>()({ description: '撤销这张卡片最近一次评分', params: [id()] }),
@@ -622,7 +667,10 @@ export const capabilities = {
       description: '某篇笔记的复习卡片',
       params: [id('noteId')]
     }),
-    check: cap<AnswerCheck>()({ description: 'AI 对照笔记检查用户的回答', params: [id(), ['answer', z.string().min(1).max(5000)]] })
+    check: cap<AnswerCheck>()({
+      description: 'AI 对照当前练习检查用户的回答',
+      params: [id(), ['answer', z.string().min(1).max(5000)], ['variantId', M.MistakeId.nullable().optional()]]
+    })
   },
   skills: {
     list: cap<SkillInfo[]>()({ description: '列出技能', params: none }),

@@ -5,6 +5,7 @@ import { useAssist, type AskAction } from './store'
 import { askInline } from './actions'
 import { annotate, lastColor } from '../annotate/store'
 import { SWATCH } from '../annotate/AnnotationCard'
+import { isForeignText } from '@shared/reading'
 
 // 选区浮条：选中资料中的文字后出现在选区上方——解释 / 讲明白 / 翻译 / 问 AI；
 // 以及批注：高亮、批注（写评论）、存疑。
@@ -43,7 +44,8 @@ export function SelectionToolbar() {
 
   if (!toolbar) return null
   const { rect, anchor } = toolbar
-  const W = 470
+  const grammar=isForeignText(anchor.quote ?? '',document.documentElement.lang || 'zh-CN')
+  const W = Math.min(grammar?540:470,window.innerWidth-24)
   const left = Math.min(Math.max(12, rect.x + rect.w / 2 - W / 2), window.innerWidth - W - 12)
   const above = rect.y > 56
   const top = above ? rect.y - 44 : rect.y + rect.h + 8
@@ -62,7 +64,7 @@ export function SelectionToolbar() {
       style={{ left, top, width: W }}
       className="glass fixed z-50 flex items-center justify-center gap-0.5 rounded-xl border border-border p-1 shadow-float animate-[fade-in_120ms_ease-out]"
     >
-      {ACTIONS.map((a) => (
+      {[...ACTIONS,...(grammar?[{id:'grammar' as const,icon:<BookOpenText />}]:[])].map((a) => (
         <button
           key={a.id}
           onMouseDown={(e) => e.preventDefault()}
@@ -70,7 +72,7 @@ export function SelectionToolbar() {
           className="inline-flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg px-1 text-xs text-fg transition-colors hover:bg-surface-hover [&_svg]:size-3.5 [&_svg]:text-accent"
         >
           {a.icon}
-          {t(`assist.actions.${a.id}`)}
+          {a.id==='grammar'?t('reading.grammar'):t(`assist.actions.${a.id}`)}
         </button>
       ))}
       <span className="mx-0.5 h-5 w-px bg-border" aria-hidden />

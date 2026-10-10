@@ -1,5 +1,20 @@
+import { mistakesZh } from '../features/mistakes/messages'
+import { readingZh } from '../features/reading/messages'
+
 const zhCN = {
+  mistakes: mistakesZh,
+  reading: readingZh,
+  learning: {
+    pendingProposal: '此提案须在错题或阅读入口完成审阅与确认。',
+    returnReading: '返回阅读资料',
+    weekly: '本周错题',
+    causeDistribution: '错因分布',
+    statisticsHint: '由实际错题记录统计，不经过 AI。',
+    summary: '{{count}} 道错题 · 已核对 {{verified}}%',
+    causes: { concept: '概念不清', calculation: '计算失误', reading: '审题错误', method: '方法不会', careless: '粗心', unknown: '无法判断' }
+  },
   recordingMain: {
+    sourceNoCloud: '资料不存在、已删除或仅本地保存，不能调用云端模型。',
     invalidVector: '声纹向量无效',
     vectorDimension: '声纹维度不匹配',
     invalidCenter: '声纹中心输入无效',
@@ -287,7 +302,14 @@ const zhCN = {
       failed: '识别失败，原件已保留',
       canceled: '已取消识别，原件已保留'
     },
-    action: { append_note: '并入笔记', new_note: '新建笔记', save_source: '存为资料', action_item: '行动项', keep: '只保留' }
+    action: {
+      append_note: '并入笔记',
+      new_note: '新建笔记',
+      save_source: '存为资料',
+      action_item: '行动项',
+      mistake: '加入错题本',
+      keep: '只保留'
+    }
   },
   captureContent: {
     imageJob: '识别笔记图片',

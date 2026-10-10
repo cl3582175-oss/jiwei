@@ -8,6 +8,7 @@ import type { BrowserState, BrowserTab, BrowserVideo, CourseState } from '@share
 import { canonicalUrl, isSensitiveUrl } from '../../lib/browserPolicy'
 import { getSettings } from '../settings'
 import { clearConcepts } from './concepts'
+import type { ReadingState } from '@shared/reading'
 
 // 内置浏览器（v0.6.0，设计见 docs/design/v0.6-browser-and-capture.md §3.1）：
 //   - 每个标签页是一个 WebContentsView（Electron 推荐的嵌入方式），叠放在工作区左栏的占位区域上
@@ -40,6 +41,7 @@ interface Tab {
   captureScope: string
   course: CourseState
   pendingSeek: { t: number; play: boolean; url: string } | null
+  reading: ReadingState | null
 }
 
 const initialCourse = (): CourseState => ({
@@ -130,7 +132,8 @@ function toTab(t: Tab): BrowserTab {
     sensitive: sensitive(t),
     sourceId: t.sourceId,
     video: !t.incognito && !sensitive(t) ? t.video : null,
-    course: t.course
+    course: t.course,
+    reading: !t.incognito && !sensitive(t) ? t.reading : null
   }
 }
 
@@ -258,7 +261,8 @@ function createTab(url: string, opts: { incognito?: boolean; activate?: boolean 
     scope: newId(),
     captureScope: newId(),
     course: initialCourse(),
-    pendingSeek: null
+    pendingSeek: null,
+    reading: null
   }
   tabs.set(t.id, t)
   order.push(t.id)
@@ -282,6 +286,7 @@ function createTab(url: string, opts: { incognito?: boolean; activate?: boolean 
       if (t.pendingSeek && canonicalUrl(t.pendingSeek.url) !== canonicalUrl(targetUrl)) t.pendingSeek = null
       t.navigationUrl = targetUrl
       if (inPlace && canonicalUrl(t.committedUrl) === canonicalUrl(targetUrl)) return
+      readingReset?.(t.id)
       if (!inPlace) t.navigating = true
       // 换了网址：不再对应之前存的资料
       t.sourceId = null
@@ -364,6 +369,7 @@ export function openTab(input: string, opts: { incognito?: boolean; activate?: b
 export function closeTab(id: string): void {
   const t = tabs.get(id)
   if (!t) return
+  readingReset?.(t.id)
   invalidateCourse(t)
   tabs.delete(id)
   const i = order.indexOf(id)
@@ -453,18 +459,20 @@ export function playback(id: string, play: boolean): void {
   toPage(id, play ? 'jw-page:play' : 'jw-page:pause', {})
 }
 
-export function pageConfig(id: string): { allowed: boolean; scope: string; course: CourseState; labels: Record<string, string> } {
+export function pageConfig(id: string): { allowed: boolean; scope: string; course: CourseState; language: string; labels: Record<string, string> } {
   const t = getTab(id)
   const zh = getSettings().language.startsWith('zh')
   return {
     allowed: !!t && !t.incognito && !sensitive(t),
     scope: t?.scope ?? '',
+    language: getSettings().language,
     course: t?.course ?? initialCourse(),
     labels: zh
       ? {
           explain: '解释',
           clarify: '讲明白',
           translate: '翻译',
+          grammar: '讲语法',
           ask: '问 AI',
           highlighting: '高亮',
           commenting: '批注',
@@ -474,6 +482,7 @@ export function pageConfig(id: string): { allowed: boolean; scope: string; cours
           explain: 'Explain',
           clarify: 'Clarify',
           translate: 'Translate',
+          grammar: 'Grammar',
           ask: 'Ask AI',
           highlighting: 'Highlight',
           commenting: 'Comment',
@@ -489,7 +498,7 @@ export function pushConfig(id: string): void {
 /** 设置与密码变化即时撤销采集，不能等下一次页面加载。 */
 export function refreshPrivacy(): void {
   for (const t of tabs.values()) {
-    if (t.incognito || sensitive(t)) invalidateCourse(t)
+    if (t.incognito || sensitive(t)) { invalidateCourse(t); readingReset?.(t.id) }
     pushConfig(t.id)
   }
   changed()
@@ -614,6 +623,7 @@ export function registerContentIpc(handlers: { action: (tabId: string, msg: unkn
     const t = tabOf(e.sender)
     if (t && e.senderFrame === e.sender.mainFrame && !t.hasPassword) {
       t.hasPassword = true
+      readingReset?.(t.id)
       t.pendingSeek = null
       invalidateCourse(t)
       pushConfig(t.id)
@@ -634,3 +644,6 @@ export function registerContentIpc(handlers: { action: (tabId: string, msg: unkn
     return pageConfig(e.senderFrame === e.sender.mainFrame ? (t?.id ?? '') : '')
   })
 }
+
+let readingReset: ((tabId: string) => void) | null = null
+export function onReadingReset(handler: (tabId: string) => void): void { readingReset = handler }

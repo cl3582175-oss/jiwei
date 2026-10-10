@@ -443,6 +443,8 @@ export const cards = sqliteTable(
     noteId: text('note_id').notNull(),
     /** 问题所在的块（通常是线索栏段落或整行） */
     blockId: text('block_id').notNull(),
+    kind: text('kind', { enum: ['cornell', 'mistake'] }).notNull().default('cornell'),
+    mistakeId: text('mistake_id'),
     due: integer('due').notNull(),
     stability: real('stability').notNull().default(0),
     difficulty: real('difficulty').notNull().default(0),
@@ -476,6 +478,70 @@ export const reviewLogs = sqliteTable(
     reviewedAt: integer('reviewed_at').notNull()
   },
   (t) => [index('review_logs_card_idx').on(t.cardId, t.reviewedAt)]
+)
+
+/** 错题正文仍落在康奈尔行；此表记录识别、审阅和练习的领域状态。 */
+export const mistakes = sqliteTable(
+  'mistakes',
+  {
+    id: text('id').primaryKey(),
+    noteId: text('note_id'),
+    rowId: text('row_id'),
+    sourceKind: text('source_kind', { enum: ['inbox', 'capture', 'browser', 'manual'] }).notNull(),
+    sourceRef: text('source_ref'),
+    assetId: text('asset_id'),
+    cropAssetId: text('crop_asset_id'),
+    question: text('question').notNull().default(''),
+    myAnswer: text('my_answer').notNull().default(''),
+    correctAnswer: text('correct_answer').notNull().default(''),
+    solution: text('solution').notNull().default(''),
+    answerOrigin: text('answer_origin', { enum: ['image', 'ai', 'user'] }).notNull().default('image'),
+    verified: integer('verified', { mode: 'boolean' }).notNull().default(false),
+    cause: text('cause', { enum: ['concept', 'calculation', 'reading', 'method', 'careless', 'unknown'] }).notNull().default('unknown'),
+    causeReason: text('cause_reason').notNull().default(''),
+    concepts: text('concepts').notNull().default('[]'),
+    subject: text('subject', { enum: ['math', 'physics', 'chemistry', 'english', 'other'] }).notNull().default('other'),
+    flags: text('flags').notNull().default('[]'),
+    // 用户纠正与批次身份让下次诊断及崩溃重试都有可靠依据。
+    diagnosisCorrection: integer('diagnosis_correction', { mode: 'boolean' }).notNull().default(false),
+    ingestKey: text('ingest_key'),
+    ...syncCols
+  },
+  (t) => [index('mistakes_note_idx').on(t.noteId), index('mistakes_created_idx').on(t.createdAt), uniqueIndex('mistakes_ingest_idx').on(t.ingestKey)]
+)
+
+export const mistakeVariants = sqliteTable(
+  'mistake_variants',
+  {
+    id: text('id').primaryKey(),
+    mistakeId: text('mistake_id').notNull(),
+    question: text('question').notNull(),
+    answer: text('answer').notNull(),
+    solution: text('solution').notNull(),
+    createdAt: integer('created_at').notNull(),
+    usedAt: integer('used_at'),
+    flagged: integer('flagged', { mode: 'boolean' }).notNull().default(false),
+    model: text('model')
+  },
+  (t) => [index('mistake_variants_pool_idx').on(t.mistakeId, t.usedAt)]
+)
+
+/** 可重建的本机缓存，没有同步列，不进入笔记内容导出。 */
+export const translationCache = sqliteTable(
+  'translation_cache',
+  {
+    id: text('id').primaryKey(),
+    textHash: text('text_hash').notNull(),
+    targetLanguage: text('target_language').notNull(),
+    styleVersion: text('style_version').notNull(),
+    translation: text('translation').notNull().default(''),
+    annotations: text('annotations').notNull().default('[]'),
+    model: text('model').notNull(),
+    createdAt: integer('created_at').notNull(),
+    usedAt: integer('used_at').notNull(),
+    bytes: integer('bytes').notNull()
+  },
+  (t) => [uniqueIndex('translation_cache_key_idx').on(t.textHash, t.targetLanguage, t.styleVersion), index('translation_cache_used_idx').on(t.usedAt)]
 )
 
 /** 学习者画像：AI 了解“你”的依据，用户可查看、修改、清除 */

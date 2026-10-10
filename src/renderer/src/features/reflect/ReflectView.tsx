@@ -55,10 +55,17 @@ function MaterialPane({ m }: { m: ReflectionMaterial }) {
   const qc = useQueryClient()
   const open = (id: string): void => useApp.getState().openNote(id)
   const empty =
-    !m.goals.length && !m.notes.length && !m.episodes.length && !m.review.reviewed && !m.unanswered.length && !m.concepts.length && !m.feynman.length && !m.actions.length && !m.annotations.items.length
+    !m.mistakes.total && !m.goals.length && !m.notes.length && !m.episodes.length && !m.review.reviewed && !m.unanswered.length && !m.concepts.length && !m.feynman.length && !m.actions.length && !m.annotations.items.length
   if (empty) return <p className="py-8 text-center text-xs leading-relaxed text-subtle">{t('reflect.noMaterial')}</p>
   return (
     <div data-testid="material">
+      {m.mistakes.total > 0 && <Section icon={<Layers />} title={t('learning.weekly')} count={m.mistakes.total}>
+        <div data-testid="material-mistakes">
+          <p>{t('learning.summary', { count: m.mistakes.total, verified: Math.round(m.mistakes.verifiedRatio * 100) })}</p>
+          <p className="mt-1 text-xs text-muted">{m.mistakes.causes.filter((c) => c.count).map((c) => `${t(`learning.causes.${c.cause}`)} ${Math.round(c.percentage)}%`).join(' · ')}</p>
+          <p className="mt-1 text-xs text-muted">{m.mistakes.concepts.map((c) => `${c.name} (${c.count})`).join(' · ')}</p>
+        </div>
+      </Section>}
       {m.goals.length > 0 && (
         <Section icon={<Target />} title={t('reflect.mGoals')} count={m.goals.length}>
           <ul className="space-y-2">

@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, gte, inArray, isNull, lt, lte, ne, or, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { getDb } from '../db'
+import { mistakeStatistics } from './learningStatistics'
 import { actions, blocks, cards, conversations, insightVersions, insights, links, notes, reviewLogs, reviews } from '../db/schema'
 import { profileDb } from '../db/profile'
 import { newId } from '../lib/ids'
@@ -518,7 +519,12 @@ export function reflectionMaterial(id: string): ReflectionMaterial {
   }
 
   const L = (zhText: string, en: string): string => (zh ? zhText : en)
+  const mistakeSummary = mistakeStatistics(start, end, scoped ?? undefined)
+  const causeLabels = zh
+    ? { concept: '概念不清', calculation: '计算失误', reading: '审题错误', method: '方法不会', careless: '粗心', unknown: '无法判断' }
+    : { concept: 'Concept', calculation: 'Calculation', reading: 'Reading', method: 'Method', careless: 'Careless', unknown: 'Unknown' }
   const text = [
+    `${L('本周错题', 'Mistakes this period')}：${mistakeSummary.total}；${L('已核对', 'Verified')} ${Math.round(mistakeSummary.verifiedRatio * 100)}%${mistakeSummary.total ? `；${mistakeSummary.causes.filter((c) => c.count).map((c) => `${causeLabels[c.cause]} ${Math.round(c.percentage)}%`).join('、')}；${mistakeSummary.concepts.map((c) => `${c.name} (${c.count})`).join('、')}` : ''}`,
     `${L('时间', 'Period')}：${new Date(start).toLocaleDateString()} – ${new Date(end - 1).toLocaleDateString()}`,
     r.scope?.topic ? `${L('主题', 'Topic')}：${r.scope.topic}` : '',
     noteRows.length ? `${L('学习的笔记', 'Notes')}：${noteRows.map((n) => `《${n.title || L('无标题', 'Untitled')}》`).join('、')}` : '',
@@ -551,6 +557,7 @@ export function reflectionMaterial(id: string): ReflectionMaterial {
     .join('\n')
 
   return {
+    mistakes: mistakeSummary,
     period: { start, end },
     notes: noteRows.map((n) => ({ id: n.id, title: n.title, editedAt: n.editedAt, created: n.createdAt >= start })),
     episodes,

@@ -28,6 +28,7 @@ const ICON: Record<AskAction, React.ReactNode> = {
   explain: <Lightbulb />,
   clarify: <BookOpenText />,
   translate: <Languages />,
+  grammar: <BookOpenText />,
   ask: <MessageCircleQuestion />,
   shorten: <PenLine />,
   expand: <PenLine />,
@@ -42,7 +43,7 @@ const W = 420
 /** 存入笔记时的线索：解释 / 提问用问题本身；翻译用原文；讲明白用“「原文」讲的是什么？” */
 function cueFor(action: AskAction, question: string, quote: string): string {
   const q = quote.length > 40 ? quote.slice(0, 40) + '…' : quote
-  if (action === 'translate' && q) return q
+  if ((action === 'translate' || action === 'grammar') && q) return action === 'grammar' ? i18n.t('reading.grammarCue', { q }) : q
   if (action === 'clarify' && q) return i18n.t('assist.cueClarify', { q })
   return question
 }

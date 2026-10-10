@@ -17,6 +17,8 @@ import { RecognitionBar } from './RecognitionBar'
 import { useAnnotations } from '../annotate/store'
 import { useTextHighlights } from '../annotate/textHighlights'
 import { AnnotationsPanel } from '../annotate/AnnotationsPanel'
+import { ReadingControls, useReadingState } from '../reading/ReadingControls'
+import { ReadingSourceText } from '../reading/ReadingText'
 
 // 工作区左栏：在应用内查看资料，并把“看到哪里 / 选中了什么”同步到工作区上下文。
 
@@ -24,6 +26,7 @@ function TextSegments({ source }: { source: Source }) {
   const { t } = useTranslation()
   const qc = useQueryClient()
   const { data: segs, isFetched } = useQuery({ queryKey: ['segments', source.id], queryFn: () => api.segments.list(source.id) })
+  const {data:reading}=useReadingState({kind:'source',id:source.id})
   useEffect(
     () =>
       window.jiweiEvents.on('segments:changed', (p) => {
@@ -33,6 +36,7 @@ function TextSegments({ source }: { source: Source }) {
   )
   if (!isFetched) return <Centered icon={<Loader2 className="animate-spin" />} />
   if (!segs?.length) return <Centered icon={<Loader2 className="animate-spin" />} text={t('workspace.parsing')} />
+  if(reading?.foreign&&(reading.mode!=='original'||reading.annotations))return <ReadingSourceText sourceId={source.id} segments={segs} />
   return <SegmentList sourceId={source.id} segs={segs} />
 }
 
@@ -67,7 +71,7 @@ function ThreadMarks({ threads, segId }: { threads: Conversation[]; segId: strin
   const mine = threads.filter((c) => c.anchor?.ownerId === segId)
   if (!mine.length) return null
   return (
-    <span className="thread-marks" contentEditable={false}>
+    <span className="thread-marks" contentEditable={false} data-jiwei-ui="threads">
       {mine.map((c) => (
         <button
           key={c.id}
@@ -195,7 +199,7 @@ export function SourcePane({ sourceId }: { sourceId: string }) {
   if (!source) return <div className="h-full bg-sunken" />
   return (
     <div className="flex h-full flex-col bg-sunken/50">
-      <header className="drag flex h-[52px] shrink-0 items-center gap-2.5 border-b border-border/70 px-4">
+      <header className="drag flex min-h-[52px] shrink-0 flex-wrap items-center gap-2.5 border-b border-border/70 px-4 py-1">
         <span data-tint={KIND_TINT[source.kind]} className="tint grid size-7 shrink-0 place-items-center rounded-lg [&_svg]:size-4">
           {KIND_ICON[source.kind]}
         </span>
@@ -210,6 +214,7 @@ export function SourcePane({ sourceId }: { sourceId: string }) {
           </p>
         </div>
         <div className="no-drag flex items-center gap-0.5">
+          {!source.aiExcluded&&['pdf','web','book','document','other'].includes(source.kind)&&<ReadingControls target={{kind:'source',id:source.id}} />}
           {source.kind === 'web' && source.url && (
             <Tip label={t('browser.openOriginal')} side="bottom">
               <Button
@@ -254,7 +259,7 @@ export function SourcePane({ sourceId }: { sourceId: string }) {
       </header>
       {(source.kind === 'pdf' || source.kind === 'image') && <RecognitionBar sourceId={source.id} />}
       <div className="relative min-h-0 flex-1">
-        <div className={cn('h-full overflow-auto')}>
+        <div className={cn('h-full overflow-auto')} data-reading-scroll>
           <Body source={source} />
         </div>
         {showAnnotations && (

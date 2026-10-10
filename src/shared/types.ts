@@ -281,6 +281,7 @@ export interface BrowserTab {
   sourceId: string | null
   video: BrowserVideo | null
   course: CourseState
+  reading?: import('./reading').ReadingState | null
 }
 
 export interface BrowserState {
@@ -291,7 +292,7 @@ export interface BrowserState {
 /** 网页中选区浮条的操作（内容脚本 → 主进程 → 界面） */
 export interface BrowserAction {
   tabId: string
-  action: 'explain' | 'clarify' | 'translate' | 'ask' | 'highlighting' | 'commenting' | 'questioning' | 'annotation'
+  action: 'explain' | 'clarify' | 'translate' | 'grammar' | 'ask' | 'highlighting' | 'commenting' | 'questioning' | 'annotation'
   quote: string
   prefix: string
   suffix: string
@@ -566,6 +567,7 @@ export interface Reflection {
 
 /** 复盘素材包：由数据统计生成（不经过 AI），既给你看，也作为 AI 追问的依据 */
 export interface ReflectionMaterial {
+  mistakes: import('./learningStats').MistakeStatistics
   period: { start: number; end: number }
   notes: { id: string; title: string; editedAt: number; created: boolean }[]
   episodes: { content: string; at: number; conversationId: string | null }[]
@@ -767,6 +769,11 @@ export interface Memory {
 export type ReviewRating = 1 | 2 | 3 | 4
 
 export interface ReviewCard {
+  kind: 'cornell' | 'mistake'
+  mistakeId: string | null
+  variantId: string | null
+  original: { question: string; answer: string } | null
+  variantFallback: 'empty' | 'no-model' | 'local-only' | 'flagged' | 'unverified' | null
   id: string
   noteId: string
   noteTitle: string
@@ -999,6 +1006,9 @@ export interface JiweiEvents {
   'memory:changed': { added?: Memory; learned?: Memory[] }
   /** 深层链接：jiwei://note/<id> 或 jiwei://source/<id> */
   'inbox:changed': Record<string, never>
+  'mistakes:changed': Record<string, never>
+  'mistakes:open': Record<string, never>
+  'reading:word': import('./reading').ReadingWord
   'nav:inbox': Record<string, never>
   'docs:updated': { noteId: string; update: Uint8Array }
   'nav:open': { type: 'note' | 'source'; id: string }

@@ -2,19 +2,19 @@ import { and, asc, eq, gte, inArray, isNotNull, isNull, lte, sql } from 'drizzle
 import { fsrs, generatorParameters, type Card as FsrsCard, type Grade, State } from 'ts-fsrs'
 import { z } from 'zod'
 import { getDb } from '../db'
-import { blocks, cards, notes, reviewLogs } from '../db/schema'
+import { blocks, cards, mistakes, notes, reviewLogs } from '../db/schema'
 import { newId } from '../lib/ids'
 import { emit } from '../events'
-import { nodeText } from '../lib/derive'
 import { nodesToMarkdown } from '../lib/markdown'
 import { embedMarkdown } from '../lib/exportFormats'
 import type { AnswerCheck, DocNode, ReviewCard, ReviewRating, ReviewStats } from '@shared/types'
 import { deviceId } from './device'
 import { getSettings } from './settings'
-import { loadDoc, stateToContent } from './docs'
+import { loadDoc, stateToContent, stateToJSON } from './docs'
 import { conceptsIn, recordConcept } from './learner'
 import { getMemorySettings } from './memory'
 import { quickModel, structured } from './ai/structured'
+import { practice, check as checkMistakeAnswer, variantFor, useVariant } from './mistakesVariants'
 
 // 复习（v0.4.0）：康奈尔笔记中有线索的每一行自动成为一张卡片——问题是线索，答案是同一行的笔记栏。
 // 调度用 ts-fsrs（FSRS 官方实现）；卡片跟着行走（行删除则卡片软删除，恢复则恢复，进度保留）。
@@ -83,33 +83,53 @@ export function syncCards(noteId: string): void {
     .get()
   const now = Date.now()
   const want = new Set<string>()
+  const liveRows = new Set<string>()
+  const mistakeIds = new Map<string, string>()
+  const invalidMistakes = new Set<string>()
   if (note && !note.deletedAt && !note.reviewExcluded && note.kind === 'cornell') {
+    const doc = stateToJSON(loadDoc(noteId))
+    for (const row of doc.content ?? []) {
+      if (row.type === 'cornellRow' && typeof row.attrs?.id === 'string') liveRows.add(row.attrs.id)
+      const id = row.type === 'cornellRow' ? row.attrs?.mistakeId : undefined
+      if (typeof id !== 'string' || typeof row.attrs?.id !== 'string') continue
+      const mistake = db.select().from(mistakes).where(eq(mistakes.id, id)).get()
+      if (mistake && !mistake.deletedAt && mistake.noteId === noteId) mistakeIds.set(row.attrs.id, id)
+      else invalidMistakes.add(row.attrs.id)
+    }
     const cues = db
       .select({ rowId: blocks.rowId, text: blocks.text })
       .from(blocks)
       .where(and(eq(blocks.noteId, noteId), eq(blocks.section, 'cue'), isNull(blocks.deletedAt), isNotNull(blocks.rowId)))
       .all()
-    for (const c of cues) if (c.rowId && c.text.trim().length >= 2) want.add(c.rowId)
+    for (const c of cues) if (c.rowId && liveRows.has(c.rowId) && !invalidMistakes.has(c.rowId) && c.text.trim().length >= 2) want.add(c.rowId)
   }
-  const existing = db.select({ id: cards.id, blockId: cards.blockId, deletedAt: cards.deletedAt }).from(cards).where(eq(cards.noteId, noteId)).all()
+  const fields = { id: cards.id, noteId: cards.noteId, blockId: cards.blockId, deletedAt: cards.deletedAt, kind: cards.kind, mistakeId: cards.mistakeId }
+  const existing = db.select(fields).from(cards).where(eq(cards.noteId, noteId)).all()
   const have = new Map(existing.map((c) => [c.blockId, c]))
+  const kept = new Set<string>()
   let changed = false
   db.transaction((tx) => {
     for (const rowId of want) {
-      const c = have.get(rowId)
+      const mistakeId = mistakeIds.get(rowId) ?? null
+      // 同一道错题改学科或替换行时沿用卡片身份和FSRS，仍由此唯一派生路径写入。
+      const c = have.get(rowId) ?? (mistakeId ? tx.select(fields).from(cards).where(eq(cards.mistakeId, mistakeId)).orderBy(asc(cards.createdAt)).get() : undefined)
+      const kind = mistakeId ? 'mistake' as const : 'cornell' as const
       if (!c) {
         tx.insert(cards)
-          .values({ id: newId(), noteId, blockId: rowId, due: now, createdAt: now, updatedAt: now, updatedBy: deviceId() })
+          .values({ id: newId(), noteId, blockId: rowId, kind, mistakeId, due: now, createdAt: now, updatedAt: now, updatedBy: deviceId() })
           .onConflictDoNothing()
           .run()
         changed = true
-      } else if (c.deletedAt) {
-        tx.update(cards).set({ deletedAt: null, updatedAt: now }).where(eq(cards.id, c.id)).run()
-        changed = true
+      } else {
+        kept.add(c.id)
+        if (c.deletedAt || c.kind !== kind || c.mistakeId !== mistakeId || c.noteId !== noteId || c.blockId !== rowId) {
+          tx.update(cards).set({ noteId, blockId: rowId, deletedAt: null, kind, mistakeId, updatedAt: now }).where(eq(cards.id, c.id)).run()
+          changed = true
+        }
       }
     }
     for (const c of existing)
-      if (!c.deletedAt && !want.has(c.blockId)) {
+      if (!c.deletedAt && !kept.has(c.id)) {
         tx.update(cards).set({ deletedAt: now, updatedAt: now }).where(eq(cards.id, c.id)).run()
         changed = true
       }
@@ -207,12 +227,13 @@ function rowContent(noteId: string, rowId: string): { question: string; answer: 
     })
     .filter((s) => s.trim())
     .join('\n\n')
-  return { question: nodeText({ type: 'doc', content: cue }).trim(), answer }
+  return { question: nodesToMarkdown(cue).trim(), answer }
 }
 
 function toReviewCard(c: CardRow): ReviewCard {
   const note = getDb().select({ title: notes.title }).from(notes).where(eq(notes.id, c.noteId)).get()
   const content = rowContent(c.noteId, c.blockId) ?? { question: '', answer: '' }
+  const exercise = c.kind === 'mistake' && c.mistakeId ? practice(c.mistakeId) : null
   const preview = scheduler().repeat(toFsrs(c), new Date())
   const next = Object.fromEntries(([1, 2, 3, 4] as const).map((g) => [g, preview[g as Grade].card.due.getTime()])) as ReviewCard['next']
   return {
@@ -220,8 +241,13 @@ function toReviewCard(c: CardRow): ReviewCard {
     noteId: c.noteId,
     noteTitle: note?.title ?? '',
     rowId: c.blockId,
-    question: content.question,
-    answer: content.answer,
+    kind: c.kind,
+    mistakeId: c.mistakeId,
+    variantId: exercise?.variantId ?? null,
+    original: exercise ? content : null,
+    variantFallback: exercise?.fallback ?? null,
+    question: exercise?.variantId ? exercise.question : content.question,
+    answer: exercise?.variantId ? [exercise.answer, exercise.solution].filter(Boolean).join('\n\n') : content.answer,
     state: STATE_NAME[c.state] ?? 'new',
     due: c.due,
     reps: c.reps,
@@ -248,10 +274,12 @@ export function cardsForNote(noteId: string): { id: string; rowId: string; state
 
 /* ————————————————— 评分 ————————————————— */
 
-export function rate(id: string, rating: ReviewRating, durationMs?: number): ReviewCard | null {
+export function rate(id: string, rating: ReviewRating, durationMs?: number, variantId?: string | null): ReviewCard | null {
   const db = getDb()
   const c = db.select().from(cards).where(eq(cards.id, id)).get()
   if (!c) throw new Error('Card not found')
+  const selectedVariant = c.kind === 'mistake' && c.mistakeId ? (variantId === undefined ? practice(c.mistakeId).variantId : variantId) : null
+  if (c.mistakeId && selectedVariant) variantFor(c.mistakeId, selectedVariant)
   const now = new Date()
   const { card, log } = scheduler().next(toFsrs(c), now, rating as Grade)
   db.transaction((tx) => {
@@ -274,6 +302,7 @@ export function rate(id: string, rating: ReviewRating, durationMs?: number): Rev
         reviewedAt: now.getTime()
       })
       .run()
+    if (selectedVariant) useVariant(selectedVariant)
   })
   // 学习者模型：问题中出现的已知概念
   if (rating !== 2 && getMemorySettings().autoLearn) {
@@ -392,9 +421,10 @@ const CheckSchema = z.object({
   suggested: z.number().int().min(1).max(4).describe('建议评分：1 忘了 2 困难 3 记得 4 轻松')
 })
 
-export async function checkAnswer(id: string, answer: string): Promise<AnswerCheck> {
+export async function checkAnswer(id: string, answer: string, variantId?: string | null): Promise<AnswerCheck> {
   const c = getDb().select().from(cards).where(eq(cards.id, id)).get()
   if (!c) throw new Error('Card not found')
+  if (c.kind === 'mistake' && c.mistakeId) return checkMistakeAnswer(c.mistakeId, variantId === undefined ? practice(c.mistakeId).variantId : variantId, answer)
   const note = getDb().select({ aiExcluded: notes.aiExcluded }).from(notes).where(eq(notes.id, c.noteId)).get()
   const zh = getSettings().language.startsWith('zh')
   if (note?.aiExcluded) throw new Error(zh ? '这篇笔记设为“不发送给 AI”' : 'This note is excluded from AI')

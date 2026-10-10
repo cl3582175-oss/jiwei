@@ -74,6 +74,13 @@ export function listProposals(noteId: string): Proposal[] {
 }
 
 export function resolveUserOp(id: string, opIndex: number, decision: 'accepted' | 'rejected', blockIds?: string[]): Proposal {
+  const record = getDb().select().from(proposals).where(eq(proposals.id, id)).get()
+  if (record) {
+    const payload = JSON.parse(record.ops) as { skill?: string; vocabulary?: unknown }
+    const skill = payload.skill ?? ''
+    if (payload.vocabulary || /^(mistake-(?:landing|move|delete):|vocabulary-landing)/.test(skill))
+      throw new Error(lensMessage('reviewInSource'))
+  }
   if (
     getDb()
       .select({ id: derivationLandings.id })

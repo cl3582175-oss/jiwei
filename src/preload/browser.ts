@@ -4,6 +4,8 @@ import { ipcRenderer } from 'electron'
 import { configureVideo, startBrowserVideo } from './browserVideo'
 import type { CourseState } from '../shared/types'
 import { startConcepts } from './browserConcepts'
+import { startBrowserReading } from './browserReading'
+import { originalRangeText, originalTextIndex, isForeignText, visibleReadingPassword } from '../shared/readingText'
 
 // 内置浏览器的内容脚本（v0.6.0）：运行在网页的隔离环境中（contextIsolation），网页本身的脚本无法访问。
 //   - 选区浮条：解释 / 讲明白 / 翻译 / 问 AI / 高亮 / 批注 / 存疑（Shadow DOM，不受网页样式影响）
@@ -11,12 +13,13 @@ import { startConcepts } from './browserConcepts'
 //   - 报告密码输入框（敏感页面自动关闭 AI）
 // 不向网页暴露任何接口（不调用 contextBridge）。
 
-type Action = 'explain' | 'clarify' | 'translate' | 'ask' | 'highlighting' | 'commenting' | 'questioning' | 'annotation'
+type Action = 'explain' | 'clarify' | 'translate' | 'grammar' | 'ask' | 'highlighting' | 'commenting' | 'questioning' | 'annotation'
 interface Config {
   allowed: boolean
   labels: Record<Exclude<Action, 'annotation'>, string>
   scope: string
   course: CourseState
+  language: string
 }
 interface Ann {
   id: string
@@ -30,6 +33,7 @@ interface Ann {
 
 const CONTEXT = 32
 let config: Config | null = null
+const reading = startBrowserReading()
 const concepts = startConcepts(
   () => !!config?.allowed,
   () => config?.labels.ask ?? ''
@@ -42,9 +46,7 @@ let ranges: { id: string; range: Range }[] = []
 
 let passwordReported = false
 function visiblePassword(el: HTMLInputElement): boolean {
-  const r = el.getBoundingClientRect(),
-    style = getComputedStyle(el)
-  return r.width > 2 && r.height > 2 && el.getClientRects().length > 0 && style.visibility !== 'hidden' && Number(style.opacity) > 0.05
+  return visibleReadingPassword(el)
 }
 function checkPassword(): void {
   // 只看用户真正看得见的密码框：很多网站预埋了隐藏的登录弹窗，不能因此把整页的 AI 与网课关掉
@@ -55,6 +57,7 @@ function checkPassword(): void {
   if (config) config.allowed = false
   if (config) configureVideo(config)
   concepts.clear()
+  reading.allowed(false)
   hideBar()
 }
 
@@ -63,6 +66,7 @@ function checkPassword(): void {
 function ensureBar(): HTMLElement {
   if (bar && host?.isConnected) return bar
   host = document.createElement('jiwei-toolbar')
+  host.dataset.jiweiUi = 'toolbar'
   host.style.cssText = 'all: initial; position: fixed; z-index: 2147483647; top: 0; left: 0;'
   const root = host.attachShadow({ mode: 'closed' })
   const style = document.createElement('style')
@@ -70,7 +74,7 @@ function ensureBar(): HTMLElement {
     .bar { display: none; position: fixed; align-items: center; gap: 2px; padding: 4px; border-radius: 12px;
       background: rgba(255,255,255,.96); border: 1px solid rgba(0,0,0,.08); box-shadow: 0 8px 28px rgba(16,40,44,.18);
       font: 12px/1 -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; color: #1d2b2e; }
-    .bar.show { display: flex; }
+    .bar.show { display: flex; flex-wrap:wrap; max-width:calc(100vw - 16px); }
     button { all: unset; cursor: pointer; padding: 7px 9px; border-radius: 8px; white-space: nowrap; }
     button:hover { background: rgba(31,96,104,.10); color: #1f6068; }
     .sep { width: 1px; height: 18px; background: rgba(0,0,0,.1); margin: 0 2px; }
@@ -82,7 +86,7 @@ function ensureBar(): HTMLElement {
   bar.className = 'bar'
   bar.setAttribute('role', 'toolbar')
   const groups: Exclude<Action, 'annotation'>[][] = [
-    ['explain', 'clarify', 'translate', 'ask'],
+    ['explain', 'clarify', 'translate', 'grammar', 'ask'],
     ['highlighting', 'commenting', 'questioning']
   ]
   groups.forEach((g, i) => {
@@ -114,7 +118,7 @@ function selectionInfo(): { quote: string; prefix: string; suffix: string; rect:
   const sel = getSelection()
   if (!sel || sel.isCollapsed || !sel.rangeCount) return null
   const range = sel.getRangeAt(0)
-  const quote = sel.toString().replace(/\s+/g, ' ').trim()
+  const quote = originalRangeText(range).replace(/\s+/g, ' ').trim()
   if (!quote || quote.length > 4000) return null
   const body = document.body
   const pre = document.createRange()
@@ -126,8 +130,8 @@ function selectionInfo(): { quote: string; prefix: string; suffix: string; rect:
   const norm = (s: string): string => s.replace(/\s+/g, ' ')
   return {
     quote,
-    prefix: norm(pre.toString()).slice(-CONTEXT),
-    suffix: norm(post.toString()).slice(0, CONTEXT),
+    prefix: norm(originalRangeText(pre)).slice(-CONTEXT),
+    suffix: norm(originalRangeText(post)).slice(0, CONTEXT),
     rect: range.getBoundingClientRect()
   }
 }
@@ -158,6 +162,8 @@ function onMouseUp(e: MouseEvent): void {
       return
     }
     const b = ensureBar()
+    const grammar = b.querySelector<HTMLButtonElement>('[data-action="grammar"]')
+    if(grammar)grammar.style.display=isForeignText(info.quote,config?.language ?? 'zh-CN',document.documentElement.lang)?'':'none'
     b.classList.add('show')
     const w = b.offsetWidth || 420
     const left = Math.min(Math.max(8, info.rect.left + info.rect.width / 2 - w / 2), innerWidth - w - 8)
@@ -179,22 +185,9 @@ function onMouseUp(e: MouseEvent): void {
 
 /* ——— 高亮 ——— */
 
-/** 网页正文的文字节点与偏移（与 Range.toString() 计数一致，空白归一） */
-function textIndex(): { text: string; nodes: { node: Text; start: number; raw: string }[] } {
-  const nodes: { node: Text; start: number; raw: string }[] = []
-  let text = ''
-  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
-    acceptNode: (n) => {
-      const p = n.parentElement
-      if (!p || /^(SCRIPT|STYLE|NOSCRIPT|TEMPLATE)$/.test(p.tagName) || p.closest('jiwei-toolbar')) return NodeFilter.FILTER_REJECT
-      return NodeFilter.FILTER_ACCEPT
-    }
-  })
-  for (let n = walker.nextNode() as Text | null; n; n = walker.nextNode() as Text | null) {
-    nodes.push({ node: n, start: text.length, raw: n.data })
-    text += n.data
-  }
-  return { text, nodes }
+/** 与选区共用原文过滤和块边界；隐藏内容与 owned UI 不进入重定位索引。 */
+function textIndex(): ReturnType<typeof originalTextIndex> {
+  return originalTextIndex(document.body)
 }
 
 /** 空白不敏感地查找原文：返回原始文本中的起止位置 */
@@ -232,11 +225,11 @@ function toRange(idx: ReturnType<typeof textIndex>, start: number, end: number):
   for (const n of idx.nodes) {
     const nEnd = n.start + n.raw.length
     if (!started && start < nEnd) {
-      r.setStart(n.node, start - n.start)
+      r.setStart(n.node, start - n.start + n.offset)
       started = true
     }
     if (started && end <= nEnd) {
-      r.setEnd(n.node, end - n.start)
+      r.setEnd(n.node, end - n.start + n.offset)
       return r
     }
   }
@@ -251,6 +244,7 @@ function paint(items: Ann[]): void {
   if (!reg || typeof Highlight === 'undefined') return
   if (!styled) {
     const st = document.createElement('style')
+    st.dataset.jiweiUi = 'highlights'
     st.textContent =
       Object.entries(COLORS)
         .map(([k, c]) => `::highlight(jw-${k}) { background-color: ${c}88; }`)
@@ -331,6 +325,7 @@ window.addEventListener('DOMContentLoaded', () => {
       if (config) {
         config.allowed = false
         configureVideo(config)
+        reading.allowed(false)
       }
     },
     true
@@ -339,6 +334,7 @@ window.addEventListener('DOMContentLoaded', () => {
     config = c
     if (passwordReported) config.allowed = false
     configureVideo(config)
+    reading.allowed(config.allowed)
     concepts.refresh()
   })
   document.addEventListener('mouseup', onMouseUp, true)
@@ -351,6 +347,7 @@ ipcRenderer.on('jw-page:config-update', (_e, c: Config) => {
   config = c
   if (passwordReported) config.allowed = false
   configureVideo(config)
+  reading.allowed(config.allowed)
   concepts.refresh()
   if (!config.allowed) hideBar()
 })

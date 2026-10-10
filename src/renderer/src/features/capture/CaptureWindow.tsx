@@ -75,7 +75,7 @@ export function CaptureWindow() {
     if (file.size > 25 * 1024 * 1024) throw new Error('capture.tooLarge')
     await api.capture.attach(state.id, new Uint8Array(await file.arrayBuffer()), file.name, file.type)
   }
-  const action = (action: 'save' | 'ask' | 'insert'): void => {
+  const action = (action: 'save' | 'ask' | 'insert' | 'mistake'): void => {
     if (state)
       void run(() =>
         api.capture.action({
@@ -228,6 +228,9 @@ export function CaptureWindow() {
         </p>
       )}
       <footer className="mt-auto flex flex-wrap gap-2">
+        {state?.image && state.mode !== 'select' && (
+          <Button disabled={busy} onClick={() => action('mistake')}>{t('mistakes.saveAs')}</Button>
+        )}
         <Button disabled={busy || state?.mode === 'select' || (!text.trim() && !state?.asset)} onClick={() => action('save')}>
           {t('capture.save')}
         </Button>

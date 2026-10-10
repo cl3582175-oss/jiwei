@@ -1,4 +1,5 @@
 import { CaptureSettings } from '../capture/CaptureSettings'
+import { TranslationCacheSettings } from '../reading/ReadingSettings'
 import { useEffect, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Dialog as D } from 'radix-ui'
@@ -220,6 +221,7 @@ function DataTab() {
   return (
     <>
       <VaultsRow />
+      <TranslationCacheSettings />
       <Row
         label={t('settings.dataDir')}
         desc={

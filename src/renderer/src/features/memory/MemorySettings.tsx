@@ -26,6 +26,7 @@ import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Tip } from '@/components/ui/primitives'
 import { confirm, prompt } from '@/components/ui/confirm'
+import { LearningProfile } from './LearningProfile'
 
 // 「关于我」：积微对你的了解，全部可查看、可修改、可删除。
 //   档案（你预设的）· 记忆（偏好、事实、术语、技能偏好；已淡出的可恢复）· 学习情况（概念掌握度）· 学习经历
@@ -428,6 +429,7 @@ export function MemorySettingsTab() {
               ))}
             </div>
           )}
+          <LearningProfile />
         </section>
       )}
       {section === 'memories' && <MemoriesSection />}

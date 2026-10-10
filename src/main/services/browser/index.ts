@@ -5,6 +5,7 @@ import { onAnnotationsChanged, onDownloaded, pushAnnotations, scheduleRelated } 
 import type { BrowserAction } from '@shared/types'
 import { registerCourse } from './course'
 import { registerConceptIpc, pushConcepts, refreshConcepts } from './concepts'
+import { registerReadingIpc, pushBrowserReading } from '../reading'
 
 // 内置浏览器的启动注册（v0.6.0）：内容脚本消息、下载导入、页面加载后的高亮与相关笔记、批注变化同步。
 
@@ -12,6 +13,7 @@ const ACTIONS = new Set<BrowserAction['action']>([
   'explain',
   'clarify',
   'translate',
+  'grammar',
   'ask',
   'highlighting',
   'commenting',
@@ -24,6 +26,7 @@ const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v)
 export function registerBrowser(): void {
   registerCourse()
   registerConceptIpc()
+  registerReadingIpc()
   onMainEvent('memory:changed', refreshConcepts)
   registerContentIpc({
     // 来自网页的消息一律校验，只转发约定的字段
@@ -49,12 +52,14 @@ export function registerBrowser(): void {
     ready: (tabId) => {
       pushAnnotations(tabId)
       void pushConcepts(tabId)
+      void pushBrowserReading(tabId)
     }
   })
   setLoadedHandler((tabId) => {
     pushAnnotations(tabId)
     scheduleRelated(tabId)
     void pushConcepts(tabId)
+    void pushBrowserReading(tabId)
   })
   setDownloadHandler((path, name) => void onDownloaded(path, name))
   onAnnotationsChange((type, id) => onAnnotationsChanged(type, id))

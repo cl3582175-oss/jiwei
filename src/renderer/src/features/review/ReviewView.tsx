@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Streamdown } from 'streamdown'
 import { toast } from 'sonner'
-import { BrainCircuit, Flame, Layers, NotebookText, PauseCircle, Sparkles, Undo2, Loader2, CheckCircle2, Target, GraduationCap } from 'lucide-react'
+import { BrainCircuit, Flame, Layers, NotebookText, PauseCircle, Sparkles, Undo2, Loader2, CheckCircle2, Target, GraduationCap, Flag } from 'lucide-react'
 import type { AnswerCheck, ReviewCard, ReviewRating } from '@shared/types'
 import { api, cn } from '@/lib/utils'
 import { useApp } from '@/store/app'
@@ -14,6 +14,8 @@ import { InkLeaf } from '@/components/Illustrations'
 import { errText } from '../chat/useChat'
 import { MasteryPanel } from './MasteryView'
 import { GoalsPanel } from './GoalsView'
+import { MistakesView } from '../mistakes/MistakesView'
+import { RichMistake } from '../mistakes/RichMistake'
 
 // 复习：线索是问题，笔记栏是答案。先想（可以写下来，让 AI 对照笔记检查），再看答案，再评分。
 // 评分按钮上显示下次复习的间隔（FSRS）。键盘：空格显示答案，1～4 评分，⌘Z 撤销。
@@ -130,7 +132,7 @@ function ReviewToday() {
       if (!card || busy) return
       setBusy(true)
       try {
-        await api.review.rate(card.id, r, Date.now() - shownAt.current)
+        await api.review.rate(card.id, r, Date.now() - shownAt.current, card.variantId)
         last.current = card.id
         seen.current.push(card.id)
         setSession((s) => ({ done: s.done + 1, again: s.again + (r === 1 ? 1 : 0) }))
@@ -158,7 +160,7 @@ function ReviewToday() {
     setRevealed(true)
     setChecking(true)
     try {
-      setCheck(await api.review.check(card.id, answer.trim()))
+      setCheck(await api.review.check(card.id, answer.trim(), card.variantId))
     } catch (e) {
       toast.error(errText(e))
     } finally {
@@ -200,6 +202,12 @@ function ReviewToday() {
     toast(t('review.suspended'), { action: { label: t('memory.undo'), onClick: () => void api.review.suspend(card.id, false) } })
     void qc.invalidateQueries({ queryKey: ['reviewStats'] })
     await loadNext()
+  }
+  const flagVariant = async (): Promise<void> => {
+    if (!card?.variantId || busy) return
+    setBusy(true)
+    try { await api.mistakes.flag(card.variantId); show(await api.review.get(card.id)); toast(t('mistakes.flagged')) }
+    catch (e) { toast.error(errText(e)) } finally { setBusy(false) }
   }
 
   const now = Date.now()
@@ -252,9 +260,13 @@ function ReviewToday() {
             </div>
 
             <article className="mt-4 rounded-2xl border border-border bg-surface px-8 py-8 shadow-card">
-              <p className="font-serif text-xl leading-[1.618] font-semibold whitespace-pre-wrap text-fg" data-testid="review-question">
-                {card.question}
-              </p>
+              <div className="font-serif text-xl leading-[1.618] font-semibold text-fg" data-testid="review-question"><RichMistake text={card.question} className="text-xl" /></div>
+              {card.kind === 'mistake' && <div className="mt-3 space-y-3">
+                <p className="text-xs text-muted">{t(card.variantId ? 'mistakes.generated' : 'mistakes.originalOnly')}</p>
+                {card.variantFallback && <p className="rounded-lg bg-sunken p-3 text-xs leading-relaxed text-muted">{t(`mistakes.fallback.${card.variantFallback}`)}</p>}
+                {card.variantId && <Button variant="ghost" size="sm" disabled={busy} onClick={() => void flagVariant()}><Flag />{t('mistakes.flag')}</Button>}
+                {card.original && <details><summary className="cursor-pointer text-xs text-muted">{t('mistakes.seeOriginal')}</summary><RichMistake className="mt-3 font-normal" text={`${card.original.question}\n\n${card.original.answer}`} /></details>}
+              </div>}
 
               {!revealed && (
                 <div className="mt-6">
@@ -302,7 +314,7 @@ function ReviewToday() {
                   <div className="mt-6 border-t border-dashed border-border pt-6">
                     <div className="chat-md text-[15px]" data-testid="review-answer">
                       {card.answer.trim() ? (
-                        <Streamdown mode="static" controls={{ code: false, table: false, mermaid: false }}>
+                        card.kind === 'mistake' ? <RichMistake text={card.answer} /> : <Streamdown mode="static" controls={{ code: false, table: false, mermaid: false }}>
                           {card.answer}
                         </Streamdown>
                       ) : (
@@ -377,7 +389,7 @@ function ReviewToday() {
   )
 }
 
-type Tab = 'today' | 'mastery' | 'goals'
+type Tab = 'today' | 'mistakes' | 'mastery' | 'goals'
 
 export function ReviewView() {
   const { t } = useTranslation()
@@ -387,7 +399,7 @@ export function ReviewView() {
       <header className="drag flex h-[52px] shrink-0 items-center gap-6 border-b border-border/70 pr-[calc(var(--tb-right)+16px)] pl-8">
         <h1 className="font-serif text-md font-semibold tracking-wide text-fg">{t('review.title')}</h1>
         <div role="tablist" className="no-drag inline-flex rounded-lg bg-sunken p-0.5">
-          {(['today', 'mastery', 'goals'] as Tab[]).map((k) => (
+          {(['today', 'mistakes', 'mastery', 'goals'] as Tab[]).map((k) => (
             <button
               key={k}
               role="tab"
@@ -395,14 +407,15 @@ export function ReviewView() {
               onClick={() => useApp.getState().setReviewTab(k)}
               className={cn('rounded-md px-3 py-1 text-xs transition-colors', tab === k ? 'bg-surface text-fg shadow-card' : 'text-muted hover:text-fg')}
             >
-              {t(`review.tabs.${k}`)}
+              {t(k === 'mistakes' ? 'mistakes.title' : `review.tabs.${k}`)}
             </button>
           ))}
         </div>
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto">
         {tab === 'today' && <ReviewToday />}
-        {tab !== 'today' && (
+        {tab === 'mistakes' && <MistakesView />}
+        {tab !== 'today' && tab !== 'mistakes' && (
           <div className="mx-auto max-w-[920px] px-10 pt-8 pb-16">
             {tab === 'mastery' ? (
               <>

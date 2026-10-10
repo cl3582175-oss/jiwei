@@ -1,4 +1,9 @@
 import * as browserCapture from './services/browser/capture'
+import * as mistakes from './services/mistakes'
+import * as mistakeEntries from './services/mistakeEntries'
+import * as reading from './services/reading'
+import * as vocabulary from './services/vocabulary'
+import { mistakeStatistics } from './services/learningStatistics'
 import * as capture from './services/capture'
 import * as phone from './services/phoneUpload'
 import * as inbox from './services/inbox'
@@ -81,6 +86,42 @@ type Handlers = {
 }
 
 const handlers: Handlers = {
+  mistakes: {
+    create: (_, input) => mistakeEntries.createManual(input),
+    fromInbox: (_, id) => mistakeEntries.fromInbox(id),
+    fromBrowserCapture: (_, id) => mistakeEntries.fromBrowserCapture(id),
+    get: (_, id) => mistakes.get(id),
+    list: (_, filters) => mistakes.list(filters),
+    update: (_, id, patch) => mistakes.update(id, patch),
+    retry: (_, id) => mistakes.retry(id),
+    prepare: (_, id) => mistakes.prepare(id),
+    complete: (_, id, proposalId, update) => mistakes.complete(id, proposalId, update),
+    remove: (_, id) => mistakes.remove(id),
+    removeComplete: (_, id, proposalId, update) => mistakes.removeComplete(id, proposalId, update),
+    practice: (_, id) => mistakes.practice(id),
+    replenish: (_, id, immediate) => mistakes.replenish(id, immediate),
+    flag: (_, id) => mistakes.flag(id),
+    check: (_, id, variantId, answer) => mistakes.check(id, variantId, answer),
+    useVariant: (_, id) => mistakes.useVariant(id),
+    variants: (_, id) => mistakes.variants(id),
+    variantStats: () => mistakes.variantStats(),
+    statistics: () => mistakeStatistics()
+  },
+  reading: {
+    state: (_, target) => reading.state(target),
+    configure: (_, input) => reading.configure(input),
+    estimate: (_, target) => reading.estimate(target),
+    translate: (_, input) => reading.translate(input),
+    profile: () => vocabulary.profile(),
+    setThreshold: (_, threshold) => vocabulary.setThreshold(threshold),
+    recognize: (_, word) => vocabulary.recognize(word),
+    query: (_, word) => vocabulary.query(word),
+    prepare: (_, input) => vocabulary.prepare(input),
+    complete: (_, proposalId, update) => vocabulary.complete(proposalId, update),
+    clearCache: () => reading.clearCache(),
+    cacheStats: () => reading.cacheStats(),
+    usage: (_, target) => reading.usage(target)
+  },
   lenses: {
     list: () => skills.listLenses(),
     save: (_, input, id) => skills.saveLens(input, id),
@@ -356,11 +397,11 @@ const handlers: Handlers = {
     next: (_, exclude) => review.nextCard(exclude),
     get: (_, id) => review.getCard(id),
     stats: () => review.reviewStats(),
-    rate: (_, id, rating, durationMs) => review.rate(id, rating, durationMs),
+    rate: (_, id, rating, durationMs, variantId) => review.rate(id, rating, durationMs, variantId),
     undo: (_, id) => review.undoRating(id),
     suspend: (_, id, suspended) => review.suspendCard(id, suspended),
     forNote: (_, noteId) => review.cardsForNote(noteId),
-    check: (_, id, answer) => review.checkAnswer(id, answer)
+    check: (_, id, answer, variantId) => review.checkAnswer(id, answer, variantId)
   },
   memory: {
     list: (_, q) => memory.listMemories(q),
