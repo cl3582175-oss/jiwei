@@ -2,6 +2,7 @@ import { test, expect, _electron as electron, type ElectronApplication, type Pag
 import { mkdtempSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
+import { navTo } from './fixtures/nav'
 
 // 真实 AI 对话（需要用户先在应用「设置 → AI 模型」中填好服务商与 API Key）。
 // 运行：JIWEI_IMPORT_PROVIDERS_FROM=<应用数据库路径> npx playwright test e2e/chat-live.spec.ts
@@ -27,7 +28,7 @@ test.afterAll(async () => {
 })
 
 const ask = async (text: string): Promise<void> => {
-  await page.getByRole('textbox', { name: '问问你的知识库……' }).fill(text)
+  await page.getByRole('textbox', { name: '问积微，或交代一件事……' }).fill(text)
   await page.keyboard.press('Enter')
 }
 const lastAnswer = () => page.locator('.group\\/msg').last()
@@ -60,7 +61,7 @@ test('provider imported and knowledge base ready', async () => {
 
 test('answer with knowledge-base citations (thinking off)', async () => {
   test.setTimeout(120_000)
-  await page.getByRole('button', { name: /AI 对话/ }).click()
+  await navTo(page, /AI 对话/)
   await page.getByRole('radio', { name: '关闭' }).click()
   await ask('学习后一天大概会遗忘多少？应该怎么复习？请用我的笔记和资料回答。')
   await expect(lastAnswer().locator('.cite-chip').first()).toBeVisible({ timeout: 90_000 })
@@ -73,7 +74,7 @@ test('citation jumps to the source passage', async () => {
   await lastAnswer().locator('.cite-chip').first().click()
   await expect(page.locator('.source-text .is-flash, .cornell-doc .is-flash').first()).toBeVisible({ timeout: 10_000 })
   if (shots) await page.screenshot({ path: join(shots, '62-citation-jump.png') })
-  await page.getByRole('button', { name: /AI 对话/ }).click()
+  await navTo(page, /AI 对话/)
 })
 
 test('thinking effort high returns a reasoning trace', async () => {

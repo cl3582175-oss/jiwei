@@ -2,6 +2,7 @@ import { test, expect, _electron as electron, type ElectronApplication, type Pag
 import { mkdtempSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
+import { navTo } from './fixtures/nav'
 
 // 学习目标与掌握度地图（不需要 API Key）。
 test.describe.configure({ mode: 'serial' })
@@ -96,10 +97,10 @@ test('goals: create with a category, progress, actions, link another note', asyn
   if (shots) await page.screenshot({ path: join(shots, '152-goal.png') })
 
   // 在笔记菜单中把分类外的笔记关联到目标
-  await page.getByRole('button', { name: /^笔记/ }).click()
+  await navTo(page, /^笔记/)
   const title = page.getByPlaceholder('笔记标题')
   if (!(await title.count()) || (await title.inputValue()) !== '边际效用') {
-    if (await title.count()) await page.getByRole('button', { name: /^笔记/ }).click()
+    if (await title.count()) await navTo(page, /^笔记/)
     await page.getByText('边际效用', { exact: true }).first().click()
   }
   await expect(page.getByPlaceholder('笔记标题')).toHaveValue('边际效用')

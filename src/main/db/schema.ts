@@ -283,6 +283,25 @@ export const activity = sqliteTable(
   (t) => [primaryKey({ columns: [t.date, t.kind] })]
 )
 
+/**
+ * 学习活动记录层（v0.6.7）：每条是一次有效学习（读、听、写、复习、录音、练习……）。
+ * 时长只统计窗口在前台且最近 60 秒有操作或正在播放的时间。今日、计划、洞察、复盘都从这里取数。
+ */
+export const activityEvents = sqliteTable(
+  'activity_events',
+  {
+    id: text('id').primaryKey(),
+    at: integer('at').notNull(),
+    date: text('date').notNull(),
+    kind: text('kind').notNull(),
+    refType: text('ref_type'),
+    refId: text('ref_id'),
+    durationMs: integer('duration_ms').notNull().default(0),
+    count: integer('count').notNull().default(1)
+  },
+  (t) => [index('activity_events_date_idx').on(t.date, t.kind)]
+)
+
 export const settings = sqliteTable('settings', {
   key: text('key').primaryKey(),
   value: text('value').notNull()

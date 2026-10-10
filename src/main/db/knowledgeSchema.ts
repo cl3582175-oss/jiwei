@@ -17,6 +17,7 @@ export {
   links,
   annotations,
   activity,
+  activityEvents,
   settings,
   users,
   devices,

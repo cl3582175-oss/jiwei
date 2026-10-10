@@ -34,6 +34,8 @@ import * as tags from './services/tags'
 import * as trash from './services/trash'
 import * as stats from './services/stats'
 import * as backups from './services/backup'
+import * as activity from './services/activity'
+import * as today from './services/today'
 import * as assets from './services/assets'
 import * as appSvc from './services/app'
 import { getSettings, setSettings } from './services/settings'
@@ -557,6 +559,14 @@ const handlers: Handlers = {
   },
   stats: {
     heatmap: (_, days) => stats.heatmap(days)
+  },
+  activity: {
+    track: (_, spans) => activity.trackSpans(spans),
+    clear: () => activity.clearActivity()
+  },
+  today: {
+    summary: () => today.todaySummary(),
+    briefing: (_, refresh) => today.todayBriefing(refresh)
   }
 }
 

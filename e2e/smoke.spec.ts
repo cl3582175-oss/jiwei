@@ -2,6 +2,7 @@ import { test, expect, _electron as electron, type ElectronApplication, type Pag
 import { mkdtempSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
+import { navTo } from './fixtures/nav'
 
 // 端到端测试：使用临时数据目录启动构建产物，覆盖 v0.1.1 的核心流程（含重启后数据持久化）
 const userData = mkdtempSync(join(tmpdir(), 'jiwei-e2e-'))
@@ -30,6 +31,10 @@ test.afterAll(async () => {
 })
 
 test('home renders', async () => {
+  // v0.6.7：启动后默认是「今日」；全新用户看到“从一件小事开始”
+  await expect(page.getByTestId('today-view')).toBeVisible()
+  await expect(page.getByTestId('today-fresh')).toBeVisible()
+  await navTo(page, /^笔记/)
   await expect(page.getByText('学习热力图', { exact: true })).toBeVisible()
 })
 
@@ -154,7 +159,7 @@ test('settings data tab shows location and backups', async () => {
 })
 
 test('everything survives an app restart', async () => {
-  await page.getByRole('button', { name: /笔记/ }).first().click()
+  await navTo(page, /笔记/)
   await sidebar().getByText('费曼学习法', { exact: true }).click()
   await page.locator('.cornell-summary-content').click()
   await page.keyboard.press('End')
@@ -162,6 +167,7 @@ test('everything survives an app restart', async () => {
   // 立即退出：验证退出前的保存握手
   await app.close()
   await launch()
+  await navTo(page, /^笔记/)
   await sidebar().getByRole('button', { name: '全部笔记' }).click()
   await sidebar().getByText('费曼学习法', { exact: true }).click()
   await expect(page.locator('.cornell-summary-content')).toHaveText('以教促学：输出倒逼输入。（重启前最后一句）')

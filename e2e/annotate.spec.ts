@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { makePdf } from './fixtures/makePdf'
+import { navTo } from './fixtures/nav'
 
 // 批注（v0.5.3）：文字资料与 PDF 的高亮 / 评论 / 存疑、批注卡片与列表、导出带批注的 PDF、
 // 笔记段落批注、进入检索与复盘素材包。
@@ -30,7 +31,7 @@ test.afterAll(async () => {
 async function openSource(title: string): Promise<void> {
   await page.reload()
   await page.waitForSelector('nav')
-  await page.getByRole('button', { name: /资料库/ }).click()
+  await navTo(page, /资料库/)
   await page.getByText(title, { exact: true }).dblclick()
 }
 

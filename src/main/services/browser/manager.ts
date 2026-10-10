@@ -338,6 +338,20 @@ function createTab(url: string, opts: { incognito?: boolean; activate?: boolean 
     t.favicon = icons[0] ?? null
     changed()
   })
+  // 学习活动记录（v0.6.7）：网页是原生视图，渲染进程看不到其中的操作与播放，由这里节流后通知。
+  // 只发“有操作 / 在播放”的信号，不发网址和内容；无痕标签不计。
+  let lastPulse = 0
+  wc.on('input-event', () => {
+    if (t.incognito || Date.now() - lastPulse < 5000) return
+    lastPulse = Date.now()
+    emit('activity:pulse', { source: 'browser', playing: null })
+  })
+  wc.on('media-started-playing', () => {
+    if (!t.incognito) emit('activity:pulse', { source: 'browser', playing: true })
+  })
+  wc.on('media-paused', () => {
+    if (!t.incognito) emit('activity:pulse', { source: 'browser', playing: false })
+  })
   wc.on('did-finish-load', () => {
     void checkLogin(t)
     onLoaded?.(t.id)

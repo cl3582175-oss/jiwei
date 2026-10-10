@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { Command } from 'cmdk'
 import { Dialog as D } from 'radix-ui'
 import { useTranslation } from 'react-i18next'
-import { NotebookText, PenLine, Library, Settings, Trash2, Search, Home, Layers, GraduationCap, Sprout, Network, Globe } from 'lucide-react'
+import { NotebookText, PenLine, Library, Settings, Trash2, Search, Home, Layers, GraduationCap, Sprout, Network, Globe, Sun, Sparkles } from 'lucide-react'
 import { useApp } from '@/store/app'
 import { useNotes } from '@/lib/queries'
 import { useCreateNote } from '@/lib/shortcuts'
@@ -59,6 +59,16 @@ export function CommandPalette() {
                     <PenLine />
                     <span className="flex-1">{t('notes.new')}</span>
                     <Kbd>{modKey}N</Kbd>
+                  </Command.Item>
+                  <Command.Item className={itemCls} onSelect={run(() => setView('today'))}>
+                    <Sun />
+                    <span className="flex-1">{t('nav.today')}</span>
+                    <Kbd>{modKey}9</Kbd>
+                  </Command.Item>
+                  <Command.Item className={itemCls} onSelect={run(() => setView('chat'))}>
+                    <Sparkles />
+                    <span className="flex-1">{t('nav.assistant')}</span>
+                    <Kbd>{modKey}3</Kbd>
                   </Command.Item>
                   <Command.Item className={itemCls} onSelect={run(() => openNote(null))}>
                     <Home />

@@ -3,6 +3,7 @@ import { mkdtempSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { makeScanPdf, scanImage } from './fixtures/makeScanPdf'
+import { navTo } from './fixtures/nav'
 
 // 文档识别（v0.5.2）：按页分流 → 识别扫描页与表格 → 并入资料分段、进入知识库。
 // 默认只测分流、状态条与设置；设置 JIWEI_OCR=1 时下载并运行本地识别模型（LightOnOCR-2-1B，约 1.1 GB）。
@@ -46,7 +47,7 @@ const setRecognition = (patch: Record<string, unknown>) =>
 async function openSource(title: string): Promise<void> {
   await page.reload()
   await page.waitForSelector('nav')
-  await page.getByRole('button', { name: /资料库/ }).click()
+  await navTo(page, /资料库/)
   await page.getByText(title, { exact: true }).dblclick()
 }
 

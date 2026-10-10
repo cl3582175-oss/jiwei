@@ -4,6 +4,7 @@ import { join, resolve } from 'path'
 import { execFileSync } from 'child_process'
 import { startSafetyApp, settingsData, pickSave, ffmpeg } from './fixtures/safetyApp'
 import { startSite } from './fixtures/browserPage'
+import { navTo } from './fixtures/nav'
 
 // 独立运行的视觉验收。全部界面使用实际操作状态；耗时的真实数据种子不放进默认全套。
 test.skip(process.env.JIWEI_BACKUP_UI !== '1', 'JIWEI_BACKUP_UI=1 生成并核查完整四组截图')
@@ -193,7 +194,7 @@ test('备份、恢复码、迁移与浏览器：两种尺寸 × 浅深主题逐�
         await capture(`${prefix}-06-restore-choice`, env.page.getByTestId('restore-preview'))
         await env.page.getByRole('button', { name: '取消', exact: true }).click()
         await env.page.keyboard.press('Escape')
-        await env.page.getByRole('button', { name: /录音/ }).first().click()
+        await navTo(env.page, /录音/)
         await expect(env.page.getByLabel('已加密', { exact: true }).first()).toBeVisible()
         await capture(`${prefix}-07-encrypted-list`, env.page.getByLabel('已加密', { exact: true }).first().locator('..'))
         const currentUserData = env.userData
@@ -202,7 +203,7 @@ test('备份、恢复码、迁移与浏览器：两种尺寸 × 浅深主题逐�
         try {
           await fresh.app.evaluate(({ BrowserWindow }, size) => BrowserWindow.getAllWindows()[0].setSize(size[0], size[1]), [width, height])
           await fresh.page.evaluate((theme) => window.jiwei.settings.set({ theme }), theme)
-          await fresh.page.getByRole('button', { name: /录音/ }).first().click()
+          await navTo(fresh.page, /录音/)
           await fresh.page.getByLabel('已加密', { exact: true }).first().locator('..').click()
           await expect(fresh.page.getByRole('textbox', { name: '录音恢复码' })).toBeVisible()
           const hint = await fresh.page.getByTestId('recording-locked-hint').evaluate((el) => ({

@@ -4,6 +4,7 @@ import { mkdtempSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { makePdf } from './fixtures/makePdf'
+import { navTo } from './fixtures/nav'
 
 // 阅读辅助（真实模型）：选中资料文字 → 浮条 → 就地答复 → 追问 → 存入笔记 → 原文标记；工作区 AI 面板。
 const source = process.env.JIWEI_IMPORT_PROVIDERS_FROM
@@ -61,7 +62,7 @@ test('setup: source in the workspace', async () => {
     '# 学习科学的关键方法\n\n## 交错练习\n\n把不同类型的题目混在一起练习，而不是一种题做完再做下一种。交错练习短期内感觉更难，但长期迁移效果更好，这是一种合意困难。\n\n## 提取练习\n\n主动回忆比反复阅读更有效，这被称为测试效应。\n'
   )
   await page.evaluate((p) => window.jiwei.sources.importPaths([p]), join(dir, '学习科学.md'))
-  await page.getByRole('button', { name: /资料库/ }).click()
+  await navTo(page, /资料库/)
   await page.getByText('学习科学', { exact: true }).dblclick()
   await expect(page.locator('.source-text p').first()).toContainText('合意困难', { timeout: 15_000 })
 })
@@ -120,8 +121,8 @@ test('source link in the note jumps back to the passage', async () => {
 
 test('workspace AI panel: sees both sides, pins as a column', async () => {
   test.setTimeout(180_000)
-  await page.getByRole('button', { name: 'AI 助手' }).click()
-  const panel = page.getByRole('complementary', { name: 'AI 助手' })
+  await page.getByRole('button', { name: '积微助手' }).click()
+  const panel = page.getByRole('complementary', { name: '积微助手' })
   await expect(panel).toBeVisible()
   // 上下文标签：当前笔记与资料
   await expect(panel.getByText('《学习科学》学习笔记')).toBeVisible()
@@ -132,9 +133,9 @@ test('workspace AI panel: sees both sides, pins as a column', async () => {
   await expect(page.getByRole('button', { name: '全部接受' })).toBeVisible({ timeout: 10_000 })
   // 钉住：成为右侧栏
   await panel.getByRole('button', { name: '钉在右侧' }).click()
-  await expect(page.getByTestId('assist').getByRole('complementary', { name: 'AI 助手' })).toBeVisible()
+  await expect(page.getByTestId('assist').getByRole('complementary', { name: '积微助手' })).toBeVisible()
   // 钉住后右下角不再有浮动按钮，第 2 栏自动收起
-  await expect(page.getByRole('button', { name: 'AI 助手' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '积微助手' })).toHaveCount(0)
   await expect(page.getByRole('button', { name: /展开侧栏/ })).toBeVisible()
   await expect(page.getByRole('button', { name: '取消钉住' })).toBeVisible()
   await shot('85-ai-panel-pinned')
@@ -155,7 +156,7 @@ test('PDF: pdf.js viewer, select text → translate, region → ask', async () =
   // 资料由接口导入，刷新界面列表
   await page.reload()
   await page.waitForSelector('nav')
-  await page.getByRole('button', { name: /资料库/ }).click()
+  await navTo(page, /资料库/)
   await page.getByText('Learning Science', { exact: true }).dblclick()
   const viewer = page.getByTestId('pdf-viewer')
   await expect(viewer.locator('.textLayer').first()).toContainText('desirable difficulty', { timeout: 20_000 })
@@ -247,7 +248,7 @@ test('video: "didn\'t get it" explains the last 30 s, saves a time link; ask abo
   await page.evaluate((p) => window.jiwei.sources.importPaths([p]), mp4)
   await page.reload()
   await page.waitForSelector('nav')
-  await page.getByRole('button', { name: /资料库/ }).click()
+  await navTo(page, /资料库/)
   await page.getByText('交错练习讲解', { exact: true }).dblclick()
   const transcript = page.getByRole('article', { name: '转写稿' })
   await expect(transcript).toContainText('交错练习', { timeout: 120_000 })

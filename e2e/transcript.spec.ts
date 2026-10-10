@@ -4,6 +4,7 @@ import { execFileSync } from 'child_process'
 import { mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'fs'
 import { homedir, tmpdir } from 'os'
 import { join, resolve } from 'path'
+import { navTo } from './fixtures/nav'
 
 // 离线分段只测试产品交互与持久化；真实模型另在条件用例运行。
 test.describe.configure({ mode: 'serial' })
@@ -110,7 +111,7 @@ test.beforeAll(async () => {
   )
   await page.reload()
   await page.waitForSelector('nav')
-  await page.getByRole('button', { name: /资料库/ }).click()
+  await navTo(page, /资料库/)
   await page.getByText('三人会议转写交互', { exact: true }).dblclick()
   await expect(page.getByTestId('dialogue-transcript')).toBeVisible()
 })

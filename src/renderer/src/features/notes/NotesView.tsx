@@ -48,13 +48,17 @@ export function NotesView() {
             {left && (
               <>
                 <Panel id="source" panelRef={sourceRef} defaultSize={`${sourcePaneSize}%`} minSize="20%" maxSize="70%">
-                  {left}
+                  <div className="h-full" data-activity-area="source">
+                    {left}
+                  </div>
                 </Panel>
                 <Separator className="workspace-sep" />
               </>
             )}
             <Panel id="main" minSize="30%">
-              {main}
+              <div className="h-full" data-activity-area="note">
+                {main}
+              </div>
             </Panel>
             {pinned && (
               <>

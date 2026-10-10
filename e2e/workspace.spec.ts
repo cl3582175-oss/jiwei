@@ -2,6 +2,7 @@ import { test, expect, _electron as electron, type ElectronApplication, type Pag
 import { mkdtempSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
+import { navTo } from './fixtures/nav'
 
 // v0.1.2：资料分段（后台任务）→ 工作区双栏 → AI 提案（思维导图）→ 接受 → 展开为康奈尔行 → 来源标记 → 重启持久化
 const userData = mkdtempSync(join(tmpdir(), 'jiwei-e2e-ws-'))
@@ -43,7 +44,7 @@ test('markdown source is segmented by a background job and opens in the workspac
   const file = join(dir, '学习科学.md')
   writeFileSync(file, '# 学习科学\n\n间隔重复：在即将遗忘时复习，记忆最牢固。\n\n## 提取练习\n\n主动回忆比反复阅读更有效。\n')
   await page.evaluate((p) => window.jiwei.sources.importPaths([p]), file)
-  await page.getByRole('button', { name: /资料库/ }).click()
+  await navTo(page, /资料库/)
   await page.getByText('学习科学', { exact: true }).dblclick()
   // 工作区左栏显示分段后的正文
   await expect(page.locator('.source-text p').first()).toHaveText('间隔重复：在即将遗忘时复习，记忆最牢固。', { timeout: 10000 })

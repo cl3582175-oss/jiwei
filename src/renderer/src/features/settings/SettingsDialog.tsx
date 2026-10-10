@@ -1,4 +1,5 @@
 import { BackupSettings } from './BackupSettings'
+import { ActivitySettings } from '../today/ActivitySettings'
 import { BrowserSafetySettings } from './BrowserSafetySettings'
 import { RecordingSecurity } from '../recording/RecordingSecurity'
 import { CaptureSettings } from '../capture/CaptureSettings'
@@ -216,6 +217,7 @@ function DataTab() {
     <>
       <VaultsRow />
       <TranslationCacheSettings />
+      <ActivitySettings />
       <Row
         label={t('settings.dataDir')}
         desc={

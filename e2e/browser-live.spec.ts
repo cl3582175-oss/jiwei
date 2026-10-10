@@ -57,7 +57,7 @@ test('explain a passage on the page, then save the answer to the note with a sou
 test('the AI panel reads the current page', async () => {
   test.setTimeout(180_000)
   await page.keyboard.press('ControlOrMeta+j')
-  const panel = page.getByRole('complementary', { name: /AI/ })
+  const panel = page.getByRole('complementary', { name: /积微助手/ })
   await panel.getByRole('textbox').fill('这个网页说复习间隔应该怎么安排？简短回答。')
   await page.keyboard.press('Enter')
   await expect(panel.locator('.group\\/msg').last()).toContainText(/一天|三天|一周|拉长/, { timeout: 120_000 })

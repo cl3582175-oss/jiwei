@@ -89,11 +89,14 @@ export function useGlobalShortcuts(): void {
         e.preventDefault()
         s.openBrowser()
       } else if (k === 'j') {
-        // 工作区 AI 面板
+        // 积微助手侧栏（v0.6.7 起任何页面都可以打开，带上当前页面的上下文）；在助手全屏页时无需侧栏
         e.preventDefault()
-        if (s.view !== 'notes') s.setView('notes')
+        if (s.view === 'chat') return
         const a = useAssist.getState()
-        a.setPanel({ panelOpen: !a.panelOpen || s.view !== 'notes' })
+        a.setPanel({ panelOpen: !a.panelOpen })
+      } else if (k === '9') {
+        e.preventDefault()
+        s.setView('today')
       }
     }
     window.addEventListener('keydown', onKey)

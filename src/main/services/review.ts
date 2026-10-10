@@ -1,3 +1,4 @@
+import { recordEvent } from './activity'
 import { and, asc, eq, gte, inArray, isNotNull, isNull, lte, sql } from 'drizzle-orm'
 import { fsrs, generatorParameters, type Card as FsrsCard, type Grade, State } from 'ts-fsrs'
 import { z } from 'zod'
@@ -231,7 +232,7 @@ function rowContent(noteId: string, rowId: string): { question: string; answer: 
 }
 
 function toReviewCard(c: CardRow): ReviewCard {
-  const note = getDb().select({ title: notes.title }).from(notes).where(eq(notes.id, c.noteId)).get()
+  const note = getDb().select({ title: notes.title, aiExcluded: notes.aiExcluded }).from(notes).where(eq(notes.id, c.noteId)).get()
   const content = rowContent(c.noteId, c.blockId) ?? { question: '', answer: '' }
   const exercise = c.kind === 'mistake' && c.mistakeId ? practice(c.mistakeId) : null
   const preview = scheduler().repeat(toFsrs(c), new Date())
@@ -240,6 +241,7 @@ function toReviewCard(c: CardRow): ReviewCard {
     id: c.id,
     noteId: c.noteId,
     noteTitle: note?.title ?? '',
+    aiExcluded: note?.aiExcluded ?? false,
     rowId: c.blockId,
     kind: c.kind,
     mistakeId: c.mistakeId,
@@ -309,6 +311,12 @@ export function rate(id: string, rating: ReviewRating, durationMs?: number, vari
     const q = rowContent(c.noteId, c.blockId)?.question ?? ''
     for (const k of conceptsIn(q, 3)) recordConcept(k.name, rating === 1 ? 'confused' : 'understood', {}, { silent: true })
   }
+  // 活动记录：一张卡片的作答时长（最长按 5 分钟计，离开不算）；错题卡记为练习
+  recordEvent(c.kind === 'mistake' ? 'practice' : 'review', {
+    refType: c.kind === 'mistake' ? 'mistake' : 'card',
+    refId: c.kind === 'mistake' ? c.mistakeId : id,
+    durationMs: Math.min(Math.max(durationMs ?? 0, 0), 5 * 60_000)
+  })
   emit('review:changed', {})
   return getCard(id)
 }

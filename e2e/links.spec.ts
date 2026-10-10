@@ -2,6 +2,7 @@ import { test, expect, _electron as electron, type ElectronApplication, type Pag
 import { mkdtempSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
+import { navTo } from './fixtures/nav'
 
 // 双向链接（v0.5.0）：[[ 链接、反向链接、未链接的提及、手动关联（双向）、相关推荐（需要向量模型，JIWEI_EVAL=1 时测试）。
 test.describe.configure({ mode: 'serial' })
@@ -75,8 +76,8 @@ test('unlinked mentions and two-way connections', async () => {
   await expect.poll(async () => (await connections(ids.mu)).mentions.map((m) => m.title), { timeout: 10_000 }).toContain('吃包子的观察')
   // 在“边际效用”中关联它
   await page.evaluate((id) => window.jiwei.notes.get(id), ids.mu)
-  await page.getByRole('button', { name: /^笔记/ }).click()
-  if (await page.getByPlaceholder('笔记标题').count()) await page.getByRole('button', { name: /^笔记/ }).click()
+  await navTo(page, /^笔记/)
+  if (await page.getByPlaceholder('笔记标题').count()) await navTo(page, /^笔记/)
   await page.getByText('边际效用', { exact: true }).first().click()
   const panel = page.getByTestId('connections')
   await panel.locator('[data-mention="吃包子的观察"]').getByRole('button', { name: '关联' }).click()
@@ -97,8 +98,8 @@ test('turn a mention into a link inside the other note (undoable)', async () => 
   ids.econ = await newNote('经济学读书笔记', '这一章讲到需求曲线和价格的关系，还有弹性。')
   await expect.poll(async () => (await connections(ids.demand)).mentions.map((m) => m.title), { timeout: 10_000 }).toContain('经济学读书笔记')
   // 打开“需求曲线”，把提及变成链接（不用打开那篇笔记）
-  await page.getByRole('button', { name: /^笔记/ }).click()
-  if (await page.getByPlaceholder('笔记标题').count()) await page.getByRole('button', { name: /^笔记/ }).click()
+  await navTo(page, /^笔记/)
+  if (await page.getByPlaceholder('笔记标题').count()) await navTo(page, /^笔记/)
   await page.getByText('需求曲线', { exact: true }).first().click()
   await expect(page.getByPlaceholder('笔记标题')).toHaveValue('需求曲线')
   const panel = page.getByTestId('connections')

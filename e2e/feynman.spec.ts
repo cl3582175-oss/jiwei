@@ -2,6 +2,7 @@ import { test, expect, _electron as electron, type ElectronApplication, type Pag
 import { mkdtempSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
+import { navTo } from './fixtures/nav'
 
 // 费曼练习：入口与界面（不需要 API Key）；设置 JIWEI_IMPORT_PROVIDERS_FROM 时测试真实的追问与诊断。
 test.describe.configure({ mode: 'serial' })
@@ -61,7 +62,7 @@ test('explain to the student, get diagnosed, add gaps to the note (live)', async
   await expect.poll(async () => (await page.evaluate(() => window.jiwei.review.stats())).total, { timeout: 15_000 }).toBe(1)
 
   // 从复习卡片进入
-  await page.getByRole('button', { name: /^复习/ }).click()
+  await navTo(page, /^复习/)
   // 点按钮显示答案（按空格时，若回答框已获得焦点，空格会输入进框里）
   await page.getByRole('button', { name: /显示答案/ }).click()
   await page.getByRole('button', { name: '用自己的话讲一遍' }).click()

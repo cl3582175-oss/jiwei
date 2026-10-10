@@ -738,6 +738,8 @@ export interface ChatMessage {
   /** 本次回答使用的技能 */
   skill: string | null
   steps: AgentStep[]
+  /** 用户消息附带了当前页面的数据（v0.6.7） */
+  contextual?: boolean
   createdAt: number
 }
 
@@ -784,6 +786,8 @@ export interface ReviewCard {
   id: string
   noteId: string
   noteTitle: string
+  /** 笔记设为“不给 AI”：不能附带给积微助手 */
+  aiExcluded?: boolean
   /** 卡片对应的笔记行 */
   rowId: string
   /** 线索栏（问题） */
@@ -1013,6 +1017,8 @@ export interface JiweiEvents {
   'memory:changed': { added?: Memory; learned?: Memory[] }
   /** 深层链接：jiwei://note/<id> 或 jiwei://source/<id> */
   'inbox:changed': Record<string, never>
+  /** 内置浏览器里有操作或开始 / 停止播放（v0.6.7 活动记录） */
+  'activity:pulse': { source: 'browser'; playing: boolean | null }
   'mistakes:changed': Record<string, never>
   'mistakes:open': Record<string, never>
   'reading:word': import('./reading').ReadingWord

@@ -6,6 +6,7 @@ import { join, resolve } from 'path'
 import { randomUUID } from 'crypto'
 import type { Scene } from '../../src/shared/recording'
 import type { Derivation, LensItem } from '../../src/shared/lens'
+import { navTo } from './nav'
 export interface TranscriptFixture {
   title: string
   scene: Scene
@@ -310,7 +311,7 @@ export async function seedTranscript(
   return { sourceId, personIds }
 }
 export async function openTranscript(env: LensApp, title: string): Promise<void> {
-  await env.page.getByRole('button', { name: /资料库/ }).click()
+  await navTo(env.page, /资料库/)
   await env.page.getByText(title, { exact: true }).dblclick()
   await expect(env.page.getByTestId('dialogue-transcript')).toBeVisible()
 }

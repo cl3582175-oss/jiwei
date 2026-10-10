@@ -8,6 +8,7 @@ import { ESSAY, READING_SENTENCE } from './fixtures/readingPage'
 import { pageAction } from './fixtures/browserPage'
 import type { ReadingTarget } from '../src/shared/reading'
 import { DOC_FIELD, type DocJSON } from '../src/shared/types'
+import { navTo } from './fixtures/nav'
 test.describe.configure({mode:'serial'})
 test.setTimeout(90000)
 let env:ReadingApp,target:ReadingTarget,pdfId='',glossaryId='',addedWord='',recognizedWord=''
@@ -54,7 +55,7 @@ async function noteJSON(noteId:string):Promise<DocJSON>{
   try{Y.applyUpdate(doc,new Uint8Array(bytes));return yDocToProsemirrorJSON(doc,DOC_FIELD) as DocJSON}finally{doc.destroy()}
 }
 async function openSource(id:string):Promise<void>{
-  await env.page.getByRole('button',{name:/^资料库/}).click()
+  await navTo(env.page,/^资料库/)
   const source=await env.page.evaluate((id)=>window.jiwei.sources.get(id),id)
   await env.page.getByPlaceholder('搜索资料').fill(source!.title)
   await env.page.getByText(source!.title,{exact:true}).dblclick()
@@ -274,7 +275,7 @@ test('待确认词汇关闭网页和重启后可恢复，同一行追加例句�
   const generic=await env.page.evaluate(async(id)=>{try{await window.jiwei.proposals.resolve(id,0,'accepted',[]);return ''}catch(error){return String(error)}},landing.proposalId!)
   expect(generic).toMatch(/领域|domain|确认|专用|dedicated/)
   await env.page.evaluate((id)=>window.jiwei.browser.close(id),target.id);await restartReadingApp(env)
-  await env.page.getByRole('button',{name:/^笔记/}).click();await env.page.getByPlaceholder('搜索笔记').fill('生词本 · 英语');await env.page.getByRole('button',{name:/生词本 · 英语/}).first().click()
+  await navTo(env.page,/^笔记/);await env.page.getByPlaceholder('搜索笔记').fill('生词本 · 英语');await env.page.getByRole('button',{name:/生词本 · 英语/}).first().click()
   const notice=env.page.getByTestId('learning-proposal-notice')
   await expect(notice).toContainText(sentence);await expect(notice.getByRole('button',{name:'接受',exact:true})).toHaveCount(0)
   await notice.getByRole('button',{name:'确认写入生词本',exact:true}).click();await expect(notice).toHaveCount(0)
@@ -291,7 +292,7 @@ test('待确认词汇关闭网页和重启后可恢复，同一行追加例句�
   await env.page.keyboard.press('ControlOrMeta+Shift+z');await expect(env.page.locator('.tiptap')).toContainText(sentence)
   await expect.poll(async()=>JSON.stringify(await noteJSON(glossaryId))).toContain(sentence)
   await env.page.reload();await env.page.waitForSelector('nav')
-  await env.page.getByRole('button',{name:/^笔记/}).click();await env.page.getByPlaceholder('搜索笔记').fill('生词本 · 英语');await env.page.getByRole('button',{name:/生词本 · 英语/}).first().click()
+  await navTo(env.page,/^笔记/);await env.page.getByPlaceholder('搜索笔记').fill('生词本 · 英语');await env.page.getByRole('button',{name:/生词本 · 英语/}).first().click()
   await expect(env.page.locator('.tiptap')).toContainText(sentence)
   expect((await env.page.evaluate(()=>window.jiwei.reading.profile())).knownWords).toContain(recognizedWord.toLowerCase())
   await shot('reading-glossary-resumed-light.png')

@@ -2,6 +2,7 @@ import { test, expect, _electron as electron, type ElectronApplication, type Pag
 import { mkdtempSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
+import { navTo } from './fixtures/nav'
 
 // 复习（不需要 API Key）：线索自动成卡、FSRS 评分与间隔、撤销、不复习的笔记、设置。
 // 设置 JIWEI_IMPORT_PROVIDERS_FROM 时额外测试“AI 检查我的回答”。
@@ -49,9 +50,9 @@ test('cue questions become review cards', async () => {
   await page.getByRole('button', { name: '全部接受' }).click()
   await expect.poll(async () => (await page.evaluate(() => window.jiwei.review.stats())).total, { timeout: 15_000 }).toBe(2)
   // 导航徽标与首页入口
-  await expect(page.getByRole('button', { name: /^复习/ })).toContainText('2')
-  await page.getByRole('button', { name: /^笔记/ }).click()
-  await page.getByRole('button', { name: /^笔记/ }).click()
+  await expect(page.getByTestId('nav-group-learn')).toContainText('2')
+  await navTo(page, /^笔记/)
+  await navTo(page, /^笔记/)
   await expect(page.getByTestId('home-review')).toContainText('2 张卡片待复习')
 })
 
@@ -89,7 +90,7 @@ test('review session: reveal, rate with intervals, again, undo, done', async () 
   expect(stats.reviewedToday).toBe(2)
   expect(stats.streak).toBe(1)
   expect(stats.due).toBe(0)
-  await expect(page.getByRole('button', { name: /^复习/ })).not.toContainText('2')
+  await expect(page.getByTestId('nav-group-learn')).not.toContainText('2')
 })
 
 test('editing a cue keeps the card; removing it removes the card; excluding the note hides its cards', async () => {
@@ -105,7 +106,7 @@ test('editing a cue keeps the card; removing it removes the card; excluding the 
   expect(again.every((c) => c.state === 'review')).toBe(true)
 
   // 修改线索：同一张卡片，进度保留；删除整行：卡片随之移除
-  await page.getByRole('button', { name: /^笔记/ }).click()
+  await navTo(page, /^笔记/)
   await page.getByText('记忆方法', { exact: true }).first().click()
   await expect(page.getByPlaceholder('笔记标题')).toHaveValue('记忆方法')
   const blocks = await page.evaluate((id) => window.jiwei.notes.blocks(id), noteId)
@@ -155,11 +156,11 @@ test('AI checks a typed answer against the note (live)', async () => {
     { noteId, ops: [row('费曼技巧的四个步骤？', '1. 选一个概念；2. 讲给外行听；3. 卡住处回到资料；4. 简化并用类比。')] }
   )
   // 回到这篇笔记（当前可能停在首页）
-  await page.getByRole('button', { name: /^笔记/ }).click()
+  await navTo(page, /^笔记/)
   if (!(await page.getByPlaceholder('笔记标题').count())) await page.getByText('记忆方法', { exact: true }).first().click()
   await page.getByRole('button', { name: '全部接受' }).click()
   await expect.poll(async () => (await page.evaluate(() => window.jiwei.review.stats())).due, { timeout: 15_000 }).toBe(1)
-  await page.getByRole('button', { name: /^复习/ }).click()
+  await navTo(page, /^复习/)
   await expect(page.getByTestId('review-question')).toHaveText('费曼技巧的四个步骤？')
   await page.getByRole('textbox').fill('先选一个概念，然后讲给别人听。')
   await page.getByRole('button', { name: 'AI 检查我的回答' }).click()

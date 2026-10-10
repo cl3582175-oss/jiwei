@@ -3,6 +3,7 @@ import { execFileSync } from 'child_process'
 import { mkdtempSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
+import { navTo } from './fixtures/nav'
 
 // 视频 / 音频的文字层：同名字幕直接使用；没有字幕时本地转写（sherpa-onnx + SenseVoice，首次下载引擎）。
 // 测试音频用 macOS 系统语音合成，因此只在 macOS 上运行。
@@ -27,7 +28,7 @@ function makeAudio(name: string): string {
 const openSource = async (title: string): Promise<void> => {
   await page.reload()
   await page.waitForSelector('nav')
-  await page.getByRole('button', { name: /资料库/ }).click()
+  await navTo(page, /资料库/)
   await page.getByText(title, { exact: true }).dblclick()
 }
 

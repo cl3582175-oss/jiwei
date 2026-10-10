@@ -15,6 +15,7 @@ import { errText } from '../chat/useChat'
 import { MasteryPanel } from './MasteryView'
 import { GoalsPanel } from './GoalsView'
 import { MistakesView } from '../mistakes/MistakesView'
+import { useProvidePageContext } from '../assist/pageContext'
 import { RichMistake } from '../mistakes/RichMistake'
 
 // 复习：线索是问题，笔记栏是答案。先想（可以写下来，让 AI 对照笔记检查），再看答案，再评分。
@@ -105,6 +106,12 @@ function ReviewToday() {
   const { data: stats } = useReviewStats()
   const [card, setCard] = useState<ReviewCard | null | undefined>(undefined)
   const [revealed, setRevealed] = useState(false)
+  // 积微助手侧栏的页面上下文：当前这张卡（“不给 AI”的笔记不附带）
+  useProvidePageContext(
+    card && !card.aiExcluded
+      ? { title: t('nav.review'), text: `${t('review.pageCard', { title: card.noteTitle })}\n${card.question}${revealed && card.answer ? `\n---\n${card.answer}` : ''}` }
+      : null
+  )
   const [answer, setAnswer] = useState('')
   const [check, setCheck] = useState<AnswerCheck | null>(null)
   const [checking, setChecking] = useState(false)

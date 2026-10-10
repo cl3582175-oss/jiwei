@@ -4,6 +4,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import type { ChatMessage } from '../src/shared/types'
 import type { ChatSend } from '../src/shared/schemas'
+import { navTo } from './fixtures/nav'
 
 // 真实模型下的智能体：记忆、无痕、技能 + 上下文包、工具调用生成提案。
 // 运行：JIWEI_IMPORT_PROVIDERS_FROM=<应用数据库路径> npx playwright test e2e/agent-live.spec.ts
@@ -100,9 +101,9 @@ test('setup: provider, knowledge base, note', async () => {
 
 test('remember: explicit request is saved as a memory with an undo toast', async () => {
   test.setTimeout(150_000)
-  await page.getByRole('button', { name: /AI 对话/ }).click()
+  await navTo(page, /AI 对话/)
   await page.getByRole('radio', { name: '关闭' }).click()
-  await page.getByRole('textbox', { name: '问问你的知识库……' }).fill('请记住：我是准备考研的大三学生，回答时请先给结论，再给推导。')
+  await page.getByRole('textbox', { name: '问积微，或交代一件事……' }).fill('请记住：我是准备考研的大三学生，回答时请先给结论，再给推导。')
   await page.keyboard.press('Enter')
   await expect(page.getByText('积微记住了').first()).toBeVisible({ timeout: 120_000 })
   if (shots) await page.screenshot({ path: join(shots, '73-remembered.png') })
@@ -168,7 +169,7 @@ test('agent: mind map from a source becomes a proposal in the note', async () =>
   // 笔记由接口创建，界面列表需刷新
   await page.reload()
   await page.waitForSelector('nav')
-  await page.getByRole('button', { name: /^笔记/ }).first().click()
+  await navTo(page, /^笔记/)
   await page.getByText('学习方法笔记').first().click()
   await expect(page.locator('.proposal-embed-live, .proposal-embed').first()).toBeVisible({ timeout: 15_000 })
   if (shots) await page.screenshot({ path: join(shots, '75-agent-mindmap-proposal.png') })

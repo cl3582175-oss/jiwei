@@ -2,6 +2,7 @@ import { test, expect, _electron as electron, type ElectronApplication, type Pag
 import { mkdirSync, mkdtempSync, symlinkSync } from 'fs'
 import { tmpdir, homedir } from 'os'
 import { join, resolve } from 'path'
+import { navTo } from './fixtures/nav'
 
 test.describe.configure({ mode: 'serial' })
 let app: ElectronApplication, page: Page
@@ -33,7 +34,7 @@ test.afterAll(async () => {
   await app?.close()
 })
 test('录音入口在窄窗完整可用', async () => {
-  await page.getByRole('button', { name: /^录音/ }).click()
+  await navTo(page, /^录音/)
   await expect(page.getByRole('button', { name: '开始录音', exact: true })).toBeVisible()
   if (process.env.SHOTS_DIR) await page.screenshot({ path: join(process.env.SHOTS_DIR, 'recording-idle.png') })
 })

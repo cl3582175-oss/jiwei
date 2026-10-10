@@ -2,6 +2,7 @@ import { test, expect, _electron as electron, type ElectronApplication, type Pag
 import { mkdtempSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
+import { navTo } from './fixtures/nav'
 
 // 智能体界面（不需要 API Key）：技能、记忆（关于我）、无痕对话
 test.describe.configure({ mode: 'serial' })
@@ -138,7 +139,7 @@ test('memory lives in the personal database, not the knowledge base', async () =
 })
 
 test('chat: incognito toggle for a new conversation', async () => {
-  await page.getByRole('button', { name: /AI 对话/ }).click()
+  await navTo(page, /AI 对话/)
   const sw = page.getByRole('switch', { name: '无痕' })
   await expect(sw).toHaveAttribute('aria-checked', 'false')
   await sw.click()
@@ -157,7 +158,7 @@ test('save answer: fills a blank new note (no empty row left), applied without r
   expect(r.created).toBe(true)
   await page.reload()
   await page.waitForSelector('nav')
-  await page.getByRole('button', { name: /^笔记/ }).first().click()
+  await navTo(page, /^笔记/)
   await page.getByText('无标题').first().click()
   await expect(page.locator('.cornell-row')).toHaveCount(1)
   await expect(page.locator('.cornell-row').first()).toContainText('短期更难、长期更好的学习难度')

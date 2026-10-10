@@ -4,6 +4,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import JSZip from 'jszip'
 import { makeScanPdf, scanImage } from './fixtures/makeScanPdf'
+import { navTo } from './fixtures/nav'
 
 test.describe.configure({ mode: 'serial' })
 const userData = mkdtempSync(join(tmpdir(), 'jiwei-capture-content-'))
@@ -222,7 +223,7 @@ test('live image references preserve history, exclude private/deleted notes and 
       db.close()
     }
   }, hit)
-  await page.getByRole('button', { name: /AI 对话/ }).click()
+  await navTo(page, /AI 对话/)
   await page.getByText('图片检索定位', { exact: true }).click()
   await page.getByRole('button', { name: '[1] 捕捉公式持久化', exact: true }).click()
   await expect(page.locator(`[data-image-block="${blockId}"]`)).toBeInViewport()
@@ -420,7 +421,7 @@ test.describe('real local OCR', () => {
     const res = await page.evaluate((file) => window.jiwei.sources.importPaths([file]), file)
     const id = res.imported[0].id
     await expect.poll(() => page.evaluate((id) => window.jiwei.recognition.scanPages(id), id), { timeout: 240_000 }).not.toEqual([])
-    await page.getByRole('button', { name: /资料库/ }).click()
+    await navTo(page, /资料库/)
     await page.getByText('扫描选择', { exact: true }).dblclick()
     await expect(page.locator('.ocrTextLayer span').first()).toBeVisible()
     const firstLine = page.locator('.ocrTextLayer span').first()
@@ -443,7 +444,7 @@ test.describe('real local OCR', () => {
   })
   test('note image OCR is searchable at its image block and formula recognition keeps the original', async () => {
     test.setTimeout(300_000)
-    await page.getByRole('button', { name: /笔记/ }).first().click()
+    await navTo(page, /笔记/)
     await page.getByText('捕捉公式持久化', { exact: true }).first().click()
     const { blockId } = await insertImage(['图片检索独有词：海马体学习规律', 'E = mc²'])
     await expect

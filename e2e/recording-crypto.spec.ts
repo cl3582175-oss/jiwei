@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test'
 import { existsSync, readdirSync, readFileSync, renameSync } from 'fs'
 import { join } from 'path'
 import { startSafetyApp, injectRecording, enableEncryption, settingsData, type SafetyApp } from './fixtures/safetyApp'
+import { navTo } from './fixtures/nav'
 
 let env: SafetyApp, code: string
 test.describe.configure({ mode: 'serial' })
@@ -90,7 +91,7 @@ test('新用户目录必须输入恢复码，输错报错，输对后可读音�
           true
         )
     })
-    await fresh.page.getByRole('button', { name: /录音/ }).first().click()
+    await navTo(fresh.page, /录音/)
     await fresh.page.getByLabel('已加密', { exact: true }).first().locator('..').click()
     await expect(fresh.page.getByRole('textbox', { name: '录音恢复码', exact: true })).toBeVisible()
     expect(await fresh.page.getByTestId('media').evaluate((m: HTMLAudioElement) => m.currentSrc)).toBe('')

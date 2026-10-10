@@ -1,3 +1,4 @@
+import { recordEvent } from './activity'
 import { voiceText, voiceErrorText } from './voiceMessages'
 import { session, systemPreferences, desktopCapturer, shell } from 'electron'
 import { randomUUID, createHash } from 'crypto'
@@ -389,6 +390,7 @@ export async function finishRecording(id: string): Promise<Recording> {
         tx.update(recordings).set({ sourceId, status: 'ready', durationMs, error: null, updatedAt: now }).where(eq(recordings.id, id)).run()
       })
       if (active?.id === id) active = null
+      recordEvent('record', { refType: 'recording', refId: id, durationMs: Math.min(durationMs, 12 * 3600_000) })
       for (const part of manifest.parts) {
         await rm(join(folder, partName(part.track, part.sequence)), { force: true }).catch(() => {})
         await rm(join(folder, partName(part.track, part.sequence)) + '.enc', { force: true }).catch(() => {})

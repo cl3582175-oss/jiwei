@@ -14,11 +14,6 @@ import type { Tint } from '@/lib/tint'
 
 const HEAT_DAYS = 364
 
-function greetingKey(): 'morning' | 'noon' | 'afternoon' | 'evening' {
-  const h = new Date().getHours()
-  return h < 11 ? 'morning' : h < 13 ? 'noon' : h < 18 ? 'afternoon' : 'evening'
-}
-
 /** 数值为 0 时显示鼓励文字，而不是冷冰冰的 0 */
 function ZeroHint({ text }: { text: string }) {
   return <span className="font-kai text-md font-normal text-muted">{text}</span>
@@ -64,14 +59,11 @@ export function NotesHome() {
     <div className="@container h-full overflow-y-auto">
       <div className="drag h-[52px]" />
       <div className="mx-auto max-w-[960px] px-6 pb-16 @min-[640px]:px-10 animate-[rise-in_360ms_cubic-bezier(0.2,0.9,0.3,1)]">
-        {/* 问候 */}
+        {/* 标题：问候与今天的安排在「今日」，这里只讲笔记 */}
         <div className="flex flex-wrap items-end justify-between gap-6">
           <div>
             <p className="font-kai text-md text-subtle">{today}</p>
-            <h1 className="mt-2 font-display text-[34px] leading-[1.15] @min-[640px]:text-[52px] font-semibold tracking-[0.06em] text-fg">
-              {t(`home.greeting.${greetingKey()}`)}
-            </h1>
-            <p className="mt-3 font-kai text-md tracking-wide text-muted">{t('app.slogan')}</p>
+            <h1 className="mt-1.5 font-display text-[30px] leading-[1.15] font-semibold tracking-[0.06em] text-fg">{t('nav.notes')}</h1>
           </div>
           <Button variant="primary" onClick={() => void createNote()}>
             <PenLine />

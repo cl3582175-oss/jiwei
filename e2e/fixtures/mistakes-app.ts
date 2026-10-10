@@ -6,6 +6,7 @@ import { join } from 'path'
 import { createCanvas, loadImage } from '@napi-rs/canvas'
 import { MATH_QUESTION, MATH_MY_ANSWER, PHYSICS_QUESTION, PHYSICS_MY_ANSWER } from './mistakes-images'
 import type { Mistake } from '../../src/shared/mistakes'
+import { navTo } from './nav'
 
 export interface MistakesApp {
   app: ElectronApplication; page: Page; userData: string; provider: Server
@@ -88,7 +89,7 @@ export async function waitMistake(env: MistakesApp, id: string, timeout = 30000)
   return (await env.page.evaluate((id) => window.jiwei.mistakes.get(id), id))!
 }
 export async function openMistakes(env: MistakesApp): Promise<void> {
-  await env.page.getByRole('button', { name: /复习/ }).first().click()
+  await navTo(env.page, /复习/)
   await env.page.getByRole('tab', { name: '错题本', exact: true }).click()
   await expect(env.page.getByTestId('mistakes-view')).toBeVisible()
 }

@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test'
 import { startLensApp, seedTranscript, openTranscript, lensShot, setLensTheme, type LensApp } from './fixtures/lensApp'
+import { navTo } from './fixtures/nav'
 test.describe.configure({ mode: 'serial' })
 let env: LensApp,
   sourceId = '',
@@ -78,7 +79,7 @@ test('课堂 → 康奈尔行与复习页卡片、概念、作业', async () => 
     )
     .toBe(5)
   await expect.poll(() => env.page.evaluate(() => window.jiwei.memory.concepts().then((c) => c.map((c) => c.name)))).toContain('间隔重复')
-  await env.page.getByRole('button', { name: /复习/ }).first().click()
+  await navTo(env.page, /复习/)
   await expect(env.page.getByText(/今日复习/).first()).toBeVisible()
 })
 test('随想 → 保留原话和 hypothesis 洞见候选', async () => {

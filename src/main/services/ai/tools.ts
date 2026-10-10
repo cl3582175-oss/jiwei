@@ -1,3 +1,4 @@
+import { todayOverviewText } from '../today'
 import { tool, type ToolSet } from 'ai'
 import { z } from 'zod'
 import { RecordingFiltersSchema } from '@shared/lens'
@@ -224,6 +225,13 @@ export function buildTools(s: AgentSession): ToolSet {
 
   if (s.scope.type !== 'none') {
     Object.assign(tools, {
+      today_overview: tool({
+        description: zh
+          ? '查看用户今天的学习安排与进度：到期复习、错题、收件箱、待确认修改、行动项、学习目标、今天学了多久。用户问“今天做什么 / 怎么安排 / 进度如何”时使用。'
+          : "See the user's plan and progress today: reviews due, mistakes, inbox, pending changes, actions, goals, time studied. Use when asked what to do today or how things are going.",
+        inputSchema: z.object({}),
+        execute: async () => todayOverviewText(zh)
+      }),
       knowledge_search: tool({
         description: zh
           ? '在用户的知识库（笔记 + 资料）中检索。结果带编号，回答时用 [编号] 引用。已提供的片段不够时再用。'
@@ -669,7 +677,8 @@ export function stepLabel(name: string, input: unknown, zh: boolean): Pick<Agent
     note_add_interactive: [`提案：${q('title')}`, `Proposal: ${q('title')}`],
     note_add_mindmap: ['提案：思维导图', 'Proposal: mind map'],
     memory_remember: [`记住：${q('content')}`, `Remembering: ${q('content')}`],
-    memory_search: [`回忆：${q('query')}`, `Recalling: ${q('query')}`]
+    memory_search: [`回忆：${q('query')}`, `Recalling: ${q('query')}`],
+    today_overview: ['查看今天的安排与进度', "Checking today's plan and progress"]
   }
   const link = name === 'source_read' && typeof i.sourceId === 'string' ? { link: { type: 'source' as const, id: i.sourceId } } : note
   return { label: (L[name] ?? [name, name])[zh ? 0 : 1], ...link }

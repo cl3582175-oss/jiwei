@@ -3,7 +3,7 @@ import { getDb, getSqlite } from '../db'
 import { activity } from '../db/schema'
 import type { HeatmapDay } from '@shared/types'
 
-export type ActivityKind = 'note_create' | 'note_edit' | 'words' | 'source_add'
+export type ActivityKind = 'note_create' | 'note_edit' | 'words' | 'source_add' | 'active_s'
 
 /** 本地日期 YYYY-MM-DD */
 export function localDate(d = new Date()): string {
@@ -19,13 +19,15 @@ export function recordActivity(kind: ActivityKind, amount = 1): void {
     .run()
 }
 
-// 学习强度评分：新建笔记 5 分，每 50 字 1 分，导入资料 2 分，编辑会话按 1/10 计（自动保存频繁）
+// 学习强度评分：新建笔记 5 分，每 50 字 1 分，导入资料 2 分，编辑会话按 1/10 计（自动保存频繁），
+// 有效学习时长（v0.6.7 活动记录层：读、听、写、复习、录音……）每 10 分钟 1 分
 const SCORE_SQL = `
   SUM(CASE kind
     WHEN 'note_create' THEN count * 5
     WHEN 'words' THEN count / 50.0
     WHEN 'source_add' THEN count * 2
     WHEN 'note_edit' THEN count / 10.0
+    WHEN 'active_s' THEN count / 600.0
     ELSE 0 END)`
 
 export function heatmap(days: number): HeatmapDay[] {

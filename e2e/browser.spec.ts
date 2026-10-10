@@ -149,7 +149,7 @@ test('ask AI from the page: the answer card docks beside the browser; overlays f
 
 test('the AI panel sees the current page', async () => {
   await page.keyboard.press('ControlOrMeta+j')
-  await expect(page.getByRole('complementary', { name: /AI/ })).toContainText('间隔重复的原理')
+  await expect(page.getByRole('complementary', { name: /积微助手/ })).toContainText('间隔重复的原理')
   await page.keyboard.press('ControlOrMeta+j')
 })
 

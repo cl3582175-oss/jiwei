@@ -31,6 +31,10 @@ import { SelectionToolbar } from './features/assist/SelectionToolbar'
 import { AnnotationCard } from './features/annotate/AnnotationCard'
 import { useBrowserEvents } from './features/browser/actions'
 import { AnswerCard } from './features/assist/AnswerCard'
+import { TodayView } from './features/today/TodayView'
+import { useActivityTracker } from './features/today/useActivityTracker'
+import { AiPanelBody, AiPanelFloat } from './features/assist/AiPanel'
+import { useAssist } from './features/assist/store'
 
 function useThemeSync(): 'light' | 'dark' {
   const { data: s } = useSettings()
@@ -65,10 +69,14 @@ function useThemeSync(): 'light' | 'dark' {
 /** 主进程派生数据更新后刷新列表与当前笔记 */
 function useMainEvents(): void {
   const qc = useQueryClient()
-  useEffect(() => window.jiweiEvents.on('mistakes:open', () => {
-    useApp.getState().setReviewTab('mistakes')
-    useApp.getState().setView('review')
-  }), [])
+  useEffect(
+    () =>
+      window.jiweiEvents.on('mistakes:open', () => {
+        useApp.getState().setReviewTab('mistakes')
+        useApp.getState().setView('review')
+      }),
+    []
+  )
   useEffect(
     () =>
       window.jiweiEvents.on('sources:changed', ({ id }) => {
@@ -158,6 +166,10 @@ export function App() {
   useGlobalShortcuts()
   useCelebrations()
   useMemoryToasts()
+  useActivityTracker()
+  // 积微助手侧栏（v0.6.7）：笔记工作区自己安排侧栏；其余页面在这里浮动或钉在右侧，助手全屏页不需要
+  const pinned = useAssist((a) => a.panelOpen && a.panelPinned)
+  const shellPanel = view !== 'notes' && view !== 'chat'
 
   // 设置加载完成前不渲染，避免语言/主题闪烁
   if (!isSuccess) return null
@@ -166,22 +178,34 @@ export function App() {
     <TooltipProvider>
       <div className="flex h-full">
         <NavRail />
-        <main className="relative min-w-0 flex-1">
-          {view === 'notes' && <NotesView />}
-          {view === 'inbox' && <InboxView />}
-          {view === 'recording' && <RecordingView />}
-          {view === 'notes' && recording?.noteId && (
-            <div className="absolute inset-x-0 bottom-2 z-20">
-              <RecorderBar compact />
-            </div>
+        <main className="relative flex min-w-0 flex-1">
+          <div className="relative h-full min-w-0 flex-1">
+            {view === 'today' && <TodayView />}
+            {view === 'notes' && <NotesView />}
+            {view === 'inbox' && <InboxView />}
+            {view === 'recording' && <RecordingView />}
+            {view === 'notes' && recording?.noteId && (
+              <div className="absolute inset-x-0 bottom-2 z-20">
+                <RecorderBar compact />
+              </div>
+            )}
+            {view === 'library' && <LibraryView />}
+            {view === 'chat' && <ChatView />}
+            {view === 'review' && <ReviewView />}
+            {view === 'feynman' && <FeynmanView />}
+            {view === 'reflect' && <ReflectView />}
+            {view === 'graph' && <GraphView />}
+            {view === 'trash' && <TrashView />}
+            {shellPanel && <AiPanelFloat />}
+          </div>
+          {shellPanel && pinned && (
+            <aside
+              className="h-full w-[min(420px,34vw)] min-w-[300px] shrink-0 border-l border-border/70 bg-sunken/40"
+              data-testid="assistant-pinned"
+            >
+              <AiPanelBody pinned />
+            </aside>
           )}
-          {view === 'library' && <LibraryView />}
-          {view === 'chat' && <ChatView />}
-          {view === 'review' && <ReviewView />}
-          {view === 'feynman' && <FeynmanView />}
-          {view === 'reflect' && <ReflectView />}
-          {view === 'graph' && <GraphView />}
-          {view === 'trash' && <TrashView />}
         </main>
       </div>
       <RecordingDialog />

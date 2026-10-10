@@ -3,6 +3,7 @@ import { execFileSync } from 'child_process'
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync, statSync } from 'fs'
 import { join, resolve } from 'path'
 import { startSafetyApp, pickSave, pickOpen, ffmpeg, type SafetyApp } from './fixtures/safetyApp'
+import { navTo } from './fixtures/nav'
 
 test.skip(process.env.JIWEI_BACKUP_REAL !== '1', 'JIWEI_BACKUP_REAL=1 强制执行真实素材、模型、网站与 kill -9 验收')
 test.setTimeout(1800000)
@@ -347,7 +348,7 @@ test('加密后的 7 分钟真实链路：实时字幕→合成→播放拖动�
     return { status: r.status, bytes: (await r.arrayBuffer()).byteLength }
   }, r.sourceId)
   expect(range).toEqual({ status: 206, bytes: 201 })
-  await env.page.getByRole('button', { name: /资料库/ }).click()
+  await navTo(env.page, /资料库/)
   const source = await env.page.evaluate((id) => window.jiwei.sources.get(id), r.sourceId)
   await env.page.getByText(source!.title, { exact: true }).dblclick()
   await expect
@@ -451,7 +452,7 @@ test('全新 userData 恢复的知识库：恢复码解锁、实际播放器拖�
     expect((await fresh.page.evaluate(() => window.jiwei.recording.cryptoStatus())).unlocked).toBe(false)
     expect(await fresh.page.evaluate(async (id) => (await fetch(`jiwei://recording/${id}`)).status, original.sourceId)).toBe(423)
     await fresh.page.evaluate((code) => window.jiwei.recording.unlock(code), code)
-    await fresh.page.getByRole('button', { name: /资料库/ }).click()
+    await navTo(fresh.page, /资料库/)
     const source = await fresh.page.evaluate((id) => window.jiwei.sources.get(id), original.sourceId)
     await fresh.page.getByText(source!.title, { exact: true }).dblclick()
     await expect

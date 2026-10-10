@@ -3,6 +3,7 @@ import { execFileSync } from 'child_process'
 import { mkdirSync, mkdtempSync, existsSync, symlinkSync, writeFileSync, readFileSync } from 'fs'
 import { homedir, tmpdir } from 'os'
 import { join, resolve } from 'path'
+import { navTo } from './fixtures/nav'
 
 test.skip(process.env.JIWEI_MOSS !== '1', 'JIWEI_MOSS=1 运行真实 MOSS + CAM++，不以离线分段代替')
 test.describe.configure({ mode: 'serial' })
@@ -134,7 +135,7 @@ test('确认三人后再次精修自动认出，并保留已登记的声纹数�
   expect(after).toHaveLength(3)
   expect(after.every((s) => s.personId && s.origin === 'auto')).toBe(true)
   expect((await page.evaluate(() => window.jiwei.people.list())).map((p) => p.voiceprints)).toEqual(before.map((p) => p.voiceprints))
-  await page.getByRole('button', { name: /资料库/ }).click()
+  await navTo(page, /资料库/)
   await page.getByText('积微 FSRS 三人会议', { exact: true }).dblclick()
   await expect(page.getByTestId('dialogue-transcript')).toBeVisible()
   await expect(page.getByTestId('speaker-card')).toHaveCount(0)

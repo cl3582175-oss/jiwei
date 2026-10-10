@@ -78,7 +78,7 @@ test('real text/image/file captures, badge, no-model guidance, deletion recovery
     { image, file }
   )
   for (const i of [text, ...ids]) await expect(page.getByTestId(`inbox-${i.id}`)).toBeVisible()
-  await expect(page.locator('nav').getByRole('button', { name: /收件箱/ })).toContainText('3')
+  await expect(page.getByTestId('nav-group-collect')).toContainText('3')
   await expect(page.getByRole('button', { name: '整理收件箱', exact: true })).toHaveAttribute('title', /设置.*模型/)
   await page.getByTestId(`inbox-${text.id}`).getByRole('button', { name: '删除捕捉' }).click()
   await expect(page.getByTestId(`inbox-${text.id}`)).toHaveCount(0)

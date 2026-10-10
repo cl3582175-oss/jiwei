@@ -3,7 +3,8 @@ import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { DropdownMenu } from 'radix-ui'
 import { toast } from 'sonner'
-import { Sparkles, X, Pin, PinOff, SquarePen, ArrowUp, Square, NotebookText, FileText, TextQuote, Globe, Plus, Check } from 'lucide-react'
+import { Sparkles, X, Pin, PinOff, SquarePen, ArrowUp, Square, NotebookText, FileText, TextQuote, Globe, Plus, Check, Maximize2, LayoutDashboard } from 'lucide-react'
+import { usePageContext } from './pageContext'
 import { packetFromWorkspace, fmtTime, type ContextPacket } from '@shared/context'
 import { collectTabSources, sameContextTab, withTabSources, type SelectedTab } from '@shared/browserTabContext'
 import type { WorkspaceContext } from '@shared/types'
@@ -22,10 +23,14 @@ import { activeTab, aiAllowed, useBrowser } from '../browser/store'
 // 工作区 AI 面板：右下角按钮 → 浮动面板 → 可钉住为右侧栏。
 // 它“看得见”两侧：当前笔记（光标所在行）、当前资料（可见位置 / 选中文字），以标签显示，可逐个移除。
 
-type ChipId = 'note' | 'source' | 'selection'
+type ChipId = 'note' | 'source' | 'selection' | 'page'
 
 function useContextChips(ctx: WorkspaceContext) {
   const { t } = useTranslation()
+  const view = useApp((a) => a.view)
+  const page = usePageContext((p) => p.page)
+  const browserOpen = useApp((a) => a.browserOpen)
+  const web = useBrowser(activeTab)
   const { data: note } = useNote(ctx.noteId)
   const { data: source } = useQuery({
     queryKey: ['source', ctx.sourceId],
@@ -33,6 +38,11 @@ function useContextChips(ctx: WorkspaceContext) {
     enabled: !!ctx.sourceId
   })
   const chips: { id: ChipId; icon: React.ReactNode; label: string }[] = []
+  // 笔记工作区以外的页面：只附带这个页面自己的内容（之前打开的笔记、资料不算）
+  if (view !== 'notes') {
+    if (page) chips.push({ id: 'page', icon: <LayoutDashboard />, label: t('assist.pageContext', { title: page.title }) })
+    return chips
+  }
   if (ctx.noteId && note) chips.push({ id: 'note', icon: <NotebookText />, label: note.title || t('common.untitled') })
   if (ctx.sourceId && source) {
     const loc = ctx.sourceLocator?.match(/page=(\d+)/)
@@ -43,8 +53,6 @@ function useContextChips(ctx: WorkspaceContext) {
     chips.push({ id: 'source', icon: <FileText />, label: `${source.title}${loc ? ` · ${loc}` : ''}` })
   }
   // 内置浏览器：还没存为资料的当前网页（发送时自动存为资料）
-  const browserOpen = useApp((a) => a.browserOpen)
-  const web = useBrowser(activeTab)
   if (browserOpen && !ctx.sourceId && aiAllowed(web))
     chips.push({ id: 'source', icon: <Globe />, label: t('browser.viewing', { title: web.title }) })
   if (ctx.sourceSelection || ctx.noteSelection) {
@@ -71,11 +79,18 @@ function filterPacket(p: ContextPacket, off: Set<ChipId>): ContextPacket {
 }
 
 const SUGGESTIONS = ['assist.s1', 'assist.s2', 'assist.s3']
+/** 笔记工作区以外的页面：提示与建议问题跟着页面走（v0.6.7） */
+const PAGE_SUGGESTIONS: Partial<Record<string, string[]>> = {
+  today: ['assist.today1', 'assist.today2', 'assist.today3'],
+  review: ['assist.review1', 'assist.review2', 'assist.review3']
+}
+const GENERAL_SUGGESTIONS = ['assist.general1', 'assist.general2', 'assist.general3']
 
 export function AiPanelBody({ pinned }: { pinned: boolean }) {
   const { t } = useTranslation()
   const qc = useQueryClient()
   const ctx = useApp((s) => s.context)
+  const view = useApp((s) => s.view)
   const conversationId = useAssist((s) => s.panelConversationId)
   const { choice, setChoice, effort, setEffort, provider } = useModelChoice()
   const { msgs, setMsgs, streaming } = useChatThread(conversationId)
@@ -113,7 +128,10 @@ export function AiPanelBody({ pinned }: { pinned: boolean }) {
     try {
       const app = useApp.getState()
       let packet = filterPacket(packetFromWorkspace(app.context), off)
-      if (app.browserOpen) {
+      if (app.view !== 'notes') {
+        const page = usePageContext.getState().page
+        packet = { targets: [], noteId: null, sourceId: null, page: page && !off.has('page') ? page : null }
+      } else if (app.browserOpen) {
         const fresh = await api.browser.state()
         useBrowser.setState({ state: fresh })
         const web = fresh.tabs.find((tab) => tab.id === fresh.activeId) ?? null
@@ -177,6 +195,20 @@ export function AiPanelBody({ pinned }: { pinned: boolean }) {
       <header className="flex h-11 shrink-0 items-center gap-1 border-b border-border/70 pr-2 pl-4">
         <Sparkles className="size-4 text-accent" />
         <span className="ml-1.5 flex-1 text-sm font-medium text-fg">{t('assist.panel')}</span>
+        <Tip label={t('assist.expand')} side="bottom">
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            aria-label={t('assist.expand')}
+            onClick={() => {
+              const id = useAssist.getState().panelConversationId
+              useAssist.getState().setPanel({ panelOpen: false, panelPinned: false })
+              useApp.getState().openConversation(id)
+            }}
+          >
+            <Maximize2 />
+          </Button>
+        </Tip>
         <Tip label={t('chat.new')} side="bottom">
           <Button
             size="icon-sm"
@@ -211,9 +243,9 @@ export function AiPanelBody({ pinned }: { pinned: boolean }) {
       <div ref={scroller} className="min-h-0 flex-1 space-y-5 overflow-y-auto px-4 py-4 text-sm">
         {msgs.length === 0 ? (
           <div className="pt-4">
-            <p className="text-xs leading-relaxed text-muted">{t('assist.panelHint')}</p>
+            <p className="text-xs leading-relaxed text-muted">{t(view === 'notes' ? 'assist.panelHint' : 'assist.pageHint')}</p>
             <div className="mt-4 flex flex-col items-start gap-2">
-              {SUGGESTIONS.map((k) => (
+              {(view === 'notes' ? SUGGESTIONS : (PAGE_SUGGESTIONS[view] ?? GENERAL_SUGGESTIONS)).map((k) => (
                 <button
                   key={k}
                   onClick={() => void send(t(k))}
@@ -225,7 +257,7 @@ export function AiPanelBody({ pinned }: { pinned: boolean }) {
             </div>
           </div>
         ) : (
-          msgs.map((m) => <MessageItem key={m.id} m={m} compact />)
+          msgs.map((m, i) => <MessageItem key={m.id} m={m} compact grounded={msgs[i - 1]?.contextual} />)
         )}
       </div>
 
@@ -398,7 +430,7 @@ export function AiPanelFloat() {
       </Tip>
     )
   return (
-    <div className="glass absolute right-3 bottom-3 z-30 h-[min(640px,calc(100%-24px))] w-[min(420px,calc(100%-24px))] overflow-hidden rounded-2xl border border-border shadow-float animate-[fade-in_160ms_ease-out]">
+    <div className="absolute right-3 bottom-3 z-30 bg-surface h-[min(640px,calc(100%-24px))] w-[min(420px,calc(100%-24px))] overflow-hidden rounded-2xl border border-border shadow-float animate-[fade-in_160ms_ease-out]">
       <AiPanelBody pinned={false} />
     </div>
   )

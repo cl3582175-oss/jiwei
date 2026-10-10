@@ -3,6 +3,7 @@ import { mkdirSync, writeFileSync } from 'fs'
 import { join, resolve } from 'path'
 import { startLensApp, type LensApp } from './fixtures/lensApp'
 import { readingParts } from '../src/shared/readingText'
+import { navTo } from './fixtures/nav'
 
 // Explicit real-material acceptance, intentionally opt-in: 10+ minutes on EACH live page.
 // Imports provider configuration only through the authorized application loader.
@@ -260,7 +261,7 @@ test.describe('v0.6.5 real English reading acceptance', () => {
     await expect
       .poll(() => env.page.evaluate((id) => window.jiwei.segments.list(id), source.id).then((s) => s.length), { timeout: 120_000 })
       .toBeGreaterThanOrEqual(5)
-    await env.page.getByRole('button', { name: /资料库/ }).click()
+    await navTo(env.page, /资料库/)
     await env.page.getByPlaceholder('搜索资料').fill(source.title)
     await env.page.getByText(source.title, { exact: true }).dblclick()
     await env.page.getByTestId('reading-control').click()

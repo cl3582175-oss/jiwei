@@ -13,6 +13,7 @@ import { errText } from '../chat/useChat'
 import { landMistake, removeMistake } from './documents'
 import { RichMistake } from './RichMistake'
 import { MistakePracticeDialog } from './PracticeDialog'
+import { useProvidePageContext } from '../assist/pageContext'
 
 // 错题本（复习页的一个标签）：左侧列表，右侧详情。详情默认是“读”的样子——题目、我的答案、
 // 错因、正确解法依次排开，公式渲染好；需要改时再点“编辑”展开表单。
@@ -98,6 +99,22 @@ function Detail({ m, job, changed, back }: { m: Mistake; job?: Job; changed: () 
   const { t } = useTranslation()
   const [busy, setBusy] = useState(false), [practising, setPractising] = useState(false), [editing, setEditing] = useState(false)
   const processing = m.flags.includes('processing'), unverified = m.answerOrigin === 'ai' && !m.verified
+  // 积微助手侧栏的页面上下文：这道错题（仅本地的题不附带）
+  useProvidePageContext(
+    m.flags.includes('local-only') || !m.question.trim()
+      ? null
+      : {
+          title: t('mistakes.title'),
+          text: [
+            `${t('mistakes.question')}：${m.question}`,
+            m.myAnswer && `${t('mistakes.myAnswer')}：${m.myAnswer}`,
+            m.correctAnswer && `${t('mistakes.correctAnswer')}：${m.correctAnswer}`,
+            m.causeReason && `${t('mistakes.cause')}（${t(`mistakes.causeNames.${m.cause}`)}）：${m.causeReason}`
+          ]
+            .filter(Boolean)
+            .join('\n')
+        }
+  )
   const notices = m.flags.filter((f) => f !== 'processing' && FLAG_KEY[f])
   const retryable = !processing && m.flags.some((f) => ['needs-recognition', 'no-model', 'canceled', 'failed'].includes(f))
   const run = async (fn: () => Promise<unknown>): Promise<boolean> => {

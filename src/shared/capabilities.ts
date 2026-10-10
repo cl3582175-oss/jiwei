@@ -30,6 +30,7 @@ import {
   type VoiceStatus
 } from './recording'
 import { z } from 'zod'
+import { ActivityBatchSchema, type TodayBriefing, type TodaySummary } from './activity'
 import { RestoreSchema, type BackupPreview, type BackupStatus, type RecordingCryptoStatus } from './backup'
 import { NetworkRuleSchema, DomainSchema, type NetworkRule } from './browserSafety'
 import * as M from './mistakes'
@@ -865,6 +866,14 @@ export const capabilities = {
   },
   stats: {
     heatmap: cap<HeatmapDay[]>()({ description: '学习热力图数据', params: [['days', z.number().int().min(1).max(3660)]] })
+  },
+  activity: {
+    track: cap<void>()({ description: '上报一批有效学习时长', params: [['spans', ActivityBatchSchema]] }),
+    clear: cap<void>()({ description: '清除全部学习活动记录', params: none })
+  },
+  today: {
+    summary: cap<TodaySummary>()({ description: '今日首页：到期复习、错题、收件箱、提案、行动项、目标与投入时长', params: none, ai: { effect: 'read' } }),
+    briefing: cap<TodayBriefing>()({ description: '今天的 AI 晨报（一天生成一次）', params: [['refresh', z.boolean().optional()]] })
   }
 } as const
 

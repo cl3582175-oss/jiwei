@@ -191,7 +191,7 @@ function ChatPanel() {
     if (el && stick.current) el.scrollTop = el.scrollHeight
   }, [msgs])
 
-  const send = async (text: string): Promise<void> => {
+  const send = async (text: string, page?: { title: string; text: string }): Promise<void> => {
     if (!choice.providerId || !choice.model) {
       toast.error(t('chat.needModel'))
       return
@@ -205,7 +205,7 @@ function ChatPanel() {
         model: choice.model,
         effort,
         scope,
-        context: packetFromWorkspace(getWorkspaceContext()),
+        context: { ...packetFromWorkspace(getWorkspaceContext()), page: page ?? null },
         ...(conversationId ? {} : { incognito: incognitoNew })
       })
       const r = { conversation, userMessage }
@@ -219,6 +219,17 @@ function ChatPanel() {
       toast.error(errText(e))
     }
   }
+
+  // 「今日」输入框与晨报回复：进入助手页后自动发送（模型就绪后发送一次）
+  const draftSent = useRef(false)
+  useEffect(() => {
+    if (draftSent.current || !choice.providerId || !choice.model || !useApp.getState().assistantDraft) return
+    const d = useApp.getState().takeAssistantDraft()
+    if (!d) return
+    draftSent.current = true
+    void send(d.text, d.context ? { title: t('today.briefing'), text: d.context } : undefined)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [choice.providerId, choice.model])
 
   const noProvider = providers.length === 0 || !providers.some((p) => p.hasKey || !PROVIDER_PRESETS[p.kind].needsKey)
 
@@ -278,8 +289,8 @@ function ChatPanel() {
               )}
             </div>
           )}
-          {msgs.map((m) => (
-            <MessageItem key={m.id} m={m} />
+          {msgs.map((m, i) => (
+            <MessageItem key={m.id} m={m} grounded={msgs[i - 1]?.contextual} />
           ))}
         </div>
       </div>

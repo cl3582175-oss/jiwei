@@ -46,7 +46,9 @@ export const ContextPacketSchema = z.object({
   noteId: Id.nullable().optional(),
   sourceId: Id.nullable().optional(),
   cursorBlockId: Id.nullable().optional(),
-  cursorRowId: Id.nullable().optional()
+  cursorRowId: Id.nullable().optional(),
+  /** 用户在积微助手侧栏提问时所在的页面（v0.6.7）：「今日」、复习卡片、错题……由该页面整理成简短文字 */
+  page: z.object({ title: z.string().max(60), text: z.string().max(4000) }).nullable().optional()
 })
 export type ContextPacket = z.infer<typeof ContextPacketSchema>
 

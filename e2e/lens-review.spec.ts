@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test'
 import { startLensApp, seedTranscript, openTranscript, runLens, lensShot, setLensTheme, type LensApp } from './fixtures/lensApp'
+import { navTo } from './fixtures/nav'
 
 test.describe.configure({ mode: 'serial' })
 let env: LensApp
@@ -122,7 +123,7 @@ test('历史保留、版本切换、转写纠错后 stale，失败不覆盖旧�
 })
 
 test('系列创建、第二次开始面板待办、系列页与人物页及备注', async () => {
-  await env.page.getByRole('button', { name: /录音 ⌘7/ }).click()
+  await navTo(env.page, /录音 ⌘7/)
   const start = env.page.getByTestId('recording-start')
   await start.getByRole('button', { name: '新建系列' }).click()
   await env.page.getByRole('textbox', { name: '系列名称' }).fill('每周预算例会')
@@ -143,7 +144,7 @@ test('系列创建、第二次开始面板待办、系列页与人物页及备�
     await panel.getByTestId('lens-receipt').scrollIntoViewIfNeeded()
     await lensShot(env, `lens-landed-${theme}.png`)
   }
-  await env.page.getByRole('button', { name: /录音 ⌘7/ }).click()
+  await navTo(env.page, /录音 ⌘7/)
   await env.page.getByTestId('recording-start').getByLabel('系列', { exact: true }).selectOption(seriesId)
   await expect(env.page.getByTestId('series-pending')).toContainText('准备预算表')
   for (const theme of ['light', 'dark'] as const) {
@@ -549,11 +550,11 @@ test('实际知识检索组合过滤，资料筛选按人场景系列，私有�
   ).toEqual([])
   await env.page.reload()
   await env.page.waitForSelector('nav')
-  await env.page.getByRole('button', { name: /资料库/ }).click()
+  await navTo(env.page, /资料库/)
   await env.page.getByLabel('场景', { exact: true }).selectOption('meeting')
   await env.page.getByLabel('全部系列', { exact: true }).selectOption(s.id)
   await expect(env.page.getByText('检索会议', { exact: true })).toBeVisible()
-  await env.page.getByRole('button', { name: /录音 ⌘7/ }).click()
+  await navTo(env.page, /录音 ⌘7/)
   await env.page.getByLabel('所有人', { exact: true }).selectOption(good.personIds[1])
   await expect.poll(() => env.page.getByRole('button', { name: /会议 ·/ }).count()).toBe(1)
 })

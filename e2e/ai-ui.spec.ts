@@ -2,6 +2,7 @@ import { test, expect, _electron as electron } from '@playwright/test'
 import { mkdtempSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
+import { navTo } from './fixtures/nav'
 
 // AI 设置与对话界面（不需要 API Key）：添加服务商、思考强度档位、对话空状态
 // 导入真实服务商时（chat-live）跳过：本用例假设没有任何服务商
@@ -16,8 +17,8 @@ test('AI settings and chat UI without a key', async () => {
   const shots = process.env.SHOTS_DIR
 
   // 对话页：未配置模型时引导去设置
-  await page.getByRole('button', { name: /AI 对话/ }).click()
-  await expect(page.getByRole('heading', { name: '问问你的知识库' })).toBeVisible()
+  await navTo(page, /AI 对话/)
+  await expect(page.getByRole('heading', { name: '问积微，或交代一件事' })).toBeVisible()
   await page.getByRole('button', { name: '去设置模型服务' }).click()
 
   // 设置 → AI：添加 DeepSeek
