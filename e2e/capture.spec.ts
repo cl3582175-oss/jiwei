@@ -52,6 +52,28 @@ async function inbox(): Promise<void> {
   await page.keyboard.press('ControlOrMeta+0')
   await expect(page.getByTestId('inbox-view')).toBeVisible()
 }
+test('quick capture keeps unsaved text when focus moves away, closes when empty', async () => {
+  // 真实地把焦点交给主窗口，让小窗收到系统的失焦事件
+  const blurCapture = (): Promise<void> =>
+    app.evaluate(({ BrowserWindow }) => {
+      BrowserWindow.getAllWindows()
+        .find((w) => !w.webContents.getURL().includes('capture=1'))!
+        .focus()
+    })
+  let capture = await open('text')
+  await capture.getByRole('textbox', { name: '捕捉内容' }).fill('写到一半的想法')
+  await blurCapture()
+  await page.waitForTimeout(500)
+  expect(capture.isClosed()).toBe(false)
+  await expect(capture.getByRole('textbox', { name: '捕捉内容' })).toHaveValue('写到一半的想法')
+  await capture.keyboard.press('Escape').catch((e) => {
+    if (!capture.isClosed()) throw e
+  })
+  await expect.poll(() => capture.isClosed()).toBe(true)
+  capture = await open('text')
+  await blurCapture()
+  await expect.poll(() => capture.isClosed()).toBe(true)
+})
 test('quick capture text and image paste use real inbox import and primary window', async () => {
   let capture = await open('text')
   await capture.getByRole('textbox', { name: '捕捉内容' }).fill('全局快速记录真实文字')

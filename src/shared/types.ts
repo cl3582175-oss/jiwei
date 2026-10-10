@@ -628,6 +628,9 @@ export interface ActionItem {
   doneAt: number | null
   reviewId: string | null
   goalId: string | null
+  ownerPersonId?: string | null
+  ownerName?: string | null
+  origin?: import('./lens').LensOrigin | null
   createdAt: number
 }
 
@@ -941,6 +944,8 @@ export interface SourceRecognition {
 
 /** 主进程 → 渲染进程的事件 */
 export interface JiweiEvents {
+  'lenses:changed': { sourceId: string }
+  'series:changed': undefined
   'recording:changed': { id: string }
   'recording:open': undefined
   'voiceprint:status': import('./recording').VoiceStatus

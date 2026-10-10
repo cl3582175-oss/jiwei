@@ -1,9 +1,11 @@
 import { TranscriptView } from '../recording/TranscriptView'
+import { LensPanel } from '../lenses/LensPanel'
+import type { EvidenceSentence } from '@shared/lens'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { CircleHelp, Scissors, Camera, Captions, FileUp, Loader2, X, Pencil } from 'lucide-react'
+import { CircleHelp, Scissors, Camera, Captions, FileUp, Loader2, X, Pencil, Sparkles } from 'lucide-react'
 import { fmtTime, type Anchor } from '@shared/context'
 import type { Conversation, Segment, Source } from '@shared/types'
 import { api, cn, formatBytes } from '@/lib/utils'
@@ -132,6 +134,12 @@ export function MediaPane({ source }: { source: Source }) {
   const qc = useQueryClient()
   const media = useRef<HTMLVideoElement & HTMLAudioElement>(null)
   const list = useRef<HTMLDivElement>(null)
+  const pane = useRef<HTMLDivElement>(null)
+  const [organizing, setOrganizing] = useState(false),
+    setSourceFocus = useApp((s) => s.setSourceFocus),
+    [wide, setWide] = useState(false),
+    [tab, setTab] = useState<'transcript' | 'review'>('review'),
+    [evidence, setEvidence] = useState<EvidenceSentence | null>(null)
   const [time, setTime] = useState(0)
   const [duration, setDuration] = useState(0)
   const [range, setRange] = useState<{ a: number; b: number | null } | null>(null)
@@ -147,6 +155,11 @@ export function MediaPane({ source }: { source: Source }) {
   const isVideo = source.kind === 'video'
 
   const { data: segs = [] } = useQuery({ queryKey: ['segments', source.id], queryFn: () => api.segments.list(source.id) })
+  const { data: retainedHistory = [] } = useQuery({
+    queryKey: ['lens-history', source.id],
+    queryFn: () => api.lenses.history(source.id),
+    enabled: source.aiExcluded
+  })
   // 转写稿上的批注高亮
   const annotations = useAnnotations('source', source.id)
   const hlVersion = useMemo(() => ({ segs, editing, structureVersion }), [segs, editing, structureVersion])
@@ -166,11 +179,42 @@ export function MediaPane({ source }: { source: Source }) {
   const current = timed.find((x) => time >= x.t[0] && time < x.t[1] + 0.5)?.s.id ?? null
 
   const seek = (sec: number, play = false, until?: number): void => {
+    setTime(sec)
     const m = media.current
     if (!m) return
     sampleUntil.current = until ?? null
     m.currentTime = Math.max(0, sec)
     if (play) void m.play().catch(() => {})
+  }
+  useEffect(() => {
+    setSourceFocus(organizing)
+    return () => setSourceFocus(false)
+  }, [organizing, setSourceFocus])
+  useEffect(() => {
+    const el = pane.current
+    if (!el) return
+    const measure = (): void => setWide(el.clientWidth >= 640 && window.innerWidth > 1000)
+    const observer = new ResizeObserver(measure)
+    observer.observe(el)
+    window.addEventListener('resize', measure)
+    measure()
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', measure)
+    }
+  }, [])
+  useEffect(() => {
+    if (!evidence || !organizing) return
+    const frame = requestAnimationFrame(() =>
+      list.current?.querySelector<HTMLElement>(`[data-segment="${CSS.escape(evidence.segmentId)}"]`)?.scrollIntoView({ block: 'center' })
+    )
+    return () => cancelAnimationFrame(frame)
+  }, [evidence, tab, wide, organizing])
+  const showEvidence = (sentence: EvidenceSentence): void => {
+    setTab('transcript')
+    setEvidence(sentence)
+    seek(sentence.start, !!source.assetUrl, sentence.end)
+    follow.current = 0
   }
 
   // 出处链接 / AI 引用：跳到对应时间并播放
@@ -271,179 +315,239 @@ export function MediaPane({ source }: { source: Source }) {
   }
 
   return (
-    <div className="flex h-full flex-col">
-      {!source.assetUrl ? (
-        <p className="shrink-0 px-5 py-4 text-xs text-muted">{t('recording.audioRemoved')}</p>
-      ) : isVideo ? (
-        <div className="flex max-h-[48%] shrink-0 items-center justify-center bg-black">
-          <video {...props} className="max-h-full w-full" data-testid="media" />
-        </div>
-      ) : (
-        <div className="shrink-0 px-5 pt-5">
-          <audio {...props} className="w-full" data-testid="media" />
-        </div>
-      )}
-
-      {/* 时间轴：就地提问标记、A–B 区间、当前位置 */}
-      <div className="shrink-0 px-4 pt-3">
-        <div
-          className="relative h-5 cursor-pointer"
-          aria-label={t('media.timeline')}
-          onClick={(e) => {
-            const b = e.currentTarget.getBoundingClientRect()
-            seek(((e.clientX - b.left) / b.width) * duration)
-          }}
-        >
-          <div className="absolute inset-x-0 top-2 h-1 rounded-full bg-border" />
-          {range && (
-            <div
-              className="absolute top-1.5 h-2 rounded-full bg-accent/35"
-              style={{ left: pct(range.a), width: range.b !== null ? `calc(${pct(range.b)} - ${pct(range.a)})` : '2px' }}
-            />
-          )}
-          <div className="absolute top-1 h-3 w-0.5 rounded bg-fg/70" style={{ left: pct(time) }} />
-          {threads
-            .filter((c) => c.anchor?.t)
-            .map((c) => (
-              <button
-                key={c.id}
-                title={c.title}
-                aria-label={t('assist.thread', { title: c.title })}
-                className="thread-dot absolute top-0.5 -translate-x-1/2"
-                style={{ left: pct(c.anchor!.t![0]) }}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  seek(c.anchor!.t![0])
-                  openThread(c, elementRect(e.currentTarget))
-                }}
-              />
-            ))}
-        </div>
-      </div>
-
-      {/* 操作 */}
-      <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-border/60 px-4 py-2">
-        <Tip label={t('media.notGetItHint')} side="bottom">
-          <Button size="sm" variant="primary" onClick={notGetIt}>
-            <CircleHelp />
-            {t('media.notGetIt')}
-          </Button>
-        </Tip>
-        <Tip label={t('media.rangeHint')} side="bottom">
+    <div
+      ref={pane}
+      className="flex h-full min-h-0 min-w-0 flex-col"
+      data-testid="lens-workspace"
+      data-layout={organizing ? (wide ? 'columns' : 'tabs') : 'transcript'}
+    >
+      {!!segs.length && (
+        <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-border px-3 py-2">
           <Button
             size="sm"
-            variant={range && range.b === null ? 'secondary' : 'outline'}
-            onClick={markRange}
-            aria-pressed={!!range && range.b === null}
+            variant="outline"
+            disabled={source.aiExcluded && !organizing}
+            title={source.aiExcluded ? t('lens.local') : undefined}
+            onClick={() => {
+              setOrganizing(true)
+              setTab('review')
+            }}
           >
-            <Scissors />
-            {range && range.b === null ? t('media.rangeEnd', { t: fmtTime(range.a) }) : t('media.range')}
+            <Sparkles />
+            {t('lens.organize')}
           </Button>
-        </Tip>
-        {isVideo && (
-          <Tip label={t('media.frameHint')} side="bottom">
-            <Button size="sm" variant="outline" onClick={askFrame}>
-              <Camera />
-              {t('media.frame')}
+          {source.aiExcluded && !!retainedHistory.length && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                setOrganizing(true)
+                setTab('review')
+              }}
+            >
+              {t('lens.review')}
             </Button>
-          </Tip>
-        )}
-        {range && (
-          <span className="inline-flex items-center gap-1 rounded-md bg-sunken px-2 py-1 text-2xs text-muted tabular-nums">
-            {fmtTime(range.a)}
-            {range.b !== null && ` – ${fmtTime(range.b)}`}
-            <button aria-label={t('media.clearRange')} onClick={() => setRange(null)} className="hover:text-fg">
-              <X className="size-3" />
-            </button>
-          </span>
-        )}
-        <span className="ml-auto text-2xs text-subtle tabular-nums">
-          {fmtTime(time)}
-          {duration ? ` / ${fmtTime(duration)}` : ''}
-        </span>
-      </div>
-
-      {/* 转写稿 */}
-      <div
-        ref={list}
-        className="min-h-0 flex-1 overflow-y-auto"
-        onWheel={() => {
-          follow.current = Date.now() + 5000
-          followed.current = null
-        }}
-        onTouchMove={() => {
-          follow.current = Date.now() + 5000
-          followed.current = null
-        }}
-        onMouseUp={onSelect}
-        onKeyUp={onSelect}
-      >
-        {segs.length === 0 ? (
-          <TranscriptEmpty source={source} />
-        ) : source.kind === 'recording' || segs.some((s) => s.locator.speaker) ? (
-          <TranscriptView
-            source={source}
-            segments={segs.filter((s) => s.kind === 'transcript')}
-            time={time}
-            seek={seek}
-            threads={threads}
-            onThread={openThread}
-            onStructureChange={structureChanged}
-          />
-        ) : (
-          <article className="source-text transcript select-text" aria-label={t('media.transcript')}>
-            {timed.map(({ s, t: tt }) => (
-              <p
-                key={s.id}
-                data-segment={s.id}
-                data-t0={tt[0]}
-                data-t1={tt[1]}
-                className={cn('transcript-line', current === s.id && 'is-current')}
-              >
-                {threads.some((c) => c.anchor?.ownerId === s.id) && (
-                  <span className="thread-marks" contentEditable={false}>
-                    {threads
-                      .filter((c) => c.anchor?.ownerId === s.id)
-                      .map((c) => (
-                        <button
-                          key={c.id}
-                          className="thread-dot"
-                          title={c.title}
-                          onMouseUp={(e) => e.stopPropagation()}
-                          onClick={(e) => openThread(c, elementRect(e.currentTarget))}
-                        />
-                      ))}
-                  </span>
-                )}
-                <button
-                  className="transcript-time"
-                  onMouseUp={(e) => e.stopPropagation()}
-                  onClick={() => {
-                    follow.current = 0
-                    seek(tt[0], true)
-                  }}
+          )}
+          {organizing && !wide && (
+            <div className="flex gap-1" role="tablist" aria-label={t('lens.review')}>
+              {(['transcript', 'review'] as const).map((id) => (
+                <Button
+                  role="tab"
+                  aria-selected={tab === id}
+                  variant={tab === id ? 'secondary' : 'ghost'}
+                  size="sm"
+                  key={id}
+                  onClick={() => setTab(id)}
                 >
-                  {fmtTime(tt[0])}
+                  {t(`lens.${id}`)}
+                </Button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+      <div className={cn('min-h-0 flex-1', organizing && wide ? 'grid grid-cols-2' : 'flex flex-col')}>
+        <div className={cn('h-full min-h-0 min-w-0 flex-col', organizing && !wide && tab === 'review' ? 'hidden' : 'flex')}>
+          {!source.assetUrl ? (
+            <p className="shrink-0 px-5 py-4 text-xs text-muted">{t('recording.audioRemoved')}</p>
+          ) : isVideo ? (
+            <div className="flex max-h-[48%] shrink-0 items-center justify-center bg-black">
+              <video {...props} className="max-h-full w-full" data-testid="media" />
+            </div>
+          ) : (
+            <div className="shrink-0 px-5 pt-5">
+              <audio {...props} className="w-full" data-testid="media" />
+            </div>
+          )}
+
+          {/* 时间轴：就地提问标记、A–B 区间、当前位置 */}
+          <div className="shrink-0 px-4 pt-3">
+            <div
+              className="relative h-5 cursor-pointer"
+              aria-label={t('media.timeline')}
+              onClick={(e) => {
+                const b = e.currentTarget.getBoundingClientRect()
+                seek(((e.clientX - b.left) / b.width) * duration)
+              }}
+            >
+              <div className="absolute inset-x-0 top-2 h-1 rounded-full bg-border" />
+              {range && (
+                <div
+                  className="absolute top-1.5 h-2 rounded-full bg-accent/35"
+                  style={{ left: pct(range.a), width: range.b !== null ? `calc(${pct(range.b)} - ${pct(range.a)})` : '2px' }}
+                />
+              )}
+              <div className="absolute top-1 h-3 w-0.5 rounded bg-fg/70" style={{ left: pct(time) }} />
+              {threads
+                .filter((c) => c.anchor?.t)
+                .map((c) => (
+                  <button
+                    key={c.id}
+                    title={c.title}
+                    aria-label={t('assist.thread', { title: c.title })}
+                    className="thread-dot absolute top-0.5 -translate-x-1/2"
+                    style={{ left: pct(c.anchor!.t![0]) }}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      seek(c.anchor!.t![0])
+                      openThread(c, elementRect(e.currentTarget))
+                    }}
+                  />
+                ))}
+            </div>
+          </div>
+
+          {/* 操作 */}
+          <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-border/60 px-4 py-2">
+            <Tip label={t('media.notGetItHint')} side="bottom">
+              <Button size="sm" variant={organizing ? 'outline' : 'primary'} onClick={notGetIt}>
+                <CircleHelp />
+                {t('media.notGetIt')}
+              </Button>
+            </Tip>
+            <Tip label={t('media.rangeHint')} side="bottom">
+              <Button
+                size="sm"
+                variant={range && range.b === null ? 'secondary' : 'outline'}
+                onClick={markRange}
+                aria-pressed={!!range && range.b === null}
+              >
+                <Scissors />
+                {range && range.b === null ? t('media.rangeEnd', { t: fmtTime(range.a) }) : t('media.range')}
+              </Button>
+            </Tip>
+            {isVideo && (
+              <Tip label={t('media.frameHint')} side="bottom">
+                <Button size="sm" variant="outline" onClick={askFrame}>
+                  <Camera />
+                  {t('media.frame')}
+                </Button>
+              </Tip>
+            )}
+            {range && (
+              <span className="inline-flex items-center gap-1 rounded-md bg-sunken px-2 py-1 text-2xs text-muted tabular-nums">
+                {fmtTime(range.a)}
+                {range.b !== null && ` – ${fmtTime(range.b)}`}
+                <button aria-label={t('media.clearRange')} onClick={() => setRange(null)} className="hover:text-fg">
+                  <X className="size-3" />
                 </button>
-                {editing === s.id ? (
-                  <LineEditor seg={s} onDone={() => setEditing(null)} />
-                ) : (
-                  <>
-                    {s.text}
+              </span>
+            )}
+            <span className="ml-auto text-2xs text-subtle tabular-nums">
+              {fmtTime(time)}
+              {duration ? ` / ${fmtTime(duration)}` : ''}
+            </span>
+          </div>
+
+          {/* 转写稿 */}
+          <div
+            ref={list}
+            className="min-h-0 flex-1 overflow-y-auto"
+            onWheel={() => {
+              follow.current = Date.now() + 5000
+              followed.current = null
+            }}
+            onTouchMove={() => {
+              follow.current = Date.now() + 5000
+              followed.current = null
+            }}
+            onMouseUp={onSelect}
+            onKeyUp={onSelect}
+          >
+            {segs.length === 0 ? (
+              <TranscriptEmpty source={source} />
+            ) : source.kind === 'recording' || segs.some((s) => s.locator.speaker) ? (
+              <TranscriptView
+                source={source}
+                segments={segs.filter((s) => s.kind === 'transcript')}
+                time={time}
+                seek={seek}
+                threads={threads}
+                onThread={openThread}
+                onStructureChange={structureChanged}
+                highlightedId={evidence?.segmentId}
+              />
+            ) : (
+              <article className="source-text transcript select-text" aria-label={t('media.transcript')}>
+                {timed.map(({ s, t: tt }) => (
+                  <p
+                    key={s.id}
+                    data-segment={s.id}
+                    data-t0={tt[0]}
+                    data-t1={tt[1]}
+                    className={cn('transcript-line', current === s.id && 'is-current')}
+                  >
+                    {threads.some((c) => c.anchor?.ownerId === s.id) && (
+                      <span className="thread-marks" contentEditable={false}>
+                        {threads
+                          .filter((c) => c.anchor?.ownerId === s.id)
+                          .map((c) => (
+                            <button
+                              key={c.id}
+                              className="thread-dot"
+                              title={c.title}
+                              onMouseUp={(e) => e.stopPropagation()}
+                              onClick={(e) => openThread(c, elementRect(e.currentTarget))}
+                            />
+                          ))}
+                      </span>
+                    )}
                     <button
-                      className="transcript-edit"
-                      aria-label={t('media.editLine')}
-                      title={t('media.editLine')}
+                      className="transcript-time"
                       onMouseUp={(e) => e.stopPropagation()}
-                      onClick={() => setEditing(s.id)}
+                      onClick={() => {
+                        follow.current = 0
+                        seek(tt[0], true)
+                      }}
                     >
-                      <Pencil className="size-3" />
+                      {fmtTime(tt[0])}
                     </button>
-                  </>
-                )}
-              </p>
-            ))}
-          </article>
+                    {editing === s.id ? (
+                      <LineEditor seg={s} onDone={() => setEditing(null)} />
+                    ) : (
+                      <>
+                        {s.text}
+                        <button
+                          className="transcript-edit"
+                          aria-label={t('media.editLine')}
+                          title={t('media.editLine')}
+                          onMouseUp={(e) => e.stopPropagation()}
+                          onClick={() => setEditing(s.id)}
+                        >
+                          <Pencil className="size-3" />
+                        </button>
+                      </>
+                    )}
+                  </p>
+                ))}
+              </article>
+            )}
+          </div>
+        </div>
+        {organizing && (
+          <div className={cn('h-full min-h-0 min-w-0 border-border', wide && 'border-l', !wide && tab === 'transcript' && 'hidden')}>
+            <LensPanel source={source} onEvidence={showEvidence} onClose={() => setOrganizing(false)} />
+          </div>
         )}
       </div>
     </div>

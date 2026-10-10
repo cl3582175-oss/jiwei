@@ -16,8 +16,17 @@ export function useSidebar(): { collapsed: boolean; toggle: () => void } {
  * 可收起的侧栏容器：外层宽度在 300 ↔ 0 之间过渡，内层保持固定宽度，收起时内容不会被挤压变形；
  * 收起后设为 inert，键盘焦点与读屏不会进入隐藏区域。
  */
-export function CollapsibleSidebar({ children, className }: { children: ReactNode; className?: string }) {
-  const { collapsed } = useSidebar()
+export function CollapsibleSidebar({
+  children,
+  className,
+  forceCollapsed = false
+}: {
+  children: ReactNode
+  className?: string
+  /** 临时收起，不改用户设置 */
+  forceCollapsed?: boolean
+}) {
+  const collapsed = useSidebar().collapsed || forceCollapsed
   return (
     <div
       data-collapsed={collapsed}

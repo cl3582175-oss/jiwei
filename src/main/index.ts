@@ -22,6 +22,7 @@ import { registerBrowser } from './services/browser'
 import { registerAsrJob } from './services/asr'
 import { registerMossJob, stopMoss } from './services/moss'
 import { registerRecording } from './services/recording'
+import { registerLensJobs } from './services/lenses'
 import { stopVoiceprint } from './services/voiceprint'
 import { pruneJobs, startJobs, stopJobs } from './services/jobs'
 import { reconcilePeopleReferences } from './services/people'
@@ -154,6 +155,7 @@ app.whenReady().then(async () => {
   registerAsrJob()
   registerMossJob()
   registerRecording()
+  registerLensJobs()
   registerRecognizeJob()
   registerBrowser()
   registerIndexJob()

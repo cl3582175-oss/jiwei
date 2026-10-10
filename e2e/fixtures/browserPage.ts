@@ -12,12 +12,15 @@ export const ARTICLE = `<!doctype html><html lang="zh"><head><meta charset="utf-
 <p>提取练习：合上书，自己回忆刚学过的内容，比反复重读更有效。每次成功的回忆都会让记忆更牢固。</p>
 <p><a id="dl" href="/lecture.pdf">下载讲义（PDF）</a></p>
 </article></body></html>`
+const HIDDEN_LOGIN = `<!doctype html><html><head><meta charset="utf-8"><title>带隐藏登录框的课程页</title></head><body>
+<p>本节讲解提取练习。</p><div id="modal" style="display:none"><input type="password"></div></body></html>`
 const LOGIN = `<!doctype html><html><head><meta charset="utf-8"><title>登录</title></head><body>
 <p>请输入账号和密码登录系统。</p><form><input name="u"><input type="password" name="p"></form></body></html>`
 
 export async function startSite(): Promise<{ server: Server; base: string }> {
   const server = createServer((req, res) => {
     if (req.url === '/article') res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }).end(ARTICLE)
+    else if (req.url === '/hidden-login') res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }).end(HIDDEN_LOGIN)
     else if (req.url === '/login') res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }).end(LOGIN)
     else if (req.url === '/lecture.pdf')
       res

@@ -3,6 +3,20 @@ import { CaptureActionSchema } from './capture'
 import type { CaptureState, PhoneStatus } from './capture'
 import type { InboxItem } from './inbox'
 import {
+  LensRun,
+  LensSave,
+  LensLand,
+  SeriesInput,
+  RecordingFiltersSchema,
+  type LensInfo,
+  type Derivation,
+  type Landing,
+  type SceneGuess,
+  type Series,
+  type SeriesDetail,
+  type PersonPageData
+} from './lens'
+import {
   RecordingBegin,
   RecordingChunk,
   RecordingId,
@@ -123,6 +137,47 @@ const none = [] as const
 const id = (name = 'id') => [name, S.Id] as const
 
 export const capabilities = {
+  lenses: {
+    list: cap<LensInfo[]>()({ description: '整理视角', params: none }),
+    save: cap<LensInfo>()({
+      description: '保存自定义视角',
+      params: [
+        ['input', LensSave],
+        ['id', S.Id.optional()]
+      ]
+    }),
+    remove: cap<void>()({ description: '删除自定义视角', params: [id()] }),
+    guess: cap<SceneGuess | null>()({ description: '判断未指定录音场景', params: [id('sourceId')] }),
+    chooseScene: cap<void>()({
+      description: '用户选择录音场景',
+      params: [id('sourceId'), ['scene', z.enum(['meeting', 'lecture', 'thought'])]]
+    }),
+    run: cap<Derivation>()({ description: '后台整理转写稿', params: [['input', LensRun]] }),
+    history: cap<Derivation[]>()({ description: '整理历史', params: [id('sourceId')] }),
+    estimate: cap<{ cost: number | null; runAfter: number; offPeak: boolean }>()({
+      description: '整理费用与夜间开始时间',
+      params: [id('sourceId')]
+    }),
+    duplicates: cap<string[]>()({ description: '疑似重复条目', params: [id('derivationId')] }),
+    landings: cap<Landing[]>()({ description: '落地记录', params: [id('derivationId')] }),
+    prepare: cap<Landing>()({ description: '创建用户已审阅的提案', params: [['input', LensLand]] }),
+    complete: cap<Landing>()({ description: '确认renderer已应用提案', params: [id(), ['update', S.Bytes]] }),
+    undo: cap<Landing>()({ description: '准备撤销未修改的落地', params: [id()] }),
+    undoComplete: cap<Landing>()({ description: '确认renderer已撤销提案', params: [id(), ['update', S.Bytes]] })
+  },
+  series: {
+    list: cap<Series[]>()({ description: '录音系列', params: none }),
+    save: cap<Series>()({
+      description: '新建或修改系列',
+      params: [
+        ['input', SeriesInput],
+        ['id', S.Id.optional()]
+      ]
+    }),
+    set: cap<void>()({ description: '修改资料所属系列', params: [id('sourceId'), ['seriesId', S.Id.nullable()]] }),
+    detail: cap<SeriesDetail>()({ description: '系列录音与行动项', params: [id()] }),
+    openActions: cap<ActionItem[]>()({ description: '系列未完成待办', params: [id()] })
+  },
   recording: {
     list: cap<Recording[]>()({ description: '本机录音', params: none }),
     get: cap<Recording>()({ description: '录音状态', params: [['id', RecordingId]] }),
@@ -159,6 +214,7 @@ export const capabilities = {
     export: cap<string | null>()({ description: '导出转写稿', params: [id('sourceId'), ['format', TranscriptFormat]] })
   },
   people: {
+    page: cap<PersonPageData>()({ description: '人物录音、行动项与观点', params: [id()] }),
     list: cap<Person[]>()({ description: '登记的人', params: none }),
     save: cap<Person>()({
       description: '新建或改名',
@@ -715,7 +771,8 @@ export const capabilities = {
       params: [
         ['query', z.string().min(1).max(2000)],
         ['scope', S.ChatScopeSchema],
-        ['limit', z.number().int().min(1).max(30).optional()]
+        ['limit', z.number().int().min(1).max(30).optional()],
+        ['filters', RecordingFiltersSchema.optional()]
       ],
       ai: { effect: 'read' }
     })

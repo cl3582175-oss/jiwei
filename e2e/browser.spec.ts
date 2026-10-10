@@ -33,7 +33,7 @@ test.afterAll(async () => {
   server?.close()
 })
 
-const inPage = <T,>(code: string): Promise<T> => inPageOf<T>(app, code)
+const inPage = <T>(code: string): Promise<T> => inPageOf<T>(app, code)
 const clickInPage = (x: number, y: number): Promise<void> => clickOf(app, x, y)
 const pageAction = (text: string, action: string): Promise<void> => actionOf(app, text, action)
 
@@ -47,10 +47,13 @@ test('a note to relate to; the browser opens beside it with a start page', async
   await page.keyboard.press('Enter')
   await page.keyboard.type('在快要遗忘的时候复习，复习间隔逐渐拉长，记忆保持得更久。')
   await expect
-    .poll(async () => {
-      const s = await page.evaluate(() => window.jiwei.embedding.status())
-      return s.total > 0 && s.indexed === s.total
-    }, { timeout: 60_000 })
+    .poll(
+      async () => {
+        const s = await page.evaluate(() => window.jiwei.embedding.status())
+        return s.total > 0 && s.indexed === s.total
+      },
+      { timeout: 60_000 }
+    )
     .toBe(true)
 
   await page.getByRole('button', { name: '在笔记旁打开浏览器' }).click()
@@ -80,7 +83,9 @@ test('in-page toolbar: highlight saves the page as a source and paints the highl
   // 网页上画出高亮（CSS Custom Highlight，不改动网页 DOM）
   await expect.poll(() => inPage<number>(`CSS.highlights.get('jw-yellow')?.size ?? 0`)).toBe(1)
   // 资料：网页快照分段，进入知识库
-  await expect.poll(() => page.evaluate((id) => window.jiwei.segments.list(id).then((s) => s.map((x) => x.text).join('')), sourceId)).toContain('提取练习')
+  await expect
+    .poll(() => page.evaluate((id) => window.jiwei.segments.list(id).then((s) => s.map((x) => x.text).join('')), sourceId))
+    .toContain('提取练习')
   await expect(page.getByRole('button', { name: '已存为资料' })).toBeVisible()
 })
 
@@ -170,6 +175,33 @@ test('sensitive pages turn AI off: no toolbar, cannot be saved', async () => {
     return wc.executeJavaScript(`typeof window.jiwei === 'undefined' && typeof window.require === 'undefined'`)
   })
   expect(forbidden).toBe(true)
+})
+
+test('a hidden login form does not turn AI off until it is actually shown', async () => {
+  await page.getByRole('textbox', { name: '地址栏' }).fill(`${base}/hidden-login`)
+  await page.keyboard.press('Enter')
+  await expect.poll(async () => (await tabs()).tabs.find((t) => t.url.endsWith('/hidden-login'))?.title).toBe('带隐藏登录框的课程页')
+  await page.waitForTimeout(800)
+  await expect(page.getByTestId('ai-off')).toHaveCount(0)
+  await app.evaluate(async ({ webContents }) => {
+    const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('/hidden-login'))!
+    await wc.executeJavaScript(`document.getElementById('modal').style.display = 'block'`)
+  })
+  await expect(page.getByTestId('ai-off')).toBeVisible({ timeout: 10_000 })
+})
+
+test('a page that fails to load shows a reason and a reload button instead of a blank pane', async () => {
+  const address = page.getByRole('textbox', { name: '地址栏' })
+  await address.fill('http://127.0.0.1:9/unreachable')
+  await address.press('Enter')
+  await expect
+    .poll(() =>
+      app.evaluate(async ({ webContents }) => {
+        const wc = webContents.getAllWebContents().find((w) => w.getURL().startsWith('http://127.0.0.1:9/'))
+        return wc ? ((await wc.executeJavaScript('document.body ? document.body.innerText : ""')) as string) : ''
+      })
+    )
+    .toContain('无法打开这个网页')
 })
 
 test('closing the last tab closes the browser', async () => {

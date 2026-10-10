@@ -28,6 +28,8 @@ import { useApp } from '@/store/app'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, Input, Tip } from '@/components/ui/primitives'
 import { useRecording, startRecording, togglePause, endRecording, recordingElapsed } from './store'
+import { SeriesSelect, lensSelectClass } from '../lenses/SeriesSelect'
+import { openSeriesPage } from '../lenses/pages'
 
 export function useRecordings() {
   const qc = useQueryClient()
@@ -50,7 +52,8 @@ export function RecordingStart({ noteId = null }: { noteId?: string | null }) {
     [local, setLocal] = useState(scene === 'thought')
   const [participants, setParticipants] = useState<string[]>([]),
     [extra, setExtra] = useState(''),
-    [name, setName] = useState('')
+    [name, setName] = useState(''),
+    [seriesId, setSeriesId] = useState<string | null>(null)
   const sceneChosen = useRef(false)
   useEffect(() => {
     if (!settings || sceneChosen.current) return
@@ -185,6 +188,7 @@ export function RecordingStart({ noteId = null }: { noteId?: string | null }) {
         value={extra}
         onChange={(e) => setExtra(e.target.value)}
       />
+      <SeriesSelect value={seriesId} onChange={setSeriesId} scene={scene} pending />
       {error && (
         <div className="text-xs text-danger" role="alert">
           {error.startsWith('recording.') ? t(error) : error}
@@ -200,7 +204,9 @@ export function RecordingStart({ noteId = null }: { noteId?: string | null }) {
         className="h-10 w-full px-5 @min-[520px]:w-auto"
         disabled={busy}
         onClick={() =>
-          void startRecording({ scene, device, system, participants, extraHotwords: extra, localOnly: local, noteId }).catch(() => {})
+          void startRecording({ scene, device, system, participants, extraHotwords: extra, localOnly: local, noteId, seriesId }).catch(
+            () => {}
+          )
         }
       >
         {busy ? <Loader2 className="animate-spin" /> : <Mic />}
@@ -375,6 +381,15 @@ export function RecordingView() {
     { data: rows = [], refetch } = useRecordings(),
     current = useRecording((s) => s.current)
   const unfinished = rows.filter((r) => r.id !== current?.id && ['recording', 'paused', 'finalizing', 'failed'].includes(r.status))
+  const [personId, setPersonId] = useState(''),
+    [seriesId, setSeriesId] = useState('')
+  const { data: people = [] } = useQuery({ queryKey: ['people'], queryFn: () => api.people.list() }),
+    { data: series = [] } = useQuery({ queryKey: ['series'], queryFn: () => api.series.list() })
+  const { data: filtered = [] } = useQuery({
+    queryKey: ['sources', 'recording-person', personId],
+    queryFn: () => api.sources.list({ personId }),
+    enabled: !!personId
+  })
   return (
     <div className="flex h-full flex-col">
       <header className="drag flex h-14 shrink-0 items-center gap-2 border-b border-border px-6">
@@ -431,8 +446,39 @@ export function RecordingView() {
           </section>
         )}
         <div className="space-y-2">
+          <div className="flex flex-wrap gap-2">
+            <select
+              className={lensSelectClass}
+              aria-label={t('personPage.all')}
+              value={personId}
+              onChange={(e) => setPersonId(e.target.value)}
+            >
+              <option value="">{t('personPage.all')}</option>
+              {people.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+            <select className={lensSelectClass} aria-label={t('series.all')} value={seriesId} onChange={(e) => setSeriesId(e.target.value)}>
+              <option value="">{t('series.all')}</option>
+              {series.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+            {seriesId && (
+              <Button size="sm" variant="ghost" onClick={() => openSeriesPage(seriesId)}>
+                {t('series.open')}
+              </Button>
+            )}
+          </div>
           {rows
-            .filter((r) => r.status === 'ready')
+            .filter(
+              (r) =>
+                r.status === 'ready' && (!seriesId || r.seriesId === seriesId) && (!personId || filtered.some((s) => s.id === r.sourceId))
+            )
             .map((r) => (
               <Button
                 variant="ghost"

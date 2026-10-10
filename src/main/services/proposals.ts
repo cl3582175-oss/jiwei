@@ -1,11 +1,12 @@
-import { and, desc, eq } from 'drizzle-orm'
+import { and, desc, eq, or } from 'drizzle-orm'
 import { getDb } from '../db'
-import { notes, proposals } from '../db/schema'
+import { derivationLandings, notes, proposals } from '../db/schema'
 import { newId } from '../lib/ids'
 import { emit } from '../events'
 import type { ProposalInput } from '@shared/schemas'
 import type { Proposal, ProposalOpStatus } from '@shared/types'
 import { recordProposalDecision } from './memoryLearn'
+import { lensMessage } from './recordingContext'
 
 // AI 修改提案：主进程只负责记录与状态流转；
 // 真正把操作应用到文档由渲染进程的编辑器完成（保证走正常的撤销、协同、ID 与来源标记流程）。
@@ -44,7 +45,12 @@ export function createProposal(input: ProposalInput): Proposal {
     id: newId(),
     noteId: input.noteId,
     title: input.title,
-    ops: JSON.stringify({ ops: input.ops, embeds: input.embeds ?? {}, ...(input.auto ? { auto: true } : {}), ...(input.skill ? { skill: input.skill } : {}) }),
+    ops: JSON.stringify({
+      ops: input.ops,
+      embeds: input.embeds ?? {},
+      ...(input.auto ? { auto: true } : {}),
+      ...(input.skill ? { skill: input.skill } : {})
+    }),
     opStatus: JSON.stringify(input.ops.map(() => 'pending')),
     status: 'pending',
     model: input.model ?? null,
@@ -67,6 +73,17 @@ export function listProposals(noteId: string): Proposal[] {
     .map(toProposal)
 }
 
+export function resolveUserOp(id: string, opIndex: number, decision: 'accepted' | 'rejected', blockIds?: string[]): Proposal {
+  if (
+    getDb()
+      .select({ id: derivationLandings.id })
+      .from(derivationLandings)
+      .where(or(eq(derivationLandings.proposalId, id), eq(derivationLandings.undoProposalId, id)))
+      .get()
+  )
+    throw new Error(lensMessage('reviewInSource'))
+  return resolveOp(id, opIndex, decision, blockIds)
+}
 export function resolveOp(id: string, opIndex: number, decision: 'accepted' | 'rejected', blockIds?: string[]): Proposal {
   const db = getDb()
   const r = db.select().from(proposals).where(eq(proposals.id, id)).get()

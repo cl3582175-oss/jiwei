@@ -238,8 +238,8 @@ test('same-page continuous capture preserves readable native width and fresh sna
       const c = document.querySelector('canvas'); c.height = 2000;
       const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, 1000, 2000);
       x.fillStyle = '#124'; x.font = '20px sans-serif'; x.fillText('同页第一段', 12, 65); x.fillText('同页第二段', 12, 445);
-      x.fillStyle = '#00aa00'; x.fillRect(innerWidth - 60, 40, 40, 40);
-      x.fillStyle = '#0000ff'; x.fillRect(innerWidth - 60, 420, 40, 40);
+      x.fillStyle = '#00aa00'; x.fillRect(innerWidth - 100, 40, 40, 40);
+      x.fillStyle = '#0000ff'; x.fillRect(innerWidth - 100, 420, 40, 40);
       scrollTo(0, 0);
     })()`)
   })

@@ -7,7 +7,8 @@ import {
   mossTranscriptRevision,
   parseMossOutput,
   parseMossRecording,
-  planMossChunks
+  planMossChunks,
+  trimRepeatedOverlap
 } from '../moss'
 
 describe('MOSS output', () => {
@@ -187,5 +188,22 @@ describe('MOSS transcript and hotwords', () => {
       ).split(',')
     ).toHaveLength(30)
     expect(buildMossHotwords(['', '，', '\n', 'a,b'], '', []).split(',').filter(Boolean)).toEqual(['a b'])
+  })
+})
+
+describe('trimRepeatedOverlap', () => {
+  it('删去下一句开头与上一句结尾重复、且时间交叠的文字', () => {
+    const out = trimRepeatedOverlap([
+      { start: 16.4, end: 29, text: '很多能力会复用同一套模型里的部分参数、内部表示和通用策略。', speaker: 'S01' },
+      { start: 24.7, end: 34.6, text: '部分参数，内部表示和通用策略。所以你训练的是一个任务。', speaker: 'S01' }
+    ])
+    expect(out.map((c) => c.text)).toEqual(['很多能力会复用同一套模型里的部分参数、内部表示和通用策略。', '所以你训练的是一个任务。'])
+    expect(out[1].start).toBe(29)
+  })
+  it('不交叠或重复太短时保持原样；整句重复则去掉', () => {
+    const a = { start: 0, end: 5, text: '我们今天讨论预算。', speaker: 'S01' }
+    expect(trimRepeatedOverlap([a, { start: 5, end: 8, text: '预算流程很重要。', speaker: 'S02' }])).toHaveLength(2)
+    expect(trimRepeatedOverlap([a, { start: 4, end: 8, text: '预算，很好。', speaker: 'S02' }])[1].text).toBe('预算，很好。')
+    expect(trimRepeatedOverlap([a, { start: 3, end: 5, text: '讨论预算。', speaker: 'S01' }])).toHaveLength(1)
   })
 })

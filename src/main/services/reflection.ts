@@ -30,6 +30,7 @@ import { parseMeta } from './feynman'
 import { structured } from './ai/structured'
 import { goalProgress, listGoals } from './progress'
 import { recentAnnotations } from './annotations'
+import type { LensOrigin } from '@shared/lens'
 
 // 复盘（v0.4.2）：每日 1 分钟微复盘、每周完整复盘（GRAI）、专题复盘（主题 / 实践 / 认知变化）。
 // 复盘正文是一篇 kind = review 的康奈尔笔记：线索栏是引导问题，笔记栏是你的回答，总结栏写最重要的一点。
@@ -84,11 +85,21 @@ const QUESTIONS: Record<ReflectionKind, [string[], string[]]> = {
   ],
   topic: [
     ['用自己的话说，这个主题的核心是什么？', '它和我已有的知识有什么联系？', '还有哪些疑问？', '我能用它做什么？'],
-    ['In my own words, what is the core of this topic?', 'How does it connect to what I already know?', 'What questions remain?', 'What can I use it for?']
+    [
+      'In my own words, what is the core of this topic?',
+      'How does it connect to what I already know?',
+      'What questions remain?',
+      'What can I use it for?'
+    ]
   ],
   practice: [
     ['预期：原本希望发生什么？', '实际：真正发生了什么？', '原因：差距从哪里来？', '下次：我会怎么做？'],
-    ['Expected: what did I hope would happen?', 'Actual: what really happened?', 'Cause: where did the gap come from?', 'Next time: what will I do?']
+    [
+      'Expected: what did I hope would happen?',
+      'Actual: what really happened?',
+      'Cause: where did the gap come from?',
+      'Next time: what will I do?'
+    ]
   ],
   belief: [
     ['我原来怎么想？', '现在怎么想？', '是什么让我改变了？（证据）', '把握有多大？还需要什么来验证？'],
@@ -127,7 +138,9 @@ function titleFor(kind: ReflectionKind, start: number, scopeTitle: string | null
     case 'daily':
       return zh ? `微复盘 · ${fmtDay(start, zh)}` : `Daily reflection · ${fmtDay(start, zh)}`
     case 'weekly':
-      return zh ? `周复盘 · ${fmtDay(start, zh)}–${fmtDay(addDays(start, 6), zh)}` : `Weekly review · ${fmtDay(start, zh)}–${fmtDay(addDays(start, 6), zh)}`
+      return zh
+        ? `周复盘 · ${fmtDay(start, zh)}–${fmtDay(addDays(start, 6), zh)}`
+        : `Weekly review · ${fmtDay(start, zh)}–${fmtDay(addDays(start, 6), zh)}`
     case 'topic':
       return zh ? `主题复盘：${scopeTitle ?? ''}` : `Topic review: ${scopeTitle ?? ''}`
     case 'practice':
@@ -188,7 +201,11 @@ export function startReflection(input: ReflectionStart): Reflection {
     if (existing && existing.noteId && getNote(existing.noteId)) return toReflection(existing)
   }
   const scopeTitle = input.topic?.trim() || null
-  const note = createNote({ kind: 'review', title: titleFor(input.kind, start ?? now, scopeTitle, zh), categoryId: input.categoryId ?? null })
+  const note = createNote({
+    kind: 'review',
+    title: titleFor(input.kind, start ?? now, scopeTitle, zh),
+    categoryId: input.categoryId ?? null
+  })
   replaceDoc(note.id, templateDoc(questions(input.kind, zh)))
   const id = newId()
   getDb()
@@ -296,9 +313,19 @@ export function saveDaily(answers: string[]): Reflection {
   const todo = answers[2]?.trim()
   if (todo) {
     // 再次保存时替换当天复盘生成的行动项，不重复
-    db.delete(actions).where(and(eq(actions.reviewId, r.id), eq(actions.status, 'open'))).run()
+    db.delete(actions)
+      .where(and(eq(actions.reviewId, r.id), eq(actions.status, 'open')))
+      .run()
     db.insert(actions)
-      .values({ id: newId(), title: clip(todo, 300), dueAt: startOfDay(now) + 2 * DAY - 1, reviewId: r.id, createdAt: now, updatedAt: now, updatedBy: deviceId() })
+      .values({
+        id: newId(),
+        title: clip(todo, 300),
+        dueAt: startOfDay(now) + 2 * DAY - 1,
+        reviewId: r.id,
+        createdAt: now,
+        updatedAt: now,
+        updatedBy: deviceId()
+      })
       .run()
   }
   db.update(reviews).set({ status: 'done', completedAt: now, updatedAt: now }).where(eq(reviews.id, r.id)).run()
@@ -335,7 +362,9 @@ export function reflectionMaterial(id: string): ReflectionMaterial {
       and(
         isNull(notes.deletedAt),
         eq(notes.kind, 'cornell'),
-        scoped ? inArray(notes.id, scoped.length ? scoped : ['-']) : or(and(gte(notes.editedAt, start), lt(notes.editedAt, end)), and(gte(notes.createdAt, start), lt(notes.createdAt, end)))
+        scoped
+          ? inArray(notes.id, scoped.length ? scoped : ['-'])
+          : or(and(gte(notes.editedAt, start), lt(notes.editedAt, end)), and(gte(notes.createdAt, start), lt(notes.createdAt, end)))
       )
     )
     .orderBy(desc(notes.editedAt))
@@ -346,7 +375,9 @@ export function reflectionMaterial(id: string): ReflectionMaterial {
   // 学习经历（个人数据库）
   const episodes = (
     profileDb()
-      .prepare("SELECT content, updated_at, evidence FROM memories WHERE kind = 'episode' AND status = 'active' AND updated_at >= ? AND updated_at < ? ORDER BY updated_at DESC LIMIT 20")
+      .prepare(
+        "SELECT content, updated_at, evidence FROM memories WHERE kind = 'episode' AND status = 'active' AND updated_at >= ? AND updated_at < ? ORDER BY updated_at DESC LIMIT 20"
+      )
       .all(start, end) as { content: string; updated_at: number; evidence: string | null }[]
   ).map((e) => ({
     content: e.content,
@@ -396,7 +427,11 @@ export function reflectionMaterial(id: string): ReflectionMaterial {
     }
     for (const e of byRow.values())
       if (e.cue.trim() && !e.body.trim())
-        unanswered.push({ question: clip(e.cue.trim(), 120), noteId: e.noteId, noteTitle: noteRows.find((n) => n.id === e.noteId)?.title ?? '' })
+        unanswered.push({
+          question: clip(e.cue.trim(), 120),
+          noteId: e.noteId,
+          noteTitle: noteRows.find((n) => n.id === e.noteId)?.title ?? ''
+        })
   }
 
   // 概念掌握度变化（期间有信号的概念）
@@ -424,7 +459,14 @@ export function reflectionMaterial(id: string): ReflectionMaterial {
   const feynman = db
     .select({ id: conversations.id, meta: conversations.meta })
     .from(conversations)
-    .where(and(eq(conversations.kind, 'feynman'), isNull(conversations.deletedAt), gte(conversations.updatedAt, start), lt(conversations.updatedAt, end)))
+    .where(
+      and(
+        eq(conversations.kind, 'feynman'),
+        isNull(conversations.deletedAt),
+        gte(conversations.updatedAt, start),
+        lt(conversations.updatedAt, end)
+      )
+    )
     .all()
     .map((c) => {
       const m = parseMeta(c.meta)
@@ -484,13 +526,21 @@ export function reflectionMaterial(id: string): ReflectionMaterial {
     logs.length
       ? `${L('复习', 'Reviews')}：${L(`复习 ${logs.length} 次，忘记 ${logs.filter((l) => l.rating === 1).length} 次`, `${logs.length} reviews, forgot ${logs.filter((l) => l.rating === 1).length}`)}${hardest.length ? `；${L('忘得最多', 'Hardest')}：${hardest.map((h) => h.question).join('；')}` : ''}`
       : '',
-    unanswered.length ? `${L('还没回答的线索', 'Unanswered cues')}：${unanswered.slice(0, 8).map((u) => u.question).join('；')}` : '',
+    unanswered.length
+      ? `${L('还没回答的线索', 'Unanswered cues')}：${unanswered
+          .slice(0, 8)
+          .map((u) => u.question)
+          .join('；')}`
+      : '',
     concepts.length ? `${L('概念掌握', 'Concepts')}：${concepts.map((c) => `${c.name}（${c.level}，${c.change}）`).join('、')}` : '',
     feynman.length ? `${L('费曼练习', 'Feynman practice')}：${feynman.map((f) => `${f.concept}（${f.level ?? '-'}）`).join('、')}` : '',
     acts.length ? `${L('行动项', 'Actions')}：${acts.map((a) => `${a.title}（${a.status}）`).join('；')}` : '',
     annotationsOut.items.length
       ? `${L('批注', 'Annotations')}（${L(`共 ${anns.length} 处`, `${anns.length} in total`)}）：\n${annotationsOut.items
-          .map((a) => `- ${a.question ? L('［存疑］', '[Question] ') : ''}《${a.targetTitle}》${a.quote ? `“${a.quote}”` : ''}${a.body ? `：${clip(a.body, 200)}` : ''}`)
+          .map(
+            (a) =>
+              `- ${a.question ? L('［存疑］', '[Question] ') : ''}《${a.targetTitle}》${a.quote ? `“${a.quote}”` : ''}${a.body ? `：${clip(a.body, 200)}` : ''}`
+          )
           .join('\n')}`
       : '',
     goalList.length
@@ -550,7 +600,9 @@ export async function harvestReflection(id: string): Promise<ReflectionHarvest> 
   if (!s.ai.chat.providerId || !s.ai.chat.model) throw new Error(zh ? '还没有设置 AI 模型' : 'No AI model configured')
   const body = reflectionText(id)
   if (!body.replace(/【[^】]*】|（还没写）|\(empty\)/g, '').trim()) throw new Error(zh ? '复盘还是空的' : 'The reflection is empty')
-  const existing = listInsights().filter((i) => i.status === 'active').slice(0, 40)
+  const existing = listInsights()
+    .filter((i) => i.status === 'active')
+    .slice(0, 40)
   const refs = new Map(existing.map((x, i) => [`i${i + 1}`, x]))
   const out = await structured({
     providerId: s.ai.chat.providerId,
@@ -580,7 +632,9 @@ export async function harvestReflection(id: string): Promise<ReflectionHarvest> 
     revisions: out.revisions
       .map((v) => {
         const target = refs.get(v.ref)
-        return target ? { insightId: target.id, current: target.statement, statement: v.statement, confidence: v.confidence, reason: v.reason } : null
+        return target
+          ? { insightId: target.id, current: target.statement, statement: v.statement, confidence: v.confidence, reason: v.reason }
+          : null
       })
       .filter((x): x is NonNullable<typeof x> => !!x),
     actions: out.actions
@@ -597,19 +651,48 @@ export function commitReflection(id: string, input: HarvestCommit): Reflection {
     for (const it of input.insights) {
       const insightId = newId()
       tx.insert(insights)
-        .values({ id: insightId, statement: it.statement, confidence: it.confidence, reviewId: id, createdAt: now, updatedAt: now, updatedBy: deviceId() })
+        .values({
+          id: insightId,
+          statement: it.statement,
+          confidence: it.confidence,
+          reviewId: id,
+          createdAt: now,
+          updatedAt: now,
+          updatedBy: deviceId()
+        })
         .run()
       tx.insert(insightVersions)
-        .values({ id: newId(), insightId, version: 1, statement: it.statement, confidence: it.confidence, reason: it.evidence ?? null, createdAt: now })
+        .values({
+          id: newId(),
+          insightId,
+          version: 1,
+          statement: it.statement,
+          confidence: it.confidence,
+          reason: it.evidence ?? null,
+          createdAt: now
+        })
         .run()
       if (r.noteId)
         tx.insert(links)
-          .values({ id: newId(), fromType: 'insight', fromId: insightId, toType: 'note', toId: r.noteId, origin: 'manual', createdAt: now, updatedAt: now, updatedBy: deviceId() })
+          .values({
+            id: newId(),
+            fromType: 'insight',
+            fromId: insightId,
+            toType: 'note',
+            toId: r.noteId,
+            origin: 'manual',
+            createdAt: now,
+            updatedAt: now,
+            updatedBy: deviceId()
+          })
           .run()
     }
-    for (const v of input.revisions) reviseInsight(tx, v.insightId, { statement: v.statement, confidence: v.confidence, reason: v.reason }, now)
+    for (const v of input.revisions)
+      reviseInsight(tx, v.insightId, { statement: v.statement, confidence: v.confidence, reason: v.reason }, now)
     for (const a of input.actions)
-      tx.insert(actions).values({ id: newId(), title: a.title, dueAt: a.dueAt, reviewId: id, createdAt: now, updatedAt: now, updatedBy: deviceId() }).run()
+      tx.insert(actions)
+        .values({ id: newId(), title: a.title, dueAt: a.dueAt, reviewId: id, createdAt: now, updatedAt: now, updatedBy: deviceId() })
+        .run()
     tx.update(reviews).set({ status: 'done', completedAt: now, updatedAt: now }).where(eq(reviews.id, id)).run()
   })
   emit('reflection:changed', {})
@@ -634,6 +717,29 @@ export function listInsights(): Insight[] {
   return getDb().select().from(insights).where(isNull(insights.deletedAt)).orderBy(desc(insights.updatedAt)).all().map(toInsight)
 }
 
+export function createLensInsight(statement: string, origin: LensOrigin): Insight {
+  const id = newId(),
+    now = Date.now()
+  getDb()
+    .insert(insights)
+    .values({
+      id,
+      statement,
+      confidence: 'hypothesis',
+      origin: JSON.stringify(origin),
+      createdAt: now,
+      updatedAt: now,
+      updatedBy: deviceId()
+    })
+    .run()
+  getDb()
+    .insert(insightVersions)
+    .values({ id: newId(), insightId: id, version: 1, statement, confidence: 'hypothesis', reason: JSON.stringify(origin), createdAt: now })
+    .run()
+  emit('reflection:changed', {})
+  return toInsight(getDb().select().from(insights).where(eq(insights.id, id)).get()!)
+}
+
 export function insightHistory(id: string): InsightVersion[] {
   return getDb()
     .select()
@@ -641,7 +747,13 @@ export function insightHistory(id: string): InsightVersion[] {
     .where(eq(insightVersions.insightId, id))
     .orderBy(asc(insightVersions.version))
     .all()
-    .map((v) => ({ version: v.version, statement: v.statement, confidence: v.confidence as InsightConfidence, reason: v.reason, createdAt: v.createdAt }))
+    .map((v) => ({
+      version: v.version,
+      statement: v.statement,
+      confidence: v.confidence as InsightConfidence,
+      reason: v.reason,
+      createdAt: v.createdAt
+    }))
 }
 
 type Tx = Parameters<Parameters<ReturnType<typeof getDb>['transaction']>[0]>[0]
@@ -659,7 +771,10 @@ function reviseInsight(
   const confidence = patch.confidence ?? cur.confidence
   const status = patch.status ?? (cur.status === 'refuted' ? 'refuted' : 'active')
   const version = cur.version + 1
-  tx.update(insights).set({ statement, confidence, status, version, updatedAt: now, updatedBy: deviceId() }).where(eq(insights.id, id)).run()
+  tx.update(insights)
+    .set({ statement, confidence, status, version, updatedAt: now, updatedBy: deviceId() })
+    .where(eq(insights.id, id))
+    .run()
   tx.insert(insightVersions)
     .values({
       id: newId(),
@@ -673,7 +788,10 @@ function reviseInsight(
     .run()
 }
 
-export function updateInsight(id: string, patch: { statement?: string; confidence?: InsightConfidence; status?: 'active' | 'refuted'; reason?: string }): Insight {
+export function updateInsight(
+  id: string,
+  patch: { statement?: string; confidence?: InsightConfidence; status?: 'active' | 'refuted'; reason?: string }
+): Insight {
   const db = getDb()
   db.transaction((tx) => reviseInsight(tx, id, patch))
   emit('reflection:changed', {})
@@ -689,7 +807,19 @@ export function removeInsight(id: string): void {
 
 type ActionRow = typeof actions.$inferSelect
 function toAction(r: ActionRow): ActionItem {
-  return { id: r.id, title: r.title, status: r.status, dueAt: r.dueAt, doneAt: r.doneAt, reviewId: r.reviewId, goalId: r.goalId, createdAt: r.createdAt }
+  return {
+    id: r.id,
+    title: r.title,
+    status: r.status,
+    dueAt: r.dueAt,
+    doneAt: r.doneAt,
+    reviewId: r.reviewId,
+    goalId: r.goalId,
+    ownerPersonId: r.ownerPersonId,
+    ownerName: r.ownerName,
+    origin: r.origin ? JSON.parse(r.origin) : null,
+    createdAt: r.createdAt
+  }
 }
 
 export function listActions(status?: ActionItem['status']): ActionItem[] {
@@ -703,10 +833,29 @@ export function listActions(status?: ActionItem['status']): ActionItem[] {
     .map(toAction)
 }
 
-export function createAction(title: string, dueAt: number | null, goalId: string | null = null): ActionItem {
+export function createAction(
+  title: string,
+  dueAt: number | null,
+  goalId: string | null = null,
+  metadata: { ownerPersonId?: string | null; ownerName?: string | null; origin?: LensOrigin } = {}
+): ActionItem {
   const now = Date.now()
   const id = newId()
-  getDb().insert(actions).values({ id, title, dueAt, goalId, createdAt: now, updatedAt: now, updatedBy: deviceId() }).run()
+  getDb()
+    .insert(actions)
+    .values({
+      id,
+      title,
+      dueAt,
+      goalId,
+      ownerPersonId: metadata.ownerPersonId,
+      ownerName: metadata.ownerName,
+      origin: metadata.origin ? JSON.stringify(metadata.origin) : null,
+      createdAt: now,
+      updatedAt: now,
+      updatedBy: deviceId()
+    })
+    .run()
   emit('reflection:changed', {})
   return toAction(getDb().select().from(actions).where(eq(actions.id, id)).get()!)
 }

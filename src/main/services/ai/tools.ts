@@ -1,5 +1,6 @@
 import { tool, type ToolSet } from 'ai'
 import { z } from 'zod'
+import { RecordingFiltersSchema } from '@shared/lens'
 import { eq } from 'drizzle-orm'
 import { getDb } from '../../db'
 import { notes, sources } from '../../db/schema'
@@ -227,9 +228,9 @@ export function buildTools(s: AgentSession): ToolSet {
         description: zh
           ? '在用户的知识库（笔记 + 资料）中检索。结果带编号，回答时用 [编号] 引用。已提供的片段不够时再用。'
           : "Search the user's knowledge base (notes + sources). Results are numbered; cite as [n].",
-        inputSchema: z.object({ query: z.string().min(1).max(500) }),
-        execute: async ({ query }) => {
-          const hits = await retrieve(query, s.scope, 6)
+        inputSchema: RecordingFiltersSchema.extend({ query: z.string().min(1).max(500) }),
+        execute: async ({ query, ...filters }) => {
+          const hits = await retrieve(query, s.scope, 6, filters)
           return hits.length ? numberHits(s, hits) : zh ? '没有找到相关内容。' : 'Nothing found.'
         }
       }),
@@ -577,7 +578,9 @@ export function buildTools(s: AgentSession): ToolSet {
           : 'Recall more about the user (preferences, background, terms, past study, grasp of a concept) when needed.',
         inputSchema: z.object({ query: z.string().min(1).max(200) }),
         execute: async ({ query }) => {
-          const lines = searchMemories(query, 8).map((m) => `- ${m.kind === 'episode' ? (zh ? '学习经历：' : 'Studied: ') : ''}${m.content}`)
+          const lines = searchMemories(query, 8).map(
+            (m) => `- ${m.kind === 'episode' ? (zh ? '学习经历：' : 'Studied: ') : ''}${m.content}`
+          )
           lines.push(...conceptsIn(query, 5).map((c) => `- ${zh ? '掌握情况：' : 'Grasp: '}${describeConcept(c, zh)}`))
           return lines.length ? lines.join('\n') : zh ? '没有相关记忆。' : 'Nothing.'
         }
@@ -598,7 +601,9 @@ export function buildTools(s: AgentSession): ToolSet {
         }
       }),
       browser_find: tool({
-        description: zh ? '在内置浏览器当前网页中查找关键词，返回出现次数与上下文' : 'Find a phrase in the current page; returns count and context',
+        description: zh
+          ? '在内置浏览器当前网页中查找关键词，返回出现次数与上下文'
+          : 'Find a phrase in the current page; returns count and context',
         inputSchema: z.object({ query: z.string().min(1).max(200), tabId: z.string().max(64).optional() }),
         execute: async ({ query, tabId }) => {
           const r = await findInPage(query, tabId)
@@ -608,7 +613,8 @@ export function buildTools(s: AgentSession): ToolSet {
       browser_links: tool({
         description: zh ? '列出内置浏览器当前网页中的链接（文字与网址）' : 'List the links on the current page',
         inputSchema: z.object({ tabId: z.string().max(64).optional() }),
-        execute: async ({ tabId }) => (await pageLinks(tabId)).map((l) => `${l.text} — ${l.href}`).join('\n') || (zh ? '没有链接。' : 'No links.')
+        execute: async ({ tabId }) =>
+          (await pageLinks(tabId)).map((l) => `${l.text} — ${l.href}`).join('\n') || (zh ? '没有链接。' : 'No links.')
       }),
       browser_open: tool({
         description: zh
@@ -617,7 +623,9 @@ export function buildTools(s: AgentSession): ToolSet {
         inputSchema: z.object({ url: z.string().min(1).max(2000) }),
         execute: async ({ url }) => {
           const id = openTab(url)
-          return zh ? `已在新标签页打开（${id}）。可以用 browser_read_page 读取。` : `Opened in a new tab (${id}). Use browser_read_page to read it.`
+          return zh
+            ? `已在新标签页打开（${id}）。可以用 browser_read_page 读取。`
+            : `Opened in a new tab (${id}). Use browser_read_page to read it.`
         }
       }),
       browser_tabs: tool({

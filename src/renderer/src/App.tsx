@@ -1,4 +1,5 @@
 import { RecordingView, RecordingDialog, RecorderBar } from './features/recording/RecordingView'
+import { LensPages } from './features/lenses/pages'
 import { useRecording } from './features/recording/store'
 import { useCaptureEvents } from './features/capture/events'
 import { PhoneDialog } from './features/capture/PhoneDialog'
@@ -93,6 +94,29 @@ function useMainEvents(): void {
     []
   )
   useEffect(() => {
+    const refresh = (): void => {
+      for (const key of [
+        'recordings',
+        'series',
+        'lens-history',
+        'lens-landings',
+        'lens-duplicates',
+        'person-page',
+        'series-page',
+        'series-actions'
+      ])
+        void qc.invalidateQueries({ queryKey: [key] })
+    }
+    const subscriptions = [
+      window.jiweiEvents.on('lenses:changed', refresh),
+      window.jiweiEvents.on('series:changed', refresh),
+      window.jiweiEvents.on('recording:changed', refresh),
+      window.jiweiEvents.on('people:changed', refresh),
+      window.jiweiEvents.on('reflection:changed', refresh)
+    ]
+    return () => subscriptions.forEach((unsubscribe) => unsubscribe())
+  }, [qc])
+  useEffect(() => {
     let timer: number | undefined
     const ids = new Set<string>()
     return window.jiweiEvents.on('notes:changed', (p) => {
@@ -157,6 +181,7 @@ export function App() {
         </main>
       </div>
       <RecordingDialog />
+      <LensPages />
       <PhoneDialog />
       <SettingsDialog />
       <CommandPalette />

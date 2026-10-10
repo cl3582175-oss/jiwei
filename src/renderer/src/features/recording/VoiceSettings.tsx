@@ -7,6 +7,7 @@ import { api, formatBytes } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/primitives'
 import { confirm, prompt } from '@/components/ui/confirm'
+import { openPersonPage } from '../lenses/pages'
 
 export function VoiceSettings() {
   const { t } = useTranslation(),
@@ -154,6 +155,9 @@ export function VoiceSettings() {
               {p.name}
               {p.isMe && ` · ${t('recording.me')}`} · {p.voiceprints}
             </span>
+            <Button variant="ghost" size="sm" onClick={() => openPersonPage(p.id)}>
+              {t('personPage.view')}
+            </Button>
             <Button
               size="icon-sm"
               variant="ghost"

@@ -38,5 +38,8 @@ export {
   chunks,
   inboxItems,
   recordings,
+  series,
+  derivations,
+  derivationLandings,
   hotwordCorrections
 } from './schema'

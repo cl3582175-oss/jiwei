@@ -1,7 +1,7 @@
 import { Mic } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
   BookOpen,
@@ -54,6 +54,8 @@ import { useApp } from '@/store/app'
 import { PanelLeftOpen } from 'lucide-react'
 import { CategoryTree, SectionHeader, categoryPaths } from '../notes/CategoryTree'
 import { TagEditor } from '../notes/TagEditor'
+import { lensSelectClass } from '../lenses/SeriesSelect'
+import type { Scene } from '@shared/recording'
 
 export const KIND_ICON: Record<SourceKind, ReactNode> = {
   book: <BookOpen />,
@@ -290,10 +292,20 @@ export function LibraryView() {
   const [kind, setKind] = useState<SourceKind | undefined>()
   const [cat, setCat] = useState<CatFilter>({ type: 'all' })
   const [search, setSearch] = useState('')
+  const [scene, setScene] = useState<Scene | undefined>(),
+    [seriesId, setSeriesId] = useState('')
+  const { data: series = [] } = useQuery({ queryKey: ['series'], queryFn: () => api.series.list() })
   const [dragging, setDragging] = useState(false)
   const [linkOpen, setLinkOpen] = useState(false)
   const categoryId = cat.type === 'all' ? undefined : cat.type === 'uncategorized' ? null : cat.id
-  const { data: items = [], isFetched } = useSources({ kind, search, categoryId, includeDescendants: true })
+  const { data: items = [], isFetched } = useSources({
+    kind,
+    search,
+    categoryId,
+    includeDescendants: true,
+    scene,
+    seriesId: seriesId || undefined
+  })
   const targetCat = cat.type === 'category' ? cat.id : null
 
   const afterImport = (r: ImportResult): void => {
@@ -405,6 +417,29 @@ export function LibraryView() {
             {t('library.import')}
           </Button>
         </header>
+        <div className="flex shrink-0 flex-wrap gap-2 border-b border-border px-6 py-2">
+          <select
+            aria-label={t('recording.sceneFilter')}
+            className={lensSelectClass}
+            value={scene ?? ''}
+            onChange={(e) => setScene((e.target.value as Scene) || undefined)}
+          >
+            <option value="">{t('recording.allScenes')}</option>
+            {(['meeting', 'lecture', 'thought', 'unspecified'] as const).map((s) => (
+              <option key={s} value={s}>
+                {t(`recording.scene.${s}`)}
+              </option>
+            ))}
+          </select>
+          <select aria-label={t('series.all')} className={lensSelectClass} value={seriesId} onChange={(e) => setSeriesId(e.target.value)}>
+            <option value="">{t('series.all')}</option>
+            {series.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+        </div>
         <div className="min-h-0 flex-1 overflow-y-auto">
           {isFetched && items.length === 0 ? (
             <EmptyState

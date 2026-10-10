@@ -16,7 +16,7 @@ import { entitiesWithTag, tagIdsFor } from './tags'
 import { assetPath, assetUrl, collectGarbage, importBytes, importFile } from './assets'
 import { canSegment, enqueueFetch, enqueueSegment } from './jobKinds'
 import { applySubtitleFile, canAutoTranscribe, enqueueTranscribe, findSidecarSubtitles, isMedia } from './asr'
-import { deleteSegments } from './segments'
+import { deleteSegments, listSegments } from './segments'
 import type { ImportResult, Source, SourceKind, SourceQuery, SourceUpdate } from '@shared/types'
 
 const EXT_KIND: Record<string, SourceKind> = {
@@ -108,7 +108,19 @@ export function listSources(q: SourceQuery): Source[] {
     const pat = `%${q.search.trim()}%`
     conds.push(or(like(sources.title, pat), like(sources.originalName, pat), like(sources.url, pat), like(sources.author, pat))!)
   }
-  return query(conds)
+  const result = query(conds)
+  if (!q.scene && !q.seriesId && !q.personId && !q.from && !q.to) return result
+  return result.filter((s) => {
+    const r = recordingForSource(s.id)
+    if ((q.scene && (r?.scene ?? 'unspecified') !== q.scene) || (q.seriesId && r?.seriesId !== q.seriesId)) return false
+    const date = new Date(r?.startedAt ?? s.accessedAt).toLocaleDateString('sv')
+    if ((q.from && date < q.from) || (q.to && date > q.to)) return false
+    return (
+      !q.personId ||
+      listSegments(s.id).some((seg) => seg.locator.personId === q.personId) ||
+      (!!r && (JSON.parse(r.participants) as string[]).includes(q.personId))
+    )
+  })
 }
 
 export const getSource = (id: string): Source | null => query([eq(sources.id, id)])[0] ?? null

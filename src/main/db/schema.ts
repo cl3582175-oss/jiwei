@@ -400,6 +400,7 @@ export const insights = sqliteTable('insights', {
     .default('active'),
   version: integer('version').notNull().default(1),
   reviewId: text('review_id'),
+  origin: text('origin'),
   ...syncCols
 })
 
@@ -428,6 +429,9 @@ export const actions = sqliteTable('actions', {
   doneAt: integer('done_at'),
   reviewId: text('review_id'),
   goalId: text('goal_id'),
+  ownerPersonId: text('owner_person_id'),
+  ownerName: text('owner_name'),
+  origin: text('origin'),
   ...syncCols
 })
 
@@ -659,6 +663,8 @@ export const recordings = sqliteTable(
     sourceId: text('source_id'),
     noteId: text('note_id'),
     scene: text('scene', { enum: ['meeting', 'lecture', 'thought', 'unspecified'] }).notNull(),
+    seriesId: text('series_id'),
+    sceneGuess: text('scene_guess'),
     status: text('status', { enum: ['recording', 'paused', 'finalizing', 'ready', 'failed', 'discarded'] }).notNull(),
     tracks: text('tracks').notNull(),
     startedAt: integer('started_at').notNull(),
@@ -672,6 +678,55 @@ export const recordings = sqliteTable(
     ...syncCols
   },
   (t) => [index('recordings_source_idx').on(t.sourceId)]
+)
+
+export const series = sqliteTable('series', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  scene: text('scene', { enum: ['meeting', 'lecture', 'thought', 'unspecified'] }).notNull(),
+  categoryId: text('category_id'),
+  ...syncCols
+})
+export const derivations = sqliteTable(
+  'derivations',
+  {
+    id: text('id').primaryKey(),
+    sourceId: text('source_id').notNull(),
+    lens: text('lens').notNull(),
+    lensTitle: text('lens_title').notNull(),
+    lensHash: text('lens_hash').notNull(),
+    params: text('params').notNull(),
+    landing: text('landing').notNull(),
+    model: text('model').notNull(),
+    transcriptRevision: text('transcript_revision').notNull(),
+    status: text('status', { enum: ['queued', 'running', 'ready', 'failed', 'stale', 'canceled'] }).notNull(),
+    input: text('input').notNull(),
+    result: text('result'),
+    stats: text('stats'),
+    summary: text('summary').notNull().default(''),
+    jobId: text('job_id'),
+    runAfter: integer('run_after').notNull(),
+    ...syncCols
+  },
+  (t) => [index('derivations_source_idx').on(t.sourceId, t.createdAt)]
+)
+// 独立日志冻结用户审阅与副作用快照，重启可复用未确认的提案，撤销不改旧模型输出。
+export const derivationLandings = sqliteTable(
+  'derivation_landings',
+  {
+    id: text('id').primaryKey(),
+    derivationId: text('derivation_id').notNull(),
+    noteId: text('note_id'),
+    proposalId: text('proposal_id'),
+    undoProposalId: text('undo_proposal_id'),
+    status: text('status', { enum: ['pending', 'applied', 'undoing', 'undone'] }).notNull(),
+    items: text('items').notNull(),
+    objects: text('objects').notNull().default('[]'),
+    blocks: text('blocks').notNull().default('[]'),
+    appliedAt: integer('applied_at'),
+    ...syncCols
+  },
+  (t) => [index('landings_derivation_idx').on(t.derivationId)]
 )
 
 /** 仅由 personalSchema 导出到个人数据库；知识库只保存 personId 引用。 */

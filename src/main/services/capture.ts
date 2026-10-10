@@ -213,7 +213,14 @@ function show(): void {
     currentWindow.focus()
   })
   currentWindow.on('blur', () => {
-    if (!currentWindow.isDestroyed()) currentWindow.close()
+    if (currentWindow.isDestroyed()) return
+    // 空白时失焦即关；已有未保存的文字或图片时保留，Esc 或保存后再关
+    void currentWindow.webContents
+      .executeJavaScript('window.__captureDirty === true')
+      .catch(() => false)
+      .then((dirty) => {
+        if (!dirty && !currentWindow.isDestroyed() && !currentWindow.isFocused()) currentWindow.close()
+      })
   })
   currentWindow.on('closed', () => {
     if (win === currentWindow) {

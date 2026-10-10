@@ -5,6 +5,10 @@ import * as inbox from './services/inbox'
 import * as recording from './services/recording'
 import * as people from './services/people'
 import * as voiceprint from './services/voiceprint'
+import * as lenses from './services/lenses'
+import * as lensLanding from './services/lensLanding'
+import * as series from './services/series'
+import { personPage } from './services/personPage'
 import { voiceErrorText } from './services/voiceMessages'
 import { VoiceValidationError } from '@shared/recording'
 import { getMainWindow } from './mainWindow'
@@ -77,6 +81,33 @@ type Handlers = {
 }
 
 const handlers: Handlers = {
+  lenses: {
+    list: () => skills.listLenses(),
+    save: (_, input, id) => skills.saveLens(input, id),
+    remove: (_, id) => skills.removeLens(id),
+    guess: (_, id) => lenses.guessScene(id),
+    chooseScene: (_, id, scene) => lenses.chooseScene(id, scene),
+    run: (_, input) => lenses.runLens(input),
+    history: (_, id) => lenses.history(id),
+    estimate: (_, id) => lenses.estimate(id),
+    duplicates: (_, id) => lensLanding.duplicates(id),
+    landings: (_, id) => lensLanding.listLandings(id),
+    prepare: (_, input) => lensLanding.prepare(input),
+    complete: (_, id, update) => lensLanding.complete(id, update),
+    undo: (_, id) => lensLanding.undo(id),
+    undoComplete: (_, id, update) => lensLanding.undoComplete(id, update)
+  },
+  series: {
+    list: () => series.listSeries(),
+    save: (_, input, id) => series.saveSeries(input, id),
+    set: (_, id, seriesId) => series.setRecordingSeries(id, seriesId),
+    detail: (_, id) => series.seriesDetail(id),
+    openActions: (_, id) =>
+      series
+        .seriesActions(id)
+        .filter((a) => a.status === 'open')
+        .slice(0, 5)
+  },
   recording: {
     list: () => recording.listRecordings(),
     get: (_, id) => recording.getRecording(id),
@@ -98,6 +129,7 @@ const handlers: Handlers = {
     export: ({ win }, id, format) => people.exportTranscript(win, id, format)
   },
   people: {
+    page: (_, id) => personPage(id),
     list: () => people.listPeople(),
     save: (_, input, id) => people.savePerson(input, id),
     remove: (_, id) => people.removePerson(id),
@@ -221,7 +253,7 @@ const handlers: Handlers = {
   proposals: {
     create: (_, input) => proposals.createProposal(input),
     list: (_, noteId) => proposals.listProposals(noteId),
-    resolve: (_, id, opIndex, decision, blockIds) => proposals.resolveOp(id, opIndex, decision, blockIds)
+    resolve: (_, id, opIndex, decision, blockIds) => proposals.resolveUserOp(id, opIndex, decision, blockIds)
   },
   segments: {
     update: (_, id, text) => reindexAfter(segments.updateSegmentText(id, text)),
@@ -451,7 +483,7 @@ const handlers: Handlers = {
     }
   },
   knowledge: {
-    search: (_, query, scope, limit) => retrieve(query, scope, limit)
+    search: (_, query, scope, limit, filters) => retrieve(query, scope, limit, filters)
   },
   stats: {
     heatmap: (_, days) => stats.heatmap(days)
@@ -466,7 +498,7 @@ export function registerIpc(): void {
       // 内置浏览器中的网页不得调用积微的接口（内容脚本只走 jw-page:* 消息）
       if (browser.isBrowserContents(e.sender)) throw new Error('Forbidden')
       if (
-        ['recording', 'people', 'voiceprint'].includes(ns) &&
+        ['recording', 'people', 'voiceprint', 'lenses', 'series'].includes(ns) &&
         (e.sender !== getMainWindow()?.webContents || e.senderFrame !== e.sender.mainFrame)
       )
         throw new Error('Forbidden')

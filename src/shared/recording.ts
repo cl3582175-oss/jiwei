@@ -40,6 +40,8 @@ export interface Recording {
   sourceId: string | null
   noteId: string | null
   scene: Scene
+  seriesId?: string | null
+  sceneGuess?: import('./lens').SceneGuess | null
   status: RecordingStatus
   tracks: Track[]
   startedAt: number
@@ -88,6 +90,7 @@ export const RecordingBegin = z.object({
     .max(2)
     .refine((v) => new Set(v).size === v.length),
   noteId: EntityId.nullable().optional(),
+  seriesId: EntityId.nullable().optional(),
   participants: z.array(EntityId).max(100).default([]),
   extraHotwords: z.string().max(4000).default(''),
   localOnly: z.boolean()

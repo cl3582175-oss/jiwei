@@ -113,6 +113,7 @@ export async function startRecording(input: {
   extraHotwords: string
   localOnly: boolean
   noteId?: string | null
+  seriesId?: string | null
 }): Promise<void> {
   if (useRecording.getState().current) return
   useRecording.setState({ busy: true, error: null, notice: '' })
@@ -140,7 +141,8 @@ export async function startRecording(input: {
       participants: input.participants,
       extraHotwords: input.extraHotwords,
       localOnly: input.localOnly,
-      noteId: input.noteId
+      noteId: input.noteId,
+      seriesId: input.seriesId
     })
     context = new AudioContext()
     saved = 0

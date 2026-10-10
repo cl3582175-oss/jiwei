@@ -509,7 +509,7 @@ async function refineRecording(payload: MossJobPayload, ctx: JobContext): Promis
       await command(
         binaryPath(),
         ['--backend', 'moss-diarize', '-m', modelPath(), '-f', audio, '-ojf', '-of', prefix, ...(terms ? ['--hotwords', terms] : [])],
-        AbortSignal.any([abort.signal, AbortSignal.timeout(Math.max(10 * 60_000, chunk.duration * 8000))])
+        AbortSignal.any([abort.signal, AbortSignal.timeout(Math.ceil(Math.max(10 * 60_000, chunk.duration * 8000)))])
       )
       const output = `${prefix}.json`
       if ((await stat(output)).size > 50 * 1024 * 1024) throw new Error('MOSS 输出异常过大，原文字稿已保留')

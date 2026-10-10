@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { openPersonPage } from '../lenses/pages'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -45,6 +46,18 @@ function PersonChoice({
   }
   return (
     <div className="mt-3 space-y-3" data-testid="speaker-choices">
+      {speaker.personId && (
+        <Button
+          variant="ghost"
+          className="w-full justify-start"
+          onClick={() => {
+            close()
+            openPersonPage(speaker.personId!)
+          }}
+        >
+          {t('personPage.view')}
+        </Button>
+      )}
       {segmentId && (
         <div className="flex flex-wrap gap-2">
           {(['sentence', 'all'] as const).map((s) => (
@@ -154,7 +167,8 @@ export function TranscriptView({
   seek,
   threads,
   onThread,
-  onStructureChange
+  onStructureChange,
+  highlightedId
 }: {
   source: Source
   segments: Segment[]
@@ -163,6 +177,7 @@ export function TranscriptView({
   threads: Conversation[]
   onThread: (c: Conversation, rect: Rect) => void
   onStructureChange: () => void
+  highlightedId?: string
 }) {
   const { t } = useTranslation(),
     qc = useQueryClient(),
@@ -308,11 +323,11 @@ export function TranscriptView({
         </p>
       )}
       {voice?.state !== 'ready' && <p className="px-4 pt-2 text-2xs leading-relaxed text-subtle">{t('recording.voiceHint')}</p>}
-      {source.kind === 'recording' && (
+      {!job && !segments.some((s) => s.locator.preview) && !!speakers.length && speakers.every((s) => s.personId || s.skipped) && (
         <p className="px-4 pt-2 text-2xs text-subtle">
-          <Button size="sm" variant="ghost" disabled className="h-6 px-2 text-2xs">
-            {t('recording.organizeLater')}
-          </Button>
+          {t('lens.readyHint', {
+            lens: t(`lens.names.${recording?.scene === 'lecture' ? 'lecture' : recording?.scene === 'thought' ? 'thought' : 'meeting'}`)
+          })}
         </p>
       )}
       {speakers
@@ -414,7 +429,13 @@ export function TranscriptView({
                   key={s.id}
                   data-t0={tm[0]}
                   data-t1={tm[1]}
-                  className={cn('transcript-line dialogue-line', j === 0 && 'is-first', time >= tm[0] && time < tm[1] && 'is-current')}
+                  className={cn(
+                    'transcript-line dialogue-line',
+                    j === 0 && 'is-first',
+                    time >= tm[0] && time < tm[1] && 'is-current',
+                    highlightedId === s.id && 'bg-accent-soft ring-1 ring-inset ring-accent/30'
+                  )}
+                  data-evidence={highlightedId === s.id || undefined}
                   style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 48px' }}
                 >
                   {threads.some((c) => c.anchor?.ownerId === s.id) && (

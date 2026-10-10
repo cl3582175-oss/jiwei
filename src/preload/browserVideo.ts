@@ -15,7 +15,14 @@ type CapturableVideo = HTMLVideoElement & { captureStream?: () => MediaStream }
 let config: Config | null = null
 let documentUrl = location.href
 const knownMedia = new Map<HTMLVideoElement, string>()
-const blockedMedia = new Map<HTMLVideoElement, string>()
+// 绑定当前视频时的时长：自动连播常先换内容、后改网址，换网址那一刻元素上已是新一集的时长
+let boundDuration = NaN
+// 每个视频元素最近一次换内容的时间：网址变化前不久刚换过内容，说明它已是新网址的视频（合集自动连播先换内容、后改网址）
+const mediaChangedAt = new WeakMap<HTMLVideoElement, number>()
+// 只认真正的“换片”：已有过一段视频后被清空重载，或时长变为另一个值；首次加载不算
+const lastDuration = new WeakMap<HTMLVideoElement, number>()
+// 切换网址时暂不绑定的旧媒体：记下当时的地址与时长，任一变化即视为已换成新视频
+const blockedMedia = new Map<HTMLVideoElement, { src: string; duration: number }>()
 let video: CapturableVideo | null = null
 let media = ''
 let src = ''
@@ -221,7 +228,14 @@ function choose(): void {
   // 网址已经换了但配置还没到时先等待，不能把真正的新视频误记为旧页面的媒体。
   if (canonicalUrl(location.href) !== canonicalUrl(documentUrl)) return
   const videos = [...document.querySelectorAll<HTMLVideoElement>('video')]
-  for (const [element, oldSrc] of blockedMedia) if (!element.isConnected || element.currentSrc !== oldSrc) blockedMedia.delete(element)
+  for (const [element, old] of blockedMedia)
+    if (
+      !element.isConnected ||
+      element.currentSrc !== old.src ||
+      // 合集/分P自动连播常复用同一个 video 与 MSE 地址，只换内容：时长变化即为新视频
+      (Number.isFinite(element.duration) && Number.isFinite(old.duration) && Math.abs(element.duration - old.duration) > 1)
+    )
+      blockedMedia.delete(element)
   knownMedia.clear()
   for (const element of videos) knownMedia.set(element, element.currentSrc)
   const candidates = videos
@@ -252,6 +266,7 @@ function choose(): void {
   video = next
   if (!video) return
   src = video.currentSrc
+  boundDuration = video.duration
   media = id()
   capture = id()
   detectedAt = performance.now()
@@ -299,7 +314,10 @@ function cleanup(): void {
 export function configureVideo(next: Config): void {
   // 分P切换通常先pushState再换video；旧画面/字幕必须等媒体真正更换才能绑定到新网址。
   if (next.scope !== config?.scope && canonicalUrl(documentUrl) !== canonicalUrl(location.href))
-    for (const [element, oldSrc] of knownMedia) blockedMedia.set(element, oldSrc)
+    for (const [element, oldSrc] of knownMedia) {
+      if (performance.now() - (mediaChangedAt.get(element) ?? -Infinity) < 15_000) continue
+      blockedMedia.set(element, element === video ? { src, duration: boundDuration } : { src: oldSrc, duration: element.duration })
+    }
   documentUrl = location.href
   if (next.scope !== config?.scope || !next.allowed) cleanup()
   config = next
@@ -320,6 +338,31 @@ export function startBrowserVideo(): void {
     'emptied',
     (e) => {
       if (e.target instanceof HTMLVideoElement) blockedMedia.delete(e.target)
+    },
+    true
+  )
+  // 已绑定或被拦下的元素真正换片时（不是首次加载），记下时间；被拦下的随即解除
+  const switched = (v: HTMLVideoElement): void => {
+    mediaChangedAt.set(v, performance.now())
+    if (blockedMedia.has(v)) {
+      blockedMedia.delete(v)
+      choose()
+    }
+  }
+  document.addEventListener(
+    'emptied',
+    (e) => {
+      if (e.target instanceof HTMLVideoElement && Number.isFinite(lastDuration.get(e.target))) switched(e.target)
+    },
+    true
+  )
+  document.addEventListener(
+    'durationchange',
+    (e) => {
+      if (!(e.target instanceof HTMLVideoElement) || !Number.isFinite(e.target.duration)) return
+      const before = lastDuration.get(e.target)
+      lastDuration.set(e.target, e.target.duration)
+      if (before !== undefined && Number.isFinite(before) && Math.abs(before - e.target.duration) > 1) switched(e.target)
     },
     true
   )

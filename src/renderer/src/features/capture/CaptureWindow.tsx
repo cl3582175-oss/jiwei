@@ -14,6 +14,10 @@ export function CaptureWindow() {
   const dirty = useRef(false),
     start = useRef<{ x: number; y: number } | null>(null),
     [box, setBox] = useState<{ x: number; y: number; width: number; height: number } | null>(null)
+  // 主进程失焦时据此决定是否关闭：已写了内容或放了图片就保留小窗，避免切到别处复制时丢稿
+  useEffect(() => {
+    ;(window as Window & { __captureDirty?: boolean }).__captureDirty = !!text.trim() || !!state?.image
+  }, [text, state?.image])
   useEffect(() => {
     const escape = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') {

@@ -41,8 +41,14 @@ let ranges: { id: string; range: Range }[] = []
 /* ——— 敏感页面：密码输入框 ——— */
 
 let passwordReported = false
+function visiblePassword(el: HTMLInputElement): boolean {
+  const r = el.getBoundingClientRect(),
+    style = getComputedStyle(el)
+  return r.width > 2 && r.height > 2 && el.getClientRects().length > 0 && style.visibility !== 'hidden' && Number(style.opacity) > 0.05
+}
 function checkPassword(): void {
-  if (passwordReported || !document.querySelector('input[type=password]')) return
+  // 只看用户真正看得见的密码框：很多网站预埋了隐藏的登录弹窗，不能因此把整页的 AI 与网课关掉
+  if (passwordReported || ![...document.querySelectorAll<HTMLInputElement>('input[type=password]')].some(visiblePassword)) return
   passwordReported = true
   ipcRenderer.send('jw-page:password')
   // 敏感页面：立即关闭浮条
@@ -301,12 +307,34 @@ ipcRenderer.on('jw-page:annotations', (_e, p: { items: Ann[] }) => {
 window.addEventListener('DOMContentLoaded', () => {
   startBrowserVideo()
   checkPassword()
-  new MutationObserver(() => checkPassword()).observe(document.documentElement, {
+  // 弹窗显示时网站通常只改 class / style；节流后再查，弹幕等频繁变动的页面也不受拖累
+  let pending = 0
+  new MutationObserver(() => {
+    if (passwordReported || pending) return
+    pending = window.setTimeout(() => {
+      pending = 0
+      checkPassword()
+    }, 300)
+  }).observe(document.documentElement, {
     childList: true,
     subtree: true,
     attributes: true,
-    attributeFilter: ['type']
+    attributeFilter: ['type', 'class', 'style', 'hidden']
   })
+  // 焦点进入密码框：无论是否判断为可见，立即视为敏感
+  document.addEventListener(
+    'focusin',
+    (e) => {
+      if (passwordReported || !(e.target instanceof HTMLInputElement) || e.target.type !== 'password') return
+      passwordReported = true
+      ipcRenderer.send('jw-page:password')
+      if (config) {
+        config.allowed = false
+        configureVideo(config)
+      }
+    },
+    true
+  )
   void (ipcRenderer.invoke('jw-page:config') as Promise<Config>).then((c) => {
     config = c
     if (passwordReported) config.allowed = false

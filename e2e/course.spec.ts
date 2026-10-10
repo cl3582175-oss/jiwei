@@ -397,6 +397,25 @@ test.describe('默认网课路径（无模型服务商）', () => {
     expect((await active()).video!.paused).toBe(true)
   })
 
+  test('7c2. 合集自动连播先换视频内容、后改网址时，新一集仍被识别并另存资料', async () => {
+    await navigate('/course?p=4')
+    await ready()
+    const before = await active()
+    // 模拟 B 站自动连播：同一个 video 先加载下一集，元数据就绪后才 pushState 改网址
+    await inCoursePage(
+      main.app,
+      before.url,
+      `new Promise((r) => { const v = document.querySelector('video'); v.addEventListener('loadedmetadata', r, { once: true }); v.src = '/v.mp4?ep=3' }).then(() => history.pushState({}, '', '/course?p=3'))`
+    )
+    await expect.poll(() => active().then((t) => t.url)).toBe(`${base}/course?p=3`)
+    await inCoursePage(main.app, `${base}/course?p=3`, 'document.querySelector("video").play()')
+    await ready()
+    await expect(transcript()).toContainText('第一讲，间隔重复')
+    await expect.poll(() => active().then((t) => t.sourceId)).not.toBeNull()
+    expect((await active()).sourceId).not.toBe(before.sourceId)
+    await inCoursePage(main.app, `${base}/course?p=3`, 'document.querySelector("video").pause()')
+  })
+
   test('8. 敏感页面和无痕标签页不采集视频、字幕、截图或录音', async () => {
     test.setTimeout(45_000)
     const sources = await main.page.evaluate(() => window.jiwei.sources.list({}).then((s) => s.map((x) => x.id).sort()))

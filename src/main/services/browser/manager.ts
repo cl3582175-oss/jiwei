@@ -73,6 +73,19 @@ export function setDownloadHandler(fn: DownloadHandler): void {
 }
 
 /** 去掉 UA 中的 Electron 与应用名（部分网站据此拒绝访问） */
+const escapeHtml = (v: string): string => v.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!)
+function failPage(code: number, desc: string, url: string): string {
+  const offline = [-106, -105, -21].includes(code)
+  const proxy = [-130, -111, -100, -101, -102, -118, -7].includes(code)
+  const hint = offline ? '网络似乎已断开。' : proxy ? '连接被中断或超时。如果开了代理，请检查代理规则是否放行了这个网站。' : '这个网页暂时打不开。'
+  return `<!doctype html><meta charset="utf-8"><title>无法打开网页</title>
+<body style="margin:0;display:grid;place-items:center;height:100vh;font:14px/1.7 -apple-system,'PingFang SC',sans-serif;color:#3b4442;background:#f6f7f5">
+<div style="max-width:420px;padding:24px;text-align:center"><div style="font-size:36px">🌐</div>
+<h1 style="font-size:17px;margin:8px 0">无法打开这个网页</h1><p style="margin:0 0 6px">${hint}</p>
+<p style="margin:0 0 16px;color:#8a938f;font-size:12px;word-break:break-all">${escapeHtml(url)}<br>${escapeHtml(desc)}（${code}）</p>
+<button onclick="location.reload()" style="font:inherit;padding:6px 16px;border-radius:8px;border:0;background:#2f6f6b;color:#fff;cursor:pointer">重新加载</button></div></body>`
+}
+
 const browserUA = (): string => app.userAgentFallback.replace(/\s(Electron|jiwei|积微)\/\S+/gi, '')
 
 function setupSession(ses: Session): void {
@@ -140,8 +153,63 @@ function layout(): void {
   for (const t of tabs.values()) {
     const show = visible && !!bounds && t.id === activeId
     t.view.setVisible(show)
-    if (show && bounds) t.view.setBounds(bounds)
+    if (show && bounds) {
+      t.view.setBounds(bounds)
+      if (fittedWidth.get(t.id) !== bounds.width) scheduleFit(t.id)
+    }
   }
+}
+
+/**
+ * 适应栏宽：很多网站规定了最小宽度（如 1100px 以上），比笔记旁的浏览器栏还宽，
+ * 右侧内容会被栏位截掉。此时按比例缩小显示（不低于 67%），让整页放进栏里；栏变宽时恢复。
+ */
+const fittedWidth = new Map<string, number>()
+const fitTimers = new Map<string, NodeJS.Timeout>()
+function scheduleFit(id: string): void {
+  clearTimeout(fitTimers.get(id))
+  fitTimers.set(
+    id,
+    setTimeout(() => {
+      fitTimers.delete(id)
+      void fitWidth(id)
+    }, 250)
+  )
+}
+// 每个标签页当前网页的最小宽度（CSS 像素）；记下后按栏宽直接换算，不必先复位到 100% 再量（避免闪烁）
+const pageMinWidth = new Map<string, number>()
+async function fitWidth(id: string): Promise<void> {
+  const t = tabs.get(id),
+    width = bounds?.width
+  // 框选识别进行中（冻结画面、识别卡片改变栏宽）不调整缩放，避免截图与网页排版不一致
+  if (!t || !width || frozen || captureLease || t.view.webContents.isDestroyed()) return
+  const wc = t.view.webContents
+  try {
+    const zoom = wc.getZoomFactor()
+    const [scrollWidth, innerWidth] = (await wc.executeJavaScript(
+      '[Math.max(document.documentElement.scrollWidth,document.body?document.body.scrollWidth:0),innerWidth]'
+    )) as [number, number]
+    if (wc.isDestroyed()) return
+    // 页面溢出时，此刻的滚动宽度就是网页的最小宽度
+    if (scrollWidth > innerWidth + 2) pageMinWidth.set(id, scrollWidth)
+    const min = pageMinWidth.get(id)
+    const target = min ? Math.min(1, Math.max(0.67, Math.floor((width / min) * 100) / 100)) : 1
+    if (Math.abs(target - zoom) > 0.01) wc.setZoomFactor(target)
+    // 沿用了上一页的缩小比例、又不知道这一页的最小宽度：恢复 100% 后再量一次
+    if (!min && zoom < 1) {
+      fittedWidth.delete(id)
+      scheduleFit(id)
+      return
+    }
+    fittedWidth.set(id, width)
+  } catch {
+    /* 页面正在跳转：下一次加载完成会重新适应 */
+  }
+}
+/** 网页上报的坐标是 CSS 像素，缩放后需乘以缩放比例才是栏内像素 */
+export const tabZoom = (id: string): number => {
+  const wc = tabs.get(id)?.view.webContents
+  return wc && !wc.isDestroyed() ? wc.getZoomFactor() : 1
 }
 
 export function attach(win: BrowserWindow): void {
@@ -239,7 +307,18 @@ function createTab(url: string, opts: { incognito?: boolean; activate?: boolean 
     t.favicon = icons[0] ?? null
     changed()
   })
-  wc.on('did-finish-load', () => onLoaded?.(t.id))
+  wc.on('did-finish-load', () => {
+    onLoaded?.(t.id)
+    fittedWidth.delete(t.id)
+    pageMinWidth.delete(t.id)
+    if (t.id === activeId) scheduleFit(t.id)
+  })
+  // Electron 没有内置的错误页：主框架加载失败时写入一个简短说明与“重新加载”，否则只剩一片空白
+  wc.on('did-fail-load', (_e, code, desc, url, isMain) => {
+    if (!isMain || code === -3) return // -3：用户或页面自己中止
+    const html = failPage(code, desc, url)
+    void wc.executeJavaScript(`document.open();document.write(${JSON.stringify(html)});document.close();`).catch(() => undefined)
+  })
   // 焦点在网页中时，积微的快捷键也要生效：浏览器自身的在这里处理，其余转发给界面
   wc.on('before-input-event', (e, input) => {
     if (input.type !== 'keyDown' || !(input.meta || input.control) || input.alt) return

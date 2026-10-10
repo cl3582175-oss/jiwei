@@ -63,7 +63,7 @@ function serial<T>(queue: Map<string, Promise<void>>, key: string, action: () =>
 }
 
 export function runAudio(cmd: string, args: string[], signal?: AbortSignal, timeoutMs = 120_000): Promise<string> {
-  const abort = AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(timeoutMs)])
+  const abort = AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(Math.ceil(timeoutMs))])
   if (abort.aborted) return Promise.reject(new Error('音频处理已取消'))
   return new Promise((resolve, reject) => {
     const child = execFile(cmd, args, { windowsHide: true, maxBuffer: 1024 * 1024 })

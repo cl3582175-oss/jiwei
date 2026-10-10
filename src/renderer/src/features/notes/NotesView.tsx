@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { Group, Panel, Separator } from 'react-resizable-panels'
+import { Group, Panel, Separator, usePanelRef } from 'react-resizable-panels'
 import { useApp } from '@/store/app'
 import { NotesSidebar } from './NotesSidebar'
 import { NoteEditor } from './NoteEditor'
@@ -16,7 +16,13 @@ import { useAssist } from '../assist/store'
  * 资料栏可拖动，默认按黄金比例 0.382；AI 面板未钉住时浮在右下角。
  */
 export function NotesView() {
-  const { noteId, sourceId, browserOpen, sourcePaneSize, setSourcePaneSize } = useApp()
+  const { noteId, sourceId, browserOpen, sourcePaneSize, setSourcePaneSize, sourceFocus } = useApp()
+  const sourceRef = usePanelRef()
+  // 整理审阅需要左右两栏（转写稿 | 结果）：临时放宽资料栏并收起笔记列表；结束后回到用户自己的宽度
+  const focus = sourceFocus && !browserOpen && !!sourceId
+  useEffect(() => {
+    sourceRef.current?.resize(focus ? '62%' : `${useApp.getState().sourcePaneSize}%`)
+  }, [focus, sourceRef])
   // 左栏：浏览器优先于资料（v0.6.0）
   const left = browserOpen ? <BrowserPane /> : sourceId ? <SourcePane sourceId={sourceId} /> : null
   const pinned = useAssist((s) => s.panelOpen && s.panelPinned)
@@ -29,7 +35,7 @@ export function NotesView() {
   const main = noteId ? <NoteEditor noteId={noteId} /> : <NotesHome />
   return (
     <div className="flex h-full">
-      <CollapsibleSidebar>
+      <CollapsibleSidebar forceCollapsed={focus}>
         <NotesSidebar />
       </CollapsibleSidebar>
       <FloatingPanel flushLeft>
@@ -37,11 +43,11 @@ export function NotesView() {
           <Group
             orientation="horizontal"
             className="h-full"
-            onLayoutChanged={(layout) => layout.source && setSourcePaneSize(layout.source)}
+            onLayoutChanged={(layout) => layout.source && !focus && setSourcePaneSize(layout.source)}
           >
             {left && (
               <>
-                <Panel id="source" defaultSize={`${sourcePaneSize}%`} minSize="20%" maxSize="70%">
+                <Panel id="source" panelRef={sourceRef} defaultSize={`${sourcePaneSize}%`} minSize="20%" maxSize="70%">
                   {left}
                 </Panel>
                 <Separator className="workspace-sep" />

@@ -8,7 +8,7 @@ import { release } from 'os'
 import { and, desc, eq, isNull } from 'drizzle-orm'
 import { z } from 'zod'
 import { getDb } from '../db'
-import { recordings, sources, notes } from '../db/schema'
+import { recordings, sources, notes, series } from '../db/schema'
 import { listPeople, removeRecordingSpeakers } from './people'
 import { getMainWindow } from '../mainWindow'
 import { emit } from '../events'
@@ -48,6 +48,8 @@ const convert = (r: typeof recordings.$inferSelect): Recording => ({
   sourceId: r.sourceId,
   noteId: r.noteId,
   scene: r.scene,
+  seriesId: r.seriesId,
+  sceneGuess: r.sceneGuess ? JSON.parse(r.sceneGuess) : null,
   status: r.status,
   tracks: JSON.parse(r.tracks) as Track[],
   startedAt: r.startedAt,
@@ -172,6 +174,15 @@ export async function beginRecording(input: z.infer<typeof RecordingBegin>): Pro
   )
     throw new Error(voiceText('missingNote'))
   const people = listPeople()
+  if (
+    input.seriesId &&
+    !db
+      .select()
+      .from(series)
+      .where(and(eq(series.id, input.seriesId), isNull(series.deletedAt)))
+      .get()
+  )
+    throw new Error('Series not found')
   for (const id of input.participants) if (!people.some((p) => p.id === id)) throw new Error(voiceText('missingParticipant'))
   await ensureFfmpeg()
   if (getDb() !== db || active?.db === db) throw new Error(voiceText('stateChanged'))
@@ -184,6 +195,7 @@ export async function beginRecording(input: z.infer<typeof RecordingBegin>): Pro
       id,
       noteId: input.noteId ?? null,
       scene: input.scene,
+      seriesId: input.seriesId ?? null,
       status: 'recording',
       tracks: JSON.stringify(input.tracks),
       startedAt: now,

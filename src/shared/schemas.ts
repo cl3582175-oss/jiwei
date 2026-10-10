@@ -2,6 +2,7 @@ import { CaptureSettingsSchema } from './capture'
 export { InboxCreateSchema, InboxUpdateSchema, InboxAcceptSchema } from './inbox'
 import { z } from 'zod'
 import { AnchorSchema, ContextPacketSchema } from './context'
+import { RecordingFiltersSchema } from './lens'
 
 // 所有跨进程输入的 zod 模式。类型由模式推导，保证“声明一次、处处一致”。
 
@@ -46,7 +47,7 @@ export const NoteMetaUpdateSchema = z.object({
 })
 export type NoteMetaUpdate = z.infer<typeof NoteMetaUpdateSchema>
 
-export const SourceQuerySchema = z.object({
+export const SourceQuerySchema = RecordingFiltersSchema.extend({
   categoryId: Id.nullable().optional(),
   includeDescendants: z.boolean().optional(),
   kind: SourceKindSchema.optional(),

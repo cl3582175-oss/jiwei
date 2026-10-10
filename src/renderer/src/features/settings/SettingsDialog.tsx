@@ -27,6 +27,7 @@ import { prompt } from '@/components/ui/confirm'
 import { Library, Plus, Sparkles } from 'lucide-react'
 import { AiSettingsTab } from '../ai/AiSettings'
 import { SkillsSettingsTab } from '../ai/SkillsSettings'
+import { LensSettings } from '../lenses/LensSettings'
 import { MemorySettingsTab } from '../memory/MemorySettings'
 import type { Language, Palette as PaletteId, ThemeMode } from '@shared/types'
 import { useAppInfo, useSettings, useUpdateSettings } from '@/lib/queries'
@@ -36,7 +37,7 @@ import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Logo } from '@/components/Logo'
 
-type Tab = 'general' | 'me' | 'learning' | 'ai' | 'skills' | 'appearance' | 'data' | 'about'
+type Tab = 'general' | 'me' | 'learning' | 'ai' | 'skills' | 'lenses' | 'appearance' | 'data' | 'about'
 
 const PALETTES: PaletteId[] = ['qinglu', 'celadon', 'dunhuang']
 
@@ -293,6 +294,7 @@ export function SettingsDialog() {
     { id: 'learning', icon: <Layers /> },
     { id: 'ai', icon: <Sparkles /> },
     { id: 'skills', icon: <Wand2 /> },
+    { id: 'lenses', icon: <Layers /> },
     { id: 'appearance', icon: <Palette /> },
     { id: 'data', icon: <Database /> },
     { id: 'about', icon: <Info /> }
@@ -468,6 +470,7 @@ export function SettingsDialog() {
             )}
             {tab === 'me' && <MemorySettingsTab />}
             {tab === 'skills' && <SkillsSettingsTab />}
+            {tab === 'lenses' && <LensSettings />}
             {tab === 'data' && info && <DataTab />}
             {tab === 'about' && info && (
               <div className="flex h-full flex-col items-center justify-center pb-6 text-center">

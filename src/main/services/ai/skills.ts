@@ -1,5 +1,9 @@
 import { app, dialog, shell, type BrowserWindow } from 'electron'
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync } from 'fs'
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, lstatSync, writeFileSync, rmSync } from 'fs'
+import { createHash, randomBytes } from 'crypto'
+import { z } from 'zod'
+import { LensSave, type LensInfo } from '@shared/lens'
+import { createLensSkill, validateLensMetadata } from '../../lib/lensSkill'
 import { basename, dirname, join, relative, resolve, sep } from 'path'
 import log from 'electron-log/main'
 import type { SkillInfo } from '@shared/types'
@@ -23,6 +27,14 @@ interface Loaded extends Parsed {
 }
 
 let cache: Map<string, Loaded> | null = null
+const isSymlink = (path: string): boolean => {
+  try {
+    return lstatSync(path).isSymbolicLink()
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return false
+    throw e
+  }
+}
 
 function scan(root: string, source: SkillInfo['source'], into: Map<string, Loaded>): void {
   if (!existsSync(root)) return
@@ -31,7 +43,11 @@ function scan(root: string, source: SkillInfo['source'], into: Map<string, Loade
     const file = join(dir, 'SKILL.md')
     if (!existsSync(file)) continue
     try {
-      into.set(d, { ...parseSkill(readFileSync(file, 'utf8'), d), dir, source })
+      const parsed = parseSkill(readFileSync(file, 'utf8'), d)
+      const isLens = parsed.metadata.kind === 'lens' || d.startsWith('lens-')
+      if (isLens && (isSymlink(root) || isSymlink(dir) || isSymlink(file))) continue
+      if (isLens) validateLensMetadata(parsed.metadata)
+      into.set(d, { ...parsed, dir, source })
     } catch (e) {
       log.warn('[skills] skip', file, e instanceof Error ? e.message : e)
     }
@@ -70,7 +86,10 @@ const toInfo = (s: Loaded, off: Set<string>): SkillInfo => ({
 
 export function listSkills(): SkillInfo[] {
   const off = disabled()
-  return [...all().values()].map((s) => toInfo(s, off)).sort((a, b) => a.name.localeCompare(b.name))
+  return [...all().values()]
+    .filter((s) => s.metadata.kind !== 'lens')
+    .map((s) => toInfo(s, off))
+    .sort((a, b) => a.name.localeCompare(b.name))
 }
 
 /** 当前模型可用的技能（tier 由模型能力决定，见 resolveCaps） */
@@ -93,7 +112,7 @@ export function skillCatalog(tier: ModelTier, zh: boolean): string | null {
 /** 加载技能正文 + 附带文件清单 + 用户对该技能的偏好（记忆） */
 export function loadSkill(name: string, zh: boolean): string {
   const s = all().get(name)
-  if (!s || disabled().has(name)) throw new Error(`没有名为 ${name} 的可用技能`)
+  if (!s || s.metadata.kind === 'lens' || disabled().has(name)) throw new Error(`没有名为 ${name} 的可用技能`)
   const files = readdirSync(s.dir, { recursive: true })
     .map(String)
     .filter((f) => f !== 'SKILL.md' && statSync(join(s.dir, f)).isFile())
@@ -149,7 +168,44 @@ export function importSkillFrom(path: string): SkillInfo {
   mkdirSync(userSkillsDir(), { recursive: true })
   cpSync(dir, target, { recursive: true, force: true })
   reloadSkills()
-  return listSkills().find((s) => s.name === parsed.name)!
+  return toInfo(all().get(parsed.name)!, disabled())
+}
+
+export function listLenses(): LensInfo[] {
+  return [...all().values()]
+    .filter((s) => s.metadata.kind === 'lens')
+    .map((s) => ({
+      id: s.name,
+      title: s.metadata.title || s.description,
+      instruction: s.body,
+      ...validateLensMetadata(s.metadata),
+      source: s.source,
+      hash: createHash('sha256')
+        .update(readFileSync(join(s.dir, 'SKILL.md')))
+        .digest('hex')
+    }))
+}
+export function saveLens(input: z.infer<typeof LensSave>, id?: string): LensInfo {
+  input = LensSave.parse(input)
+  const original = id || input.copyFrom ? listLenses().find((s) => s.id === (id ?? input.copyFrom)) : undefined
+  if ((id || input.copyFrom) && (!original || (id && original.source !== 'user'))) throw new Error('Invalid lens identity')
+  const name = original?.id ?? `lens-${randomBytes(4).toString('hex')}`
+  const contents = createLensSkill(name, input.title, input.instruction, original)
+  if (isSymlink(userSkillsDir())) throw new Error('Invalid lens root')
+  const folder = join(userSkillsDir(), name)
+  if (isSymlink(folder)) throw new Error('Invalid lens directory')
+  mkdirSync(folder, { recursive: true })
+  const file = join(folder, 'SKILL.md')
+  if (isSymlink(file)) throw new Error('Invalid lens file')
+  writeFileSync(file, contents, 'utf8')
+  reloadSkills()
+  return listLenses().find((l) => l.id === name)!
+}
+export function removeLens(id: string): void {
+  const lens = listLenses().find((l) => l.id === id && l.source === 'user')
+  if (!lens || !/^lens-[a-z0-9-]{1,48}$/.test(lens.id)) throw new Error('Invalid lens identity')
+  rmSync(join(userSkillsDir(), lens.id), { recursive: true, force: true })
+  reloadSkills()
 }
 
 export function openUserSkillsDir(): void {

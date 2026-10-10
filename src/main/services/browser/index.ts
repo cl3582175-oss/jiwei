@@ -1,6 +1,6 @@
 import { emit, onMainEvent } from '../../events'
 import { onAnnotationsChange } from '../annotations'
-import { markInteraction, registerContentIpc, setDownloadHandler, setLoadedHandler } from './manager'
+import { markInteraction, registerContentIpc, setDownloadHandler, setLoadedHandler, tabZoom } from './manager'
 import { onAnnotationsChanged, onDownloaded, pushAnnotations, scheduleRelated } from './pages'
 import type { BrowserAction } from '@shared/types'
 import { registerCourse } from './course'
@@ -31,14 +31,15 @@ export function registerBrowser(): void {
       const m = (raw ?? {}) as Record<string, unknown>
       const action = m.action as BrowserAction['action']
       if (!ACTIONS.has(action)) return
-      const r = (m.rect ?? {}) as Record<string, unknown>
+      const r = (m.rect ?? {}) as Record<string, unknown>,
+        z = tabZoom(tabId)
       const msg: BrowserAction = {
         tabId,
         action,
         quote: str(m.quote, 4000),
         prefix: str(m.prefix, 200),
         suffix: str(m.suffix, 200),
-        rect: { x: num(r.x), y: num(r.y), w: num(r.w), h: num(r.h) },
+        rect: { x: num(r.x) * z, y: num(r.y) * z, w: num(r.w) * z, h: num(r.h) * z },
         ...(typeof m.annotationId === 'string' ? { annotationId: m.annotationId.slice(0, 64) } : {})
       }
       if (action !== 'annotation' && !msg.quote) return

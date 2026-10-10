@@ -32,6 +32,8 @@ export async function structured<T>(opts: {
   prompt: string
   schema: z.ZodType<T>
   signal?: AbortSignal
+  /** 长流程每次发请求（含回退）前重读隐私与取消状态。 */
+  guard?: () => void
 }): Promise<T> {
   const built = buildModel({ providerId: opts.providerId, model: opts.model, effort: 'off' })
   const base = {
@@ -41,6 +43,7 @@ export async function structured<T>(opts: {
     abortSignal: opts.signal ?? AbortSignal.timeout(90_000)
   }
   try {
+    opts.guard?.()
     const r = await generateText({
       ...base,
       system: opts.system,
@@ -55,6 +58,7 @@ export async function structured<T>(opts: {
     if (opts.signal?.aborted) throw e
     log.warn('[structured] tool call failed, falling back to JSON text:', e instanceof Error ? e.message : e)
   }
+  opts.guard?.()
   const r = await generateText({
     ...base,
     system: `${opts.system}\n\nOutput only one JSON object matching this JSON Schema, with no other text:\n${JSON.stringify(z.toJSONSchema(opts.schema))}`,

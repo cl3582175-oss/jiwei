@@ -50,6 +50,9 @@ interface AppState extends Location {
 
   /** 工作区分栏比例（资料栏百分比） */
   sourcePaneSize: number
+  /** 资料栏在整理审阅时临时放宽（收起笔记列表、资料栏约 62%），关闭后恢复 */
+  sourceFocus: boolean
+  setSourceFocus: (on: boolean) => void
   setSourcePaneSize: (n: number) => void
 
   context: WorkspaceContext
@@ -163,6 +166,8 @@ export const useApp = create<AppState>((set, get) => {
     },
 
     sourcePaneSize: 38.2,
+    sourceFocus: false,
+    setSourceFocus: (sourceFocus) => set({ sourceFocus }),
     setSourcePaneSize: (sourcePaneSize) => set({ sourcePaneSize }),
 
     context: emptyContext,

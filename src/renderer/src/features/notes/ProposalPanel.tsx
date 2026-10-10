@@ -10,6 +10,7 @@ import { Sparkles, Check, X, BookOpen, Network } from 'lucide-react'
 import { DOC_FIELD, type Proposal, type ProposalOp } from '@shared/types'
 import { embedText } from '@shared/embeds'
 import { api, cn, formatRelative } from '@/lib/utils'
+import { useApp } from '@/store/app'
 import { Button } from '@/components/ui/button'
 import { applyOp, ProposalTargetMissing } from './editor/applyProposal'
 import { diffKey, DIFF_DECISION, type DiffDecision, type DiffItem } from './editor/proposalDiff'
@@ -53,7 +54,9 @@ export function ProposalPanel({ noteId, editor, ydoc }: { noteId: string; editor
   const qc = useQueryClient()
   const key = ['proposals', noteId]
   // 打开笔记时总是重新读取：笔记没打开期间（如费曼练习、存入笔记）新增的提案不会经过下面的事件监听
-  const { data: list = [] } = useQuery({ queryKey: key, queryFn: () => api.proposals.list(noteId), staleTime: 0 })
+  const { data: stored = [] } = useQuery({ queryKey: key, queryFn: () => api.proposals.list(noteId), staleTime: 0 })
+  const list = useMemo(() => stored.filter((p) => p.skill !== 'lens-landing'), [stored])
+  const lensProposals = stored.filter((p) => p.skill === 'lens-landing')
 
   useEffect(
     () =>
@@ -105,7 +108,10 @@ export function ProposalPanel({ noteId, editor, ydoc }: { noteId: string; editor
   }
 
   const decideAll = async (p: Proposal, decision: 'accepted' | 'rejected'): Promise<void> => {
-    if (p.skill === 'inbox' && decision === 'accepted' && editor && ydoc) { await applyInboxToEditor(editor, ydoc, p); return }
+    if (p.skill === 'inbox' && decision === 'accepted' && editor && ydoc) {
+      await applyInboxToEditor(editor, ydoc, p)
+      return
+    }
     for (let i = 0; i < p.ops.length; i++) if (p.opStatus[i] === 'pending') await decide(p, i, decision)
   }
 
@@ -128,7 +134,10 @@ export function ProposalPanel({ noteId, editor, ydoc }: { noteId: string; editor
       for (const p of list) {
         if (!p.auto || applying.current.has(p.id)) continue
         applying.current.add(p.id)
-        void decideAll(p, 'accepted').catch((e: Error) => { applying.current.delete(p.id); toast.error(e.message) })
+        void decideAll(p, 'accepted').catch((e: Error) => {
+          applying.current.delete(p.id)
+          toast.error(e.message)
+        })
       }
     }
     run()
@@ -192,7 +201,7 @@ export function ProposalPanel({ noteId, editor, ydoc }: { noteId: string; editor
   const inlineKeys = new Set(inline.map((x) => `${x.proposalId}:${x.opIndex}`))
   // 所有待定操作都已在原文处显示的提案，不再出现在面板中
   const visible = list.filter((p) => !p.auto && p.ops.some((_, i) => p.opStatus[i] === 'pending' && !inlineKeys.has(`${p.id}:${i}`)))
-  if (visible.length === 0) return null
+  if (visible.length === 0 && lensProposals.length === 0) return null
 
   const opLabel = (op: ProposalOp): string => t(`proposals.op.${op.op}`)
   const preview = (p: Proposal, op: ProposalOp): React.ReactNode => {
@@ -217,6 +226,22 @@ export function ProposalPanel({ noteId, editor, ydoc }: { noteId: string; editor
 
   return (
     <div className="mb-6 space-y-3">
+      {lensProposals.map((p) => (
+        <section key={p.id} className="rounded-xl border border-border p-3 text-xs" data-testid="lens-proposal-notice">
+          <p>{t('lens.errors.reviewInSource')}</p>
+          <Button
+            variant="outline"
+            size="sm"
+            className="mt-2"
+            onClick={() => {
+              const source = p.sources?.find((s) => s.type === 'source')
+              if (source) useApp.getState().openSource(source.id)
+            }}
+          >
+            {t('lens.source')}
+          </Button>
+        </section>
+      ))}
       {visible.map((p) => (
         <section key={p.id} className="overflow-hidden rounded-xl border border-accent/30 bg-accent-soft/40 shadow-card">
           <header className="flex items-center gap-2.5 border-b border-accent/20 px-4 py-2.5">
@@ -266,7 +291,16 @@ export function ProposalPanel({ noteId, editor, ydoc }: { noteId: string; editor
               <Button size="sm" variant="ghost" onClick={() => void decideAll(p, 'rejected')}>
                 {t('proposals.rejectAll')}
               </Button>
-              <Button size="sm" variant="primary" onClick={() => void decideAll(p, 'accepted').catch((e: Error) => { applying.current.delete(p.id); toast.error(e.message) })}>
+              <Button
+                size="sm"
+                variant="primary"
+                onClick={() =>
+                  void decideAll(p, 'accepted').catch((e: Error) => {
+                    applying.current.delete(p.id)
+                    toast.error(e.message)
+                  })
+                }
+              >
                 <Check />
                 {t('proposals.acceptAll')}
               </Button>

@@ -53,7 +53,40 @@ export function parseMossOutput(raw: unknown): MossCue[] {
     }
     cues.push({ start: offsets.from / 1000, end: offsets.to / 1000, text, speaker })
   }
-  return cues.sort((a, b) => a.start - b.start || a.end - b.end)
+  return trimRepeatedOverlap(cues.sort((a, b) => a.start - b.start || a.end - b.end))
+}
+
+const speechChar = (c: string): boolean => !/[\p{P}\p{Z}\s]/u.test(c)
+/**
+ * MOSS 在长句处常把上一句的结尾在下一句开头再说一遍（时间也交叠）。
+ * 时间交叠时，删去下一句开头与上一句结尾相同的文字（按去标点后至少 4 个字比较）。
+ */
+export function trimRepeatedOverlap(cues: MossCue[]): MossCue[] {
+  const out: MossCue[] = []
+  for (const cue of cues) {
+    const prev = out[out.length - 1]
+    if (!prev || cue.start >= prev.end) {
+      out.push(cue)
+      continue
+    }
+    const tail = normalizedSpeech(prev.text),
+      head = normalizedSpeech(cue.text)
+    let n = Math.min(tail.length, head.length)
+    while (n >= 4 && !tail.endsWith(head.slice(0, n))) n--
+    if (n < 4) {
+      out.push(cue)
+      continue
+    }
+    // 把去标点后的 n 个字映射回原文位置，连同其后的标点一起去掉
+    let i = 0,
+      seen = 0
+    const chars = [...cue.text]
+    while (i < chars.length && seen < n) if (speechChar(chars[i++])) seen++
+    while (i < chars.length && !speechChar(chars[i])) i++
+    const text = chars.slice(i).join('').trim()
+    if (text) out.push({ ...cue, text, start: Math.max(cue.start, prev.end) < cue.end ? Math.max(cue.start, prev.end) : cue.start })
+  }
+  return out
 }
 
 export function planMossChunks(duration: number): MossChunk[] {

@@ -6,6 +6,8 @@ import type { KnowledgeStatus, SearchHit } from '@shared/types'
 import { embed, isReady } from './embedding'
 import { annotationText, vecBuffer } from './indexer'
 import { ftsQuery } from '../../lib/fts'
+import { lensKeywordSQL, lensVectorSQL } from '../../lib/lensRetrieval'
+import type { RecordingFilters } from '@shared/lens'
 
 // 混合检索：关键词（FTS5 trigram）+ 向量（sqlite-vec）→ RRF 融合 → 时间与可信度加权。
 //   - 检索单位：笔记的康奈尔行 / 总结段落，资料的分段
@@ -18,9 +20,16 @@ const DAY = 86_400_000
 
 type Key = string // `${ownerType}:${ownerId}`
 
-function keywordHits(q: string, limit: number): Key[] {
+function keywordHits(q: string, limit: number, filters: RecordingFilters = {}): Key[] {
   const fq = ftsQuery(q)
   const sqlite = getSqlite()
+  if (Object.values(filters).some(Boolean)) {
+    if (!fq) return []
+    const filter = lensKeywordSQL(filters)
+    return (sqlite.prepare(filter.sql).all(fq, ...filter.params, limit * 3) as { segment_id: string }[]).map(
+      (r) => `segment:${r.segment_id}`
+    )
+  }
   const b = (
     fq ? sqlite.prepare('SELECT block_id FROM blocks_fts WHERE blocks_fts MATCH ? ORDER BY rank LIMIT ?').all(fq, limit * 3) : []
   ) as { block_id: string }[]
@@ -76,12 +85,20 @@ function keywordHits(q: string, limit: number): Key[] {
   return keys.slice(0, limit * 2)
 }
 
-async function vectorHits(q: string, limit: number): Promise<Key[]> {
+async function vectorHits(q: string, limit: number, filters: RecordingFilters = {}): Promise<Key[]> {
   if (!(await isReady())) return []
   const [v] = await embed([q], 'query')
-  const rows = getSqlite()
-    .prepare('SELECT rowid, distance FROM vec_chunks WHERE embedding MATCH ? AND k = ? ORDER BY distance')
-    .all(vecBuffer(v), limit * 3) as { rowid: number; distance: number }[]
+  const filter = lensVectorSQL(filters),
+    filtered = Object.values(filters).some(Boolean)
+  const rows = (
+    filtered
+      ? getSqlite()
+          .prepare(filter.sql)
+          .all(vecBuffer(v), ...filter.params, limit * 3)
+      : getSqlite()
+          .prepare('SELECT rowid, distance FROM vec_chunks WHERE embedding MATCH ? AND k = ? ORDER BY distance')
+          .all(vecBuffer(v), limit * 3)
+  ) as { rowid: number; distance: number }[]
   if (!rows.length) return []
   const meta = getDb()
     .select({ rowid: chunks.rowid, ownerType: chunks.ownerType, ownerId: chunks.ownerId })
@@ -234,9 +251,12 @@ function weight(h: SearchHit): number {
 }
 
 /** 检索知识库，返回按相关度与时间加权排序的片段 */
-export async function retrieve(query: string, scope: ChatScope, limit = 8): Promise<SearchHit[]> {
+export async function retrieve(query: string, scope: ChatScope, limit = 8, filters: RecordingFilters = {}): Promise<SearchHit[]> {
   if (scope.type === 'none' || !query.trim()) return []
-  const [kw, vec] = await Promise.all([Promise.resolve(keywordHits(query, limit)), vectorHits(query, limit).catch(() => [] as Key[])])
+  const [kw, vec] = await Promise.all([
+    Promise.resolve(keywordHits(query, limit, filters)),
+    vectorHits(query, limit, filters).catch(() => [] as Key[])
+  ])
   const rrf = new Map<Key, number>()
   kw.forEach((k, i) => rrf.set(k, (rrf.get(k) ?? 0) + 1 / (RRF_K + i)))
   // 向量命中权重略高：语义相关比字面重合更可靠
@@ -280,10 +300,12 @@ export async function similarTo(
   scope: ChatScope,
   limit: number,
   minSim: number,
-  options?: { distinctCornellNotes?: boolean }
+  options?: { distinctCornellNotes?: boolean; guard?: () => void }
 ): Promise<(SearchHit & { sim: number })[]> {
   if (!text.trim() || !(await isReady())) return []
+  options?.guard?.()
   const [v] = await embed([text.slice(0, 2000)], 'doc')
+  options?.guard?.()
   const rows = (
     options?.distinctCornellNotes
       ? getSqlite()
