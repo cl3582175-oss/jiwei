@@ -45,7 +45,7 @@ test.beforeAll(async () => {
       const db = new Database(path.join(app.getPath('userData'), 'data/jiwei.db')),
         personal = new Database(path.join(app.getPath('userData'), 'profile/memory.db')),
         now = Date.now()
-      const folder = path.join(app.getPath('userData'), 'recordings', sourceId)
+      const folder = path.join(app.getPath('userData'), 'data', 'recordings', sourceId)
       fs.mkdirSync(folder, { recursive: true })
       fs.copyFileSync(audio, path.join(folder, 'mix.webm'))
       try {

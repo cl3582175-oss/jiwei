@@ -1,4 +1,4 @@
-import { recordingAudio } from './recording'
+import { recordingAudio, withRecordingFile } from './recording'
 import { enqueueMoss, mossStatus } from './moss'
 import { mossTranscriptRevision } from '../lib/moss'
 import { voiceText } from './voiceMessages'
@@ -407,22 +407,26 @@ export function registerAsrJob(): void {
       if (!file) throw new Error(voiceText('missingAudio'))
       await stat(file)
       const t = getSettings().ai.transcription
-      let cues: Cue[]
-      if (!row.s.aiExcluded && t?.mode === 'cloud' && t.providerId && t.model)
-        cues = await transcribeCloud(
-          file,
-          t.providerId,
-          t.model,
-          (p) => ctx.progress(p),
-          () => {
-            const current = getDb().select().from(sources).where(eq(sources.id, sourceId)).get()
-            return getDb() === db && !ctx.isCanceled() && !!current && !current.deletedAt && !current.aiExcluded
-          }
-        )
-      else {
-        if (!installed()) await installAsr()
-        cues = await ctx.worker<Cue[]>('transcribe', { file, ...asrPaths() })
+      let cues: Cue[] = []
+      const transcribe = async (file: string): Promise<void> => {
+        if (!row.s.aiExcluded && t?.mode === 'cloud' && t.providerId && t.model)
+          cues = await transcribeCloud(
+            file,
+            t.providerId,
+            t.model,
+            (p) => ctx.progress(p),
+            () => {
+              const current = getDb().select().from(sources).where(eq(sources.id, sourceId)).get()
+              return getDb() === db && !ctx.isCanceled() && !!current && !current.deletedAt && !current.aiExcluded
+            }
+          )
+        else {
+          if (!installed()) await installAsr()
+          cues = await ctx.worker<Cue[]>('transcribe', { file, ...asrPaths() })
+        }
       }
+      if (row.s.kind === 'recording') await withRecordingFile(sourceId, 'mix', transcribe)
+      else await transcribe(file)
       if (ctx.isCanceled()) return
       if (getDb() !== db || mossTranscriptRevision(listSegments(sourceId)) !== revision) throw new Error(voiceText('transcriptChanged'))
       if (!cues.length) return { segments: 0, note: 'no speech' }

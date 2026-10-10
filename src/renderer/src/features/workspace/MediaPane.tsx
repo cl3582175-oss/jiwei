@@ -1,3 +1,4 @@
+import { RecoveryCodeDialog } from '../recording/RecordingSecurity'
 import { TranscriptView } from '../recording/TranscriptView'
 import { LensPanel } from '../lenses/LensPanel'
 import type { EvidenceSentence } from '@shared/lens'
@@ -153,6 +154,12 @@ export function MediaPane({ source }: { source: Source }) {
   const highlight = useApp((s) => s.highlight)
   const onSelect = useSourceSelection(source.id)
   const isVideo = source.kind === 'video'
+  const { data: crypto, refetch: refreshCrypto } = useQuery({
+    queryKey: ['recording-crypto'],
+    queryFn: () => api.recording.cryptoStatus(),
+    enabled: source.kind === 'recording'
+  })
+  const [unlockClosed, setUnlockClosed] = useState(false)
 
   const { data: segs = [] } = useQuery({ queryKey: ['segments', source.id], queryFn: () => api.segments.list(source.id) })
   const { data: retainedHistory = [] } = useQuery({
@@ -306,7 +313,9 @@ export function MediaPane({ source }: { source: Source }) {
 
   const props = {
     ref: media,
-    src: source.assetUrl!,
+    // 锁住时不把 423 响应交给媒体管线；Chromium 会复用同地址的失败结果。
+    // 解锁状态确认后挂载真实音源，React 的 src 更新触发正常加载与拖动。
+    src: source.kind === 'recording' && crypto?.unlocked !== true ? undefined : (source.assetUrl ?? undefined),
     controls: true,
     crossOrigin: 'anonymous' as const,
     onTimeUpdate: onTime,
@@ -321,6 +330,22 @@ export function MediaPane({ source }: { source: Source }) {
       data-testid="lens-workspace"
       data-layout={organizing ? (wide ? 'columns' : 'tabs') : 'transcript'}
     >
+      <RecoveryCodeDialog
+        open={source.kind === 'recording' && crypto?.unlocked === false && !unlockClosed}
+        unlocked
+        close={() => setUnlockClosed(true)}
+        onDone={() => {
+          void refreshCrypto()
+        }}
+      />
+      {source.kind === 'recording' && crypto?.unlocked === false && (
+        <div className="safety-ui px-4 py-3 text-sm text-muted" data-testid="recording-locked-hint">
+          录音已加密，需要恢复码才能播放。
+          <Button variant="outline" className="ml-2" onClick={() => setUnlockClosed(false)}>
+            输入恢复码
+          </Button>
+        </div>
+      )}
       {!!segs.length && (
         <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-border px-3 py-2">
           <Button

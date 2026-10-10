@@ -22,6 +22,12 @@ export async function startSite(): Promise<{ server: Server; base: string }> {
     if (req.url === '/article') res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }).end(ARTICLE)
     else if (req.url === '/hidden-login') res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }).end(HIDDEN_LOGIN)
     else if (req.url === '/login') res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }).end(LOGIN)
+    else if (req.url === '/signin/rejected') res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }).end('<title>登录受阻</title><p>This browser or app may not be secure</p>')
+    else if (req.url === '/slow-network-status') {
+      res.writeHead(200, { 'content-type': 'text/plain' })
+      res.write('first')
+      setTimeout(() => res.end('last'), 1500)
+    }
     else if (req.url === '/lecture.pdf')
       res
         .writeHead(200, { 'content-type': 'application/pdf', 'content-disposition': 'attachment; filename="lecture.pdf"' })

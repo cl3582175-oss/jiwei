@@ -198,7 +198,7 @@ export function SourcePane({ sourceId }: { sourceId: string }) {
   const [showAnnotations, setShowAnnotations] = useState(false)
   if (!source) return <div className="h-full bg-sunken" />
   return (
-    <div className="flex h-full flex-col bg-sunken/50">
+    <div className="@container flex h-full flex-col bg-sunken/50">
       <header className="drag flex min-h-[52px] shrink-0 flex-wrap items-center gap-2.5 border-b border-border/70 px-4 py-1">
         <span data-tint={KIND_TINT[source.kind]} className="tint grid size-7 shrink-0 place-items-center rounded-lg [&_svg]:size-4">
           {KIND_ICON[source.kind]}

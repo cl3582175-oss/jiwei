@@ -58,6 +58,7 @@ function toInfo(r: Row): ProviderInfo {
     name: r.name,
     baseUrl: r.baseUrl,
     hasKey: !!key,
+    needsKey: !!r.apiKeyEnc && !key,
     keyHint: key ? `••••${key.slice(-4)}` : null,
     models: JSON.parse(r.models) as string[],
     modelCaps: parseCaps(r),

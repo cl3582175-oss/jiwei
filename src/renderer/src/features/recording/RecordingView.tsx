@@ -1,3 +1,4 @@
+import { RecordingSecurity } from './RecordingSecurity'
 import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
@@ -18,7 +19,8 @@ import {
   Lightbulb,
   Info,
   Plus,
-  AlertTriangle
+  AlertTriangle,
+  LockKeyhole
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { fmtTime } from '@shared/context'
@@ -72,6 +74,7 @@ export function RecordingStart({ noteId = null }: { noteId?: string | null }) {
   }, [])
   return (
     <section className="@container space-y-4" data-testid="recording-start">
+      <RecordingSecurity beforeStart />
       <div className="grid gap-2 @min-[520px]:grid-cols-3">
         {(
           [
@@ -391,7 +394,7 @@ export function RecordingView() {
     enabled: !!personId
   })
   return (
-    <div className="flex h-full flex-col">
+    <div className="safety-ui flex h-full flex-col">
       <header className="drag flex h-14 shrink-0 items-center gap-2 border-b border-border px-6">
         <Mic className="size-5 text-accent" />
         <h1 className="text-md font-medium">{t('recording.title')}</h1>
@@ -482,11 +485,16 @@ export function RecordingView() {
             .map((r) => (
               <Button
                 variant="ghost"
-                className="h-auto w-full justify-start gap-3 py-3"
+                className="safety-ui h-auto w-full justify-start gap-3 py-3"
                 key={r.id}
                 onClick={() => r.sourceId && useApp.getState().openSource(r.sourceId)}
               >
                 <FileAudio />
+                {r.encrypted && (
+                  <span title="已加密" aria-label="已加密">
+                    <LockKeyhole className="size-4 text-accent" />
+                  </span>
+                )}
                 <span>
                   {t(`recording.scene.${r.scene}`)} · {new Date(r.startedAt).toLocaleString()}
                 </span>

@@ -42,7 +42,7 @@ export function ReadingControls({target,state:supplied}:{target:ReadingTarget;st
   useEffect(()=>{if(supplied?.error)toast.error(supplied.error)},[supplied?.error])
   if(!state?.foreign)return null
   return <>
-    <Menu><MenuTrigger asChild><Button variant={state.mode!=='original'||state.annotations?'secondary':'ghost'} size="sm" className="h-7 shrink-0 px-2 text-xs" data-testid="reading-control"><Languages />{t('reading.title')}</Button></MenuTrigger><MenuContent>
+    <Menu><MenuTrigger asChild><Button variant={state.mode!=='original'||state.annotations?'secondary':'ghost'} size="sm" className="h-7 shrink-0 px-2 text-xs" aria-label={t('reading.title')} data-testid="reading-control"><Languages /><span className="hidden @min-[640px]:inline">{t('reading.title')}</span></Button></MenuTrigger><MenuContent>
       {(['original','parallel','translation'] as const).map((mode)=><MenuItem key={mode} disabled={busy} onSelect={()=>void change(mode,state.annotations)}>{state.mode===mode?<Check />:<span className="size-4" />}{t(`reading.${mode}`)}</MenuItem>)}
       {state.language==='en'&&<><MenuSeparator /><MenuItem disabled={busy} onSelect={()=>void change(state.mode,!state.annotations)}>{state.annotations?<Check />:<BookOpenText />}{t('reading.annotations')}</MenuItem></>}
       {state.error&&<><MenuSeparator /><MenuItem onSelect={()=>void apply(state.mode,state.annotations)}>{t('reading.retry')}</MenuItem></>}

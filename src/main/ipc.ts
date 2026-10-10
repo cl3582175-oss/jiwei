@@ -1,3 +1,4 @@
+import { tr } from './lib/messages'
 import * as browserCapture from './services/browser/capture'
 import * as mistakes from './services/mistakes'
 import * as mistakeEntries from './services/mistakeEntries'
@@ -18,7 +19,11 @@ import { voiceErrorText } from './services/voiceMessages'
 import { VoiceValidationError } from '@shared/recording'
 import { getMainWindow } from './mainWindow'
 import { queueNoteImages, recognizeNoteFormula } from './services/noteImages'
-import { BrowserWindow, ipcMain, shell } from 'electron'
+import { BrowserWindow, ipcMain, shell, dialog } from 'electron'
+import { writeFile } from 'fs/promises'
+import * as fullBackup from './services/fullBackup'
+import * as recordingFiles from './services/recordingFiles'
+import * as browserNetwork from './services/browser/network'
 import log from 'electron-log/main'
 import { backupsDir } from './db'
 import * as notes from './services/notes'
@@ -150,6 +155,19 @@ const handlers: Handlers = {
         .slice(0, 5)
   },
   recording: {
+    cryptoStatus: () => recordingFiles.cryptoStatus(),
+    prepareRecovery: () => recordingFiles.prepareRecovery(),
+    confirmRecovery: (_, group) => recordingFiles.confirmRecovery(group),
+    cancelRecovery: () => recordingFiles.cancelRecovery(),
+    saveRecovery: async () => {
+      const code = recordingFiles.pendingRecovery(), result = await dialog.showSaveDialog({ title: tr('保存录音恢复码', 'Save recording recovery code'), defaultPath: tr('积微录音恢复码.txt', 'Jiwei-recording-recovery-code.txt'), filters: [{ name: tr('文本文件', 'Text file'), extensions: ['txt'] }] })
+      if (!result.canceled && result.filePath) await writeFile(result.filePath, tr(`积微录音恢复码\n${code}\n请保存在安全的位置。换电脑或从备份恢复时需要此码。\n`, `Jiwei recording recovery code\n${code}\nKeep it somewhere safe. You need it on a new computer or when restoring from a backup.\n`), { mode: 0o600 })
+    },
+    unlock: (_, code) => recordingFiles.unlockRecordings(code),
+    encryption: (_, enabled, confirmed) => recordingFiles.setRecordingEncryption(enabled, confirmed),
+    deferEncryption: () => recordingFiles.deferRecordingEncryption(),
+    pauseMigration: () => recordingFiles.cryptoOperation.cancel(),
+    resumeMigration: () => recordingFiles.resumeCryptoMigration(),
     list: () => recording.listRecordings(),
     get: (_, id) => recording.getRecording(id),
     begin: (_, input) => recording.beginRecording(input),
@@ -233,7 +251,13 @@ const handlers: Handlers = {
   },
   backups: {
     list: () => backups.listBackups(),
-    create: () => backups.backupNow(),
+    create: (_, includeProfile) => fullBackup.fullBackupNow(includeProfile),
+    status: () => fullBackup.backupStatus(),
+    export: (_, includeProfile) => fullBackup.exportBackup(includeProfile),
+    preview: (_, name) => fullBackup.previewBackup(name),
+    restore: (_, input) => fullBackup.restoreBackup(input),
+    cancel: () => fullBackup.backupOperation.cancel(),
+    pickExternal: () => fullBackup.pickExternalBackup(),
     reveal: async () => {
       await shell.openPath(backupsDir())
     }
@@ -439,6 +463,11 @@ const handlers: Handlers = {
     importSubtitles: ({ win }, id) => sources.importSubtitlesDialog(win, id)
   },
   browser: {
+    networkStatus: () => browserNetwork.networkStatus(),
+    networkRules: (_, rules) => browserNetwork.setNetworkRules(rules),
+    openExternal: (_, id) => browser.openExternalTab(id),
+    externalSite: (_, site, enabled) => browser.setExternalSite(site, enabled),
+    dismissLogin: (_, id) => browser.dismissLogin(id),
     state: () => browser.browserState(),
     seek: (_, id, t, play) => browser.seek(id, t, play),
     playback: (_, id, play) => browser.playback(id, play),

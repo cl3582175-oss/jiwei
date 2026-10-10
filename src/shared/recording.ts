@@ -36,6 +36,7 @@ export interface PreviewCue {
   track?: Track
 }
 export interface Recording {
+  encrypted?: boolean
   id: string
   sourceId: string | null
   noteId: string | null

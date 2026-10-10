@@ -46,6 +46,14 @@ async function open(mode: 'text' | 'screenshot'): Promise<Page> {
   await page.evaluate((mode) => window.jiwei.capture.open(mode), mode)
   const window = await next
   await window.waitForSelector('[data-testid="capture-window"]')
+  // DOM 就绪不证明原生窗口已经取得焦点；失焦用例先核验真实焦点，保留关闭与未保存内容断言。
+  await expect
+    .poll(() =>
+      app.evaluate(({ BrowserWindow }) =>
+        BrowserWindow.getAllWindows().some((w) => w.webContents.getURL().includes('capture=1') && w.isVisible() && w.isFocused())
+      )
+    )
+    .toBe(true)
   return window
 }
 async function inbox(): Promise<void> {

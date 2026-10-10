@@ -26,6 +26,7 @@
     "src/renderer/src/i18n/zh-CN.ts",
     "src/renderer/src/i18n/en.ts",
     "src/renderer/src/features/mistakes/messages.ts",
-    "src/renderer/src/features/reading/messages.ts"
+    "src/renderer/src/features/reading/messages.ts",
+    "src/renderer/src/features/settings/safetyMessages.ts"
   ]
 }

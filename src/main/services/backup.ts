@@ -1,8 +1,9 @@
 import { join } from 'path'
-import { readdir, rm, stat } from 'fs/promises'
+import { readdir, rm, stat, rename } from 'fs/promises'
 import log from 'electron-log/main'
 import { backupsDir, getSqlite } from '../db'
 import type { BackupInfo } from '@shared/types'
+import { listSnapshots, automaticSnapshot } from './fullBackup'
 
 const DAY = 86_400_000
 const PREFIX = 'jiwei-'
@@ -19,13 +20,19 @@ export async function listBackups(): Promise<BackupInfo[]> {
     const s = await stat(join(backupsDir(), name))
     out.push({ name, size: s.size, createdAt: s.mtimeMs, kind: name.startsWith('pre-migrate') ? 'pre-migrate' : 'auto' })
   }
-  return out.sort((a, b) => b.createdAt - a.createdAt)
+  return [...out, ...(await listSnapshots())].sort((a, b) => b.createdAt - a.createdAt)
 }
 
 /** 在线备份（不阻塞读写） */
 export async function backupNow(): Promise<BackupInfo> {
   const name = `${PREFIX}${stamp()}.db`
-  await getSqlite().backup(join(backupsDir(), name))
+  const partial = join(backupsDir(), name + '.partial')
+  try {
+    await getSqlite().backup(partial)
+    await rename(partial, join(backupsDir(), name))
+  } finally {
+    await rm(partial, { force: true })
+  }
   const s = await stat(join(backupsDir(), name))
   log.info('[backup] created', name)
   return { name, size: s.size, createdAt: s.mtimeMs, kind: 'auto' }
@@ -36,7 +43,7 @@ export async function backupNow(): Promise<BackupInfo> {
  * 迁移前备份保留最近 3 份。
  */
 export async function pruneBackups(): Promise<void> {
-  const all = await listBackups()
+  const all = (await listBackups()).filter((b) => b.format !== 'snapshot')
   const keep = new Set<string>()
   const autos = all.filter((b) => b.kind === 'auto')
   const bucketKeep = (span: number, count: number): void => {
@@ -63,9 +70,10 @@ export async function pruneBackups(): Promise<void> {
 /** 启动时调用：距上次自动备份超过 24 小时则备份 */
 export async function autoBackup(): Promise<void> {
   try {
-    const last = (await listBackups()).find((b) => b.kind === 'auto')
+    const last = (await listBackups()).find((b) => b.kind === 'auto' && b.format !== 'snapshot')
     if (!last || Date.now() - last.createdAt > DAY) await backupNow()
     await pruneBackups()
+    await automaticSnapshot()
   } catch (e) {
     log.error('[backup] failed', e)
   }

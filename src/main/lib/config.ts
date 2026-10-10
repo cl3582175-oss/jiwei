@@ -1,6 +1,6 @@
 import { app } from 'electron'
 import { join } from 'path'
-import { existsSync, readFileSync, writeFileSync } from 'fs'
+import { existsSync, readFileSync, writeFileSync, renameSync } from 'fs'
 
 // 引导配置：保存在系统应用目录，只记录“数据目录在哪里”。
 // 数据目录本身可由用户迁移到任意位置（设置 → 数据）。
@@ -12,6 +12,7 @@ export interface VaultEntry {
 }
 
 interface BootConfig {
+  pendingBackup?: string | null
   /** 当前打开的知识库目录 */
   dataDir?: string
   /** 已知的知识库列表 */
@@ -29,7 +30,8 @@ export function readBootConfig(): BootConfig {
 }
 
 export function writeBootConfig(cfg: BootConfig): void {
-  writeFileSync(file(), JSON.stringify(cfg, null, 2))
+  writeFileSync(file() + '.tmp', JSON.stringify(cfg, null, 2), { mode: 0o600 })
+  renameSync(file() + '.tmp', file())
 }
 
 export function defaultDataDir(): string {

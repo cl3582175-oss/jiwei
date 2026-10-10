@@ -296,7 +296,7 @@ export async function seedTranscript(
             .run(sourceId, s.label, personIds[i], 'user')
         )
         if (opts.audio) {
-          const folder = path.join(app.getPath('userData'), 'recordings', sourceId)
+          const folder = path.join(app.getPath('userData'), 'data', 'recordings', sourceId)
           fs.mkdirSync(folder, { recursive: true })
           fs.copyFileSync(path.join(app.getAppPath(), 'e2e/fixtures/meeting.wav'), path.join(folder, 'mix.webm'))
         }

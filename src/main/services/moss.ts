@@ -3,7 +3,6 @@ import { execFile } from 'child_process'
 import { createHash } from 'crypto'
 import { existsSync, readFileSync, statSync } from 'fs'
 import { chmod, copyFile, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from 'fs/promises'
-import { tmpdir } from 'os'
 import { dirname, isAbsolute, join, relative, resolve } from 'path'
 import { and, eq, inArray } from 'drizzle-orm'
 import { x as untar } from 'tar'
@@ -12,11 +11,13 @@ import log from 'electron-log/main'
 import { getDb } from '../db'
 import { jobs, sources, assets } from '../db/schema'
 import { assetPath } from './assets'
-import { recordingAudio, recordingForSource, recordingDir } from './recording'
+import { dataDir } from '../db'
+import { storedRecordingFile } from './recordingFiles'
+import { recordingAudio, recordingForSource, withRecordingFile } from './recording'
 import { extractRecordingVoiceprints, voiceprintStatus } from './voiceprint'
 import { alignSpeakers, reviewSpeakers, type VoiceCue } from '../lib/voiceprint'
 import { identifySpeakers, saveRecordingSpeakers, listPeople, listCorrections, voiceprintEpoch } from './people'
-import { voiceText } from './voiceMessages'
+import { voiceText, voiceErrorText } from './voiceMessages'
 import { emit } from '../events'
 import {
   buildMossHotwords,
@@ -423,7 +424,8 @@ async function refineRecording(payload: MossJobPayload, ctx: JobContext): Promis
   }, 250)
   let work: string | null = null
   try {
-    work = await mkdtemp(join(tmpdir(), 'jiwei-moss-'))
+    await mkdir(join(dataDir(), '.tmp'), { recursive: true, mode: 0o700 })
+    work = await mkdtemp(join(dataDir(), '.tmp/rec-moss-'))
     setStatus({ running: true, message: null })
     if (ctx.isCanceled()) throw new Error('精修已取消')
     if (!(await verifyRuntime()) || (await sha256File(modelPath())) !== MODEL.sha256)
@@ -431,7 +433,8 @@ async function refineRecording(payload: MossJobPayload, ctx: JobContext): Promis
     await ensureFfmpeg()
     if (abort.signal.aborted) throw new Error('精修已取消')
     const input = join(work, 'input.webm')
-    await copyFile(snapshot.file, input)
+    if (source.kind === 'recording') await withRecordingFile(source.id, 'mix', (file) => copyFile(file, input))
+    else await copyFile(snapshot.file, input)
     if (!sameRecording(readRecording(payload.sourceId), payload)) throw new Error('复制期间录音已改变，请重新发起精修')
     const wav = join(work, 'recording.wav')
     const decoded = await command(
@@ -523,13 +526,15 @@ async function refineRecording(payload: MossJobPayload, ctx: JobContext): Promis
     }
     let cues: VoiceCue[] = mergeMossChunks(parts)
     if (voiceprintStatus().state === 'ready' && payload.voiceEpoch === voiceprintEpoch()) {
-      const tracks = recordingRow
-        ? Object.fromEntries(
-            (JSON.parse(recordingRow.tracks) as string[])
-              .map((t) => [t, join(recordingDir(recordingRow.id), `${t}.webm`)])
-              .filter(([, p]) => existsSync(p))
-          )
-        : undefined
+      const tracks: Record<string, string> = {}
+      if (recordingRow)
+        for (const track of JSON.parse(recordingRow.tracks) as ('mic' | 'system')[]) {
+          if (storedRecordingFile(recordingRow.id, `${track}.webm`)) {
+            const plain = join(work, `${track}.webm`)
+            await withRecordingFile(source.id, track, (file) => copyFile(file, plain))
+            tracks[track] = plain
+          }
+        }
       cues = reviewSpeakers(await extractRecordingVoiceprints(wav, cues, ctx, tracks, abort.signal))
     }
     // 清除完成后可交付文字，但旧任务的中心/认人结果不能重新写回个人库。
@@ -574,7 +579,7 @@ export function registerMossJob(): void {
       serial = task.then(
         () => {},
         (error: unknown) => {
-          log.warn('[moss]', error instanceof Error ? error.message : String(error))
+          log.warn('[moss]', voiceErrorText(error))
         }
       )
       return task

@@ -1,3 +1,4 @@
+import { LoginSafetyBar, WebsiteNetwork } from './BrowserSafety'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
@@ -223,7 +224,7 @@ function AddressBar({ tab, capture }: { tab: BrowserTab; capture: () => void }) 
   }
   const btn = 'size-7 [&_svg]:size-4'
   return (
-    <div className="flex min-h-10 shrink-0 flex-wrap items-center gap-1 border-b border-border/70 bg-surface px-2">
+    <div className="flex min-h-10 shrink-0 flex-wrap items-center gap-1 border-b border-border/70 bg-surface px-2 py-1">
       <Tip label={t('browser.back')} side="bottom">
         <Button
           variant="ghost"
@@ -260,7 +261,7 @@ function AddressBar({ tab, capture }: { tab: BrowserTab; capture: () => void }) 
         </Button>
       </Tip>
       <form
-        className="min-w-0 flex-1"
+        className="min-w-40 flex-[1_1_10rem]"
         onSubmit={(e) => {
           e.preventDefault()
           if (!text.trim()) return
@@ -269,6 +270,7 @@ function AddressBar({ tab, capture }: { tab: BrowserTab; capture: () => void }) 
         }}
       >
         <input
+          data-testid="browser-address"
           ref={input}
           aria-label={t('browser.address')}
           value={text}
@@ -282,58 +284,65 @@ function AddressBar({ tab, capture }: { tab: BrowserTab; capture: () => void }) 
           className="h-7 w-full rounded-lg border border-transparent bg-sunken px-3 text-xs text-fg outline-none placeholder:text-subtle focus:border-accent focus:bg-surface"
         />
       </form>
-      {tab.sensitive ? (
-        <Tip label={t('browser.aiOffHint')} side="bottom">
-          <span className="flex h-7 items-center gap-1 rounded-lg bg-sunken px-2 text-2xs text-muted [&_svg]:size-3.5" data-testid="ai-off">
-            <ShieldOff />
-            {t('browser.aiOff')}
-          </span>
-        </Tip>
-      ) : tab.incognito ? (
-        <span className="flex h-7 items-center gap-1 rounded-lg bg-sunken px-2 text-2xs text-muted [&_svg]:size-3.5">
-          <EyeOff />
-          {t('browser.incognito')}
-        </span>
-      ) : (
-        /^https?:/i.test(tab.url) && (
-          <Tip label={saved ? t('browser.savedHint') : t('browser.saveHint')} side="bottom">
-            <Button
-              variant="ghost"
-              size="sm"
-              className={cn('h-7 px-2 text-xs', saved && 'text-accent')}
-              aria-disabled={saved}
-              onClick={() => !saved && void save()}
+      <div className="ml-auto flex items-center gap-1">
+        {tab.sensitive ? (
+          <Tip label={t('browser.aiOffHint')} side="bottom">
+            <span
+              className="flex h-7 items-center gap-1 rounded-lg bg-sunken px-2 text-2xs text-muted [&_svg]:size-3.5"
+              data-testid="ai-off"
             >
-              {saved ? <BookmarkCheck /> : <BookmarkPlus />}
-              {saved ? t('browser.savedShort') : t('browser.save')}
-            </Button>
+              <ShieldOff />
+              {t('browser.aiOff')}
+            </span>
           </Tip>
-        )
-      )}
-      <span title={!aiAllowed(tab) ? t('browserCapture.unavailable') : t('browserCapture.start')}>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className={btn}
-          aria-label={t('browserCapture.start')}
-          disabled={!aiAllowed(tab)}
-          onClick={capture}
-        >
-          <ScanText />
-        </Button>
-      </span>
-      {aiAllowed(tab)&&<ReadingControls target={{kind:'browser',id:tab.id}} state={tab.reading} />}
-      <Tip label={t('browser.close')} side="bottom">
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className={btn}
-          aria-label={t('browser.close')}
-          onClick={() => useApp.getState().closeBrowser()}
-        >
-          <X />
-        </Button>
-      </Tip>
+        ) : tab.incognito ? (
+          <span className="flex h-7 items-center gap-1 rounded-lg bg-sunken px-2 text-2xs text-muted [&_svg]:size-3.5">
+            <EyeOff />
+            {t('browser.incognito')}
+          </span>
+        ) : (
+          /^https?:/i.test(tab.url) && (
+            <Tip label={saved ? t('browser.savedHint') : t('browser.saveHint')} side="bottom">
+              <Button
+                variant="ghost"
+                size="sm"
+                className={cn('h-7 px-2 text-xs', saved && 'text-accent')}
+                aria-disabled={saved}
+                aria-label={saved ? t('browser.savedShort') : t('browser.save')}
+                onClick={() => !saved && void save()}
+              >
+                {saved ? <BookmarkCheck /> : <BookmarkPlus />}
+                <span className="hidden @min-[640px]:inline">{saved ? t('browser.savedShort') : t('browser.save')}</span>
+              </Button>
+            </Tip>
+          )
+        )}
+        <span title={!aiAllowed(tab) ? t('browserCapture.unavailable') : t('browserCapture.start')}>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className={btn}
+            aria-label={t('browserCapture.start')}
+            disabled={!aiAllowed(tab)}
+            onClick={capture}
+          >
+            <ScanText />
+          </Button>
+        </span>
+        {aiAllowed(tab) && <ReadingControls target={{ kind: 'browser', id: tab.id }} state={tab.reading} />}
+        <WebsiteNetwork tab={tab} />
+        <Tip label={t('browser.close')} side="bottom">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className={btn}
+            aria-label={t('browser.close')}
+            onClick={() => useApp.getState().closeBrowser()}
+          >
+            <X />
+          </Button>
+        </Tip>
+      </div>
     </div>
   )
 }
@@ -418,6 +427,7 @@ export function BrowserPane() {
     <div className="@container flex h-full flex-col bg-sunken/50" data-testid="browser-pane" aria-label={t('browser.title')}>
       <TabStrip tabs={state.tabs} activeId={state.activeId} />
       {tab && <AddressBar key={tab.id} tab={tab} capture={() => void capture.start()} />}
+      {tab && <LoginSafetyBar tab={tab} />}
       {tab && <RelatedStrip tab={tab} />}
       <div className="flex min-h-0 flex-1 flex-col @min-[640px]:flex-row">
         <div ref={slot} className="relative min-h-0 min-w-0 flex-1 bg-white" data-testid="browser-view">

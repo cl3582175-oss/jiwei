@@ -1,3 +1,4 @@
+import { tr } from '../../lib/messages'
 import { captureText } from '../capture/messages'
 import { join } from 'path'
 import { app, BrowserWindow, WebContentsView, ipcMain, session, shell, type NativeImage, type Session, type WebContents } from 'electron'
@@ -6,7 +7,8 @@ import { newId } from '../../lib/ids'
 import { emit } from '../../events'
 import type { BrowserState, BrowserTab, BrowserVideo, CourseState } from '@shared/types'
 import { canonicalUrl, isSensitiveUrl } from '../../lib/browserPolicy'
-import { getSettings } from '../settings'
+import { getSettings, setSettings } from '../settings'
+import { loginBlocked, domainMatches } from '@shared/browserSafety'
 import { clearConcepts } from './concepts'
 import type { ReadingState } from '@shared/reading'
 
@@ -42,6 +44,10 @@ interface Tab {
   course: CourseState
   pendingSeek: { t: number; play: boolean; url: string } | null
   reading: ReadingState | null
+  loginBlocked: BrowserTab['loginBlocked']
+  externalNotice: BrowserTab['externalNotice']
+  previousPage: string | null
+  dismissedLogin: string | null
 }
 
 const initialCourse = (): CourseState => ({
@@ -75,11 +81,16 @@ export function setDownloadHandler(fn: DownloadHandler): void {
 }
 
 /** 去掉 UA 中的 Electron 与应用名（部分网站据此拒绝访问） */
-const escapeHtml = (v: string): string => v.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!)
+const escapeHtml = (v: string): string =>
+  v.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!)
 function failPage(code: number, desc: string, url: string): string {
   const offline = [-106, -105, -21].includes(code)
   const proxy = [-130, -111, -100, -101, -102, -118, -7].includes(code)
-  const hint = offline ? '网络似乎已断开。' : proxy ? '连接被中断或超时。如果开了代理，请检查代理规则是否放行了这个网站。' : '这个网页暂时打不开。'
+  const hint = offline
+    ? '网络似乎已断开。'
+    : proxy
+      ? '连接被中断或超时。如果开了代理，请检查代理规则是否放行了这个网站。'
+      : '这个网页暂时打不开。'
   return `<!doctype html><meta charset="utf-8"><title>无法打开网页</title>
 <body style="margin:0;display:grid;place-items:center;height:100vh;font:14px/1.7 -apple-system,'PingFang SC',sans-serif;color:#3b4442;background:#f6f7f5">
 <div style="max-width:420px;padding:24px;text-align:center"><div style="font-size:36px">🌐</div>
@@ -133,7 +144,9 @@ function toTab(t: Tab): BrowserTab {
     sourceId: t.sourceId,
     video: !t.incognito && !sensitive(t) ? t.video : null,
     course: t.course,
-    reading: !t.incognito && !sensitive(t) ? t.reading : null
+    reading: !t.incognito && !sensitive(t) ? t.reading : null,
+    loginBlocked: t.loginBlocked,
+    externalNotice: t.externalNotice
   }
 }
 
@@ -262,7 +275,11 @@ function createTab(url: string, opts: { incognito?: boolean; activate?: boolean 
     captureScope: newId(),
     course: initialCourse(),
     pendingSeek: null,
-    reading: null
+    reading: null,
+    loginBlocked: null,
+    externalNotice: null,
+    previousPage: null,
+    dismissedLogin: null
   }
   tabs.set(t.id, t)
   order.push(t.id)
@@ -278,6 +295,10 @@ function createTab(url: string, opts: { incognito?: boolean; activate?: boolean 
   // 只允许 http(s) 与 about:blank
   wc.on('will-navigate', (e, u) => {
     if (!/^(https?:|about:blank)/i.test(u)) e.preventDefault()
+    else if (redirectExternal(t, u)) e.preventDefault()
+  })
+  wc.on('will-redirect', (e, u, _inPlace, isMain) => {
+    if (isMain && redirectExternal(t, u)) e.preventDefault()
   })
   wc.on('did-start-navigation', (_e, targetUrl, inPlace, isMain) => {
     if (isMain) {
@@ -285,6 +306,11 @@ function createTab(url: string, opts: { incognito?: boolean; activate?: boolean 
       changed()
       if (t.pendingSeek && canonicalUrl(t.pendingSeek.url) !== canonicalUrl(targetUrl)) t.pendingSeek = null
       t.navigationUrl = targetUrl
+      t.dismissedLogin = null
+      if (t.committedUrl && /^https?:/.test(t.committedUrl) && !loginBlocked(t.committedUrl, '', '', testLoginHosts()))
+        t.previousPage = t.committedUrl
+      const reason = loginBlocked(targetUrl, '', '', testLoginHosts())
+      t.loginBlocked = reason ? { reason, url: t.previousPage ?? targetUrl } : null
       if (inPlace && canonicalUrl(t.committedUrl) === canonicalUrl(targetUrl)) return
       readingReset?.(t.id)
       if (!inPlace) t.navigating = true
@@ -313,6 +339,7 @@ function createTab(url: string, opts: { incognito?: boolean; activate?: boolean 
     changed()
   })
   wc.on('did-finish-load', () => {
+    void checkLogin(t)
     onLoaded?.(t.id)
     fittedWidth.delete(t.id)
     pageMinWidth.delete(t.id)
@@ -340,7 +367,7 @@ function createTab(url: string, opts: { incognito?: boolean; activate?: boolean 
     e.preventDefault()
   })
   wc.on('render-process-gone', (_e, d) => log.warn('[browser] render process gone', d.reason))
-  void wc.loadURL(url || HOME).catch((e: Error) => log.warn('[browser] load failed', url, e.message))
+  void wc.loadURL(redirectExternal(t, url) ? HOME : url || HOME).catch((e: Error) => log.warn('[browser] load failed', url, e.message))
   if (opts.activate !== false) activeId = t.id
   layout()
   changed()
@@ -394,9 +421,67 @@ export function navigate(id: string, input: string): void {
   const t = getTab(id)
   if (t) {
     t.pendingSeek = null
-    void t.view.webContents.loadURL(normalizeInput(input)).catch(() => {})
+    const url = normalizeInput(input)
+    if (!redirectExternal(t, url)) void t.view.webContents.loadURL(url).catch(() => {})
   }
 }
+
+const testLoginHosts = (): string[] => (!app.isPackaged ? (process.env.JIWEI_TEST_LOGIN_BLOCK_HOSTS ?? '').split(',').filter(Boolean) : [])
+async function checkLogin(t: Tab): Promise<void> {
+  const wc = t.view.webContents
+  if (wc.isDestroyed() || !/^https?:/.test(wc.getURL()) || t.dismissedLogin === wc.getURL()) return
+  const url = wc.getURL()
+  const host = new URL(url).hostname
+  if (!domainMatches(host, 'youtube.com') && host !== 'accounts.google.com' && !testLoginHosts().includes(host)) return
+  try {
+    const body = (await wc.executeJavaScript('(document.body?.innerText ?? "").slice(0, 100000)')) as string
+    if (wc.isDestroyed() || wc.getURL() !== url) return
+    const reason = loginBlocked(url, wc.getTitle(), body, testLoginHosts())
+    if (reason) {
+      t.loginBlocked = { reason, url: reason === 'google' ? (t.previousPage ?? url) : url }
+      changed()
+    }
+  } catch {
+    /* 导航中由下一次 ready 消息继续。 */
+  }
+}
+function redirectExternal(t: Tab, url: string): boolean {
+  if (!/^https?:\/\//i.test(url)) return false
+  const site = (getSettings().browser?.externalSites ?? []).find((s) => domainMatches(new URL(url).hostname, s))
+  if (!site) return false
+  t.externalNotice = { site, url }
+  changed()
+  void shell.openExternal(url).catch(() => {})
+  return true
+}
+export async function openExternalTab(id: string): Promise<void> {
+  const t = getTab(id),
+    url = t?.loginBlocked?.url ?? t?.externalNotice?.url ?? (t ? tabUrl(t) : '')
+  if (!/^https?:\/\//i.test(url)) throw new Error(tr('只能在系统浏览器中打开网页网址', 'Only web addresses can be opened in the system browser'))
+  await shell.openExternal(url)
+}
+export function dismissLogin(id: string): void {
+  const t = getTab(id)
+  if (t) {
+    t.dismissedLogin = tabUrl(t)
+    t.loginBlocked = null
+    changed()
+  }
+}
+export function setExternalSite(site: string, enabled: boolean): void {
+  const s = getSettings().browser ?? {},
+    sites = new Set(s.externalSites ?? [])
+  if (enabled) sites.add(site)
+  else sites.delete(site)
+  setSettings({ browser: { ...s, externalSites: [...sites] } })
+  for (const t of tabs.values()) if (t.externalNotice?.site === site && !enabled) t.externalNotice = null
+  changed()
+}
+
+ipcMain.on('jw-page:login-safety', (event) => {
+  const t = [...tabs.values()].find((t) => t.view.webContents === event.sender)
+  if (t && event.senderFrame === event.sender.mainFrame) void checkLogin(t)
+})
 
 let courseReset: ((id: string) => void) | null = null
 export function onCourseReset(fn: (id: string) => void): void {
@@ -459,7 +544,13 @@ export function playback(id: string, play: boolean): void {
   toPage(id, play ? 'jw-page:play' : 'jw-page:pause', {})
 }
 
-export function pageConfig(id: string): { allowed: boolean; scope: string; course: CourseState; language: string; labels: Record<string, string> } {
+export function pageConfig(id: string): {
+  allowed: boolean
+  scope: string
+  course: CourseState
+  language: string
+  labels: Record<string, string>
+} {
   const t = getTab(id)
   const zh = getSettings().language.startsWith('zh')
   return {
@@ -498,7 +589,10 @@ export function pushConfig(id: string): void {
 /** 设置与密码变化即时撤销采集，不能等下一次页面加载。 */
 export function refreshPrivacy(): void {
   for (const t of tabs.values()) {
-    if (t.incognito || sensitive(t)) { invalidateCourse(t); readingReset?.(t.id) }
+    if (t.incognito || sensitive(t)) {
+      invalidateCourse(t)
+      readingReset?.(t.id)
+    }
     pushConfig(t.id)
   }
   changed()
@@ -646,4 +740,6 @@ export function registerContentIpc(handlers: { action: (tabId: string, msg: unkn
 }
 
 let readingReset: ((tabId: string) => void) | null = null
-export function onReadingReset(handler: (tabId: string) => void): void { readingReset = handler }
+export function onReadingReset(handler: (tabId: string) => void): void {
+  readingReset = handler
+}

@@ -6,6 +6,7 @@ import { copyFile, mkdir, rename, rm, stat, writeFile } from 'fs/promises'
 import { extname, join } from 'path'
 import { net, protocol } from 'electron'
 import { recordingAudio } from './recording'
+import { recordingPlainSize, recordingStream, recordingKey } from './recordingFiles'
 import { pathToFileURL } from 'url'
 import { eq, inArray, notInArray } from 'drizzle-orm'
 import log from 'electron-log/main'
@@ -193,7 +194,8 @@ export function registerProtocol(): void {
       if (!/^[0-9a-f-]{36}$/.test(id)) return new Response('Bad request', { status: 400 })
       const file = recordingAudio(id)
       if (!file) return new Response('Not found', { status: 404 })
-      const { size } = await stat(file)
+      if (file.endsWith('.enc')) { try { recordingKey() } catch { return new Response('请先输入恢复码解锁录音', { status: 423 }) } }
+      const size = await recordingPlainSize(file)
       const headers = new Headers({
         'Content-Type': 'audio/webm',
         'Access-Control-Allow-Origin': '*',
@@ -213,7 +215,7 @@ export function registerProtocol(): void {
         headers.set('Content-Range', `bytes ${start}-${end}/${size}`)
       }
       headers.set('Content-Length', String(end - start + 1))
-      const stream = createReadStream(file, { start, end })
+      const stream = file.endsWith('.enc') ? Readable.from(await recordingStream(file, start, end)) : createReadStream(file, { start, end })
       const body = Readable.toWeb(stream) as ReadableStream<Uint8Array>
       return new Response(body, { status: range ? 206 : 200, headers })
     }

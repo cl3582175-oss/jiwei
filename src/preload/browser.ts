@@ -163,7 +163,7 @@ function onMouseUp(e: MouseEvent): void {
     }
     const b = ensureBar()
     const grammar = b.querySelector<HTMLButtonElement>('[data-action="grammar"]')
-    if(grammar)grammar.style.display=isForeignText(info.quote,config?.language ?? 'zh-CN',document.documentElement.lang)?'':'none'
+    if (grammar) grammar.style.display = isForeignText(info.quote, config?.language ?? 'zh-CN', document.documentElement.lang) ? '' : 'none'
     b.classList.add('show')
     const w = b.offsetWidth || 420
     const left = Math.min(Math.max(8, info.rect.left + info.rect.width / 2 - w / 2), innerWidth - w - 8)
@@ -355,6 +355,18 @@ ipcRenderer.on('jw-page:config-update', (_e, c: Config) => {
 // 动态内容加载后重新定位高亮（节流）
 let repaintTimer = 0
 window.addEventListener('load', () => {
+  // 登录受阻识别不属于 AI；敏感页面仍需向主进程发送无正文的检查信号。
+  if (location.hostname === 'accounts.google.com' || /(^|\.)youtube\.com$/.test(location.hostname) || location.hostname === '127.0.0.1') {
+    let safetyTimer = 0
+    ipcRenderer.send('jw-page:login-safety')
+    new MutationObserver(() => {
+      if (safetyTimer) return
+      safetyTimer = window.setTimeout(() => {
+        safetyTimer = 0
+        ipcRenderer.send('jw-page:login-safety')
+      }, 1000)
+    }).observe(document.body, { childList: true, subtree: true, characterData: true })
+  }
   new MutationObserver(() => {
     if (!lastItems.length) return
     clearTimeout(repaintTimer)

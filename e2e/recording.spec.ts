@@ -90,7 +90,7 @@ test('真实假麦克风录制二十秒、降级、标记、暂停与合并音�
   expect(r.tracks).toEqual(['mic'])
   const files = await app.evaluate(
     ({ app }, id) =>
-      process.getBuiltinModule('fs').readdirSync(process.getBuiltinModule('path').join(app.getPath('userData'), 'recordings', id)),
+      process.getBuiltinModule('fs').readdirSync(process.getBuiltinModule('path').join(app.getPath('userData'), 'data', 'recordings', id)),
     r.id
   )
   expect(files).toContain('mix.webm')
@@ -156,7 +156,7 @@ test('写盘失败立即停止采集，已保存分块仍可恢复结束', async
   await app.evaluate(({ app }, id) => {
     const path = process.getBuiltinModule('path'),
       fs = process.getBuiltinModule('fs')
-    fs.chmodSync(path.join(app.getPath('userData'), 'recordings', id), 0o500)
+    fs.chmodSync(path.join(app.getPath('userData'), 'data', 'recordings', id), 0o500)
   }, original.id)
   try {
     await expect(page.getByTestId('recorder')).toHaveCount(0, { timeout: 15000 })
@@ -166,7 +166,7 @@ test('写盘失败立即停止采集，已保存分块仍可恢复结束', async
     await app.evaluate(({ app }, id) => {
       const path = process.getBuiltinModule('path'),
         fs = process.getBuiltinModule('fs')
-      fs.chmodSync(path.join(app.getPath('userData'), 'recordings', id), 0o700)
+      fs.chmodSync(path.join(app.getPath('userData'), 'data', 'recordings', id), 0o700)
     }, original.id)
   }
   const saved = await page.evaluate((id) => window.jiwei.recording.get(id), original.id)
@@ -226,7 +226,7 @@ test('强制中断后清单恢复、回收站可还原，再结束与原块时�
   const parts = await app.evaluate(({ app }, id) => {
     const path = process.getBuiltinModule('path'),
       fs = process.getBuiltinModule('fs')
-    return JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), 'recordings', id, 'manifest.json'), 'utf8')) as {
+    return JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), 'data', 'recordings', id, 'manifest.json'), 'utf8')) as {
       parts: { durationMs: number; startMs: number }[]
     }
   }, original.id)

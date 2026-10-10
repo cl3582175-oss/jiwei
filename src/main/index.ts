@@ -36,6 +36,10 @@ import { startMemoryLearning, stopMemoryLearning } from './services/memoryLearn'
 import { syncAllCards } from './services/review'
 import { startReminders, stopReminders } from './services/reminders'
 import { importProvidersForTest } from './services/ai/providers'
+import { initializeBackupSafety, backupOperation } from './services/fullBackup'
+import { setMessageLanguage } from './lib/messages'
+import { initializeRecordingFiles, resumeCryptoMigration, clearRecordingKeys, cryptoOperation } from './services/recordingFiles'
+import { refreshBrowserNetwork } from './services/browser/network'
 
 const HOUR = 3_600_000
 const DEEP_LINK = /^jiwei:\/\/(note|source)\/([0-9a-f-]{36})/i
@@ -141,11 +145,16 @@ app.on('second-instance', (_, argv) => {
 })
 
 app.whenReady().then(async () => {
+  setMessageLanguage(process.env.JIWEI_LANG || app.getLocale())
   electronApp.setAppUserModelId('io.github.cl3582175-oss.jiwei')
   app.on('browser-window-created', (_, w) => optimizer.watchWindowShortcuts(w))
 
+  await initializeBackupSafety()
   await openDatabase()
   ensureIdentity()
+  await initializeRecordingFiles()
+  resumeCryptoMigration()
+  await refreshBrowserNetwork()
   // 仅开发 / 测试：导入服务商配置（见 importProvidersForTest）
   if (!app.isPackaged && process.env.JIWEI_IMPORT_PROVIDERS_FROM) {
     log.info('[test] imported providers:', importProvidersForTest(process.env.JIWEI_IMPORT_PROVIDERS_FROM))
@@ -198,7 +207,7 @@ app.whenReady().then(async () => {
     }
   }
   void autoBackup().then(maintenance)
-  setInterval(() => void maintenance(), HOUR)
+  setInterval(() => { void autoBackup(); void maintenance() }, HOUR)
 
   createWindow()
   registerCapture()
@@ -229,9 +238,11 @@ app.on('before-quit', (e) => {
       stopJobs()
       stopMoss()
       stopVoiceprint()
+      await Promise.all([backupOperation.stop(), cryptoOperation.stop()])
       flushAll()
       closeDatabase()
       closeProfileDb()
+      clearRecordingKeys()
       app.quit()
     })
 })

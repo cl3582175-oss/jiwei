@@ -1,8 +1,10 @@
 import { mistakesZh } from '../features/mistakes/messages'
+import { safetyZh } from '../features/settings/safetyMessages'
 import { readingZh } from '../features/reading/messages'
 
 const zhCN = {
   mistakes: mistakesZh,
+  safety: safetyZh,
   reading: readingZh,
   learning: {
     pendingProposal: '此提案须在错题或阅读入口完成审阅与确认。',
@@ -60,6 +62,7 @@ const zhCN = {
     thought: '随想',
     unspecified: '录音',
     missingAudio: '音频文件不存在',
+    recordingProcessingFailed: '录音处理未完成，请重试。原始录音已保留。',
     emptyAudio: '音频文件为空',
     missingAvSource: '音视频资料不存在',
     overwriteConfirm: '重新精修会覆盖你的修改，请确认后重试',

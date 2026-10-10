@@ -38,6 +38,7 @@ const kinds = new Map<string, JobKind>()
 const running = new Set<string>()
 const canceled = new Set<string>()
 const controllers = new Map<string, AbortController>()
+const executions = new Set<Promise<void>>()
 let timer: NodeJS.Timeout | null = null
 /** 退出时置位：之后不再调度任何任务、不再写库 */
 let stopped = false
@@ -221,7 +222,11 @@ function tick(): void {
     .limit(free)
     .all()
     .filter((r) => !running.has(r.id))
-  for (const r of due) void execute(r)
+  for (const r of due) {
+    const run = execute(r)
+    executions.add(run)
+    void run.finally(() => executions.delete(run))
+  }
 }
 
 export function startJobs(): void {
@@ -241,6 +246,11 @@ export function stopJobs(): void {
   timer = null
   child?.kill()
   child = null
+}
+/** 替换数据库或个人档案前，等待工作进程与临时明文清理完成。 */
+export async function stopJobsAndWait(): Promise<void> {
+  stopJobs()
+  await Promise.allSettled([...executions])
 }
 
 export function listJobs(): Job[] {

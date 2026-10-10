@@ -169,6 +169,19 @@ test.describe('默认网课路径（无模型服务商）', () => {
     await expect(transcript()).toContainText('第一讲，间隔重复', { timeout: 15_000 })
     await expect(transcript()).toContainText('第二讲，提取练习')
     await expect.poll(() => segments().then((s) => s.filter((x) => x.kind === 'transcript').length)).toBe(COURSE_CUES.length)
+    // 字幕与网页正文由两个独立后台路径持久化；字幕显示并不代表正文解析已完成。
+    await expect
+      .poll(
+        () =>
+          segments().then((s) =>
+            s
+              .filter((x) => x.kind !== 'transcript')
+              .map((x) => x.text)
+              .join('')
+          ),
+        { timeout: 15000 }
+      )
+      .toContain(COURSE_BODY)
     const all = await segments()
     expect(
       all
@@ -284,9 +297,14 @@ test.describe('默认网课路径（无模型服务商）', () => {
       expect(collapsed?.visible).toBe(true)
       await expand()
       await expect.poll(() => courseView(main.app, `${base}/course`).then((r) => r?.height ?? 0)).toBeLessThan(collapsed!.height - 30)
+      // 面板展开与地址栏换行会先后触发两次布局同步，等原生视图停在面板上方再测量。
+      await expect
+        .poll(async () => {
+          const view = await courseView(main.app, `${base}/course`), box = await panel().boundingBox()
+          return !!view && !!box && view.y + view.height <= box.y + 2
+        })
+        .toBe(true)
       const expanded = (await courseView(main.app, `${base}/course`))!
-      const bounds = (await panel().boundingBox())!
-      expect(expanded.y + expanded.height).toBeLessThanOrEqual(bounds.y + 2)
       await panel().getByRole('button', { name: '没听懂', exact: true }).click()
       await expect(answer()).toBeVisible()
       const card = (await answer().boundingBox())!

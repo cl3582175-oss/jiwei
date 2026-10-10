@@ -1,3 +1,6 @@
+import { BackupSettings } from './BackupSettings'
+import { BrowserSafetySettings } from './BrowserSafetySettings'
+import { RecordingSecurity } from '../recording/RecordingSecurity'
 import { CaptureSettings } from '../capture/CaptureSettings'
 import { TranslationCacheSettings } from '../reading/ReadingSettings'
 import { useEffect, useState, type ReactNode } from 'react'
@@ -17,7 +20,6 @@ import {
   Check,
   FolderOpen,
   FolderInput,
-  DatabaseBackup,
   TriangleAlert,
   Layers
 } from 'lucide-react'
@@ -33,12 +35,12 @@ import { MemorySettingsTab } from '../memory/MemorySettings'
 import type { Language, Palette as PaletteId, ThemeMode } from '@shared/types'
 import { useAppInfo, useSettings, useUpdateSettings } from '@/lib/queries'
 import { useApp } from '@/store/app'
-import { api, cn, formatDateTime } from '@/lib/utils'
+import { api, cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Logo } from '@/components/Logo'
 
-type Tab = 'general' | 'me' | 'learning' | 'ai' | 'skills' | 'lenses' | 'appearance' | 'data' | 'about'
+type Tab = 'general' | 'me' | 'learning' | 'ai' | 'skills' | 'lenses' | 'appearance' | 'data' | 'browser' | 'about'
 
 const PALETTES: PaletteId[] = ['qinglu', 'celadon', 'dunhuang']
 
@@ -200,11 +202,8 @@ function ProfileRow() {
 }
 
 function DataTab() {
-  const { t, i18n } = useTranslation()
-  const qc = useQueryClient()
+  const { t } = useTranslation()
   const { data: info } = useAppInfo()
-  const { data: backups = [] } = useQuery({ queryKey: ['backups'], queryFn: () => api.backups.list() })
-  const last = backups.find((b) => b.kind === 'auto')
   if (!info) return null
   const change = async (): Promise<void> => {
     try {
@@ -212,11 +211,6 @@ function DataTab() {
     } catch (e) {
       toast.error(String(e instanceof Error ? e.message : e).replace(/^Error invoking remote method '[^']+': (Error: )?/, ''))
     }
-  }
-  const backup = async (): Promise<void> => {
-    await api.backups.create()
-    void qc.invalidateQueries({ queryKey: ['backups'] })
-    toast.success(t('settings.backupDone'))
   }
   return (
     <>
@@ -227,7 +221,7 @@ function DataTab() {
         desc={
           <>
             {t('settings.dataDirDesc')}
-            <code className="mt-2 block font-mono text-2xs break-all text-subtle select-text">{info.dataDir}</code>
+            <code className="mt-2 block font-mono text-xs break-all text-subtle select-text">{info.dataDir}</code>
             {info.dataDirInCloud && (
               <span className="mt-2 flex items-start gap-1.5 text-danger">
                 <TriangleAlert className="mt-0.5 size-3.5 shrink-0" />
@@ -250,28 +244,8 @@ function DataTab() {
           </Tip>
         </div>
       </Row>
-      <Row
-        label={t('settings.backups')}
-        desc={
-          <>
-            {t('settings.backupsDesc')}
-            <span className="mt-2 block text-subtle">
-              {last ? t('settings.lastBackup', { time: formatDateTime(last.createdAt, i18n.language) }) : t('settings.noBackup')}
-            </span>
-          </>
-        }
-      >
-        <div className="flex flex-col items-end gap-2">
-          <Button variant="outline" size="sm" onClick={() => void backup()}>
-            <DatabaseBackup />
-            {t('settings.backupNow')}
-          </Button>
-          <Button variant="ghost" size="sm" onClick={() => void api.backups.reveal()}>
-            <FolderOpen />
-            {t('settings.openBackups')}
-          </Button>
-        </div>
-      </Row>
+      <RecordingSecurity />
+      <BackupSettings />
     </>
   )
 }
@@ -299,6 +273,7 @@ export function SettingsDialog() {
     { id: 'lenses', icon: <Layers /> },
     { id: 'appearance', icon: <Palette /> },
     { id: 'data', icon: <Database /> },
+    { id: 'browser', icon: <Monitor /> },
     { id: 'about', icon: <Info /> }
   ]
 
@@ -309,7 +284,7 @@ export function SettingsDialog() {
         {/* 尺寸 760 × 470 ≈ φ */}
         <D.Content className="fixed top-1/2 left-1/2 z-50 flex h-[min(88vh,560px)] w-[min(94vw,906px)] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-2xl border border-border bg-surface shadow-float outline-none data-[state=open]:animate-[dialog-in_220ms_cubic-bezier(0.2,0.9,0.3,1)]">
           <D.Description className="sr-only">{t('settings.title')}</D.Description>
-          <nav className="w-[200px] shrink-0 border-r border-border bg-sunken p-3">
+          <nav className="safety-ui w-[200px] shrink-0 border-r border-border bg-sunken p-3">
             <D.Title className="px-3 pt-2 pb-4 font-serif text-md font-semibold text-fg">{t('settings.title')}</D.Title>
             {tabs.map((it) => (
               <button
@@ -321,11 +296,12 @@ export function SettingsDialog() {
                 )}
               >
                 {it.icon}
-                {t(`settings.${it.id}`)}
+                {it.id === 'browser' ? '浏览器' : t(`settings.${it.id}`)}
               </button>
             ))}
           </nav>
           <div className="min-w-0 flex-1 overflow-y-auto px-8 py-4">
+            {tab === 'browser' && <BrowserSafetySettings />}
             {tab === 'general' && <ProfileRow />}
             {tab === 'general' && (
               <Row label={t('settings.language')}>

@@ -30,6 +30,8 @@ import {
   type VoiceStatus
 } from './recording'
 import { z } from 'zod'
+import { RestoreSchema, type BackupPreview, type BackupStatus, type RecordingCryptoStatus } from './backup'
+import { NetworkRuleSchema, DomainSchema, type NetworkRule } from './browserSafety'
 import * as M from './mistakes'
 import * as R from './reading'
 import * as S from './schemas'
@@ -223,6 +225,22 @@ export const capabilities = {
     openActions: cap<ActionItem[]>()({ description: '系列未完成待办', params: [id()] })
   },
   recording: {
+    cryptoStatus: cap<RecordingCryptoStatus>()({ description: '录音加密与迁移状态', params: none }),
+    prepareRecovery: cap<string>()({ description: '生成待确认的恢复码', params: none }),
+    saveRecovery: cap<void>()({ description: '保存当前待确认的恢复码', params: none }),
+    confirmRecovery: cap<void>()({ description: '确认恢复码最后一组并启用加密', params: [['group', z.string().max(20)]] }),
+    cancelRecovery: cap<void>()({ description: '放弃未确认的恢复码', params: none }),
+    unlock: cap<void>()({ description: '输入恢复码解锁', params: [['code', z.string().max(100)]] }),
+    encryption: cap<void>()({
+      description: '启用或二次确认关闭加密',
+      params: [
+        ['enabled', z.boolean()],
+        ['confirmed', z.boolean()]
+      ]
+    }),
+    deferEncryption: cap<void>()({ description: '暂不加密', params: none }),
+    pauseMigration: cap<void>()({ description: '暂停录音文件迁移', params: none }),
+    resumeMigration: cap<void>()({ description: '继续录音文件迁移', params: none }),
     list: cap<Recording[]>()({ description: '本机录音', params: none }),
     get: cap<Recording>()({ description: '录音状态', params: [['id', RecordingId]] }),
     begin: cap<Recording>()({ description: '开始录音', params: [['input', RecordingBegin]] }),
@@ -366,7 +384,16 @@ export const capabilities = {
   },
   backups: {
     list: cap<BackupInfo[]>()({ description: '列出数据库备份', params: none }),
-    create: cap<BackupInfo>()({ description: '立即备份数据库', params: none }),
+    create: cap<BackupInfo>()({ description: '立即完整备份', params: [['includeProfile', z.boolean().optional()]] }),
+    status: cap<BackupStatus>()({ description: '备份进度和外部位置状态', params: none }),
+    export: cap<string | null>()({ description: '导出完整备份', params: [['includeProfile', z.boolean().optional()]] }),
+    preview: cap<BackupPreview | null>()({ description: '预览备份文件或本地快照', params: [['name', z.string().max(300).optional()]] }),
+    restore: cap<{ id: string; name: string; path: string } | null>()({
+      description: '校验并恢复知识库',
+      params: [['input', RestoreSchema]]
+    }),
+    cancel: cap<void>()({ description: '取消备份或恢复', params: none }),
+    pickExternal: cap<string | null>()({ description: '选择外部备份文件夹', params: none }),
     reveal: cap<void>()({ description: '打开备份目录', params: none })
   },
   settings: {
@@ -697,6 +724,17 @@ export const capabilities = {
     importSubtitles: cap<number | null>()({ description: '为视频 / 音频导入字幕文件', params: [id('sourceId')] })
   },
   browser: {
+    networkStatus: cap<{ proxyAvailable: boolean; rules: NetworkRule[] }>()({ description: '网站网络规则', params: none }),
+    networkRules: cap<void>()({ description: '修改内置浏览器网络', params: [['rules', z.array(NetworkRuleSchema).max(500)]] }),
+    openExternal: cap<void>()({ description: '在系统浏览器继续', params: [id('tabId')] }),
+    externalSite: cap<void>()({
+      description: '以后用系统浏览器打开或撤销',
+      params: [
+        ['site', DomainSchema],
+        ['enabled', z.boolean()]
+      ]
+    }),
+    dismissLogin: cap<void>()({ description: '关闭登录受阻提示', params: [id('tabId')] }),
     state: cap<BrowserState>()({ description: '内置浏览器的标签页状态', params: none }),
     seek: cap<void>()({
       description: '网页视频跳到时间点，视频就绪后执行',

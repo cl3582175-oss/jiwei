@@ -184,9 +184,9 @@ function ProviderCard({ p, defaultOpen }: { p: ProviderInfo; defaultOpen: boolea
             {preset.needsKey ? p.keyHint : t('ai.noKeyNeeded')}
           </span>
         ) : (
-          <span className="inline-flex items-center gap-1 text-2xs text-danger">
+          <span className="inline-flex items-center gap-1 text-xs text-danger">
             <CircleAlert className="size-3" />
-            {t('ai.needKey')}
+            {p.needsKey ? '需要重新填写 API Key' : t('ai.needKey')}
           </span>
         )}
         <ChevronDown className={cn('size-4 text-subtle transition-transform', open && 'rotate-180')} />

@@ -1,3 +1,4 @@
+import { setMessageLanguage } from '../lib/messages'
 import { mergeCaptureSettings, captureDefaults } from '@shared/capture'
 import { app, nativeTheme } from 'electron'
 import { getDb } from '../db'
@@ -27,7 +28,9 @@ function defaults(): Settings {
 export function getSettings(): Settings {
   const rows = getDb().select().from(settings).all()
   const stored = Object.fromEntries(rows.map((r) => [r.key, JSON.parse(r.value)]))
-  return { ...defaults(), ...stored, capture: mergeCaptureSettings(stored.capture, process.platform === 'darwin') }
+  const result: Settings = { ...defaults(), ...stored, capture: mergeCaptureSettings(stored.capture, process.platform === 'darwin') }
+  setMessageLanguage(result.language)
+  return result
 }
 
 export function setSettings(patch: SettingsPatch): Settings {

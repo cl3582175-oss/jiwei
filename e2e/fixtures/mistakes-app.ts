@@ -66,6 +66,11 @@ export async function startMistakesApp(options: { provider?: boolean; importProv
   const app = await electron.launch({ args: ['.', `--user-data-dir=${userData}`], env: { ...process.env, JIWEI_LANG: 'zh-CN', JIWEI_SKIP_ONBOARDING: '1', JIWEI_IMPORT_PROVIDERS_FROM: options.importProviders ?? '' } })
   const page = await app.firstWindow(); await page.waitForSelector('nav')
   if (!process.env.JIWEI_OCR) await app.evaluate(({ app }, directory) => app.setPath('appData', directory), mkdtempSync(join(tmpdir(), 'jiwei-mistakes-models-')))
+  // 错题传输夹具不处理收件箱整理；隔离 21:00 后的自动整理，避免无关请求混入取消断言。
+  await page.evaluate(async () => {
+    const settings = await window.jiwei.settings.get()
+    await window.jiwei.settings.set({ capture: { ...settings.capture, daily: false } })
+  })
   if (options.provider !== false) {
     const baseUrl = `http://127.0.0.1:${(provider.address() as { port: number }).port}/v1`
     await page.evaluate(async (baseUrl) => {

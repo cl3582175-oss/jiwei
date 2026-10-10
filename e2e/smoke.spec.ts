@@ -143,8 +143,12 @@ test('delete note → trash → restore', async () => {
 test('settings data tab shows location and backups', async () => {
   await page.keyboard.press('ControlOrMeta+,')
   await page.getByRole('button', { name: '数据' }).click()
-  await expect(page.getByText('自动备份', { exact: true })).toBeVisible()
-  await expect(page.getByText(/最近备份：/)).toBeVisible()
+  await page.getByTestId('backup-settings').scrollIntoViewIfNeeded()
+  await expect(page.getByRole('heading', { name: '备份与恢复' })).toBeVisible()
+  await expect(page.getByText('上次本地完整备份', { exact: true })).toBeVisible()
+  await expect
+    .poll(() => page.evaluate(() => window.jiwei.backups.list().then((list) => list.some((b) => b.format === 'snapshot'))))
+    .toBe(true)
   await shot('13-settings-data')
   await page.keyboard.press('Escape')
 })

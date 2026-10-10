@@ -20,7 +20,14 @@ test.beforeAll(async () => {
   ;({ server, base } = await startSite())
   app = await electron.launch({
     args: ['.', `--user-data-dir=${mkdtempSync(join(tmpdir(), 'jiwei-e2e-browser-'))}`],
-    env: { ...process.env, JIWEI_LANG: 'zh-CN', JIWEI_SKIP_ONBOARDING: '1', JIWEI_IMPORT_PROVIDERS_FROM: '', JIWEI_DOWNLOAD_DIR: downloads }
+    env: {
+      ...process.env,
+      JIWEI_LANG: 'zh-CN',
+      JIWEI_SKIP_ONBOARDING: '1',
+      JIWEI_IMPORT_PROVIDERS_FROM: '',
+      JIWEI_DOWNLOAD_DIR: downloads,
+      JIWEI_TEST_LOGIN_BLOCK_HOSTS: '127.0.0.1'
+    }
   })
   page = await app.firstWindow()
   await page.waitForSelector('nav')
@@ -208,4 +215,105 @@ test('closing the last tab closes the browser', async () => {
   await page.getByRole('button', { name: /关闭标签页/ }).click()
   await expect(page.getByTestId('browser-pane')).toHaveCount(0)
   expect((await tabs()).tabs).toHaveLength(0)
+})
+
+test('登录受阻引导使用进入登录前的网址，始终外部打开可以撤销', async () => {
+  const id = await page.evaluate((base) => window.jiwei.browser.open(base + '/article', { newTab: true }), base)
+  await expect
+    .poll(() => page.evaluate((id) => window.jiwei.browser.state().then((s) => s.tabs.find((t) => t.id === id)?.title), id))
+    .toBe('间隔重复的原理')
+  await app.evaluate(({ shell }) => {
+    const urls: string[] = []
+    ;(globalThis as typeof globalThis & { safetyExternalUrls?: string[] }).safetyExternalUrls = urls
+    shell.openExternal = async (url) => {
+      urls.push(url)
+    }
+  })
+  await page.evaluate(({ id, url }) => window.jiwei.browser.navigate(id, url), { id, url: base + '/signin/rejected' })
+  await expect
+    .poll(() => page.evaluate((id) => window.jiwei.browser.state().then((s) => s.tabs.find((t) => t.id === id)?.loginBlocked?.url), id))
+    .toBe(base + '/article')
+  await page.evaluate((id) => window.jiwei.browser.openExternal(id), id)
+  expect(await app.evaluate(() => (globalThis as typeof globalThis & { safetyExternalUrls: string[] }).safetyExternalUrls)).toEqual([
+    base + '/article'
+  ])
+  await page.evaluate(() => window.jiwei.browser.externalSite('127.0.0.1', true))
+  const before = (await tabs()).tabs.find((t) => t.id === id)!.url
+  await page.evaluate(({ id, base }) => window.jiwei.browser.navigate(id, base + '/article'), { id, base })
+  expect((await tabs()).tabs.find((t) => t.id === id)!.url).toBe(before)
+  await page.evaluate(() => window.jiwei.browser.externalSite('127.0.0.1', false))
+  await page.evaluate(({ id, base }) => window.jiwei.browser.navigate(id, base + '/article'), { id, base })
+  await expect
+    .poll(() => page.evaluate((id) => window.jiwei.browser.state().then((s) => s.tabs.find((t) => t.id === id)?.title), id))
+    .toBe('间隔重复的原理')
+  await page.evaluate((id) => window.jiwei.browser.close(id), id)
+})
+test('网站网络持久化且只影响内置浏览器，域名和子域名返回 DIRECT', async () => {
+  const before = await app.evaluate(({ session }) => session.defaultSession.resolveProxy('https://www.bilibili.com/'))
+  await page.evaluate(() =>
+    window.jiwei.browser.networkRules([
+      { domain: 'bilibili.com', mode: 'direct' },
+      { domain: 'bilivideo.com', mode: 'direct' }
+    ])
+  )
+  expect(
+    await app.evaluate(({ session }) => session.fromPartition('persist:jiwei-browser').resolveProxy('https://www.bilibili.com/'))
+  ).toBe('DIRECT')
+  expect(
+    await app.evaluate(({ session }) => session.fromPartition('persist:jiwei-browser').resolveProxy('https://upos.bilivideo.com/'))
+  ).toBe('DIRECT')
+  expect(await app.evaluate(({ session }) => session.defaultSession.resolveProxy('https://www.bilibili.com/'))).toBe(before)
+  expect((await page.evaluate(() => window.jiwei.settings.get())).browser?.networkRules?.length).toBe(2)
+  await page.evaluate(() => window.jiwei.browser.networkRules([]))
+})
+
+test('读取网站网络状态不会打断正在接收的网页请求', async () => {
+  const id = await page.evaluate((base) => window.jiwei.browser.open(base + '/article', { newTab: true }), base)
+  await expect
+    .poll(() => page.evaluate((id) => window.jiwei.browser.state().then((s) => s.tabs.find((t) => t.id === id)?.title), id))
+    .toBe('间隔重复的原理')
+  await page.evaluate(() => window.jiwei.browser.networkStatus())
+  await inPage(`(() => {
+    window.safetyNetworkResult = 'pending';
+    fetch('/slow-network-status').then(r => r.text()).then(text => window.safetyNetworkResult = text, e => window.safetyNetworkResult = e.message);
+    return true;
+  })()`)
+  await page.evaluate(() => window.jiwei.browser.networkStatus())
+  await page.evaluate(() => window.jiwei.browser.networkStatus())
+  await expect.poll(() => inPage<string>('window.safetyNetworkResult')).toBe('firstlast')
+})
+
+test('1000×680 登录引导正文至少 14px，长操作换行且不横向溢出', async () => {
+  const size = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getSize())
+  const theme = (await page.evaluate(() => window.jiwei.settings.get())).theme
+  try {
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1000, 680))
+    await page.keyboard.press('ControlOrMeta+n')
+    await page.getByPlaceholder('笔记标题').fill('窄窗登录引导验收')
+    await page.keyboard.press('Enter')
+    await page.getByRole('button', { name: '在笔记旁打开浏览器' }).click()
+    const id = await page.evaluate((base) => window.jiwei.browser.open(base + '/signin/rejected', { newTab: true }), base)
+    const bar = page.getByTestId('browser-login-warning')
+    await expect(bar).toBeVisible()
+    for (const theme of ['light', 'dark'] as const) {
+      await page.evaluate((theme) => window.jiwei.settings.set({ theme }), theme)
+      await expect
+        .poll(() =>
+          bar.evaluate((el) => ({
+            font: parseFloat(getComputedStyle(el).fontSize),
+            overflow: el.scrollWidth > el.clientWidth + 1,
+            buttonOverflow: [...el.querySelectorAll('button')].some((b) => b.scrollWidth > b.clientWidth + 1)
+          }))
+        )
+        .toEqual({ font: 14, overflow: false, buttonOverflow: false })
+      // 地址栏不能被网络菜单等按钮挤到换行或只剩几个字符（v0.6.6 审查发现）。
+      await expect(page.getByTestId('website-network')).toBeVisible()
+      expect(await page.getByTestId('browser-address').evaluate((el) => el.getBoundingClientRect().width)).toBeGreaterThan(160)
+      if (shots) await page.screenshot({ path: join(shots, `browser-login-warning-${theme}-1000x680.png`), animations: 'disabled' })
+    }
+    await page.evaluate((id) => window.jiwei.browser.close(id), id)
+  } finally {
+    await app.evaluate(({ BrowserWindow }, [w, h]) => BrowserWindow.getAllWindows()[0].setSize(w, h), size)
+    await page.evaluate((theme) => window.jiwei.settings.set({ theme }), theme)
+  }
 })

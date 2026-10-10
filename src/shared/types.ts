@@ -222,9 +222,12 @@ export interface Settings {
   ai: AiSettings
   /** 内置浏览器（v0.6.0） */
   browser?: BrowserSettings
+  backup?: { external: import('./backup').ExternalBackup }
 }
 
 export interface BrowserSettings {
+  networkRules?: import('./browserSafety').NetworkRule[]
+  externalSites?: string[]
   /** 搜索引擎（查询词拼接在末尾） */
   searchEngine?: string
   /** 不发送给 AI 的网站（域名，按后缀匹配） */
@@ -282,6 +285,8 @@ export interface BrowserTab {
   video: BrowserVideo | null
   course: CourseState
   reading?: import('./reading').ReadingState | null
+  loginBlocked?: { reason: 'google' | 'youtube'; url: string } | null
+  externalNotice?: { site: string; url: string } | null
 }
 
 export interface BrowserState {
@@ -378,7 +383,8 @@ export interface BackupInfo {
   name: string
   size: number
   createdAt: number
-  kind: 'auto' | 'pre-migrate'
+  kind: 'auto' | 'pre-migrate' | 'manual' | 'pre-restore'
+  format?: 'database' | 'snapshot'
 }
 
 export const TRASH_RETENTION_DAYS = 30
@@ -405,6 +411,7 @@ export interface WorkspaceContext {
 /* ——— AI ——— */
 
 export interface ProviderInfo {
+  needsKey?: boolean
   id: string
   kind: ProviderKind
   name: string

@@ -1,4 +1,7 @@
 import { hostname, userInfo } from 'os'
+import { app } from 'electron'
+import { readFileSync, writeFileSync } from 'fs'
+import { join } from 'path'
 import { eq } from 'drizzle-orm'
 import { getDb } from '../db'
 import { devices, meta, users } from '../db/schema'
@@ -22,8 +25,16 @@ function metaSet(key: string, value: string): void {
 /** 本机设备 ID：首次启动生成 */
 export function deviceId(): string {
   if (cachedDevice) return cachedDevice
-  cachedDevice = metaGet('device_id') ?? newId()
-  metaSet('device_id', cachedDevice)
+  // 本机身份不随知识库复制；恢复到新的 userData 必须拥有独立的钥匙串条目。
+  const file = join(app.getPath('userData'), 'device-id')
+  try {
+    const id = readFileSync(file, 'utf8').trim()
+    if (!/^[\w-]{1,128}$/.test(id)) throw new Error('invalid device')
+    cachedDevice = id
+  } catch {
+    cachedDevice = newId()
+    writeFileSync(file, cachedDevice, { mode: 0o600 })
+  }
   return cachedDevice
 }
 

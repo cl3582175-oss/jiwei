@@ -1,8 +1,10 @@
 import type { Messages } from './zh-CN'
 import { mistakesEn } from '../features/mistakes/messages'
+import { safetyEn } from '../features/settings/safetyMessages'
 import { readingEn } from '../features/reading/messages'
 const en: Messages = {
   mistakes: mistakesEn,
+  safety: safetyEn,
   reading: readingEn,
   learning: {
     pendingProposal: 'Complete this reviewed proposal from the mistake or reading view.',
@@ -67,6 +69,7 @@ const en: Messages = {
     thought: 'Thought',
     unspecified: 'Recording',
     missingAudio: 'Audio file not found',
+    recordingProcessingFailed: 'Audio processing did not finish. Try again; the original recording is retained.',
     emptyAudio: 'Audio file is empty',
     missingAvSource: 'Audio or video source not found',
     overwriteConfirm: 'Refining will overwrite your edits. Confirm before retrying.',

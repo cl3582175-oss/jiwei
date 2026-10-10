@@ -1551,3 +1551,15 @@
   color: var(--speaker);
   background: color-mix(in oklab, var(--speaker) 14%, transparent);
 }
+
+/* v0.6.6 的备份与安全界面：正文至少 14px，说明沿用 12px 变量。 */
+.safety-ui {
+  --text-sm: 14px;
+}
+/* @theme inline 会把 text-sm 编译为常量，显式引用局部变量才能覆盖实际字号。 */
+.safety-ui.text-sm,
+.safety-ui .text-sm {
+  font-size: var(--text-sm);
+}
+.safety-ui input[type='checkbox'],
+.safety-ui input[type='radio'] { accent-color: var(--accent); }

@@ -1,6 +1,8 @@
 import { CaptureSettingsSchema } from './capture'
 export { InboxCreateSchema, InboxUpdateSchema, InboxAcceptSchema } from './inbox'
 import { z } from 'zod'
+import { ExternalBackupSchema } from './backup'
+import { DomainSchema, NetworkRuleSchema } from './browserSafety'
 import { AnchorSchema, ContextPacketSchema } from './context'
 import { RecordingFiltersSchema } from './lens'
 
@@ -94,12 +96,15 @@ export const SettingsPatchSchema = z.object({
   /** 内置浏览器（v0.6.0）：搜索引擎、不发送给 AI 的网站、主动程度 */
   browser: z
     .object({
+      networkRules: z.array(NetworkRuleSchema).max(500).optional(),
+      externalSites: z.array(DomainSchema).max(500).optional(),
       searchEngine: z.string().url().max(300).optional(),
       aiBlockedSites: z.array(z.string().max(200)).max(500).optional(),
       proactivity: z.enum(['quiet', 'balanced', 'active']).optional(),
       course: z.object({ autoTimestamp: z.boolean(), autoSlides: z.boolean(), quiz: z.boolean() }).optional()
     })
-    .optional()
+    .optional(),
+  backup: z.object({ external: ExternalBackupSchema }).optional()
 })
 export type SettingsPatch = z.infer<typeof SettingsPatchSchema>
 
