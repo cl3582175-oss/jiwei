@@ -2,6 +2,7 @@ import { CaptureRectSchema, BrowserCaptureEntriesSchema, type BrowserCaptureFram
 import { CaptureActionSchema } from './capture'
 import { TaskSave, type AiTask, type TaskRun, type TaskToolInfo, type TaskInput } from './tasks'
 import type { TaskRecipe } from './taskRecipes'
+import { MailSave, type MailAccount } from './mail'
 import type { CaptureState, PhoneStatus } from './capture'
 import type { InboxItem } from './inbox'
 import {
@@ -649,6 +650,13 @@ export const capabilities = {
     }),
     harvest: cap<ReflectionHarvest>()({ description: 'AI 从复盘中提炼洞见、修正与行动项（供确认）', params: [id()] }),
     commit: cap<Reflection>()({ description: '保存确认的洞见、修正与行动项，复盘完成', params: [id(), ['input', S.HarvestCommitSchema]] })
+  },
+  mail: {
+    accounts: cap<MailAccount[]>()({ description: '列出邮箱账号与凭证已设置状态，不返回凭证明文', params: none }),
+    save: cap<MailAccount>()({ description: '加密保存只读邮箱连接', params: [['input', MailSave]] }),
+    test: cap<{ ok: boolean; message: string }>()({ description: '测试只读邮箱连接，错误不包含凭证', params: [id()] }),
+    help: cap<void>()({ description: '在系统浏览器打开所选邮箱官方授权码帮助', params: [['preset', z.enum(['qq', '163', '126', 'gmail', 'icloud'])]] }),
+    remove: cap<void>()({ description: '移除邮箱并清除本地加密凭证与增量游标', params: [id()] })
   },
   tasks: {
     list: cap<AiTask[]>()({ description: '列出 AI 任务与最近结果和本月费用', params: none }),

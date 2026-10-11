@@ -1,4 +1,5 @@
 import { tasksEn } from '../features/tasks/messages'
+import { mailEn } from '../features/tasks/mailMessages'
 import { planEn } from '../features/plan/messages'
 import { agentEn } from '../features/agent/messages'
 import { spendEn } from '../features/agent/spendMessages'
@@ -9,6 +10,7 @@ import { safetyEn } from '../features/settings/safetyMessages'
 import { readingEn } from '../features/reading/messages'
 const en: Messages = {
   tasks: tasksEn,
+  mail: mailEn,
   plan: planEn,
   mistakes: mistakesEn,
   today: todayEn,

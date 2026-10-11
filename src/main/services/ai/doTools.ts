@@ -17,6 +17,7 @@ import { EventRange } from '@shared/plan'
 import { TaskSave, taskConfirmation } from '@shared/tasks'
 import { saveTask } from '../tasks/service'
 import * as plan from '../plan/calendar'
+import { mailTools } from '../mail/tools'
 
 // 助手“办事”（v0.7）：跨模块的读与写。写入工具执行前在对话中弹出确认卡片（wrap.ts），
 // 卡片上的文字由 describe 生成，写清楚要做什么，而不是工具名和参数。
@@ -206,7 +207,10 @@ export function buildDoTools(zh: boolean): { tools: ToolSet; meta: Record<string
     })
   }
 
+  const mail = mailTools(zh)
+  Object.assign(tools, mail.tools)
   const meta: Record<string, ToolMeta> = {
+    ...mail.meta,
     task_create: {
       level: 'write', confirm: true,
       describe: (i) => ({

@@ -44,6 +44,7 @@ const defaultTrigger = (type: Trigger['type']): Trigger =>
                   : { type: 'manual' }
 export function TriggerEditor({ value, onChange }: { value: Trigger; onChange: (t: Trigger) => void }) {
   const { t } = useTranslation()
+  const { data: accounts = [] } = useQuery({ queryKey: ['mail-accounts'], queryFn: () => api.mail.accounts() })
   return (
     <div className="space-y-3">
       <label className="block text-xs text-muted">
@@ -54,7 +55,7 @@ export function TriggerEditor({ value, onChange }: { value: Trigger; onChange: (
           value={value.type}
           onChange={(e) => onChange(defaultTrigger(e.target.value as Trigger['type']))}
         >
-          {(['schedule', 'interval', 'web', 'folder', 'calendar', 'mistakes', 'deadline', 'manual'] as const).map((type) => (
+          {(['schedule', 'interval', 'mail', 'web', 'folder', 'calendar', 'mistakes', 'deadline', 'manual'] as const).map((type) => (
             <option key={type} value={type}>
               {t(`tasks.triggerTypes.${type}`)}
             </option>
@@ -106,6 +107,40 @@ export function TriggerEditor({ value, onChange }: { value: Trigger; onChange: (
               ))}
             </div>
           )}
+        </>
+      )}
+      {value.type === 'mail' && (
+        <>
+          <label className="text-xs text-muted">
+            {t('tasks.mailAccount')}
+            <select
+              className={field}
+              aria-label={t('tasks.mailAccount')}
+              value={value.accountId}
+              onChange={(e) => onChange({ ...value, accountId: e.target.value })}
+            >
+              <option value="">—</option>
+              {accounts
+                .filter((a) => a.enabled)
+                .map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name} · {a.username}
+                  </option>
+                ))}
+            </select>
+          </label>
+          <label className="block text-xs text-muted">
+            {t('tasks.from')}
+            <input className={field} value={value.from ?? ''} onChange={(e) => onChange({ ...value, from: e.target.value || undefined })} />
+          </label>
+          <label className="block text-xs text-muted">
+            {t('tasks.subject')}
+            <input
+              className={field}
+              value={value.subjectContains ?? ''}
+              onChange={(e) => onChange({ ...value, subjectContains: e.target.value || undefined })}
+            />
+          </label>
         </>
       )}
       {value.type === 'interval' && (

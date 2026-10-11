@@ -17,6 +17,7 @@ import { Switch } from '@/components/ui/switch'
 import { confirm } from '@/components/ui/confirm'
 import { useSettings, useUpdateSettings } from '@/lib/queries'
 import { api, cn } from '@/lib/utils'
+import { MailSettings } from '../tasks/MailSettings'
 
 // 设置 → 连接（v0.7）：积微使用外部 MCP 工具；让其他应用通过 MCP 使用积微。
 
@@ -685,6 +686,7 @@ export function ConnectionsSettings() {
         </div>
       </section>
       <ServeSection />
+      <MailSettings />
     </div>
   )
 }

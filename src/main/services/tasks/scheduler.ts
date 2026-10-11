@@ -14,6 +14,7 @@ import { events } from '../plan/calendar'
 import { listGoals } from '../progress'
 import * as mistakes from '../mistakes'
 import { fetchWebText } from '../webText'
+import { checkMailTriggers } from '../mail/scheduler'
 
 interface TriggerState {
   files?: string[]
@@ -94,6 +95,7 @@ export async function checkTasks(now = Date.now()): Promise<void> {
   if (checking || getSettings().tasks.paused) return
   checking = true
   try {
+    await checkMailTriggers(now)
     for (const task of listTasks().filter((t) => t.enabled)) {
       try {
         const t = task.trigger,

@@ -1028,3 +1028,27 @@ export const aiTaskRuns = sqliteTable(
   },
   (t) => [index('ai_task_runs_task_idx').on(t.taskId, t.startedAt)],
 )
+
+export const mailAccounts = sqliteTable('mail_accounts', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  preset: text('preset').notNull(),
+  host: text('host').notNull(),
+  port: integer('port').notNull().default(993),
+  tls: integer('tls', { mode: 'boolean' }).notNull().default(true),
+  username: text('username').notNull(),
+  secretEnc: blob('secret_enc', { mode: 'buffer' }),
+  enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
+  lastError: text('last_error'),
+  ...syncCols,
+})
+export const mailSeen = sqliteTable(
+  'mail_seen',
+  {
+    accountId: text('account_id').notNull(),
+    mailbox: text('mailbox').notNull(),
+    uidValidity: text('uid_validity').notNull(),
+    lastUid: integer('last_uid').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.accountId, t.mailbox] })],
+)

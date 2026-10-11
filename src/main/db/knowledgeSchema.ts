@@ -30,6 +30,8 @@ export {
   icsFeeds,
   aiTasks,
   aiTaskRuns,
+  mailAccounts,
+  mailSeen,
   reviews,
   insights,
   insightVersions,

@@ -7,6 +7,7 @@ import { assistantMcpTools } from '../mcp/client'
 import { fetchWebText } from '../webText'
 import type { ToolMeta } from '../agent/wrap'
 import { getSettings } from '../settings'
+import { mailTools } from '../mail/tools'
 
 export async function taskToolCatalog(model = ''): Promise<{ tools: ToolSet; meta: Record<string, ToolMeta>; info: TaskToolInfo[] }> {
   const zh = getSettings().language.startsWith('zh'),
@@ -24,6 +25,9 @@ export async function taskToolCatalog(model = ''): Promise<{ tools: ToolSet; met
     doing = buildDoTools(zh)
   const tools: ToolSet = {},
     meta: Record<string, ToolMeta> = {}
+  const mail = mailTools(zh)
+  Object.assign(tools, mail.tools)
+  Object.assign(meta, mail.meta)
   for (const name of TASK_READ_TOOLS) {
     const t = built[name] ?? doing.tools[name]
     if (t) {
@@ -49,11 +53,13 @@ export async function taskToolCatalog(model = ''): Promise<{ tools: ToolSet; met
     group:
       name in mcp.tools
         ? 'mcp'
-        : name.startsWith('web_')
-          ? 'web'
-          : ['today_overview', 'plan_list', 'actions_list', 'goals_list', 'mistakes_list'].includes(name)
-            ? 'plan'
-            : 'knowledge',
+        : name.startsWith('mail_')
+          ? 'mail'
+          : name.startsWith('web_')
+            ? 'web'
+            : ['today_overview', 'plan_list', 'actions_list', 'goals_list', 'mistakes_list'].includes(name)
+              ? 'plan'
+              : 'knowledge',
     label: typeof tools[name].description === 'string' ? (tools[name].description as string).slice(0, 180) : name,
     available: true,
     reason:

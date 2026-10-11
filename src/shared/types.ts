@@ -1033,6 +1033,7 @@ export interface SourceRecognition {
 
 /** 主进程 → 渲染进程的事件 */
 export interface JiweiEvents {
+  'mail:changed': Record<string, never>
   'lenses:changed': { sourceId: string }
   'series:changed': undefined
   'recording:changed': { id: string }

@@ -1,4 +1,5 @@
 import { tasksZh } from '../features/tasks/messages'
+import { mailZh } from '../features/tasks/mailMessages'
 import { planZh } from '../features/plan/messages'
 import { agentZh } from '../features/agent/messages'
 import { spendZh } from '../features/agent/spendMessages'
@@ -9,6 +10,7 @@ import { readingZh } from '../features/reading/messages'
 
 const zhCN = {
   tasks: tasksZh,
+  mail: mailZh,
   plan: planZh,
   mistakes: mistakesZh,
   today: todayZh,

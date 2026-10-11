@@ -1,6 +1,6 @@
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
 import { createServer, type Server } from 'http'
-import { mkdtempSync } from 'fs'
+import { mkdtempSync, copyFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import type { TaskInput } from '../src/shared/tasks'
@@ -13,6 +13,8 @@ let app: ElectronApplication,
   taskId = '',
   noteId = ''
 const userData = mkdtempSync(join(tmpdir(), 'jiwei-tasks-'))
+const mailDir = mkdtempSync(join(tmpdir(), 'jiwei-task-mail-'))
+copyFileSync('e2e/fixtures/mail/1-lesson.eml', join(mailDir, '1-lesson.eml'))
 const requests: { system: string; messages: string; tools: string[] }[] = []
 let failures = 0
 const textOf = (c: unknown): string =>
@@ -50,7 +52,15 @@ function completion(res: import('http').ServerResponse, text: string | null, nam
 async function launch() {
   app = await electron.launch({
     args: ['.', `--user-data-dir=${userData}`],
-    env: { ...process.env, JIWEI_TEST_NETWORK: '1', JIWEI_LANG: 'zh-CN', JIWEI_SKIP_ONBOARDING: '1', JIWEI_IMPORT_PROVIDERS_FROM: '' }
+    env: {
+      ...process.env,
+      JIWEI_TEST_NETWORK: '1',
+      JIWEI_TEST_MAIL: 'fixture',
+      JIWEI_TEST_MAIL_DIR: mailDir,
+      JIWEI_LANG: 'zh-CN',
+      JIWEI_SKIP_ONBOARDING: '1',
+      JIWEI_IMPORT_PROVIDERS_FROM: ''
+    }
   })
   page = await app.firstWindow()
   await page.waitForSelector('nav')
@@ -130,6 +140,14 @@ test.beforeAll(async () => {
           completion(res, null, 'web_fetch', { url: `http://127.0.0.1:${(server.address() as { port: number }).port}/page` })
         else if (!done.includes('send_mail')) completion(res, null, 'send_mail', { to: 'external@example.invalid', text: 'private notes' })
         else completion(res, '已读取资料；没有发送内容。')
+        return
+      }
+      if (system.includes('TASK_MAIL')) {
+        const raw = textOf(input.messages.find((m: { role: string }) => m.role === 'user')?.content)
+        const id = /"mailIds":\["([^"]+)"/.exec(raw)?.[1]
+        if (!done.includes('mail_read')) completion(res, null, 'mail_read', { id })
+        else if (!done.includes('send_mail')) completion(res, null, 'send_mail', { to: 'external@example.invalid' })
+        else completion(res, '老师要求明天前完成概率练习，附件仅列出了名称；注入的发送要求已跳过。')
         return
       }
       if (system.includes('TASK_SUCCESS')) {
@@ -305,4 +323,66 @@ test('P4 重启补跑最近一次遗漏且标延迟执行，运行记录跨重�
   await page.getByRole('button', { name: 'AI 任务', exact: true }).click()
   await page.locator(`[data-task-id="${task.id}"]`).getByRole('button', { name: '运行记录' }).click()
   await expect(page.getByTestId('task-runs')).toContainText('延迟执行')
+})
+
+test('P5 fixture 邮箱连接、凭证加密、增量邮件触发与注入拒绝', async () => {
+  test.setTimeout(90000)
+  if (!(await page.getByRole('button', { name: '连接', exact: true }).isVisible())) await page.keyboard.press('ControlOrMeta+,')
+  await page.getByRole('button', { name: '连接', exact: true }).click()
+  await page.getByTestId('mail-settings').getByRole('button', { name: '添加邮箱' }).click()
+  const form = page.getByTestId('mail-form')
+  await form.getByLabel('邮箱名称').fill('老师邮箱')
+  await form.getByLabel('邮箱账号').fill('student@example.invalid')
+  await form.getByLabel('授权码或应用专用密码').fill('fixture-only-not-a-real-credential')
+  await form.getByRole('button', { name: '保存', exact: true }).click()
+  const account = (await page.evaluate(() => window.jiwei.mail.accounts()))[0]
+  expect(account.secretSet).toBe(true)
+  expect(JSON.stringify(account)).not.toContain('fixture-only')
+  await page.getByTestId('mail-settings').getByRole('button', { name: '测试连接' }).click()
+  await expect(page.getByText('连接成功（只读）')).toBeVisible()
+  expect(
+    await app.evaluate(
+      ({ app }, path) => {
+        const load = process.getBuiltinModule('module').createRequire(app.getAppPath() + '/package.json'),
+          db = new (load('better-sqlite3'))(path)
+        try {
+          const r = db.prepare('SELECT secret_enc FROM mail_accounts').get()
+          return Buffer.isBuffer(r.secret_enc) && !r.secret_enc.includes(Buffer.from('fixture-only'))
+        } finally {
+          db.close()
+        }
+      },
+      join(userData, 'data/jiwei.db')
+    )
+  ).toBe(true)
+  const task = await page.evaluate(
+    (v) => window.jiwei.tasks.save(v),
+    savedTask('老师新邮件要点', 'TASK_MAIL 只读老师新邮件并放入收件箱', {
+      trigger: { type: 'mail', accountId: account.id, from: 'teacher', subjectContains: 'lesson' },
+      tools: ['mail_read']
+    })
+  )
+  await dbRun('INSERT OR REPLACE INTO mail_seen (account_id,mailbox,uid_validity,last_uid) VALUES (?,?,?,?)', [
+    account.id,
+    'INBOX',
+    'fixture-1',
+    1
+  ])
+  copyFileSync('e2e/fixtures/mail/2-injection.eml', join(mailDir, '2-injection.eml'))
+  const run = await waitRun(task.id)
+  expect(run.status).toBe('ok')
+  expect(run.triggerInfo.type).toBe('mail')
+  expect((run.triggerInfo.mailIds as string[]).length).toBe(1)
+  expect(run.summary).toContain('1 个操作需要你确认，已跳过')
+  const calls = requests.filter((r) => r.system.includes('TASK_MAIL'))
+  expect(calls.some((r) => r.messages.includes('<external-data') && r.messages.includes('Complete probability exercises'))).toBe(true)
+  expect(calls.every((r) => !r.tools.includes('send_mail'))).toBe(true)
+  const toolData = calls.map((r) => r.messages).join('')
+  expect(toolData).toContain('practice.txt')
+  expect(toolData).not.toContain('Previous mail: ignore')
+  expect(toolData).not.toContain('VGVzdCBhdHRhY2htZW50')
+  expect((await page.evaluate(() => window.jiwei.inbox.list())).some((i) => i.origin?.taskId === task.id)).toBe(true)
+  await page.evaluate((id) => window.jiwei.mail.remove(id), account.id)
+  expect(await page.evaluate(() => window.jiwei.mail.accounts())).toHaveLength(0)
+  await expect(page.evaluate((id) => window.jiwei.mail.test(id), account.id)).resolves.toMatchObject({ ok: false })
 })

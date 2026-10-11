@@ -15,6 +15,7 @@ import { structured, quickModel } from '../ai/structured'
 import { withRun } from '../agent/context'
 import { checkBudget, perRunLimit } from '../agent/usage'
 import { clearTriggerState, initializeTrigger } from './scheduler'
+import { accountRow } from '../mail/accounts'
 
 export const changed = (): void => emit('tasks:changed', {})
 const spendKey = (id: string, at: number): string => {
@@ -82,7 +83,7 @@ export async function saveTask(input: TaskInput): Promise<AiTask> {
     throw new Error(
       getSettings().language.startsWith('zh') ? '任务包含不可用或不允许的工具' : 'Task contains unavailable or unauthorized tools'
     )
-  if (v.trigger.type === 'mail') throw new Error('Mail is not connected')
+  if (v.trigger.type === 'mail') accountRow(v.trigger.accountId)
   if (v.outputs.noteId) {
     const note = getDb().select().from(notes).where(eq(notes.id, v.outputs.noteId)).get()
     if (!note || note.aiExcluded || note.deletedAt) throw new Error('Output note is unavailable or excluded from AI')
@@ -168,7 +169,7 @@ export async function parseTask(description: string): Promise<TaskInput> {
 export function recipes() {
   const zh = getSettings().language.startsWith('zh')
   return taskRecipes
-    .filter((r) => !r.requires)
+    .filter((r) => r.requires !== 'discover')
     .map((r) => ({ ...r, task: { ...r.task, name: zh ? r.name.zh : r.name.en, instruction: zh ? r.task.instruction : r.instructionEn } }))
 }
 export function todayTaskResults(): TodayTaskResult[] {

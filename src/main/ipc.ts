@@ -6,6 +6,8 @@ import * as planSchedule from './services/plan/schedule'
 import * as tasks from './services/tasks/service'
 import { taskToolCatalog } from './services/tasks/tools'
 import { applyResidency } from './services/tasks/residency'
+import * as mail from './services/mail/accounts'
+import { MAIL_PRESETS } from '@shared/mail'
 import * as browserCapture from './services/browser/capture'
 import * as mistakes from './services/mistakes'
 import * as mistakeEntries from './services/mistakeEntries'
@@ -425,6 +427,10 @@ const handlers: Handlers = {
     saveDaily: (_, answers) => reflection.saveDaily(answers),
     harvest: (_, id) => reflection.harvestReflection(id),
     commit: (_, id, input) => reflection.commitReflection(id, input)
+  },
+  mail: {
+    help: async (_, preset) => { await shell.openExternal(MAIL_PRESETS[preset].help) },
+    accounts: () => mail.accounts(), save: (_, input) => mail.saveAccount(input), test: (_, id) => mail.testAccount(id), remove: (_, id) => mail.removeAccount(id)
   },
   tasks: {
     list: () => tasks.listTasks(), save: (_, input) => tasks.saveTask(input), remove: (_, id) => tasks.removeTask(id), run: (_, id) => tasks.queueTask(id), runs: (_, id) => tasks.taskRuns(id), parse: (_, text) => tasks.parseTask(text), recipes: () => tasks.recipes(), tools: async () => (await taskToolCatalog()).info, pauseAll: (_, paused) => tasks.pauseAll(paused),

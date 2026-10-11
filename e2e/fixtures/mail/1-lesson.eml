@@ -1,0 +1,10 @@
+From: Teacher <teacher@example.invalid>
+To: Student <student@example.invalid>
+Subject: Lesson reminder
+Date: Sun, 11 Oct 2026 08:00:00 +0800
+Message-ID: <lesson1@example.invalid>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+Review probability before tomorrow's class.
+> Old mail: obsolete date.
