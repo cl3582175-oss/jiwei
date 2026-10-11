@@ -30,7 +30,7 @@ import {
   type VoiceStatus
 } from './recording'
 import { z } from 'zod'
-import { EventRange, EventSave, PhaseSave, MilestoneSave, IcsSave, type GoalPhase, type GoalMilestone, type IcsFeed, type PlanEvent, type ReviewForecast } from './plan'
+import { EventRange, EventSave, PhaseSave, MilestoneSave, IcsSave, ScheduleOptions, type SchedulePreview, type GoalPhase, type GoalMilestone, type IcsFeed, type PlanEvent, type ReviewForecast } from './plan'
 import { ActivityBatchSchema, type TodayBriefing, type TodaySummary } from './activity'
 import {
   ApprovalDecisionSchema,
@@ -649,6 +649,8 @@ export const capabilities = {
     commit: cap<Reflection>()({ description: '保存确认的洞见、修正与行动项，复盘完成', params: [id(), ['input', S.HarvestCommitSchema]] })
   },
   plan: {
+    schedulePreview: cap<SchedulePreview>()({ description: '生成经时间与投入校验的排期预览；不写入', params: [['input', ScheduleOptions]] }),
+    scheduleApply: cap<void>()({ description: '确认主进程持有的预览并事务写入；变化后须重新生成', params: [id('previewId')] }),
     phases: cap<GoalPhase[]>()({ description: '方向的阶段与完成进度', params: [id('goalId')] }),
     phaseSave: cap<GoalPhase>()({ description: '创建或修改阶段及挂接的笔记与资料', params: [['input', PhaseSave]] }),
     phaseRemove: cap<void>()({ description: '移除阶段；保留并解除挂接的任务、里程碑、日程', params: [id()] }),

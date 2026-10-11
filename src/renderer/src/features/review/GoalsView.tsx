@@ -15,6 +15,8 @@ import { ActionRow } from '../reflect/ReflectHome'
 import { errText } from '../chat/useChat'
 import { TINTS } from '@/lib/tint'
 import { Timeline } from '../plan/Timeline'
+import { ScheduleDialog } from '../plan/ScheduleDialog'
+import { useApp } from '@/store/app'
 
 // 方向：一个目标关联一个分类（含子分类）和若干笔记；进度由其中的复习卡片计算。
 // 目标会出现在 AI 的系统提示与每周复盘的素材包中。
@@ -162,6 +164,7 @@ function GoalDetail({ goal, onBack }: { goal: Goal; onBack: () => void }) {
   const { data: acts = [] } = useQuery({ queryKey: ['actions', 'goal', goal.id], queryFn: () => api.actions.list() })
   const mine = acts.filter((a) => a.goalId === goal.id && a.status !== 'dropped')
   const [editing, setEditing] = useState(false)
+  const [scheduling, setScheduling] = useState(useApp.getState().scheduleGoal)
   const refresh = (): void => {
     for (const k of ['goals', 'actions', 'reflection']) void qc.invalidateQueries({ queryKey: [k] })
   }
@@ -230,6 +233,8 @@ function GoalDetail({ goal, onBack }: { goal: Goal; onBack: () => void }) {
         </div>
       )}
       <Timeline goal={goal} />
+      {goal.status === 'active' && <Button variant="primary" className="mt-4" onClick={() => setScheduling(true)}>{t('plan.generatePlan')}</Button>}
+      {scheduling && <ScheduleDialog goal={goal} onClose={() => { setScheduling(false); useApp.setState({ scheduleGoal: false }) }} />}
       <section className="mt-6">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-medium text-fg">{t('reflect.actions')}</h3>
@@ -260,7 +265,8 @@ function GoalDetail({ goal, onBack }: { goal: Goal; onBack: () => void }) {
 export function GoalsPanel() {
   const { t } = useTranslation()
   const { data: goals = [] } = useQuery({ queryKey: ['goals'], queryFn: () => api.goals.list() })
-  const [open, setOpen] = useState<string | null>(null)
+  const open = useApp((s) => s.goalId)
+  const setOpen = (goalId: string | null): void => useApp.setState({ goalId, scheduleGoal: false })
   const [creating, setCreating] = useState(false)
   const current = goals.find((g) => g.id === open)
   if (current) return <GoalDetail goal={current} onBack={() => setOpen(null)} />

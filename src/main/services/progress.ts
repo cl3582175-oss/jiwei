@@ -246,6 +246,8 @@ export function goalProgress(id: string): GoalProgress {
   const g = db.select().from(goals).where(eq(goals.id, id)).get()
   if (!g) throw new Error('Goal not found')
   const map = masteryMap(id)
+  // 投入统计覆盖方向全部笔记（自由笔记、阅读、录音），不受康奈尔掌握度地图范围限制。
+  const studyIds = noteIdsForGoal(id) ?? []
   const ids = map.notes.map((n) => n.id)
   const cardRows = ids.length ? db.select().from(cards).where(and(inArray(cards.noteId, ids), isNull(cards.deletedAt), eq(cards.suspended, false))).all() : []
   const f = scheduler()
@@ -255,7 +257,7 @@ export function goalProgress(id: string): GoalProgress {
   weekStart.setDate(weekStart.getDate() - (weekStart.getDay() + 6) % 7)
   const cardIds = new Set(cardRows.map((c) => c.id))
   const study = db.select().from(activityEvents).where(gte(activityEvents.at, weekStart.getTime())).all()
-    .filter((e) => (e.refType === 'note' && ids.includes(e.refId ?? '')) || (e.refType === 'card' && cardIds.has(e.refId ?? '')))
+    .filter((e) => (e.refType === 'note' && studyIds.includes(e.refId ?? '')) || (e.refType === 'card' && cardIds.has(e.refId ?? '')))
   const mastered = cardRows.filter((c) => c.state !== State.New && cardSolid(f.get_retrievability(toFsrs(c), now, false), c.stability)).length
   const reviewed = map.notes.reduce((s, n) => s + n.reviewed, 0)
   const recalls = map.notes.filter((n) => n.recall !== null)

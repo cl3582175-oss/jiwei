@@ -527,6 +527,7 @@ export function TodayView() {
           <Briefing onReply={setReply} />
         </div>
 
+        {!!s?.planLags.length && <section className="mt-8 space-y-2" data-testid="plan-lags">{s.planLags.map((lag) => <div key={lag.goalId} className="paper flex items-center gap-3 rounded-xl p-4"><p className="min-w-0 flex-1 text-sm text-fg">{t('plan.lag', { ...lag })}</p><Button size="sm" onClick={() => useApp.getState().openGoal(lag.goalId, true)}>{t('plan.adjustPlan')}</Button></div>)}</section>}
         {!!s?.schedule.length && <section className="mt-8" data-testid="today-schedule"><h2 className="mb-3 text-sm font-semibold text-fg">{t('plan.schedule')}</h2><ul className="paper divide-y divide-border rounded-2xl px-5">{s.schedule.map((e) => <li key={e.id} className="flex items-center gap-3 py-3 text-sm text-fg"><span className="text-xs text-muted">{e.allDay ? t('plan.allDay') : new Date(e.startAt).toLocaleTimeString(i18n.language, { hour: '2-digit', minute: '2-digit' })}</span><button className="min-w-0 flex-1 truncate text-left" onClick={() => useApp.getState().goNav('calendar')}>{e.title}</button>{e.kind === 'study' && !e.readonly && e.status === 'planned' ? <Button size="sm" onClick={() => void api.plan.eventSave({ ...e, status: 'done' }).catch((err) => toast.error(String(err)))}>{t('plan.done')}</Button> : <span className="text-xs text-subtle">{t(`plan.status.${e.status}`)}</span>}</li>)}</ul></section>}
         {s?.fresh ? (
           <div className="mt-8">

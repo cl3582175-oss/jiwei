@@ -50,6 +50,9 @@ const emptyContext: WorkspaceContext = {
 }
 
 interface AppState extends Location {
+  goalId: string | null
+  scheduleGoal: boolean
+  openGoal: (id: string, schedule?: boolean) => void
   /** 导航到新位置（记入历史） */
   navigate: (to: Partial<Location>) => void
   back: () => void
@@ -157,6 +160,9 @@ export const useApp = create<AppState>((set, get) => {
 
   return {
     view: 'today',
+    goalId: null,
+    scheduleGoal: false,
+    openGoal: (id, schedule = false) => { get().goNav('goals'); set({ goalId: id, scheduleGoal: schedule }) },
     noteId: null,
     sourceId: null,
     history: [{ view: 'today', noteId: null, sourceId: null }],

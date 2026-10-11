@@ -13,6 +13,7 @@ function defaults(): Settings {
   const language: Settings['language'] =
     (process.env.JIWEI_LANG as Settings['language']) || (app.getLocale().toLowerCase().startsWith('zh') ? 'zh-CN' : 'en')
   return {
+    plan: { autoComplete: true },
     language,
     theme: 'system',
     capture: captureDefaults(process.platform === 'darwin'),

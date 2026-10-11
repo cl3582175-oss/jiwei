@@ -83,6 +83,7 @@ export function phaseSave(input: z.input<typeof PhaseSave>): GoalPhase {
   if (ns.length !== new Set(v.noteIds).size || ss.length !== new Set(v.sourceIds).size) throw new Error('Linked resource not found')
   const row = {
     ...v,
+    origin: 'user' as const,
     noteIds: JSON.stringify([...new Set(v.noteIds)]),
     sourceIds: JSON.stringify([...new Set(v.sourceIds)]),
     updatedAt: now,
@@ -132,7 +133,7 @@ export function milestoneSave(input: z.input<typeof MilestoneSave>): GoalMilesto
       .get()
   )
     throw new Error('Milestone not found')
-  const row = { ...v, updatedAt: now, updatedBy: deviceId() }
+  const row = { ...v, origin: 'user' as const, updatedAt: now, updatedBy: deviceId() }
   if (v.id) db.update(goalMilestones).set(row).where(eq(goalMilestones.id, id)).run()
   else
     db.insert(goalMilestones)

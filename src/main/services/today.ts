@@ -12,6 +12,7 @@ import { listActions, reflectionOverview } from './reflection'
 import { getSettings } from './settings'
 import { structured, quickModel } from './ai/structured'
 import { events as planEvents } from './plan/calendar'
+import { planLags } from './plan/schedule'
 import { addDays, dayStart } from '@shared/plan'
 
 // 「今日」首页（v0.6.7）：回答“今天该做什么”。只汇总已有数据，不新建任何学习内容。
@@ -93,6 +94,7 @@ export function todaySummary(): TodaySummary {
   const sourceCount = db.select({ n: sql<number>`count(*)` }).from(sources).where(isNull(sources.deletedAt)).get()?.n ?? 0
   return {
     date: localDate(),
+    planLags: planLags(now),
     schedule: planEvents({ startAt: dayStart(now), endAt: addDays(dayStart(now), 1) }),
     streak: streakDays(),
     minutes: minutesOn(localDate()),

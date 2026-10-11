@@ -67,3 +67,29 @@ export function addDays(t: number, days: number): number {
   d.setDate(d.getDate() + days)
   return d.getTime()
 }
+
+export const ScheduleOptions = z.object({
+  goalId: z.string().min(1), startAt: z.number().int(), targetAt: z.number().int(),
+  weekdayMinutes: z.array(z.number().int().min(0).max(1440)).length(7),
+  avoidExternal: z.boolean().default(true), preference: z.enum(['morning', 'afternoon', 'evening']).default('evening'),
+  sessionMinutes: z.number().int().min(30).max(120).default(60)
+}).refine((v) => v.targetAt >= v.startAt && v.targetAt - v.startAt < 366 * 86400000, 'Plan range must be within one year')
+export type ScheduleInput = z.input<typeof ScheduleOptions>
+export const ScheduleDraft = z.object({
+  phases: z.array(z.object({ title: z.string().min(1).max(200), start: z.string().max(10), end: z.string().max(10), objective: z.string().max(500) })).min(1).max(12),
+  milestones: z.array(z.object({ title: z.string().min(1).max(200), date: z.string().max(10) })).max(30),
+  sessions: z.array(z.object({ date: z.string().max(10), time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/), minutes: z.number().int().min(30).max(120), title: z.string().min(1).max(200), phase: z.number().int().min(0).max(11) })).max(500),
+  tradeoffs: z.string().max(2000)
+})
+export type ScheduleModel = z.infer<typeof ScheduleDraft>
+export interface ValidSchedule {
+  phases: { title: string; objective: string; startAt: number; endAt: number }[]
+  milestones: { title: string; at: number }[]
+  sessions: { title: string; startAt: number; endAt: number; phase: number }[]
+  unplacedMinutes: number
+  tradeoffs: string
+}
+export interface SchedulePreview extends ValidSchedule {
+  id: string; options: z.infer<typeof ScheduleOptions>; expiresAt: number; cost: number; estimatedCost: number | null
+}
+export interface PlanLag { goalId: string; title: string; missed: number; milestones: number }

@@ -77,6 +77,7 @@ export const CategoryPatchSchema = z.object({
 })
 
 export const SettingsPatchSchema = z.object({
+  plan: z.object({ autoComplete: z.boolean() }).optional(),
   recordingScene: z.enum(['meeting', 'lecture', 'thought']).optional(),
   capture: CaptureSettingsSchema.optional(),
   language: z.enum(['zh-CN', 'en']).optional(),

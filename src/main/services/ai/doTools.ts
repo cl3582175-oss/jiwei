@@ -13,6 +13,8 @@ import { replaceDoc } from '../docs'
 import { markdownToNodes } from '../../lib/markdown'
 import { localDate } from '../stats'
 import type { ToolMeta } from '../agent/wrap'
+import { EventRange } from '@shared/plan'
+import * as plan from '../plan/calendar'
 
 // 助手“办事”（v0.7）：跨模块的读与写。写入工具执行前在对话中弹出确认卡片（wrap.ts），
 // 卡片上的文字由 describe 生成，写清楚要做什么，而不是工具名和参数。
@@ -54,6 +56,16 @@ const SUBJECT_ZH: Record<string, string> = { math: '数学', physics: '物理', 
 
 export function buildDoTools(zh: boolean): { tools: ToolSet; meta: Record<string, ToolMeta> } {
   const tools: ToolSet = {
+    plan_list: tool({
+      description: zh ? '查询某段时间的日程与复习负荷；可指定方向。排计划需到方向详情的排计划按钮预览。' : 'Read calendar and review load for a time range, optionally for a direction. Scheduling requires the preview in Directions.',
+      inputSchema: EventRange.extend({ goalId: z.string().optional() }),
+      execute: async ({ startAt, endAt, goalId }) => JSON.stringify({ goalId, guidance: zh ? '在方向详情点“排计划”，预览后确认写入。' : 'Open the direction and choose Schedule a plan; confirm the preview.', events: plan.events({ startAt, endAt }).filter((e) => !goalId || e.goalId === goalId), forecast: plan.forecast(Math.min(366, Math.max(1, Math.ceil((endAt - Date.now()) / 86400000)))) })
+    }),
+    plan_event_create: tool({
+      description: zh ? '用户确认后在日历上新建日程。' : 'Create a calendar event after the user confirms.',
+      inputSchema: z.object({ title: z.string().min(1).max(300), startAt: z.number().int(), endAt: z.number().int(), kind: z.enum(['study', 'exam', 'deadline', 'event']).default('study'), goalId: z.string().nullable().optional() }),
+      execute: async (input) => { const e = plan.eventSave(input); return zh ? `已创建日程（${e.id}）。` : `Event created (${e.id}).` }
+    }),
     actions_list: tool({
       description: zh ? '列出未完成的行动项（ID、标题、截止日期）' : 'List open action items (ID, title, due date)',
       inputSchema: z.object({}),
@@ -184,6 +196,8 @@ export function buildDoTools(zh: boolean): { tools: ToolSet; meta: Record<string
   }
 
   const meta: Record<string, ToolMeta> = {
+    plan_list: { level: 'read', untrusted: true },
+    plan_event_create: { level: 'write', confirm: true, describe: (i) => ({ title: zh ? `新建日程「${cut(String(i.title ?? ''), 60)}」` : `Create event “${cut(String(i.title ?? ''), 60)}”`, detail: `${new Date(Number(i.startAt)).toLocaleString()} — ${new Date(Number(i.endAt)).toLocaleString()}` }) },
     actions_list: { level: 'read' },
     goals_list: { level: 'read' },
     mistakes_list: { level: 'read' },

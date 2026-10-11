@@ -124,6 +124,7 @@ export const spendZh = {
     purposeOther: '其他'
   },
   subPurposes: {
+    plan_schedule: 'AI 排期',
     inbox_triage: '整理收件箱',
     inbox_recognize: '识别收件箱图片',
     lens_derive: '整理录音与资料',
@@ -268,6 +269,7 @@ export const spendEn: typeof spendZh = {
     purposeOther: 'Other'
   },
   subPurposes: {
+    plan_schedule: 'AI scheduling',
     inbox_triage: 'Inbox triage',
     inbox_recognize: 'Inbox image recognition',
     lens_derive: 'Recording & source digest',

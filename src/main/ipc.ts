@@ -2,6 +2,7 @@ import { tr } from './lib/messages'
 import * as plan from './services/plan/calendar'
 import * as planPhases from './services/plan/phases'
 import * as planIcs from './services/plan/ics'
+import * as planSchedule from './services/plan/schedule'
 import * as browserCapture from './services/browser/capture'
 import * as mistakes from './services/mistakes'
 import * as mistakeEntries from './services/mistakeEntries'
@@ -419,6 +420,8 @@ const handlers: Handlers = {
     commit: (_, id, input) => reflection.commitReflection(id, input)
   },
   plan: {
+    schedulePreview: (_, input) => planSchedule.schedulePreview(input),
+    scheduleApply: (_, id) => planSchedule.scheduleApply(id),
     phases: (_, id) => planPhases.phases(id),
     phaseSave: (_, input) => planPhases.phaseSave(input),
     phaseRemove: (_, id) => planPhases.phaseRemove(id),

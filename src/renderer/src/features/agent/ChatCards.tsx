@@ -15,7 +15,7 @@ export function openStepLink(link: NonNullable<AgentStep['link']>): void {
   const s = useApp.getState()
   if (link.type === 'note') s.openNote(link.id)
   else if (link.type === 'source') s.openSource(link.id)
-  else if (link.type === 'goal') s.goNav('goals')
+  else if (link.type === 'goal') s.openGoal(link.id)
   else if (link.type === 'inbox') s.goNav('inbox')
   else s.goNav('today')
 }

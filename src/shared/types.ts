@@ -211,6 +211,7 @@ export type Palette = 'qinglu' | 'celadon' | 'dunhuang'
 export type SidebarPage = 'notes' | 'library' | 'chat'
 
 export interface Settings {
+  plan: { autoComplete: boolean }
   recordingScene?: 'meeting' | 'lecture' | 'thought'
   capture: ReturnType<typeof import('./capture').captureDefaults>
   language: Language

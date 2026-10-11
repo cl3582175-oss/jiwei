@@ -112,6 +112,7 @@ export function eventSave(input: EventInput): PlanEvent {
       old.note !== (v.note === undefined ? old.note : v.note) ||
       old.kind !== v.kind ||
       old.allDay !== v.allDay)
+    || (old && v.phaseId !== undefined && old.phaseId !== v.phaseId)
   const row = {
     title: v.title,
     kind: v.kind,

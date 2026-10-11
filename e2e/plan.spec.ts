@@ -8,9 +8,26 @@ import { navTo } from './fixtures/nav'
 test.describe.configure({ mode: 'serial' })
 let app: ElectronApplication, page: Page
 let server: Server, icsTitle = '外部学习讨论'
+const modelPrompts: string[] = []
 const calendarRequests: { at: number; ua: string; conditional?: string }[] = []
 test.beforeAll(async () => {
   server = createServer((req, res) => {
+    if (req.url?.startsWith('/v1')) {
+      let body = ''; req.on('data', (c) => body += c); req.on('end', () => {
+        const input = JSON.parse(body), text = (c: unknown): string => typeof c === 'string' ? c : Array.isArray(c) ? c.map((v: { text?: string }) => v.text ?? '').join('') : ''
+        const system = text(input.messages.find((m: { role: string }) => m.role === 'system')?.content)
+        const prompt = text(input.messages.filter((m: { role: string }) => m.role === 'user').at(-1)?.content)
+        modelPrompts.push(prompt)
+        let args: unknown = { text: '今天根据到期复习和已经安排的学习时段继续推进。' }
+        if (system.includes('学习排期助手')) {
+          const context = JSON.parse(prompt.slice(prompt.indexOf('\n') + 1, prompt.lastIndexOf('\n')))
+          const first = new Date(context.options.startAt); first.setDate(first.getDate() + (first.getTime() <= Date.now() ? 1 : 0))
+          const date = (d: Date): string => [d.getFullYear(), String(d.getMonth()+1).padStart(2,'0'), String(d.getDate()).padStart(2,'0')].join('-')
+          args = { phases: [{ title: '概率基础', start: date(first), end: date(new Date(context.options.targetAt)), objective: '掌握概率分布并练习' }], milestones: [{ title: '完成练习', date: date(new Date(context.options.targetAt)) }], sessions: [0,1,2].map((i) => {const d=new Date(first);d.setDate(d.getDate()+i);return {date:date(d), time:'10:00',minutes:60,title:'概率练习 '+(i+1),phase:0}}), tradeoffs: context.lag ? '把未完成练习分配到剩余时段，优先基础。' : '每天练习一小时，避开外部讨论。' }
+        }
+        res.writeHead(200, {'content-type':'application/json'}).end(JSON.stringify({ id:'controlled', object:'chat.completion', created:1, model:'deepseek-flash', choices:[{index:0,message:{role:'assistant',content:null,tool_calls:[{id:'submit',type:'function',function:{name:'submit',arguments:JSON.stringify(args)}}]},finish_reason:'tool_calls'}],usage:{prompt_tokens:1000,completion_tokens:300,total_tokens:1300} }))
+      }); return
+    }
     // Node 将请求头按 latin1 解码；Electron 默认 UA 包含中文应用名，先还原线上 UTF-8 字节。
     calendarRequests.push({ at: Date.now(), ua: Buffer.from(String(req.headers['user-agent']), 'latin1').toString('utf8'), conditional: String(req.headers['if-none-match'] ?? '') })
     const d = new Date(); d.setDate(d.getDate() + 1)
@@ -189,4 +206,60 @@ test('P2 阶段与里程碑时间线，拖动阶段持久化并可挂接笔记',
   await page.getByRole('option', { name: /概率复习/ }).click()
   await page.getByRole('dialog').getByRole('button', { name: '保存', exact: true }).click()
   expect((await page.evaluate((id) => window.jiwei.plan.phases(id), goal.id))[0].noteIds).toHaveLength(1)
+})
+
+let scheduledGoal = ''
+const dayInput = (d: Date): string => [d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-')
+test('P3 AI 排期预览不写库、确认避开 ICS、再排期保留完成和手改时段', async () => {
+  const baseUrl = 'http://127.0.0.1:'+(server.address() as {port:number}).port+'/v1'
+  scheduledGoal = await page.evaluate(async (baseUrl) => {
+    const j=window.jiwei, provider=await j.providers.save({kind:'ollama',name:'受控排期模型',baseUrl,models:['deepseek-flash']})
+    const settings=await j.settings.get(); await j.settings.set({ai:{...settings.ai,chat:{providerId:provider.id,model:'deepseek-flash'},effort:'off'}})
+    const feed=(await j.plan.icsFeeds()).find((f)=>f.name==='学习讨论日历')!; await j.plan.icsSave({...feed,enabled:true})
+    const hidden=(await j.notes.list({search:'概率复习'}))[0]; await j.notes.update(hidden.id,{aiExcluded:true})
+    return (await j.goals.save({title:'AI 概率学习',kind:'exam',weeklyMinutes:1260,noteIds:[hidden.id]})).id
+  },baseUrl)
+  await navTo(page,/^方向/)
+  const back=page.getByRole('button',{name:'全部方向'}); if(await back.isVisible()) await back.click()
+  await page.locator('[data-goal="AI 概率学习"]').click(); await page.getByRole('button',{name:'排计划',exact:true}).click()
+  const tomorrow=new Date();tomorrow.setDate(tomorrow.getDate()+1); const end=new Date(tomorrow);end.setDate(end.getDate()+4)
+  const dialog=page.getByTestId('schedule-dialog')
+  await dialog.getByLabel('开始日期').fill(dayInput(tomorrow)); await dialog.getByLabel('截止日期').fill(dayInput(end));await dialog.getByLabel('学习时段偏好').selectOption('morning')
+  await dialog.getByRole('button',{name:'生成预览',exact:true}).click(); await expect(page.getByTestId('schedule-preview')).toContainText('概率基础')
+  expect(modelPrompts.every((p)=>!p.includes('概率复习'))).toBe(true)
+  const before=await page.evaluate((id)=>window.jiwei.plan.phases(id),scheduledGoal); expect(before).toHaveLength(0)
+  expect((await page.evaluate(()=>window.jiwei.plan.events({startAt:0,endAt:Date.now()+365*86400000}))).filter((e)=>e.origin==='ai')).toHaveLength(0)
+  await dialog.getByRole('button',{name:'确认写入'}).click();await expect(dialog).not.toBeVisible()
+  const first=await page.evaluate((id)=>window.jiwei.plan.events({startAt:0,endAt:Date.now()+365*86400000}).then((es)=>es.filter((e)=>e.goalId===id&&!e.readonly)),scheduledGoal)
+  expect(first).toHaveLength(3);expect(first.every((e)=>new Date(e.startAt).getHours()===11)).toBe(true)
+  await page.evaluate(async (es)=>{await window.jiwei.plan.eventSave({...es[0],status:'done'});await window.jiwei.plan.eventSave({...es[1],title:'手动调整的学习',startAt:es[1].startAt+3600000,endAt:es[1].endAt+3600000})},first)
+  const input=await page.evaluate(async (id)=>{const g=(await window.jiwei.goals.list()).find((g)=>g.id===id)!;return {goalId:id,startAt:g.startAt!,targetAt:g.targetAt!,weekdayMinutes:g.weekdayMinutes!,avoidExternal:true,preference:'morning' as const,sessionMinutes:60}},scheduledGoal)
+  const preview=await page.evaluate((input)=>window.jiwei.plan.schedulePreview(input),input);await page.evaluate((id)=>window.jiwei.plan.scheduleApply(id),preview.id)
+  const after=await page.evaluate(()=>window.jiwei.plan.events({startAt:0,endAt:Date.now()+365*86400000}));expect(after.find((e)=>e.id===first[0].id)?.status).toBe('done');expect(after.find((e)=>e.id===first[1].id)).toMatchObject({title:'手动调整的学习',origin:'user'})
+  const phaseIds=(await page.evaluate((id)=>window.jiwei.plan.phases(id),scheduledGoal)).map((p)=>p.id)
+  expect(after.filter((e)=>e.goalId===scheduledGoal&&!e.readonly).every((e)=>!e.phaseId||phaseIds.includes(e.phaseId))).toBe(true)
+})
+test('P3 确认时重读约束，过期未完成时段在今日显示并能调整计划', async () => {
+  const input=await page.evaluate(async (id)=>{const g=(await window.jiwei.goals.list()).find((g)=>g.id===id)!;return {goalId:id,startAt:g.startAt!,targetAt:g.targetAt!,weekdayMinutes:g.weekdayMinutes!,avoidExternal:true,preference:'morning' as const,sessionMinutes:60}},scheduledGoal)
+  const preview=await page.evaluate((input)=>window.jiwei.plan.schedulePreview(input),input)
+  await page.evaluate(async (p)=>{await window.jiwei.plan.eventSave({title:'刚新增的忙碌时间',kind:'event',startAt:p.options.startAt+9*3600000,endAt:p.options.startAt+12*3600000});for(let i=1;i<=2;i++){const endAt=Date.now()-i*86400000;await window.jiwei.plan.eventSave({goalId:p.options.goalId,title:'未完成学习 '+i,kind:'study',startAt:endAt-3600000,endAt})}},preview)
+  await expect(page.evaluate((id)=>window.jiwei.plan.scheduleApply(id),preview.id)).rejects.toThrow('changed')
+  await page.keyboard.press('ControlOrMeta+9');await expect(page.getByTestId('plan-lags')).toContainText('AI 概率学习');await page.getByTestId('plan-lags').getByRole('button',{name:'调整计划'}).click()
+  await expect(page.getByTestId('schedule-dialog')).toBeVisible();await page.getByTestId('schedule-dialog').getByLabel('学习时段偏好').selectOption('morning');await page.getByRole('button',{name:'生成预览',exact:true}).click();await expect(page.getByTestId('schedule-preview')).toContainText('未完成练习')
+  await page.getByTestId('schedule-dialog').getByRole('button',{name:'取消',exact:true}).click()
+})
+
+test('P3 相关有效学习自动完成，无关学习不填充方向进度', async () => {
+  test.setTimeout(90000)
+  const ids=await page.evaluate(async (goalId)=>{
+    const j=window.jiwei, n=await j.notes.create({title:'方向内笔记'}), other=await j.notes.create({title:'方向外笔记'})
+    const g=(await j.goals.list()).find((g)=>g.id===goalId)!; await j.goals.save({id:g.id,title:g.title,noteIds:[...g.noteIds,n.id]})
+    const noScope=await j.goals.save({title:'没有关联活动的方向',kind:'skill'}), endAt=Date.now()-1000
+    const yes=await j.plan.eventSave({title:'可自动完成',kind:'study',goalId,startAt:endAt-60000,endAt}), no=await j.plan.eventSave({title:'不可凑完成',kind:'study',goalId:noScope.id,startAt:endAt-60000,endAt})
+    await j.activity.track([{kind:'write',refType:'note',refId:other.id,durationMs:45000}]); await j.activity.track([{kind:'write',refType:'note',refId:n.id,durationMs:40000}])
+    return {yes:yes.id,no:no.id,goalId}
+  },scheduledGoal)
+  await expect.poll(async()=>{const es=await page.evaluate(()=>window.jiwei.plan.events({startAt:Date.now()-86400000,endAt:Date.now()+86400000}));return es.find((e)=>e.id===ids.yes)?.status},{timeout:75000}).toBe('done')
+  const es=await page.evaluate(()=>window.jiwei.plan.events({startAt:Date.now()-86400000,endAt:Date.now()+86400000}));expect(es.find((e)=>e.id===ids.no)?.status).toBe('planned')
+  expect((await page.evaluate((id)=>window.jiwei.goals.progress(id),ids.goalId)).minutesThisWeek).toBe(1)
 })
