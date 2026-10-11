@@ -1439,8 +1439,6 @@ const en: Messages = {
     rateLabel: 'Rating',
     pageCard: 'Reviewing this card from “{{title}}”:',
     tabs: { today: 'Today', cards: 'Cards', mastery: 'Mastery', goals: 'Goals' },
-    todayList: "Today's {{count}} cards",
-    todayListHide: 'Hide list',
     cards: {
       filter: {
         due: 'Due today',
@@ -1464,7 +1462,17 @@ const en: Messages = {
       lapses: 'Forgotten {{count}}×',
       hint: 'Check cards and click “Review these”. Cards that are not due are practiced without changing their schedule.'
     },
+    plan: {
+      title: "Today's {{count}} cards",
+      hint: 'All are included by default; uncheck to skip some, or review just one note.',
+      start: 'Start review ({{count}})',
+      onlyNote: 'Only this note ({{count}})',
+      more: 'Want more practice? Pick cards in the library',
+      bucket: { new: 'New', due: 'Due', learning: 'Learning' }
+    },
     queue: {
+      skip: 'Skip this card',
+      backToPlan: "Back to today's list",
       title: 'Custom review',
       progress: 'Card {{n}} of {{total}}',
       count: 'Count early cards toward the schedule',

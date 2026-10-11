@@ -1394,8 +1394,6 @@ const zhCN = {
     rateLabel: '评分',
     pageCard: '正在复习《{{title}}》中的这张卡片：',
     tabs: { today: '今日复习', cards: '卡片', mastery: '掌握度', goals: '学习目标' },
-    todayList: '今天的 {{count}} 张卡片',
-    todayListHide: '收起清单',
     cards: {
       filter: { due: '今天到期', new: '新卡片', learning: '学习中', review: '已在复习', weak: '常忘', suspended: '已暂停', all: '全部' },
       search: '搜索问题或笔记',
@@ -1411,7 +1409,17 @@ const zhCN = {
       lapses: '忘了 {{count}} 次',
       hint: '勾选卡片后点“复习这些”。没到期的卡片按练习处理，不改变它们的复习时间。'
     },
+    plan: {
+      title: '今天的 {{count}} 张卡片',
+      hint: '默认全部复习；取消勾选可以先跳过，或只复习某篇笔记的。',
+      start: '开始复习（{{count}} 张）',
+      onlyNote: '只复习这篇（{{count}}）',
+      more: '还想再练？去卡片库挑几张',
+      bucket: { new: '新卡片', due: '到期', learning: '学习中' }
+    },
     queue: {
+      skip: '跳过这张',
+      backToPlan: '回到今日清单',
       title: '自选复习',
       progress: '第 {{n}} / {{total}} 张',
       count: '没到期的也计入排期',

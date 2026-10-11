@@ -720,6 +720,10 @@ export const capabilities = {
         ['search', z.string().max(200).optional()]
       ]
     }),
+    today: cap<(CardListItem & { bucket: 'learning' | 'due' | 'new' })[]>()({
+      description: '今天的复习清单：学习中、今天到期、今天可学的新卡（按复习顺序）',
+      params: none
+    }),
     scheduledNow: cap<boolean>()({ description: '这张卡片现在是否该复习（自选复习时只有它计入排期）', params: [id()] }),
     practice: cap<void>()({
       description: '练习一张没到期的卡片：只记活动，不改变复习排期',

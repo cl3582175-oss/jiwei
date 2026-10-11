@@ -456,6 +456,7 @@ const handlers: Handlers = {
     next: (_, exclude) => review.nextCard(exclude),
     get: (_, id) => review.getCard(id),
     list: (_, filter, search) => review.listCards(filter, search),
+    today: () => review.todayCards(),
     scheduledNow: (_, id) => review.isScheduledNow(id),
     practice: (_, id, durationMs) => review.practiceCard(id, durationMs),
     stats: () => review.reviewStats(),

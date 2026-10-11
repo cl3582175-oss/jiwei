@@ -65,6 +65,7 @@ test('explain to the student, get diagnosed, add gaps to the note (live)', async
 
   // 从复习卡片进入
   await navTo(page, /^复习/)
+  await page.getByTestId('plan-start').click()
   // 点按钮显示答案（按空格时，若回答框已获得焦点，空格会输入进框里）
   await page.getByRole('button', { name: /显示答案/ }).click()
   await page.getByRole('button', { name: '用自己的话讲一遍' }).click()

@@ -95,7 +95,9 @@ interface AppState extends Location {
   setReviewTab: (t: 'today' | 'cards' | 'mistakes' | 'mastery') => void
   /** 自选复习（v0.7.6）：从卡片库选中的卡片，按顺序复习；null 为按计划的今日复习 */
   reviewQueue: string[] | null
-  startReviewQueue: (ids: string[] | null) => void
+  /** today：从今日清单开始（全部计入排期）；custom：从卡片库自选（没到期的只算练习） */
+  reviewQueueMode: 'today' | 'custom'
+  startReviewQueue: (ids: string[] | null, mode?: 'today' | 'custom') => void
 
   /** 复盘页中打开的复盘（null 为复盘首页） */
   reflectionId: string | null
@@ -244,8 +246,9 @@ export const useApp = create<AppState>((set, get) => {
     reviewTab: 'today',
     setReviewTab: (reviewTab) => set({ reviewTab }),
     reviewQueue: null,
-    startReviewQueue: (ids) => {
-      set({ reviewQueue: ids && ids.length ? ids : null, reviewTab: 'today' })
+    reviewQueueMode: 'custom',
+    startReviewQueue: (ids, mode = 'custom') => {
+      set({ reviewQueue: ids && ids.length ? ids : null, reviewQueueMode: mode, reviewTab: 'today' })
       if (ids?.length && get().view !== 'review') get().navigate({ view: 'review' })
     },
 

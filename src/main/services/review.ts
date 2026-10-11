@@ -1,5 +1,5 @@
 import { recordEvent } from './activity'
-import { and, asc, eq, gte, inArray, isNotNull, isNull, lte, sql } from 'drizzle-orm'
+import { and, asc, eq, gte, inArray, isNotNull, isNull, lte, sql, type SQL } from 'drizzle-orm'
 import { fsrs, generatorParameters, type Card as FsrsCard, type Grade, State } from 'ts-fsrs'
 import { z } from 'zod'
 import { getDb } from '../db'
@@ -479,28 +479,19 @@ export function dueQuestions(limit = 20): { noteId: string; noteTitle: string; q
 
 /* ————————————————— 卡片库（v0.7.6） ————————————————— */
 
-/** 列出卡片（问题取线索栏文字，不加载笔记正文）：按到期时间排序 */
-export function listCards(filter: CardFilter = 'all', search = ''): CardListItem[] {
+const cueText = sql<string>`coalesce((SELECT group_concat(b.text, ' ') FROM blocks b WHERE b.row_id = ${cards.blockId} AND b.section = 'cue' AND b.deleted_at IS NULL), '')`
+
+/** 卡片行（问题取线索栏文字，不加载笔记正文） */
+function cardItems(where: SQL[], order: SQL[], limit = 3000): CardListItem[] {
   const endOfDay = startOfDay() + DAY
-  const where = [isNull(cards.deletedAt), isNull(notes.deletedAt), eq(notes.reviewExcluded, false)]
-  if (filter === 'suspended') where.push(eq(cards.suspended, true))
-  else if (filter !== 'all') where.push(eq(cards.suspended, false))
-  if (filter === 'new') where.push(eq(cards.state, State.New))
-  if (filter === 'learning') where.push(inArray(cards.state, [State.Learning, State.Relearning]))
-  if (filter === 'review') where.push(eq(cards.state, State.Review))
-  if (filter === 'due') where.push(sql`${cards.state} != ${State.New}`, lte(cards.due, endOfDay))
-  if (filter === 'weak') where.push(sql`(${cards.lapses} > 0 OR ${cards.state} = ${State.Relearning})`)
-  const question = sql<string>`coalesce((SELECT group_concat(b.text, ' ') FROM blocks b WHERE b.row_id = ${cards.blockId} AND b.section = 'cue' AND b.deleted_at IS NULL), '')`
-  const rows = getDb()
-    .select({ c: cards, title: notes.title, categoryId: notes.categoryId, question })
+  return getDb()
+    .select({ c: cards, title: notes.title, categoryId: notes.categoryId, question: cueText })
     .from(cards)
     .innerJoin(notes, eq(notes.id, cards.noteId))
-    .where(and(...where))
-    .orderBy(filter === 'weak' ? sql`${cards.lapses} DESC` : asc(cards.due))
-    .limit(3000)
+    .where(and(isNull(cards.deletedAt), isNull(notes.deletedAt), eq(notes.reviewExcluded, false), ...where))
+    .orderBy(...order)
+    .limit(limit)
     .all()
-  const q = search.trim().toLowerCase()
-  return rows
     .map((r) => ({
       id: r.c.id,
       noteId: r.c.noteId,
@@ -516,7 +507,42 @@ export function listCards(filter: CardFilter = 'all', search = ''): CardListItem
       suspended: r.c.suspended,
       isDue: r.c.state !== State.New && r.c.due <= endOfDay
     }))
-    .filter((c) => !q || c.question.toLowerCase().includes(q) || c.noteTitle.toLowerCase().includes(q))
+}
+
+/** 列出卡片：按到期时间排序 */
+export function listCards(filter: CardFilter = 'all', search = ''): CardListItem[] {
+  const endOfDay = startOfDay() + DAY
+  const where: SQL[] = []
+  if (filter === 'suspended') where.push(eq(cards.suspended, true))
+  else if (filter !== 'all') where.push(eq(cards.suspended, false))
+  if (filter === 'new') where.push(eq(cards.state, State.New))
+  if (filter === 'learning') where.push(inArray(cards.state, [State.Learning, State.Relearning])!)
+  if (filter === 'review') where.push(eq(cards.state, State.Review))
+  if (filter === 'due') where.push(sql`${cards.state} != ${State.New}`, lte(cards.due, endOfDay))
+  if (filter === 'weak') where.push(sql`(${cards.lapses} > 0 OR ${cards.state} = ${State.Relearning})`)
+  const q = search.trim().toLowerCase()
+  return cardItems(where, [filter === 'weak' ? sql`${cards.lapses} DESC` : sql`${cards.due} ASC`]).filter(
+    (c) => !q || c.question.toLowerCase().includes(q) || c.noteTitle.toLowerCase().includes(q)
+  )
+}
+
+/**
+ * 今天的复习清单（v0.7.7）：与“待复习”数一致——学习中且快到期的、今天到期的复习卡、今天还能学的新卡（不超过每日上限），
+ * 按复习顺序排列。
+ */
+export function todayCards(): (CardListItem & { bucket: 'learning' | 'due' | 'new' })[] {
+  const now = Date.now()
+  const endOfDay = startOfDay(now) + DAY
+  const active = eq(cards.suspended, false)
+  const learning = cardItems([active, inArray(cards.state, [State.Learning, State.Relearning])!, lte(cards.due, now + LEARN_AHEAD)], [sql`${cards.due} ASC`])
+  const due = cardItems([active, eq(cards.state, State.Review), lte(cards.due, endOfDay)], [sql`${cards.due} ASC`])
+  const quota = counts(now).newToday
+  const fresh = quota > 0 ? cardItems([active, eq(cards.state, State.New)], [sql`${cards.createdAt} ASC`], quota) : []
+  return [
+    ...learning.map((c) => ({ ...c, bucket: 'learning' as const })),
+    ...due.map((c) => ({ ...c, bucket: 'due' as const })),
+    ...fresh.map((c) => ({ ...c, bucket: 'new' as const }))
+  ]
 }
 
 /** 这张卡片现在是否到了该复习的时候（到期的复习卡、学习中的卡）——自选复习时只有它们计入排期 */

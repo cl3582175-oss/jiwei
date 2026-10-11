@@ -57,6 +57,11 @@ test('cue questions become review cards', async () => {
 
 test('review session: reveal, rate with intervals, again, undo, done', async () => {
   await page.getByTestId('home-review').click()
+  // v0.7.7：先看今天的清单（默认全选），再开始
+  const plan = page.getByTestId('review-plan')
+  await expect(plan).toContainText('今天的 2 张卡片')
+  await expect(plan.getByTestId('plan-row')).toHaveCount(2)
+  await page.getByTestId('plan-start').click()
   const card = page.getByTestId('review-card')
   await expect(page.getByTestId('review-question')).toHaveText('什么是间隔重复？')
   await expect(card).toContainText('新卡片')

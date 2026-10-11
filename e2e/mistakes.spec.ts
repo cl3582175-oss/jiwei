@@ -170,6 +170,7 @@ test('数值变式独立求解不看候选答案；今日复习默认变式、�
   expect((await env.page.evaluate(() => window.jiwei.review.next([])))?.id).toBe(cardId)
   const beforeUsed = (await env.page.evaluate((id) => window.jiwei.mistakes.variants(id), math.id)).filter((v) => v.usedAt !== null).map((v) => v.id)
   await env.page.getByRole('tab', { name: '今日复习', exact: true }).click()
+  await env.page.getByTestId('plan-start').click()
   const todayCard = env.page.getByTestId('review-card')
   await expect(todayCard).toBeVisible()
   await expect(todayCard).toContainText('变式题')

@@ -323,6 +323,46 @@ test('复习：卡片库列出全部卡片，勾选后自选复习；没到期�
   await page.getByRole('tab', { name: '今日复习' }).click()
 })
 
+test('v0.7.7 今日复习：先看清单可取消勾选；复习中可以跳到清单里的某一张或跳过；做完回到清单', async () => {
+  await page.getByRole('tab', { name: '今日复习' }).click()
+  const plan = page.getByTestId('review-plan')
+  await expect(plan.getByTestId('plan-row')).toHaveCount(3)
+  await shot('v077-review-plan')
+  await plan.getByRole('checkbox', { name: '提取练习为什么有效？' }).uncheck()
+  await expect(page.getByTestId('plan-start')).toContainText('开始复习（2 张）')
+  await page.getByTestId('plan-start').click()
+  const bar = page.getByTestId('review-queue')
+  await expect(bar).toContainText('今日复习')
+  await expect(page.getByTestId('queue-progress')).toContainText('第 1 / 2 张')
+  await expect(page.getByTestId('review-question')).toContainText('什么是间隔重复？')
+  // 跳到清单里的第 2 张
+  await page.getByTestId('queue-progress').click()
+  await page
+    .getByTestId('queue-list')
+    .getByRole('button', { name: /交错练习适合什么场景？/ })
+    .click()
+  await expect(page.getByTestId('review-question')).toContainText('交错练习适合什么场景？')
+  await shot('v077-review-jump')
+  // 跳过这张：留在今天的待复习里
+  await bar.getByRole('button', { name: '跳过这张' }).click()
+  await expect(page.getByTestId('review-question')).toContainText('什么是间隔重复？')
+  // 新卡片评“轻松”直接进入复习阶段（评“记得”会在 10 分钟后再出现一次，属于正常的学习步骤）
+  await page.getByRole('button', { name: '显示答案' }).click()
+  await page.getByRole('button', { name: /^轻松/ }).click()
+  await expect(page.getByTestId('review-done')).toContainText('这次复习了 1 张')
+  await expect(page.getByRole('button', { name: '还想再练？去卡片库挑几张' })).toBeVisible()
+  await page.getByRole('button', { name: '回到今日清单' }).click()
+  await expect(page.getByTestId('review-plan').getByText('交错练习适合什么场景？')).toBeVisible()
+  // 只复习某篇笔记的
+  await page
+    .getByTestId('review-plan')
+    .getByRole('button', { name: /只复习这篇/ })
+    .first()
+    .click()
+  await expect(page.getByTestId('review-queue')).toBeVisible()
+  await page.getByRole('button', { name: '回到今日清单' }).click()
+})
+
 test('费曼练习：从导航进入是首页（推荐的概念、练过的），不再是空白页', async () => {
   await navTo(page, /费曼/)
   const home = page.getByTestId('feynman-home')

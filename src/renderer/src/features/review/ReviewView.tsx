@@ -3,7 +3,8 @@ import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Streamdown } from 'streamdown'
 import { toast } from 'sonner'
-import { BrainCircuit, Flame, Layers, NotebookText, PauseCircle, Sparkles, Undo2, Loader2, CheckCircle2, Target, GraduationCap, Flag, ListChecks, ChevronRight } from 'lucide-react'
+import { BrainCircuit, Flame, Layers, NotebookText, PauseCircle, Sparkles, Undo2, Loader2, CheckCircle2, Target, GraduationCap, Flag, ChevronDown, Play, SkipForward } from 'lucide-react'
+import { Popover } from 'radix-ui'
 import type { AnswerCheck, ReviewCard, ReviewRating } from '@shared/types'
 import { api, cn } from '@/lib/utils'
 import { useApp } from '@/store/app'
@@ -99,6 +100,194 @@ function CheckResult({ r }: { r: AnswerCheck }) {
   )
 }
 
+type TodayCard = Awaited<ReturnType<typeof api.review.today>>[number]
+
+/** 进度与清单：点开可以跳到任意一张（v0.7.7） */
+function QueueList({ order, pos, onJump }: { order: string[]; pos: number; onJump: (index: number) => void }) {
+  const { t } = useTranslation()
+  const [open, setOpen] = useState(false)
+  const { data: items = [] } = useQuery({
+    queryKey: ['reviewCards', 'queue', order.join(',')],
+    queryFn: () => api.review.list('all'),
+    enabled: open
+  })
+  const byId = new Map(items.map((c) => [c.id, c]))
+  return (
+    <Popover.Root open={open} onOpenChange={setOpen}>
+      <Popover.Trigger asChild>
+        <button className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-muted tabular-nums hover:bg-surface-hover hover:text-fg" data-testid="queue-progress">
+          {t('review.queue.progress', { n: Math.min(pos + 1, order.length), total: order.length })}
+          <ChevronDown className="size-3" />
+        </button>
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content
+          align="start"
+          sideOffset={6}
+          className="z-50 max-h-80 w-80 overflow-y-auto rounded-xl border border-border bg-surface p-1.5 shadow-float data-[state=open]:animate-[pop-in_140ms_ease-out]"
+          data-testid="queue-list"
+        >
+          {order.map((id, i) => {
+            const c = byId.get(id)
+            return (
+              <button
+                key={`${id}-${i}`}
+                disabled={i < pos}
+                onClick={() => {
+                  setOpen(false)
+                  if (i !== pos) onJump(i)
+                }}
+                className={cn(
+                  'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm',
+                  i === pos ? 'bg-accent-soft text-accent' : i < pos ? 'text-subtle line-through' : 'text-fg hover:bg-surface-hover'
+                )}
+              >
+                <span className="w-5 shrink-0 text-right text-2xs text-subtle tabular-nums">{i + 1}</span>
+                <span className="min-w-0 flex-1 truncate">{c?.question ?? '…'}</span>
+              </button>
+            )
+          })}
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
+  )
+}
+
+/** 今日复习的清单（v0.7.7）：先看今天有哪些，默认全选，可以取消或只复习某篇笔记的，再开始 */
+function TodayPlan({ stats }: { stats: ReturnType<typeof useReviewStats>['data'] | null }) {
+  const { t } = useTranslation()
+  const { data: cards } = useQuery({ queryKey: ['reviewCards', 'today'], queryFn: () => api.review.today(), staleTime: 0 })
+  const [off, setOff] = useState<Set<string>>(new Set())
+  const groups = new Map<string, { title: string; cards: TodayCard[] }>()
+  for (const c of cards ?? []) {
+    const g = groups.get(c.noteId) ?? { title: c.noteTitle, cards: [] }
+    g.cards.push(c)
+    groups.set(c.noteId, g)
+  }
+  const chosen = (cards ?? []).filter((c) => !off.has(c.id))
+  const start = (ids: string[]): void => {
+    if (ids.length) useApp.getState().startReviewQueue(ids, 'today')
+  }
+  const toggle = (ids: string[], on: boolean): void =>
+    setOff((s) => {
+      const n = new Set(s)
+      for (const id of ids) {
+        if (on) n.delete(id)
+        else n.add(id)
+      }
+      return n
+    })
+  // 回车 / 空格直接开始（和以前一样一步开始）
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if ((e.target as HTMLElement | null)?.closest('textarea, input, button, [contenteditable="true"]')) return
+      if ((e.key === 'Enter' || e.key === ' ') && chosen.length) {
+        e.preventDefault()
+        start(chosen.map((c) => c.id))
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
+  return (
+    <div className="mx-auto max-w-[720px] px-10 pt-7 pb-16" data-testid="review-plan">
+      {stats && (
+        <div className="flex flex-wrap gap-x-8 gap-y-3">
+          <Stat icon={<Layers />} label={t('review.statDue')} value={stats.due} />
+          <Stat icon={<CheckCircle2 />} label={t('review.statToday')} value={stats.reviewedToday} />
+          <Stat icon={<Flame />} label={t('review.statStreak')} value={t('review.days', { count: stats.streak })} />
+          <Stat icon={<Target />} label={t('review.statRetention')} value={stats.retention === null ? '—' : `${Math.round(stats.retention * 100)}%`} />
+        </div>
+      )}
+      {cards && cards.length === 0 ? (
+        stats && stats.total === 0 ? (
+          <div className="mt-10">
+            <EmptyState icon={<InkLeaf />} title={t('review.emptyTitle')} hint={t('review.emptyHint')} />
+          </div>
+        ) : (
+          <div className="mx-auto mt-16 max-w-[460px] text-center" data-testid="review-done">
+            <div className="mx-auto grid size-14 place-items-center rounded-full bg-accent-soft text-accent">
+              <CheckCircle2 className="size-7" />
+            </div>
+            <h2 className="mt-5 font-serif text-xl font-semibold text-fg">{t('review.doneTitle')}</h2>
+            <p className="mt-2 text-sm text-muted">
+              {stats?.laterToday ? t('review.laterToday', { count: stats.laterToday }) : t('review.tomorrow', { count: stats?.tomorrow ?? 0 })}
+            </p>
+            <Button className="mt-6" variant="outline" size="sm" onClick={() => useApp.getState().setReviewTab('cards')}>
+              {t('review.plan.more')}
+            </Button>
+          </div>
+        )
+      ) : (
+        cards && (
+          <>
+            <div className="mt-7 flex items-end justify-between gap-4">
+              <div>
+                <h2 className="font-serif text-lg font-semibold text-fg">{t('review.plan.title', { count: cards.length })}</h2>
+                <p className="mt-1 text-xs text-muted">{t('review.plan.hint')}</p>
+              </div>
+              <Button variant="primary" className="h-10 px-5" disabled={!chosen.length} onClick={() => start(chosen.map((c) => c.id))} data-testid="plan-start">
+                <Play />
+                {t('review.plan.start', { count: chosen.length })}
+                <Kbd>{t('review.space')}</Kbd>
+              </Button>
+            </div>
+            <div className="mt-4 space-y-3">
+              {[...groups.entries()].map(([noteId, g]) => {
+                const ids = g.cards.map((c) => c.id)
+                const allOn = ids.every((id) => !off.has(id))
+                return (
+                  <section key={noteId} className="paper rounded-2xl px-3 py-2 shadow-[var(--shadow-1)]" data-testid="plan-group">
+                    <div className="flex items-center gap-2 px-1 py-1">
+                      <input
+                        type="checkbox"
+                        checked={allOn}
+                        onChange={(e) => toggle(ids, e.target.checked)}
+                        aria-label={t('review.cards.selectNote')}
+                        className="accent-[var(--accent)]"
+                      />
+                      <NotebookText className="size-3.5 shrink-0 text-subtle" />
+                      <span className="min-w-0 flex-1 truncate text-sm font-medium text-fg">{g.title || t('common.untitled')}</span>
+                      <button
+                        onClick={() => start(ids)}
+                        className="shrink-0 rounded-md px-2 py-0.5 text-xs text-accent hover:bg-accent-soft"
+                      >
+                        {t('review.plan.onlyNote', { count: ids.length })}
+                      </button>
+                    </div>
+                    <ul className="divide-y divide-border/60">
+                      {g.cards.map((c) => (
+                        <li key={c.id} className="flex items-center gap-2.5 py-2 pr-1 pl-7 text-sm" data-testid="plan-row">
+                          <input
+                            type="checkbox"
+                            checked={!off.has(c.id)}
+                            onChange={(e) => toggle([c.id], e.target.checked)}
+                            aria-label={c.question}
+                            className="accent-[var(--accent)]"
+                          />
+                          <span className={cn('min-w-0 flex-1 truncate', off.has(c.id) ? 'text-subtle' : 'text-fg')}>{c.question}</span>
+                          <span
+                            className={cn(
+                              'shrink-0 rounded-full px-2 py-0.5 text-2xs',
+                              c.bucket === 'new' ? 'bg-accent-soft text-accent' : c.bucket === 'learning' ? 'bg-warning/10 text-warning' : 'bg-sunken text-muted'
+                            )}
+                          >
+                            {t(`review.plan.bucket.${c.bucket}`)}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                )
+              })}
+            </div>
+          </>
+        )
+      )}
+    </div>
+  )
+}
+
 function ReviewToday() {
   const { t } = useTranslation()
   const qc = useQueryClient()
@@ -117,15 +306,20 @@ function ReviewToday() {
   const [checking, setChecking] = useState(false)
   const [busy, setBusy] = useState(false)
   const [session, setSession] = useState({ done: 0, again: 0, practice: 0 })
-  // 自选复习（v0.7.6）：按卡片库选中的顺序；没到期的卡片默认只算练习
+  // v0.7.7：今日复习先看清单、可以取消勾选，开始后按清单顺序复习（mode = today，全部计入排期）；
+  // 从卡片库自选时 mode = custom，没到期的只算练习。复习中可以跳到清单里的任意一张，或跳过当前这张。
   const queue = useApp((s) => s.reviewQueue)
-  const pos = useRef(0)
+  const mode = useApp((s) => s.reviewQueueMode)
+  const [order, setOrder] = useState<string[]>([])
+  const [pos, setPos] = useState(0)
+  const posRef = useRef(0)
+  const orderRef = useRef<string[]>([])
   const [countAll, setCountAll] = useState(false)
-  const [listOpen, setListOpen] = useState(false)
-  const { data: todayCards = [] } = useQuery({ queryKey: ['reviewCards', 'due', ''], queryFn: () => api.review.list('due'), enabled: !queue })
-  const seen = useRef<string[]>([])
   const shownAt = useRef(Date.now())
   const last = useRef<string | null>(null)
+  const again = useRef(new Map<string, number>())
+  /** 上一次评分“忘了”时追加到末尾的那一项（撤销时一并去掉） */
+  const appended = useRef(false)
 
   const show = useCallback((c: ReviewCard | null) => {
     setCard(c)
@@ -134,31 +328,58 @@ function ReviewToday() {
     setCheck(null)
     shownAt.current = Date.now()
   }, [])
-  const loadNext = useCallback(async () => {
-    if (queue) {
-      // 跳过已删除的卡片
-      while (pos.current < queue.length) {
-        const c = await api.review.get(queue[pos.current])
-        if (c) return show(c)
-        pos.current++
+  const setQueue = (next: string[], at: number): void => {
+    orderRef.current = next
+    posRef.current = at
+    setOrder(next)
+    setPos(at)
+  }
+  const loadAt = useCallback(
+    async (at: number) => {
+      let list = orderRef.current
+      let i = at
+      for (;;) {
+        // 跳过已删除的卡片
+        while (i < list.length) {
+          const c = await api.review.get(list[i])
+          if (c) {
+            setQueue(list, i)
+            return show(c)
+          }
+          i++
+        }
+        // 清单做完：今日复习时，选中的卡片里刚学过、20 分钟内又到期的学习中卡片再来一轮
+        if (useApp.getState().reviewQueueMode !== 'today') break
+        const chosen = new Set(useApp.getState().reviewQueue ?? [])
+        const more = (await api.review.today()).filter((c) => c.bucket === 'learning' && chosen.has(c.id)).map((c) => c.id)
+        if (!more.length) break
+        list = [...list, ...more]
       }
-      return show(null)
-    }
-    show(await api.review.next(seen.current.slice(-1)))
-  }, [show, queue])
+      setQueue(list, list.length)
+      show(null)
+    },
+    [show]
+  )
 
   useEffect(() => {
-    pos.current = 0
     setSession({ done: 0, again: 0, practice: 0 })
-    void loadNext()
-  }, [loadNext])
+    again.current.clear()
+    last.current = null
+    if (!queue) {
+      setQueue([], 0)
+      setCard(undefined)
+      return
+    }
+    setQueue(queue, 0)
+    void loadAt(0)
+  }, [queue, loadAt])
 
   const rate = useCallback(
     async (r: ReviewRating) => {
       if (!card || busy) return
       setBusy(true)
       try {
-        const counted = !queue || countAll || (await api.review.scheduledNow(card.id))
+        const counted = mode === 'today' || countAll || (await api.review.scheduledNow(card.id))
         if (counted) {
           await api.review.rate(card.id, r, Date.now() - shownAt.current, card.variantId)
           last.current = card.id
@@ -166,23 +387,55 @@ function ReviewToday() {
           await api.review.practice(card.id, Date.now() - shownAt.current)
           last.current = null
         }
-        seen.current.push(card.id)
-        if (queue) pos.current++
+        // 忘了的卡片放到清单末尾再来一次（同一张最多再来两次）
+        let list = orderRef.current
+        const n = again.current.get(card.id) ?? 0
+        appended.current = r === 1 && n < 2
+        if (appended.current) {
+          again.current.set(card.id, n + 1)
+          list = [...list, card.id]
+          orderRef.current = list
+        }
         setSession((s) => ({ done: s.done + 1, again: s.again + (r === 1 ? 1 : 0), practice: s.practice + (counted ? 0 : 1) }))
-        await loadNext()
+        void qc.invalidateQueries({ queryKey: ['reviewStats'] })
+        await loadAt(posRef.current + 1)
       } finally {
         setBusy(false)
       }
     },
-    [card, busy, loadNext, queue, countAll]
+    [card, busy, loadAt, mode, countAll, qc]
   )
+  /** 跳过当前这张（本轮不再出现，仍留在今天的待复习里） */
+  const skip = (): void => {
+    const list = orderRef.current.filter((_, i) => i !== posRef.current)
+    orderRef.current = list
+    void loadAt(posRef.current)
+  }
+  /** 跳到清单里的某一张：把它挪到当前位置 */
+  const jump = (index: number): void => {
+    const list = [...orderRef.current]
+    const [id] = list.splice(index, 1)
+    list.splice(posRef.current, 0, id)
+    orderRef.current = list
+    void loadAt(posRef.current)
+  }
+  const exit = (): void => useApp.getState().startReviewQueue(null)
 
   const undo = useCallback(async () => {
     if (!last.current) return
-    const c = await api.review.undo(last.current)
+    const id = last.current
+    const c = await api.review.undo(id)
     last.current = null
     if (c) {
       setSession((s) => ({ ...s, done: Math.max(0, s.done - 1) }))
+      // 回到刚评分的那一张（评分后位置前进了一格）；“忘了”追加到末尾的那一项一并去掉
+      const list = [...orderRef.current]
+      if (appended.current && list.at(-1) === id) {
+        list.pop()
+        again.current.set(id, Math.max(0, (again.current.get(id) ?? 1) - 1))
+      }
+      appended.current = false
+      setQueue(list, Math.max(0, posRef.current - 1))
       show(c)
       toast(t('review.undone'))
     }
@@ -234,7 +487,7 @@ function ReviewToday() {
     await api.review.suspend(card.id, true)
     toast(t('review.suspended'), { action: { label: t('memory.undo'), onClick: () => void api.review.suspend(card.id, false) } })
     void qc.invalidateQueries({ queryKey: ['reviewStats'] })
-    await loadNext()
+    skip()
   }
   const flagVariant = async (): Promise<void> => {
     if (!card?.variantId || busy) return
@@ -246,54 +499,34 @@ function ReviewToday() {
   const now = Date.now()
   return (
     <>
-        {queue && (
-          <div className="mx-auto flex max-w-[720px] flex-wrap items-center gap-x-4 gap-y-2 px-10 pt-6" data-testid="review-queue">
-            <span className="rounded-full bg-accent-soft px-2.5 py-0.5 text-xs font-medium text-accent">{t('review.queue.title')}</span>
-            <span className="text-xs text-muted tabular-nums">{t('review.queue.progress', { n: Math.min(pos.current + 1, queue.length), total: queue.length })}</span>
-            <Tip label={t('review.queue.countHint')}>
-              <label className="ml-auto flex items-center gap-1.5 text-xs text-muted">
-                <input type="checkbox" checked={countAll} onChange={(e) => setCountAll(e.target.checked)} className="accent-[var(--accent)]" />
-                {t('review.queue.count')}
-              </label>
-            </Tip>
-            <Button size="sm" variant="ghost" onClick={() => useApp.getState().startReviewQueue(null)}>
-              {t('review.queue.exit')}
+        {!queue && <TodayPlan stats={stats ?? null} />}
+        {queue && card !== null && (
+          <div className="mx-auto flex max-w-[720px] flex-wrap items-center gap-x-3 gap-y-2 px-10 pt-6" data-testid="review-queue">
+            <span className="rounded-full bg-accent-soft px-2.5 py-0.5 text-xs font-medium text-accent">
+              {mode === 'today' ? t('review.tabs.today') : t('review.queue.title')}
+            </span>
+            <QueueList order={order} pos={pos} onJump={jump} />
+            {card && (
+              <Button size="sm" variant="ghost" onClick={skip}>
+                <SkipForward />
+                {t('review.queue.skip')}
+              </Button>
+            )}
+            {mode === 'custom' && (
+              <Tip label={t('review.queue.countHint')}>
+                <label className="flex items-center gap-1.5 text-xs text-muted">
+                  <input type="checkbox" checked={countAll} onChange={(e) => setCountAll(e.target.checked)} className="accent-[var(--accent)]" />
+                  {t('review.queue.count')}
+                </label>
+              </Tip>
+            )}
+            <Button size="sm" variant="ghost" className="ml-auto" onClick={exit}>
+              {mode === 'today' ? t('review.queue.backToPlan') : t('review.queue.exit')}
             </Button>
           </div>
         )}
-        {stats && !queue && (
-          <div className="mx-auto flex max-w-[720px] flex-wrap gap-x-8 gap-y-3 px-10 pt-7">
-            <Stat icon={<Layers />} label={t('review.statDue')} value={stats.due} />
-            <Stat icon={<CheckCircle2 />} label={t('review.statToday')} value={stats.reviewedToday} />
-            <Stat icon={<Flame />} label={t('review.statStreak')} value={t('review.days', { count: stats.streak })} />
-            <Stat icon={<Target />} label={t('review.statRetention')} value={stats.retention === null ? '—' : `${Math.round(stats.retention * 100)}%`} />
-          </div>
-        )}
-        {!queue && todayCards.length > 0 && (
-          <div className="mx-auto max-w-[720px] px-10 pt-4">
-            <button
-              onClick={() => setListOpen(!listOpen)}
-              aria-expanded={listOpen}
-              className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs text-subtle hover:bg-surface-hover hover:text-fg"
-            >
-              <ListChecks className="size-3.5" />
-              {listOpen ? t('review.todayListHide') : t('review.todayList', { count: todayCards.length })}
-              <ChevronRight className={cn('size-3 transition-transform', listOpen && 'rotate-90')} />
-            </button>
-            {listOpen && (
-              <ul className="mt-2 max-h-64 divide-y divide-border/60 overflow-y-auto rounded-xl border border-border bg-surface/60 px-3" data-testid="review-today-list">
-                {todayCards.map((c) => (
-                  <li key={c.id} className="flex items-center gap-3 py-1.5 text-sm">
-                    <span className="min-w-0 flex-1 truncate text-fg">{c.question}</span>
-                    <span className="max-w-[40%] shrink-0 truncate text-2xs text-subtle">{c.noteTitle}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        )}
 
-        {card === undefined ? null : card === null ? (
+        {!queue || card === undefined ? null : card === null ? (
           stats && stats.total === 0 ? (
             <div className="h-[70%]">
               <EmptyState icon={<InkLeaf />} title={t('review.emptyTitle')} hint={t('review.emptyHint')} />
@@ -304,7 +537,7 @@ function ReviewToday() {
                 <CheckCircle2 className="size-7" />
               </div>
               <h2 className="mt-5 font-serif text-xl font-semibold text-fg">{queue ? t('review.queue.doneTitle') : t('review.doneTitle')}</h2>
-              {queue ? (
+              {mode === 'custom' ? (
                 <>
                   <p className="mt-2 text-sm leading-relaxed text-muted">{t('review.queue.done', { count: session.done, practice: session.practice })}</p>
                   <Button
@@ -312,21 +545,31 @@ function ReviewToday() {
                     variant="outline"
                     size="sm"
                     onClick={() => {
-                      useApp.getState().startReviewQueue(null)
+                      exit()
                       useApp.getState().setReviewTab('cards')
                     }}
                   >
                     {t('review.queue.back')}
                   </Button>
                 </>
-              ) : (<>
-              <p className="mt-2 text-sm leading-relaxed text-muted">
-                {session.done > 0 ? t('review.doneSession', { count: session.done, again: session.again }) : t('review.nothingDue')}
-              </p>
-              <p className="mt-1 text-sm text-muted">
-                {stats?.laterToday ? t('review.laterToday', { count: stats.laterToday }) : t('review.tomorrow', { count: stats?.tomorrow ?? 0 })}
-              </p>
-              </>)}
+              ) : (
+                <>
+                  <p className="mt-2 text-sm leading-relaxed text-muted">
+                    {session.done > 0 ? t('review.doneSession', { count: session.done, again: session.again }) : t('review.nothingDue')}
+                  </p>
+                  <p className="mt-1 text-sm text-muted">
+                    {stats?.laterToday ? t('review.laterToday', { count: stats.laterToday }) : t('review.tomorrow', { count: stats?.tomorrow ?? 0 })}
+                  </p>
+                  <div className="mt-6 flex justify-center gap-2">
+                    <Button variant="outline" size="sm" onClick={exit}>
+                      {t('review.queue.backToPlan')}
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => useApp.getState().setReviewTab('cards')}>
+                      {t('review.plan.more')}
+                    </Button>
+                  </div>
+                </>
+              )}
               {last.current && (
                 <Button className="mt-6" variant="ghost" size="sm" onClick={() => void undo()}>
                   <Undo2 />
