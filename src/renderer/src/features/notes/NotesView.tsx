@@ -5,10 +5,10 @@ import { NotesSidebar } from './NotesSidebar'
 import { NoteEditor } from './NoteEditor'
 import { NotesHome } from '../home/NotesHome'
 import { SourcePane } from '../workspace/SourcePane'
-import { BrowserPane } from '../browser/BrowserPane'
 import { BrowserWorkspace } from '../browser/BrowserWorkspace'
 import { FloatingPanel } from '@/components/FloatingPanel'
-import { CollapsibleSidebar, useSidebar } from '@/components/CollapsibleSidebar'
+import { PageSidebar, useWindowWidth } from '@/components/PageSidebar'
+import { useNoteFilterLabel } from './filterLabel'
 import { AiPanelBody, AiPanelFloat } from '../assist/AiPanel'
 import { useAssist } from '../assist/store'
 
@@ -24,23 +24,21 @@ export function NotesView() {
   useEffect(() => {
     sourceRef.current?.resize(focus ? '62%' : `${useApp.getState().sourcePaneSize}%`)
   }, [focus, sourceRef])
-  // 左栏：浏览器优先于资料（v0.6.0）
-  const left = browserOpen ? <BrowserPane /> : sourceId ? <SourcePane sourceId={sourceId} /> : null
+  // 左栏：资料（浏览器自 v0.7.2 起是独立工作区）
+  const left = !browserOpen && sourceId ? <SourcePane sourceId={sourceId} /> : null
   const pinned = useAssist((s) => s.panelOpen && s.panelPinned)
-  const sidebar = useSidebar()
-  // 钉住 AI 面板时收起第 2 栏，把空间留给资料与笔记
-  useEffect(() => {
-    if (pinned && !sidebar.collapsed) sidebar.toggle()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pinned])
+  const windowWidth = useWindowWidth()
+  const filterLabel = useNoteFilterLabel()
+  // 空间不够时自动收成书脊（不改用户设置）：整理审阅、钉住 AI 面板、资料与笔记并排而窗口较窄
+  const cramped = focus || pinned || windowWidth < 1100 || (!!left && windowWidth < 1280)
   const main = noteId ? <NoteEditor noteId={noteId} /> : <NotesHome />
   // 浏览器（v0.7.2）：独立工作区，不显示笔记分类与搜索栏；笔记按需出现在浏览器旁边
   if (browserOpen) return <BrowserWorkspace />
   return (
     <div className="flex h-full">
-      <CollapsibleSidebar forceCollapsed={focus}>
+      <PageSidebar page="notes" auto={cramped} label={filterLabel}>
         <NotesSidebar />
-      </CollapsibleSidebar>
+      </PageSidebar>
       <FloatingPanel flushLeft>
         {left || pinned ? (
           <Group

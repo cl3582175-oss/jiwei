@@ -47,7 +47,7 @@ import {
 } from '@/components/ui/primitives'
 import { confirm } from '@/components/ui/confirm'
 import { FloatingPanel } from '@/components/FloatingPanel'
-import { CollapsibleSidebar } from '@/components/CollapsibleSidebar'
+import { PageSidebar, SidebarToggle, useWindowWidth } from '@/components/PageSidebar'
 import { KIND_TINT } from '@/lib/tint'
 import { InkLibrary } from '@/components/Illustrations'
 import { useApp } from '@/store/app'
@@ -292,6 +292,18 @@ export function LibraryView() {
   const [kind, setKind] = useState<SourceKind | undefined>()
   const [cat, setCat] = useState<CatFilter>({ type: 'all' })
   const [search, setSearch] = useState('')
+  // 书脊（v0.7.3）：收起后竖排显示当前筛选；窗口较窄时自动收起
+  const narrow = useWindowWidth() < 1100
+  const { data: sourceCats = [] } = useCategories('source')
+  const libraryLabel = `${t('library.title')} · ${
+    kind
+      ? t(`library.kinds.${kind}`)
+      : cat.type === 'category'
+        ? (sourceCats.find((c) => c.id === cat.id)?.name ?? '')
+        : cat.type === 'uncategorized'
+          ? t('common.uncategorized')
+          : t('library.kinds.all')
+  }`
   const [scene, setScene] = useState<Scene | undefined>(),
     [seriesId, setSeriesId] = useState('')
   const { data: series = [] } = useQuery({ queryKey: ['series'], queryFn: () => api.series.list() })
@@ -353,10 +365,11 @@ export function LibraryView() {
       onDrop={(e) => void onDrop(e)}
     >
       {/* 左栏：类型 + 分类 */}
-      <CollapsibleSidebar>
+      <PageSidebar page="library" auto={narrow} label={libraryLabel}>
         <aside className="flex h-full w-full flex-col">
-          <div className="drag flex h-[52px] shrink-0 items-end px-4 pb-1.5">
+          <div className="drag flex h-[52px] shrink-0 items-end justify-between px-4 pb-1.5">
             <h2 className="font-serif text-lg font-semibold tracking-wide text-fg">{t('library.title')}</h2>
+            <SidebarToggle />
           </div>
           <div className="space-y-0.5 overflow-y-auto px-3 pt-1">
             <SectionHeader label={t('library.typeHeader')} />
@@ -378,7 +391,7 @@ export function LibraryView() {
             />
           </div>
         </aside>
-      </CollapsibleSidebar>
+      </PageSidebar>
 
       {/* 主区：浮动面板 */}
       <FloatingPanel flushLeft className="flex flex-col">

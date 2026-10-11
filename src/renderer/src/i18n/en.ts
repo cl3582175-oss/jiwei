@@ -415,8 +415,10 @@ const en: Messages = {
     groups: { collect: 'Collect', learn: 'Learn', plan: 'Plan' },
     browser: 'Browse',
     chat: 'Jiwei Assistant',
-    collapseSidebar: 'Hide sidebar',
-    expandSidebar: 'Show sidebar',
+    collapseSidebar: 'Hide list',
+    expandSidebar: 'Show list',
+    pinSidebar: 'Pin list',
+    resizeSidebar: 'Drag to resize; double-click to reset',
     back: 'Back',
     forward: 'Forward',
     home: 'Back to home',
@@ -870,6 +872,7 @@ const en: Messages = {
     }
   },
   chat: {
+    history: 'Conversations',
     title: 'Jiwei Assistant',
     new: 'New chat',
     noConversations: 'No chats yet',

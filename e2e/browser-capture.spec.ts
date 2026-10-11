@@ -103,7 +103,16 @@ async function reachable(testId: string): Promise<void> {
   }
 }
 test('retained frame pixels match crop after the live canvas changes; Electron 2x representations', async () => {
-  const frame = await page.evaluate(() => window.jiwei.browser.captureBegin())
+  // 网页恰好在这一刻导航时，产品会提示“请重新框选”；照用户的做法重试，并记录当时的标签状态
+  let frame: Awaited<ReturnType<typeof window.jiwei.browser.captureBegin>> | null = null
+  for (let i = 0; i < 3 && !frame; i++) {
+    frame = await page.evaluate(() => window.jiwei.browser.captureBegin()).catch(async (e: Error) => {
+      console.warn('[capture retry]', e.message, JSON.stringify((await page.evaluate(() => window.jiwei.browser.state())).tabs.map((t) => [t.url, t.loading])))
+      await page.waitForTimeout(500)
+      return null
+    })
+  }
+  if (!frame) throw new Error('captureBegin failed 3 times')
   await app.evaluate(async ({ webContents }) => {
     const wc = webContents.getAllWebContents().find((w) => w.getURL().startsWith('http://127.0.0.1'))!
     await wc.executeJavaScript("document.querySelector('canvas').getContext('2d').fillRect(0,0,1000,800)")

@@ -9,8 +9,6 @@ import {
   Trash2,
   Settings,
   Search,
-  PanelLeftClose,
-  PanelLeftOpen,
   Sparkles,
   Layers,
   Sprout,
@@ -28,7 +26,6 @@ import { cn, isMac, modKey } from '@/lib/utils'
 import { Tip } from './ui/primitives'
 import { Logo } from './Logo'
 import { JobsIndicator } from './JobsIndicator'
-import { useSidebar } from './CollapsibleSidebar'
 import { useReviewStats } from '@/features/review/ReviewView'
 import { useAssist } from '@/features/assist/store'
 
@@ -88,7 +85,6 @@ function RailButton({
 export function NavRail() {
   const { t } = useTranslation()
   const { view, setSettingsOpen, setPaletteOpen, browserOpen, lastInGroup, goNav } = useApp()
-  const sidebar = useSidebar()
   const { data: inbox = [] } = useInbox()
   const { data: stats } = useReviewStats()
   const inboxCount = inbox.filter((i) => i.status === 'new' || i.status === 'suggested').length
@@ -145,16 +141,6 @@ export function NavRail() {
       <RailButton label={`${t('nav.search')}  ${modKey}K`} onClick={() => setPaletteOpen(true)}>
         <Search />
       </RailButton>
-      {/* 侧栏收展：最多四栏并存时，把空间让给资料与笔记 */}
-      {['notes', 'library', 'chat', 'review', 'reflect'].includes(view) && !(view === 'notes' && browserOpen) && (
-        <RailButton
-          label={`${sidebar.collapsed ? t('nav.expandSidebar') : t('nav.collapseSidebar')}  ${modKey}\\`}
-          pressed={!sidebar.collapsed}
-          onClick={sidebar.toggle}
-        >
-          {sidebar.collapsed ? <PanelLeftOpen /> : <PanelLeftClose />}
-        </RailButton>
-      )}
       <div className="my-1.5 h-px w-6 shrink-0 bg-border" />
       {(Object.keys(NAV_GROUPS) as NavGroup[]).map((g) => {
         const open = currentGroup === g && NAV_GROUPS[g].length > 1

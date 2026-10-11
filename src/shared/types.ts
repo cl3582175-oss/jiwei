@@ -207,6 +207,9 @@ export interface ReflectionSettings {
 /** 配色方案：青绿山水 / 汝窑天青 / 敦煌 */
 export type Palette = 'qinglu' | 'celadon' | 'dunhuang'
 
+/** 有列表栏的页面（v0.7.3） */
+export type SidebarPage = 'notes' | 'library' | 'chat'
+
 export interface Settings {
   recordingScene?: 'meeting' | 'lecture' | 'thought'
   capture: ReturnType<typeof import('./capture').captureDefaults>
@@ -219,6 +222,8 @@ export interface Settings {
   onboarded: boolean
   /** 侧栏（目录 / 资料分类）是否收起 */
   sidebarCollapsed: boolean
+  /** 各页面列表栏（v0.7.3）：是否收起、宽度 */
+  sidebars?: Partial<Record<SidebarPage, { collapsed: boolean; width: number }>>
   ai: AiSettings
   /** 费用上限（v0.7） */
   budget: import('./agent').Budget

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { SidebarToggle } from '@/components/PageSidebar'
 import { useTranslation } from 'react-i18next'
 import { useQueryClient } from '@tanstack/react-query'
 import { Plus, Search, Pin, Layers, Inbox, ArrowDownUp, Check, X, Hash, Trash2, ShieldOff } from 'lucide-react'
@@ -97,6 +98,7 @@ export function NotesSidebar() {
       <div className="drag flex h-[52px] shrink-0 items-end justify-between px-4 pb-1.5">
         <h2 className="font-serif text-lg font-semibold tracking-wide text-fg">{t('notes.title')}</h2>
         <div className="no-drag flex items-center gap-0.5">
+          <SidebarToggle />
           <Menu>
             <Tip label={t(`notes.sort.${noteSort}`)} side="bottom">
               <MenuTrigger asChild>

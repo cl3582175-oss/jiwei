@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button'
 import { Tip } from '@/components/ui/primitives'
 import { confirm } from '@/components/ui/confirm'
 import { FloatingPanel } from '@/components/FloatingPanel'
-import { CollapsibleSidebar } from '@/components/CollapsibleSidebar'
+import { PageSidebar, SidebarToggle, useWindowWidth } from '@/components/PageSidebar'
 import { InkMountains } from '@/components/Illustrations'
 import { ModelPicker } from '../ai/ModelPicker'
 import { EffortPicker } from '../ai/EffortPicker'
@@ -42,16 +42,13 @@ function ChatSidebar() {
     <aside className="flex h-full w-full flex-col">
       <div className="drag flex h-[52px] shrink-0 items-end justify-between px-4 pb-1.5">
         <h2 className="font-serif text-lg font-semibold tracking-wide text-fg">{t('chat.title')}</h2>
-        <Button
-          variant="outline"
-          size="sm"
-          className="no-drag h-7 rounded-full px-2.5"
-          onClick={() => openConversation(null)}
-          aria-label={t('chat.new')}
-        >
-          <Plus />
-          {t('common.create')}
-        </Button>
+        <div className="no-drag flex items-center gap-0.5">
+          <SidebarToggle />
+          <Button variant="outline" size="sm" className="ml-1 h-7 rounded-full px-2.5" onClick={() => openConversation(null)} aria-label={t('chat.new')}>
+            <Plus />
+            {t('common.create')}
+          </Button>
+        </div>
       </div>
       <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 pt-3 pb-4">
         {list.map((c) => (
@@ -328,11 +325,13 @@ function ChatPanel() {
 }
 
 export function ChatView() {
+  const { t } = useTranslation()
+  const narrow = useWindowWidth() < 1100
   return (
     <div className="flex h-full">
-      <CollapsibleSidebar>
+      <PageSidebar page="chat" auto={narrow} label={t('chat.history')}>
         <ChatSidebar />
-      </CollapsibleSidebar>
+      </PageSidebar>
       <FloatingPanel flushLeft>
         <ChatPanel />
       </FloatingPanel>

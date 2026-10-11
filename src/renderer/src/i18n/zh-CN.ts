@@ -402,8 +402,10 @@ const zhCN = {
     groups: { collect: '收集', learn: '学习', plan: '计划' },
     browser: '浏览',
     chat: '积微助手',
-    collapseSidebar: '收起侧栏',
-    expandSidebar: '展开侧栏',
+    collapseSidebar: '收起列表',
+    expandSidebar: '展开列表',
+    pinSidebar: '固定列表',
+    resizeSidebar: '拖动调整宽度，双击恢复默认',
     back: '后退',
     forward: '前进',
     home: '返回首页',
@@ -836,6 +838,7 @@ const zhCN = {
     }
   },
   chat: {
+    history: '对话记录',
     title: '积微助手',
     new: '新对话',
     noConversations: '还没有对话',

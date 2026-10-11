@@ -82,6 +82,10 @@ export const SettingsPatchSchema = z.object({
   palette: z.enum(['qinglu', 'celadon', 'dunhuang']).optional(),
   onboarded: z.boolean().optional(),
   sidebarCollapsed: z.boolean().optional(),
+  /** 各页面列表栏（v0.7.3）：是否收起、宽度 */
+  sidebars: z
+    .partialRecord(z.enum(['notes', 'library', 'chat']), z.object({ collapsed: z.boolean(), width: z.number().min(150).max(600) }))
+    .optional(),
   ai: z.lazy(() => AiSettingsSchema).optional(),
   /** 费用上限（v0.7） */
   budget: z.lazy(() => BudgetSchema).optional(),
