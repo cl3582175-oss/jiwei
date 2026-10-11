@@ -1,4 +1,6 @@
-import { useEffect, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
+import { NavRing } from './NavRing'
 import { useInbox } from '@/features/inbox/InboxView'
 import { useTranslation } from 'react-i18next'
 import {
@@ -29,8 +31,13 @@ import { JobsIndicator } from './JobsIndicator'
 import { useReviewStats } from '@/features/review/ReviewView'
 import { useAssist } from '@/features/assist/store'
 
-// 左侧导航（v0.6.7）：顶部是积微助手，其下按学习闭环分组——今日 · 收集 · 学习 · 计划。
-// 点组图标回到这组上次去过的页面，当前所在的组展开显示它的各项。快捷键保持不变。
+// 左侧导航（v0.6.7，v0.7.4 改为浮卡）：顶部是积微助手，其下按学习闭环分组——今日 · 收集 · 学习 · 计划。
+// 点组图标直达这组上次去过的页面；停在组图标上，组图标的底色向右延伸成玻璃浮卡，按行列出二级入口（NavRing）。
+// 导航栏高度从此固定，当前所在的二级页面以组图标右下角的小标显示。快捷键保持不变。
+
+const OPEN_DELAY = 120
+const CLOSE_DELAY = 220
+const HINT_KEY = 'jiwei.hint.navRing'
 
 function RailButton({
   active,
@@ -40,6 +47,13 @@ function RailButton({
   badge,
   small,
   accent,
+  noTip,
+  sub,
+  buttonRef,
+  onPointerEnter,
+  onPointerLeave,
+  onKeyDown,
+  expanded,
   children
 }: {
   active?: boolean
@@ -49,19 +63,35 @@ function RailButton({
   badge?: number
   small?: boolean
   accent?: boolean
+  /** 有半环的组不显示提示气泡（半环本身就是说明） */
+  noTip?: boolean
+  /** 当前所在的二级页面图标（组图标右下角的小标） */
+  sub?: ReactNode
+  buttonRef?: (el: HTMLButtonElement | null) => void
+  onPointerEnter?: () => void
+  onPointerLeave?: () => void
+  onKeyDown?: (e: React.KeyboardEvent) => void
+  expanded?: boolean
   children: ReactNode
 }) {
-  return (
-    <Tip label={label}>
+  const button = (
       <button
+        ref={buttonRef}
         onClick={onClick}
+        onPointerEnter={onPointerEnter}
+        onPointerLeave={onPointerLeave}
+        onKeyDown={onKeyDown}
+        aria-haspopup={expanded !== undefined ? 'menu' : undefined}
+        aria-expanded={expanded}
         aria-label={label}
         aria-current={active ? 'page' : undefined}
         aria-pressed={pressed}
         className={cn(
-          'no-drag relative grid place-items-center transition-colors duration-150',
+          'no-drag relative grid place-items-center transition-[background-color,color,border-radius] duration-150',
           small ? 'size-8 rounded-lg [&_svg]:size-[16px]' : 'size-10 rounded-[10px] [&_svg]:size-[19px]',
-          accent
+          expanded
+            ? 'z-[51] rounded-r-none border border-r-0 border-border bg-surface/90 text-accent backdrop-blur-xl'
+            : accent
             ? active
               ? 'bg-accent text-accent-fg'
               : 'bg-accent-soft text-accent hover:bg-accent hover:text-accent-fg'
@@ -76,10 +106,77 @@ function RailButton({
             {badge > 99 ? '99+' : badge}
           </span>
         )}
+        {sub && (
+          <span className="absolute -right-1 -bottom-1 grid size-[18px] place-items-center rounded-full border border-accent/40 bg-surface text-accent shadow-card [&_svg]:size-[11px]" data-testid="nav-sub">
+            {sub}
+          </span>
+        )}
         {active && !small && !accent && <span className="absolute top-2.5 -left-[17px] h-5 w-[3px] rounded-r-full bg-accent" />}
       </button>
-    </Tip>
   )
+  return noTip ? button : <Tip label={label}>{button}</Tip>
+}
+
+/** 首次提示浮在窗口上（导航栏会裁掉超出宽度的内容） */
+function RingHint({ anchor, text, leaving }: { anchor: () => HTMLElement | null; text: string; leaving: boolean }) {
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null)
+  useEffect(() => {
+    const place = (): void => {
+      const r = anchor()?.getBoundingClientRect()
+      if (r) setPos({ x: r.right + 12, y: r.top + r.height / 2 })
+    }
+    place()
+    window.addEventListener('resize', place)
+    return () => window.removeEventListener('resize', place)
+  }, [anchor])
+  if (!pos) return null
+  return createPortal(
+    <span className="pointer-events-none fixed z-40 -translate-y-1/2" style={{ left: pos.x, top: pos.y }} data-testid="nav-ring-hint">
+      <span
+        className={cn(
+          'relative flex animate-[fade-in_400ms_ease-out] items-center rounded-lg border border-accent/30 bg-surface px-3 py-1.5 text-sm whitespace-nowrap text-muted shadow-float',
+          'transition-[opacity,transform] duration-[600ms] ease-out motion-reduce:transition-opacity',
+          leaving && '-translate-x-1 opacity-0'
+        )}
+      >
+        <span className="absolute top-1/2 -left-[5px] size-2.5 -translate-y-1/2 rotate-45 border-b border-l border-accent/30 bg-surface" />
+        {text}
+      </span>
+    </span>,
+    document.body
+  )
+}
+
+/** 首次使用的轻提示：停在组图标上可以看到全部入口（只出现一次）。淡入，停留约 3.5 秒后用 0.6 秒淡出 */
+const HINT_STAY = 3500
+const HINT_FADE = 600
+function useRingHint(): [boolean, boolean, () => void] {
+  const [show, setShow] = useState(() => {
+    try {
+      return !localStorage.getItem(HINT_KEY)
+    } catch {
+      return false
+    }
+  })
+  const done = (): void => {
+    setShow(false)
+    try {
+      localStorage.setItem(HINT_KEY, '1')
+    } catch {
+      // 存不了就下次再提示
+    }
+  }
+  const [leaving, setLeaving] = useState(false)
+  useEffect(() => {
+    if (!show) return
+    const fade = window.setTimeout(() => setLeaving(true), HINT_STAY)
+    const end = window.setTimeout(done, HINT_STAY + HINT_FADE)
+    return () => {
+      window.clearTimeout(fade)
+      window.clearTimeout(end)
+    }
+  }, [show])
+  return [show, leaving, done]
 }
 
 export function NavRail() {
@@ -116,6 +213,43 @@ export function NavRail() {
     learn: { label: t('nav.groups.learn'), icon: <BookOpen /> },
     plan: { label: t('nav.groups.plan'), icon: <CalendarRange /> }
   }
+  // 半环：悬停片刻展开，移开片刻收起
+  const [ring, setRing] = useState<NavGroup | null>(null)
+  const anchors = useRef<Partial<Record<NavGroup, HTMLButtonElement | null>>>({})
+  const openTimer = useRef<number | undefined>(undefined)
+  const closeTimer = useRef<number | undefined>(undefined)
+  const [hint, hintLeaving, doneHint] = useRingHint()
+  useEffect(
+    () => () => {
+      window.clearTimeout(openTimer.current)
+      window.clearTimeout(closeTimer.current)
+    },
+    []
+  )
+  const keep = (): void => window.clearTimeout(closeTimer.current)
+  const scheduleOpen = (g: NavGroup): void => {
+    keep()
+    window.clearTimeout(openTimer.current)
+    if (NAV_GROUPS[g].length < 2) return setRing(null)
+    openTimer.current = window.setTimeout(() => {
+      setRing(g)
+      doneHint()
+    }, ring ? 0 : OPEN_DELAY)
+  }
+  const scheduleClose = (): void => {
+    window.clearTimeout(openTimer.current)
+    window.clearTimeout(closeTimer.current)
+    closeTimer.current = window.setTimeout(() => {
+      // 鼠标仍停在组图标或半环上（进出事件的顺序并不总是可靠）：不收起
+      const hovered = document.querySelector('[data-testid="nav-ring"] :hover') || document.querySelector('[data-testid="nav-rail"] [aria-expanded="true"]:hover')
+      if (!hovered) setRing(null)
+    }, CLOSE_DELAY)
+  }
+  const select = (i: NavItem): void => {
+    setRing(null)
+    goNav(i)
+  }
+
   const groupBadge = (g: NavGroup): number | undefined => {
     const n = NAV_GROUPS[g].reduce((sum, i) => sum + (item[i].badge ?? 0), 0)
     return n || undefined
@@ -143,26 +277,52 @@ export function NavRail() {
       </RailButton>
       <div className="my-1.5 h-px w-6 shrink-0 bg-border" />
       {(Object.keys(NAV_GROUPS) as NavGroup[]).map((g) => {
-        const open = currentGroup === g && NAV_GROUPS[g].length > 1
+        const multi = NAV_GROUPS[g].length > 1
+        const here = currentGroup === g && current ? current : null
+        const name = groups[g].label
         return (
-          <div key={g} className={cn('flex flex-col items-center gap-1', open && 'rounded-xl bg-sunken/70 pb-1.5')} data-testid={`nav-group-${g}`}>
+          <div key={g} className="relative flex flex-col items-center" data-testid={`nav-group-${g}`}>
             <RailButton
               active={currentGroup === g}
-              label={groups[g].label}
-              badge={open ? undefined : groupBadge(g)}
-              onClick={() => goNav(lastInGroup[g] ?? NAV_GROUPS[g][0])}
+              label={here && multi ? `${name} · ${item[here].label.split('  ')[0]}` : name}
+              noTip={multi}
+              expanded={multi ? ring === g : undefined}
+              badge={groupBadge(g)}
+              sub={here && multi ? item[here].icon : undefined}
+              buttonRef={(el) => {
+                anchors.current[g] = el
+              }}
+              onPointerEnter={() => scheduleOpen(g)}
+              onPointerLeave={scheduleClose}
+              onKeyDown={(e) => {
+                if (multi && (e.key === 'ArrowRight' || e.key === ' ')) {
+                  e.preventDefault()
+                  setRing(g)
+                }
+              }}
+              onClick={() => select(lastInGroup[g] ?? NAV_GROUPS[g][0])}
             >
               {groups[g].icon}
             </RailButton>
-            {open &&
-              NAV_GROUPS[g].map((i) => (
-                <RailButton key={i} small active={current === i} label={item[i].label} badge={item[i].badge} onClick={() => goNav(i)}>
-                  {item[i].icon}
-                </RailButton>
-              ))}
           </div>
         )
       })}
+      {hint && !ring && <RingHint anchor={() => anchors.current.collect ?? null} text={t('nav.ringHint')} leaving={hintLeaving} />}
+      {ring && anchors.current[ring] && (
+        <NavRing
+          key={ring}
+          anchor={anchors.current[ring]!}
+          title={groups[ring].label}
+          items={NAV_GROUPS[ring].map((i) => {
+            const [label, hint] = item[i].label.split('  ')
+            return { id: i, label, hint, icon: item[i].icon, badge: item[i].badge, current: current === i }
+          })}
+          onSelect={(id) => select(id as NavItem)}
+          onClose={() => setRing(null)}
+          onPointerEnter={keep}
+          onPointerLeave={scheduleClose}
+        />
+      )}
       <div className="flex-1" />
       <JobsIndicator />
       <RailButton active={view === 'trash'} label={t('nav.trash')} onClick={() => useApp.getState().setView('trash')}>

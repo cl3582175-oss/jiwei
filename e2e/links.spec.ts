@@ -77,7 +77,7 @@ test('unlinked mentions and two-way connections', async () => {
   // 在“边际效用”中关联它
   await page.evaluate((id) => window.jiwei.notes.get(id), ids.mu)
   await navTo(page, /^笔记/)
-  if (await page.getByPlaceholder('笔记标题').count()) await navTo(page, /^笔记/)
+  if (await page.getByPlaceholder('笔记标题').count()) await navTo(page, /^笔记/, { again: true })
   await page.getByText('边际效用', { exact: true }).first().click()
   const panel = page.getByTestId('connections')
   await panel.locator('[data-mention="吃包子的观察"]').getByRole('button', { name: '关联' }).click()
@@ -99,7 +99,7 @@ test('turn a mention into a link inside the other note (undoable)', async () => 
   await expect.poll(async () => (await connections(ids.demand)).mentions.map((m) => m.title), { timeout: 10_000 }).toContain('经济学读书笔记')
   // 打开“需求曲线”，把提及变成链接（不用打开那篇笔记）
   await navTo(page, /^笔记/)
-  if (await page.getByPlaceholder('笔记标题').count()) await navTo(page, /^笔记/)
+  if (await page.getByPlaceholder('笔记标题').count()) await navTo(page, /^笔记/, { again: true })
   await page.getByText('需求曲线', { exact: true }).first().click()
   await expect(page.getByPlaceholder('笔记标题')).toHaveValue('需求曲线')
   const panel = page.getByTestId('connections')

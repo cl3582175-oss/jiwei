@@ -51,8 +51,7 @@ test('cue questions become review cards', async () => {
   await expect.poll(async () => (await page.evaluate(() => window.jiwei.review.stats())).total, { timeout: 15_000 }).toBe(2)
   // 导航徽标与首页入口
   await expect(page.getByTestId('nav-group-learn')).toContainText('2')
-  await navTo(page, /^笔记/)
-  await navTo(page, /^笔记/)
+  await navTo(page, /^笔记/, { again: true })
   await expect(page.getByTestId('home-review')).toContainText('2 张卡片待复习')
 })
 

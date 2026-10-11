@@ -417,6 +417,7 @@ const en: Messages = {
     chat: 'Jiwei Assistant',
     collapseSidebar: 'Hide list',
     expandSidebar: 'Show list',
+    ringHint: 'Hover an icon to see everything in its group',
     pinSidebar: 'Pin list',
     resizeSidebar: 'Drag to resize; double-click to reset',
     back: 'Back',

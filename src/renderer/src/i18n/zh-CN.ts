@@ -404,6 +404,7 @@ const zhCN = {
     chat: '积微助手',
     collapseSidebar: '收起列表',
     expandSidebar: '展开列表',
+    ringHint: '停在图标上，可以看到这一组的全部入口',
     pinSidebar: '固定列表',
     resizeSidebar: '拖动调整宽度，双击恢复默认',
     back: '后退',

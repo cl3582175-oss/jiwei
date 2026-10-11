@@ -3,7 +3,7 @@ import { createServer, type Server } from 'http'
 import { mkdtempSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { navTo } from './fixtures/nav'
+import { currentNav, navTo } from './fixtures/nav'
 
 // v0.6.7：「今日」首页、导航分组、学习活动记录、积微助手统一。
 // 受控的模型服务：结构化调用（晨报）返回固定文字，对话流返回一句话；记录收到的全部请求。
@@ -87,20 +87,20 @@ test('全新用户：默认打开「今日」，导航为助手 + 四组，晨�
 test('导航分组：点组回到上次去过的页面，⌘9 回到今日', async () => {
   const rail = page.getByTestId('nav-rail')
   await rail.getByRole('button', { name: /^学习/ }).click()
-  await expect(rail.getByRole('button', { name: /^笔记/ })).toHaveAttribute('aria-current', 'page')
-  await rail.getByRole('button', { name: /^图谱/ }).click()
+  await expect(currentNav(page, '学习', '笔记')).toBeVisible()
+  await navTo(page, /^图谱/)
   await page.keyboard.press('ControlOrMeta+9')
   await expect(page.getByTestId('today-view')).toBeVisible()
   await rail.getByRole('button', { name: /^学习/ }).click()
-  await expect(rail.getByRole('button', { name: /^图谱/ })).toHaveAttribute('aria-current', 'page')
+  await expect(currentNav(page, '学习', '图谱')).toBeVisible()
   // 收集组：资料库；计划组：学习目标、复盘
   await navTo(page, /^资料库/)
-  await expect(rail.getByRole('button', { name: /^资料库/ })).toHaveAttribute('aria-current', 'page')
+  await expect(currentNav(page, '收集', '资料库')).toBeVisible()
   await navTo(page, /^学习目标/)
   await expect(page.getByTestId('goals-view')).toBeVisible()
   // 学习目标只在「计划」里，复习页不再有这个标签
   await expect(page.getByRole('tab', { name: '学习目标' })).toHaveCount(0)
-  await expect(rail.getByRole('button', { name: /^学习目标/ })).toHaveAttribute('aria-current', 'page')
+  await expect(currentNav(page, '计划', '学习目标')).toBeVisible()
   await page.keyboard.press('ControlOrMeta+9')
 })
 
