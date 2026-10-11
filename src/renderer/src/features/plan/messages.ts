@@ -1,4 +1,7 @@
 export const planZh = {
+  unlink: '取消关联',
+  subscribe: '订阅日历', icsHint: '只读订阅，每 6 小时刷新；取消勾选可隐藏。支持 https / webcal 地址。', feedName: '订阅名称', feedUrl: '订阅地址', feedAdd: '添加订阅', importIcs: '导入 .ics 文件', refresh: '刷新', fetchPending: '等待首次抓取',
+  timeline: '时间线', newPhase: '新建阶段', newMilestone: '新建里程碑', phaseTitle: '阶段名称', milestoneTitle: '里程碑名称', endDate: '结束日期', phaseState: '阶段状态', phaseStates: { planned: '计划中', active: '进行中', done: '已完成' }, phase: '所属阶段', linkNotes: '关联笔记', linkSources: '关联资料', linkedMistakes: '关联笔记中有 {{count}} 道错题',
   calendar: '日历',
   week: '周视图',
   month: '月视图',
@@ -33,6 +36,9 @@ export const planZh = {
   forecastHint: '复习负荷为已排期的下限，不模拟之后的评分'
 }
 export const planEn = {
+  unlink: 'Unlink',
+  subscribe: 'Subscribe to calendars', icsHint: 'Read-only subscription, refreshed every 6 hours. Uncheck to hide. Supports https / webcal addresses.', feedName: 'Subscription name', feedUrl: 'Subscription address', feedAdd: 'Add subscription', importIcs: 'Import .ics file', refresh: 'Refresh', fetchPending: 'Awaiting first fetch',
+  timeline: 'Timeline', newPhase: 'New phase', newMilestone: 'New milestone', phaseTitle: 'Phase title', milestoneTitle: 'Milestone title', endDate: 'End date', phaseState: 'Phase status', phaseStates: { planned: 'Planned', active: 'Active', done: 'Done' }, phase: 'Phase', linkNotes: 'Linked notes', linkSources: 'Linked sources', linkedMistakes: '{{count}} mistakes in linked notes',
   calendar: 'Calendar',
   week: 'Week view',
   month: 'Month view',

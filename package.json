@@ -48,6 +48,7 @@
     "marked": "^18.1.0",
     "mermaid": "^12.1.0",
     "mind-elixir": "^5.15.1",
+    "node-ical": "0.22.1",
     "pdf-lib": "1.17.1",
     "pdfjs-dist": "^6.4.299",
     "qrcode": "1.5.4",

@@ -14,6 +14,7 @@ import { MasteryPanel } from './MasteryView'
 import { ActionRow } from '../reflect/ReflectHome'
 import { errText } from '../chat/useChat'
 import { TINTS } from '@/lib/tint'
+import { Timeline } from '../plan/Timeline'
 
 // 方向：一个目标关联一个分类（含子分类）和若干笔记；进度由其中的复习卡片计算。
 // 目标会出现在 AI 的系统提示与每周复盘的素材包中。
@@ -228,6 +229,7 @@ function GoalDetail({ goal, onBack }: { goal: Goal; onBack: () => void }) {
           ))}
         </div>
       )}
+      <Timeline goal={goal} />
       <section className="mt-6">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-medium text-fg">{t('reflect.actions')}</h3>

@@ -2,7 +2,7 @@ import { and, asc, desc, eq, gte, inArray, isNull, lt, lte, ne, or, sql } from '
 import { z } from 'zod'
 import { getDb } from '../db'
 import { mistakeStatistics } from './learningStatistics'
-import { actions, blocks, cards, conversations, insightVersions, insights, links, notes, reviewLogs, reviews } from '../db/schema'
+import { actions, blocks, cards, conversations, goalPhases, insightVersions, insights, links, notes, reviewLogs, reviews } from '../db/schema'
 import { profileDb } from '../db/profile'
 import { newId } from '../lib/ids'
 import { markdownToNodes } from '../lib/markdown'
@@ -816,6 +816,7 @@ type ActionRow = typeof actions.$inferSelect
 function toAction(r: ActionRow): ActionItem {
   return {
     id: r.id,
+    phaseId: r.phaseId,
     title: r.title,
     status: r.status,
     dueAt: r.dueAt,
@@ -864,14 +865,19 @@ export function createAction(
     })
     .run()
   emit('reflection:changed', {})
+  emit('plan:changed', {})
   return toAction(getDb().select().from(actions).where(eq(actions.id, id)).get()!)
 }
 
-export function updateAction(id: string, patch: { title?: string; status?: ActionItem['status']; dueAt?: number | null }): ActionItem {
+export function updateAction(id: string, patch: { title?: string; status?: ActionItem['status']; dueAt?: number | null; phaseId?: string | null }): ActionItem {
+  const row = getDb().select().from(actions).where(and(eq(actions.id, id), isNull(actions.deletedAt))).get()
+  if (!row) throw new Error('Action not found')
+  if (patch.phaseId && !getDb().select().from(goalPhases).where(and(eq(goalPhases.id, patch.phaseId), eq(goalPhases.goalId, row.goalId ?? ''), isNull(goalPhases.deletedAt))).get()) throw new Error('Phase not found in direction')
   const now = Date.now()
   getDb()
     .update(actions)
     .set({
+      ...(patch.phaseId !== undefined ? { phaseId: patch.phaseId } : {}),
       ...(patch.title !== undefined ? { title: patch.title } : {}),
       ...(patch.dueAt !== undefined ? { dueAt: patch.dueAt } : {}),
       ...(patch.status ? { status: patch.status, doneAt: patch.status === 'done' ? now : null } : {}),
@@ -881,10 +887,12 @@ export function updateAction(id: string, patch: { title?: string; status?: Actio
     .where(eq(actions.id, id))
     .run()
   emit('reflection:changed', {})
+  emit('plan:changed', {})
   return toAction(getDb().select().from(actions).where(eq(actions.id, id)).get()!)
 }
 
 export function removeAction(id: string): void {
   getDb().update(actions).set({ deletedAt: Date.now(), updatedAt: Date.now() }).where(eq(actions.id, id)).run()
   emit('reflection:changed', {})
+  emit('plan:changed', {})
 }

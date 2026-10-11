@@ -1,5 +1,7 @@
 import { tr } from './lib/messages'
 import * as plan from './services/plan/calendar'
+import * as planPhases from './services/plan/phases'
+import * as planIcs from './services/plan/ics'
 import * as browserCapture from './services/browser/capture'
 import * as mistakes from './services/mistakes'
 import * as mistakeEntries from './services/mistakeEntries'
@@ -417,6 +419,17 @@ const handlers: Handlers = {
     commit: (_, id, input) => reflection.commitReflection(id, input)
   },
   plan: {
+    phases: (_, id) => planPhases.phases(id),
+    phaseSave: (_, input) => planPhases.phaseSave(input),
+    phaseRemove: (_, id) => planPhases.phaseRemove(id),
+    milestones: (_, id) => planPhases.milestones(id),
+    milestoneSave: (_, input) => planPhases.milestoneSave(input),
+    milestoneRemove: (_, id) => planPhases.milestoneRemove(id),
+    icsFeeds: () => planIcs.feeds(),
+    icsSave: (_, input) => planIcs.save(input),
+    icsRefresh: (_, id) => planIcs.refresh(id),
+    icsRemove: (_, id) => planIcs.remove(id),
+    icsImport: () => planIcs.importFile(),
     events: (_, range) => plan.events(range),
     eventSave: (_, input) => plan.eventSave(input),
     eventRemove: (_, id) => plan.eventRemove(id),

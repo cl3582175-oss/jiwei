@@ -1,4 +1,5 @@
 import { net } from 'electron'
+import { registerIcsJobs } from './plan/ics'
 import { and, eq, isNull, sql } from 'drizzle-orm'
 import { getDb } from '../db'
 import { assets, sources } from '../db/schema'
@@ -58,6 +59,7 @@ const sourceTitle = (id: string): string =>
   getDb().select({ title: sources.title }).from(sources).where(eq(sources.id, id)).get()?.title ?? id
 
 export function registerJobKinds(): void {
+  registerIcsJobs()
   registerJobKind<{ sourceId: string }>('source.segment', {
     title: ({ sourceId }) => `解析资料：${sourceTitle(sourceId)}`,
     async run({ sourceId }, ctx) {

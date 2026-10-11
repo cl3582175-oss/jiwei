@@ -1,4 +1,5 @@
 import { readFile } from 'fs/promises'
+import { expandICS } from '../main/lib/ics'
 import { segmentText, type TextSegment } from '../main/lib/segment'
 import { parseDocx, parseEpub, parseHtml, parsePdf, renderPdfPage } from './parsers'
 import { transcribe } from './transcribe'
@@ -10,6 +11,10 @@ import { extractVoiceprints, type VoiceprintInput } from './voiceprint'
 type Task = (payload: unknown, progress: (p: number) => void, signal: AbortSignal) => Promise<unknown>
 
 const tasks: Record<string, Task> = {
+  async parseICS(payload) {
+    const { body, range } = payload as { body: string; range: { startAt: number; endAt: number } }
+    return expandICS(body, range)
+  },
   voiceprint: (payload, progress, signal) => extractVoiceprints(payload as VoiceprintInput, progress, signal),
   /** 读取文本类文件并分段 */
   async segmentTextFile(payload) {

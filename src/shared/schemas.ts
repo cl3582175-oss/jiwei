@@ -382,6 +382,7 @@ export const InsightUpdateSchema = z.object({
 })
 
 export const ActionUpdateSchema = z.object({
+  phaseId: Id.nullable().optional(),
   title: z.string().min(1).max(300).optional(),
   status: z.enum(['open', 'done', 'dropped']).optional(),
   dueAt: z.number().int().nullable().optional()

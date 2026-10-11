@@ -30,7 +30,7 @@ import {
   type VoiceStatus
 } from './recording'
 import { z } from 'zod'
-import { EventRange, EventSave, type PlanEvent, type ReviewForecast } from './plan'
+import { EventRange, EventSave, PhaseSave, MilestoneSave, IcsSave, type GoalPhase, type GoalMilestone, type IcsFeed, type PlanEvent, type ReviewForecast } from './plan'
 import { ActivityBatchSchema, type TodayBriefing, type TodaySummary } from './activity'
 import {
   ApprovalDecisionSchema,
@@ -649,6 +649,17 @@ export const capabilities = {
     commit: cap<Reflection>()({ description: '保存确认的洞见、修正与行动项，复盘完成', params: [id(), ['input', S.HarvestCommitSchema]] })
   },
   plan: {
+    phases: cap<GoalPhase[]>()({ description: '方向的阶段与完成进度', params: [id('goalId')] }),
+    phaseSave: cap<GoalPhase>()({ description: '创建或修改阶段及挂接的笔记与资料', params: [['input', PhaseSave]] }),
+    phaseRemove: cap<void>()({ description: '移除阶段；保留并解除挂接的任务、里程碑、日程', params: [id()] }),
+    milestones: cap<GoalMilestone[]>()({ description: '方向的里程碑', params: [id('goalId')] }),
+    milestoneSave: cap<GoalMilestone>()({ description: '创建或修改里程碑与完成日期', params: [['input', MilestoneSave]] }),
+    milestoneRemove: cap<void>()({ description: '移除里程碑', params: [id()] }),
+    icsFeeds: cap<IcsFeed[]>()({ description: '列出只读日历订阅', params: none }),
+    icsSave: cap<IcsFeed>()({ description: '添加、编辑或隐藏日历订阅', params: [['input', IcsSave]] }),
+    icsRefresh: cap<void>()({ description: '立即刷新日历订阅，失败保留上次成功快照', params: [id()] }),
+    icsRemove: cap<void>()({ description: '移除日历订阅与来源日程', params: [id()] }),
+    icsImport: cap<IcsFeed | null>()({ description: '选择并一次性导入本地 .ics 文件', params: none }),
     events: cap<PlanEvent[]>()({ description: '查询日历日程（含行动项与方向截止标记）', params: [['range', EventRange]] }),
     eventSave: cap<PlanEvent>()({ description: '新建或修改日程；订阅事件只读', params: [['input', EventSave]] }),
     eventRemove: cap<void>()({ description: '删除自己创建的日程', params: [id()] }),

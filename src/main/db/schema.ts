@@ -477,6 +477,17 @@ export const planEvents = sqliteTable('plan_events', {
   ...syncCols
 }, (t) => [index('plan_events_range_idx').on(t.startAt, t.endAt), uniqueIndex('plan_events_feed_uid_idx').on(t.feedId, t.uid, t.startAt)])
 
+export const goalPhases = sqliteTable('goal_phases', {
+  id: text('id').primaryKey(), goalId: text('goal_id').notNull(), title: text('title').notNull(), startAt: integer('start_at').notNull(), endAt: integer('end_at').notNull(), position: integer('position').notNull().default(0),
+  status: text('status', { enum: ['planned', 'active', 'done'] }).notNull().default('planned'), noteIds: text('note_ids').notNull().default('[]'), sourceIds: text('source_ids').notNull().default('[]'), ...syncCols
+}, (t) => [index('goal_phases_goal_idx').on(t.goalId)])
+export const goalMilestones = sqliteTable('goal_milestones', {
+  id: text('id').primaryKey(), goalId: text('goal_id').notNull(), phaseId: text('phase_id'), title: text('title').notNull(), at: integer('at').notNull(), doneAt: integer('done_at'), ...syncCols
+}, (t) => [index('goal_milestones_goal_idx').on(t.goalId)])
+export const icsFeeds = sqliteTable('ics_feeds', {
+  id: text('id').primaryKey(), name: text('name').notNull(), url: text('url').notNull(), color: text('color'), enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true), lastFetchedAt: integer('last_fetched_at'), etag: text('etag'), lastModified: text('last_modified'), error: text('error'), ...syncCols
+})
+
 /** 复习卡片（FSRS）：问题来自线索段落 */
 export const cards = sqliteTable(
   'cards',

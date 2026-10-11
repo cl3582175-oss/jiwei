@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button'
 import { tintFor } from '@/lib/tint'
 import { errText } from '../chat/useChat'
 import { PlanDialog, field } from './ui'
+import { IcsDialog } from './IcsDialog'
 
 const HOUR = 32
 export const localInput = (t: number): string =>
@@ -260,6 +261,7 @@ export function CalendarView() {
   const [mode, setMode] = useState<'week' | 'month'>('week'),
     [anchor, setAnchor] = useState(dayStart())
   const [editing, setEditing] = useState<Partial<PlanEvent> | null>(null)
+  const [subscriptions, setSubscriptions] = useState(false)
   const monday = addDays(dayStart(anchor), -(new Date(anchor).getDay() + 6) % 7)
   const first = new Date(anchor)
   first.setDate(1)
@@ -341,7 +343,8 @@ export function CalendarView() {
           >
             <ChevronRight />
           </Button>
-          <Button onClick={() => setAnchor(dayStart())}>{t('plan.today')}</Button>
+        <Button onClick={() => setAnchor(dayStart())}>{t('plan.today')}</Button>
+        <Button onClick={() => setSubscriptions(true)}>{t('plan.subscribe')}</Button>
           <Button onClick={() => setEditing({})}>
             <Plus />
             {t('plan.newEvent')}
@@ -424,6 +427,7 @@ export function CalendarView() {
           </div>
         )}
         {editing && <EventDialog key={editing.id ?? 'new'} event={editing} onClose={() => setEditing(null)} />}
+      {subscriptions && <IcsDialog onClose={() => setSubscriptions(false)} />}
       </div>
     </FloatingPanel>
   )

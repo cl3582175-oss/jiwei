@@ -2,7 +2,7 @@ import { and, eq, gt, isNull, lt } from 'drizzle-orm'
 import type { EventInput, PlanEvent, ReviewForecast } from '@shared/plan'
 import { EventSave, addDays, dayStart } from '@shared/plan'
 import { getDb } from '../../db'
-import { actions, cards, goals, notes, planEvents } from '../../db/schema'
+import { actions, cards, goals, goalPhases, icsFeeds, notes, planEvents } from '../../db/schema'
 import { newId } from '../../lib/ids'
 import { deviceId } from '../device'
 import { emit } from '../../events'
@@ -22,12 +22,14 @@ export function forecast(days = 42): ReviewForecast[] {
 export function events(range: { startAt: number; endAt: number }, virtual = true): PlanEvent[] {
   const db = getDb()
   const gs = db.select().from(goals).where(isNull(goals.deletedAt)).all()
+  const subscriptions = db.select().from(icsFeeds).where(and(isNull(icsFeeds.deletedAt), eq(icsFeeds.enabled, true))).all()
   const result: PlanEvent[] = db
     .select()
     .from(planEvents)
     .where(and(isNull(planEvents.deletedAt), lt(planEvents.startAt, range.endAt), gt(planEvents.endAt, range.startAt)))
     .all()
-    .map((e) => ({ ...e, readonly: e.origin === 'ics', color: gs.find((g) => g.id === e.goalId)?.color }))
+    .filter((e) => e.origin !== 'ics' || subscriptions.some((f) => f.id === e.feedId))
+    .map((e) => ({ ...e, readonly: e.origin === 'ics', color: e.origin === 'ics' ? subscriptions.find((f) => f.id === e.feedId)?.color : gs.find((g) => g.id === e.goalId)?.color }))
   if (virtual) {
     const marker = (
       id: string,
@@ -90,6 +92,9 @@ export function eventSave(input: EventInput): PlanEvent {
       .get()
   )
     throw new Error('Direction not found')
+  const phaseId = v.phaseId === undefined ? old?.phaseId : v.phaseId
+  const goalId = v.goalId === undefined ? old?.goalId : v.goalId
+  if (phaseId && !db.select().from(goalPhases).where(and(eq(goalPhases.id, phaseId), eq(goalPhases.goalId, goalId ?? ''), isNull(goalPhases.deletedAt))).get()) throw new Error('Phase not found in direction')
   let startAt = v.startAt,
     endAt = v.endAt
   if (v.allDay) {

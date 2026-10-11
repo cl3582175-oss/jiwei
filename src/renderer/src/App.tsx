@@ -126,7 +126,7 @@ function useMainEvents(): void {
     const subscriptions = [
       // 日历与方向会在其他页面修改，未挂载的页面也要立即失效缓存。
       window.jiweiEvents.on('plan:changed', () => {
-        for (const key of ['plan', 'today', 'today-briefing', 'goals']) void qc.invalidateQueries({ queryKey: [key] })
+        for (const key of ['plan', 'today', 'today-briefing', 'goals', 'actions']) void qc.invalidateQueries({ queryKey: [key] })
       }),
       window.jiweiEvents.on('review:changed', () => void qc.invalidateQueries({ queryKey: ['plan', 'forecast'] })),
       window.jiweiEvents.on('lenses:changed', refresh),
