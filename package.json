@@ -55,6 +55,7 @@
     "node-ical": "0.22.1",
     "pdf-lib": "1.17.1",
     "pdfjs-dist": "^6.4.299",
+    "pptxgenjs": "4.0.1",
     "qrcode": "1.5.4",
     "shiki": "^4.5.0",
     "sigma": "3.0.3",

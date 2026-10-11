@@ -21,6 +21,7 @@ import {
   BookOpen,
   CalendarRange,
   Feather,
+  PenLine,
   Scale,
   CalendarDays,
   Target,
@@ -210,7 +211,8 @@ export function NavRail() {
     calendar: { label: t('plan.calendar'), icon: <CalendarDays /> },
     goals: { label: t('nav.goals'), icon: <Target /> },
     reflect: { label: `${t('nav.reflect')}  ${modKey}5`, icon: <Sprout /> },
-    advisor: { label: t('nav.advisor'), icon: <Scale /> }
+    advisor: { label: t('nav.advisor'), icon: <Scale /> },
+    works: { label: t('nav.works'), icon: <PenLine /> }
   }
   const groups: Record<NavGroup, { label: string; icon: ReactNode }> = {
     today: { label: `${t('nav.today')}  ${modKey}9`, icon: <Sun /> },

@@ -1,5 +1,6 @@
 import { discoverEn } from '../features/discover/messages'
 import { advisorEn } from '../features/advisor/messages'
+import { worksEn } from '../features/works/messages'
 import { tasksEn } from '../features/tasks/messages'
 import { mailEn } from '../features/tasks/mailMessages'
 import { planEn } from '../features/plan/messages'
@@ -13,6 +14,7 @@ import { readingEn } from '../features/reading/messages'
 const en: Messages = {
   discover: discoverEn,
   advisor: advisorEn,
+  works: worksEn,
   tasks: tasksEn,
   mail: mailEn,
   plan: planEn,

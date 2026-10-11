@@ -10,12 +10,12 @@ export type View = 'today' | 'recording' | 'inbox' | 'notes' | 'library' | 'chat
  * 积微助手（'chat'）不属于任何一组，常驻导航顶部。
  */
 export type NavGroup = 'today' | 'collect' | 'learn' | 'create' | 'plan'
-export type NavItem = 'today' | 'inbox' | 'library' | 'browser' | 'recording' | 'notes' | 'review' | 'feynman' | 'graph' | 'calendar' | 'goals' | 'reflect' | 'advisor'
+export type NavItem = 'today' | 'inbox' | 'library' | 'browser' | 'recording' | 'notes' | 'review' | 'feynman' | 'graph' | 'calendar' | 'goals' | 'reflect' | 'advisor' | 'works'
 export const NAV_GROUPS: Record<NavGroup, NavItem[]> = {
   today: ['today'],
   collect: ['inbox', 'library', 'browser', 'recording'],
   learn: ['notes', 'review', 'feynman', 'graph'],
-  create: ['advisor'],
+  create: ['works', 'advisor'],
   plan: ['calendar', 'goals', 'reflect']
 }
 /** 当前所在的导航条目（浏览器显示在笔记工作区左栏，算作“收集 · 浏览器”） */
@@ -55,6 +55,8 @@ interface AppState extends Location {
   goalId: string | null
   /** 参谋页当前打开的决策（v0.9） */
   decisionId: string | null
+  /** 作品页当前打开的作品（v0.9） */
+  workId: string | null
   scheduleGoal: boolean
   openGoal: (id: string, schedule?: boolean) => void
   /** 导航到新位置（记入历史） */
@@ -168,6 +170,7 @@ export const useApp = create<AppState>((set, get) => {
     goalId: null,
     scheduleGoal: false,
     decisionId: null,
+    workId: null,
     openGoal: (id, schedule = false) => { get().goNav('goals'); set({ goalId: id, scheduleGoal: schedule }) },
     noteId: null,
     sourceId: null,

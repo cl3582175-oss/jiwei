@@ -1,4 +1,5 @@
 import { AdvisorView } from './features/advisor/AdvisorView'
+import { WorksView } from './features/works/WorksView'
 import { RecordingView, RecordingDialog, RecorderBar } from './features/recording/RecordingView'
 import { LensPages } from './features/lenses/pages'
 import { useRecording } from './features/recording/store'
@@ -237,6 +238,7 @@ export function App() {
             {view === 'calendar' && <CalendarView />}
             {view === 'goals' && <GoalsPage />}
             {view === 'advisor' && <AdvisorView />}
+            {view === 'works' && <WorksView />}
             {view === 'usage' && <UsageDashboard />}
             {view === 'feynman' && <FeynmanView />}
             {view === 'reflect' && <ReflectView />}

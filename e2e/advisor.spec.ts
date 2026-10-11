@@ -129,7 +129,7 @@ test.afterAll(async () => {
 })
 
 test('提问生成备忘录：依据来自知识库且不含不给 AI 的内容，编造编号被去掉', async () => {
-  await page.getByTestId('nav-rail').getByRole('button', { name: /^创作/ }).click()
+  await navTo(page, /^参谋/)
   await expect(page.getByTestId('advisor-view')).toBeVisible()
   await page.getByRole('textbox', { name: '参谋' }).fill('下学期要不要去实习？')
   await page.getByRole('button', { name: '补充背景（可选）' }).click()

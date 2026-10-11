@@ -14,6 +14,8 @@ import * as discoverDaily from './services/discover/daily'
 import * as discoverPath from './services/discover/path'
 import * as discoverPodcast from './services/discover/podcast'
 import * as advisor from './services/advisor'
+import * as worksSvc from './services/works'
+import * as worksExport from './services/works/export'
 import * as discoverTts from './services/discover/tts'
 import * as localSpeech from './services/discover/localSpeech'
 import { MAIL_PRESETS } from '@shared/mail'
@@ -436,6 +438,21 @@ const handlers: Handlers = {
     saveDaily: (_, answers) => reflection.saveDaily(answers),
     harvest: (_, id) => reflection.harvestReflection(id),
     commit: (_, id, input) => reflection.commitReflection(id, input)
+  },
+  works: {
+    list: () => worksSvc.listWorks(),
+    get: (_, id) => worksSvc.getWork(id),
+    create: (_, input) => worksSvc.createWork(input),
+    update: (_, input) => worksSvc.updateWork(input),
+    remove: (_, id) => worksSvc.removeWork(id),
+    topics: (_, id) => worksSvc.suggestTopics(id),
+    gather: (_, id, query) => worksSvc.gatherMaterials(id, query),
+    dropMaterial: (_, id, materialId) => worksSvc.removeMaterial(id, materialId),
+    outline: (_, id) => worksSvc.generateOutline(id),
+    draft: (_, id, partId) => worksSvc.draftWork(id, partId),
+    polish: (_, id) => worksSvc.polishWork(id),
+    unclearToCards: (_, id, indexes) => worksSvc.unclearToCards(id, indexes),
+    export: (ctx, id, format) => worksExport.exportWork(ctx.win, id, format)
   },
   advisor: {
     list: () => advisor.listDecisions(),

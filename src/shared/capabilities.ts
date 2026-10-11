@@ -34,6 +34,7 @@ import {
   type VoiceStatus
 } from './recording'
 import { z } from 'zod'
+import { WorkCreateSchema, WorkUpdateSchema, type Work } from './works'
 import { AdvisorAskSchema, DecideSchema, ReviewDecisionSchema, type Decision } from './advisor'
 import { EventRange, EventSave, PhaseSave, MilestoneSave, IcsSave, ScheduleOptions, type SchedulePreview, type GoalPhase, type GoalMilestone, type IcsFeed, type PlanEvent, type ReviewForecast } from './plan'
 import { ActivityBatchSchema, type TodayBriefing, type TodaySummary } from './activity'
@@ -652,6 +653,30 @@ export const capabilities = {
     }),
     harvest: cap<ReflectionHarvest>()({ description: 'AI 从复盘中提炼洞见、修正与行动项（供确认）', params: [id()] }),
     commit: cap<Reflection>()({ description: '保存确认的洞见、修正与行动项，复盘完成', params: [id(), ['input', S.HarvestCommitSchema]] })
+  },
+  works: {
+    list: cap<Work[]>()({ description: '创作工坊：全部作品', params: none }),
+    get: cap<Work>()({ description: '读取一个作品（含素材与正文）', params: [id('id')] }),
+    create: cap<Work>()({ description: '新建作品（图文长文、课件 PPT、讲解视频）', params: [['input', WorkCreateSchema]] }),
+    update: cap<Work>()({ description: '修改作品：标题、选题、受众、模式、阶段、正文、发布记录、复盘', params: [['input', WorkUpdateSchema]] }),
+    remove: cap<void>()({ description: '删除作品', params: [id('id')] }),
+    topics: cap<{ title: string; angle: string; audience: string; why: string }[]>()({
+      description: '根据掌握得好的知识与方向推荐选题（花费 AI 费用）',
+      params: [id('id')]
+    }),
+    gather: cap<Work>()({ description: '按选题从知识库收集素材（只含允许给 AI 的内容）', params: [id('id'), ['query', z.string().max(500).optional()]] }),
+    dropMaterial: cap<Work>()({ description: '移除一条素材', params: [id('id'), id('materialId')] }),
+    outline: cap<Work>()({ description: '生成结构：长文为章节、课件为逐页（花费 AI 费用）', params: [id('id')] }),
+    draft: cap<Work>()({ description: '起草：长文逐节（教练模式只给提示问题）、课件补全所有页（花费 AI 费用）', params: [id('id'), ['partId', z.string().max(40).optional()]] }),
+    polish: cap<Work>()({ description: '打磨：受众视角挑刺、核对事实依据、标出讲不清的地方（花费 AI 费用）', params: [id('id')] }),
+    unclearToCards: cap<{ noteId: string; count: number }>()({
+      description: '把讲不清的地方写成复习卡片',
+      params: [id('id'), ['indexes', z.array(z.number().int().min(0)).min(1).max(20)]]
+    }),
+    export: cap<string | null>()({
+      description: '导出作品：长文 md / docx / pdf，课件 pptx / md',
+      params: [id('id'), ['format', z.enum(['md', 'docx', 'pdf', 'pptx'])]]
+    })
   },
   advisor: {
     list: cap<Decision[]>()({ description: '决策日志：全部决策（未删除）', params: none }),

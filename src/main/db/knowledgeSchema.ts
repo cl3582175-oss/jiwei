@@ -19,6 +19,8 @@ export {
   activity,
   activityEvents,
   decisions,
+  works,
+  workSources,
   settings,
   users,
   devices,

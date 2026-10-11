@@ -391,6 +391,50 @@ export const goals = sqliteTable('goals', {
   ...syncCols
 })
 
+/** 创作工坊（v0.9）：作品与它的素材。正文按章节 / 页存在 content（WorkParts JSON） */
+export const works = sqliteTable(
+  'works',
+  {
+    id: text('id').primaryKey(),
+    type: text('type', { enum: ['article', 'slides', 'video'] }).notNull(),
+    title: text('title').notNull().default(''),
+    topic: text('topic').notNull().default(''),
+    audience: text('audience').notNull().default(''),
+    mode: text('mode', { enum: ['coach', 'cowrite', 'ghost'] }).notNull().default('cowrite'),
+    stage: text('stage', { enum: ['topic', 'materials', 'outline', 'draft', 'polish', 'done'] })
+      .notNull()
+      .default('topic'),
+    goalId: text('goal_id'),
+    content: text('content'),
+    polish: text('polish'),
+    exports: text('exports').notNull().default('[]'),
+    publishedWhere: text('published_where'),
+    publishedAt: integer('published_at'),
+    retrospective: text('retrospective'),
+    ...syncCols
+  },
+  (t) => [index('works_updated_idx').on(t.updatedAt)]
+)
+
+/** 作品的素材（溯源、知识运用率）：ref 为提示里的编号 M1…；used 表示进入了成品 */
+export const workSources = sqliteTable(
+  'work_sources',
+  {
+    id: text('id').primaryKey(),
+    workId: text('work_id').notNull(),
+    ref: text('ref').notNull(),
+    refType: text('ref_type', { enum: ['note', 'source'] }).notNull(),
+    refId: text('ref_id').notNull(),
+    ownerId: text('owner_id').notNull(),
+    title: text('title').notNull().default(''),
+    excerpt: text('excerpt').notNull().default(''),
+    used: integer('used', { mode: 'boolean' }).notNull().default(false),
+    position: integer('position').notNull().default(0),
+    ...syncCols
+  },
+  (t) => [index('work_sources_work_idx').on(t.workId), index('work_sources_ref_idx').on(t.refType, t.refId)]
+)
+
 /** 参谋与决策日志（v0.9）：一个真实问题 → 决策备忘录 → 选定与预期 → 到期回看 */
 export const decisions = sqliteTable(
   'decisions',

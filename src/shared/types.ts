@@ -1060,6 +1060,8 @@ export interface JiweiEvents {
   'plan:changed': Record<string, never>
   /** 参谋与决策日志变化（v0.9） */
   'advisor:changed': Record<string, never>
+  /** 创作工坊作品变化（v0.9） */
+  'works:changed': Record<string, never>
   'tasks:changed': Record<string, never>
   'tasks:run': { taskId: string; runId: string; status: import('./tasks').TaskRun['status'] }
   'nav:tasks': { taskId: string }
