@@ -33,15 +33,16 @@ async function inDomain<T>(u: URL, fn: () => Promise<T>): Promise<T> {
 
 export async function externalFetch(
   value: string,
-  options: { headers?: Record<string, string>; method?: string; body?: string; maxBytes?: number; httpsOnly?: boolean } = {}
+  options: { headers?: Record<string, string>; method?: string; body?: string; maxBytes?: number; httpsOnly?: boolean; validateUrl?: (url: string) => void } = {}
 ): Promise<{ status: number; text: string; headers: Headers }> {
   let u = checkedWebUrl(value, options.httpsOnly),
     headers = { ...options.headers },
     method = options.method ?? 'GET',
     body = options.body
   for (let redirect = 0; redirect <= 5; redirect++) {
+    options.validateUrl?.(u.href)
     const response = await inDomain(u, async () => {
-      const res = await net.fetch(u.href, { method, body, headers, redirect: 'manual', signal: AbortSignal.timeout(15000) })
+      const res = await net.fetch(u.href, { method, body, headers, credentials: 'omit', redirect: 'manual', signal: AbortSignal.timeout(15000) })
       if (res.status >= 300 && res.status < 400 && res.status !== 304) return { status: res.status, text: '', headers: res.headers }
       const max = options.maxBytes ?? 2 * 1024 * 1024
       if (Number(res.headers.get('content-length')) > max) throw new Error('Response too large')

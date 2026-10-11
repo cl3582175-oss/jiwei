@@ -773,7 +773,7 @@ export const inboxItems = sqliteTable(
   'inbox_items',
   {
     id: text('id').primaryKey(),
-    kind: text('kind', { enum: ['text', 'screenshot', 'photo', 'file', 'clip'] }).notNull(),
+    kind: text('kind', { enum: ['text', 'screenshot', 'photo', 'file', 'clip', 'task'] }).notNull(),
     text: text('text').notNull().default(''),
     assetId: text('asset_id'),
     recognized: text('recognized').notNull().default(''),
@@ -995,3 +995,36 @@ export const mcpClients = sqliteTable('mcp_clients', {
   lastUsedAt: integer('last_used_at'),
   createdAt: integer('created_at').notNull()
 })
+
+export const aiTasks = sqliteTable('ai_tasks', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  instruction: text('instruction').notNull(),
+  trigger: text('trigger').notNull(),
+  tools: text('tools').notNull(),
+  outputs: text('outputs').notNull(),
+  budgetPerRun: real('budget_per_run'),
+  enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
+  recipe: text('recipe'),
+  lastRunAt: integer('last_run_at'),
+  nextRunAt: integer('next_run_at'),
+  ...syncCols,
+})
+export const aiTaskRuns = sqliteTable(
+  'ai_task_runs',
+  {
+    id: text('id').primaryKey(),
+    taskId: text('task_id').notNull(),
+    startedAt: integer('started_at').notNull(),
+    endedAt: integer('ended_at'),
+    status: text('status', { enum: ['running', 'ok', 'error', 'skipped', 'budget', 'canceled'] }).notNull(),
+    delayed: integer('delayed', { mode: 'boolean' }).notNull().default(false),
+    triggerInfo: text('trigger_info').notNull().default('{}'),
+    cost: real('cost').notNull().default(0),
+    summary: text('summary'),
+    resultRefs: text('result_refs').notNull().default('[]'),
+    error: text('error'),
+    conversationId: text('conversation_id'),
+  },
+  (t) => [index('ai_task_runs_task_idx').on(t.taskId, t.startedAt)],
+)

@@ -77,6 +77,7 @@ export const CategoryPatchSchema = z.object({
 })
 
 export const SettingsPatchSchema = z.object({
+  tasks: z.object({ paused: z.boolean().optional(), launchAtLogin: z.boolean().optional(), keepRunning: z.boolean().optional() }).optional(),
   plan: z.object({ autoComplete: z.boolean() }).optional(),
   recordingScene: z.enum(['meeting', 'lecture', 'thought']).optional(),
   capture: CaptureSettingsSchema.optional(),

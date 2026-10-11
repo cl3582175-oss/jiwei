@@ -29,6 +29,7 @@ export interface ActivityMinutes {
 /** 「今日」首页需要的全部数字与条目（主进程汇总，渲染进程只负责展示）。 */
 export interface TodaySummary {
   planLags: import('./plan').PlanLag[]
+  taskResults: import('./tasks').TodayTaskResult[]
   schedule: import('./plan').PlanEvent[]
   date: string
   streak: number

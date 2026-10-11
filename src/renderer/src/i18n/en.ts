@@ -1,3 +1,4 @@
+import { tasksEn } from '../features/tasks/messages'
 import { planEn } from '../features/plan/messages'
 import { agentEn } from '../features/agent/messages'
 import { spendEn } from '../features/agent/spendMessages'
@@ -7,6 +8,7 @@ import { todayEn } from '../features/today/messages'
 import { safetyEn } from '../features/settings/safetyMessages'
 import { readingEn } from '../features/reading/messages'
 const en: Messages = {
+  tasks: tasksEn,
   plan: planEn,
   mistakes: mistakesEn,
   today: todayEn,
@@ -316,7 +318,7 @@ const en: Messages = {
     offPeak: 'Delay until DeepSeek off-peak pricing',
     recognizeJob: 'Recognize inbox image',
     triageJob: 'Organize inbox',
-    kind: { text: 'Text', screenshot: 'Screenshot', photo: 'Photo', file: 'File', clip: 'Clip' },
+    kind: { task: 'AI task', text: 'Text', screenshot: 'Screenshot', photo: 'Photo', file: 'File', clip: 'Clip' },
     status: { new: 'New', suggested: 'Suggested', filed: 'Filed', dismissed: 'Dismissed' },
     recognition: {
       pending: 'Recognizing',

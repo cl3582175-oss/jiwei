@@ -14,6 +14,8 @@ import { markdownToNodes } from '../../lib/markdown'
 import { localDate } from '../stats'
 import type { ToolMeta } from '../agent/wrap'
 import { EventRange } from '@shared/plan'
+import { TaskSave, taskConfirmation } from '@shared/tasks'
+import { saveTask } from '../tasks/service'
 import * as plan from '../plan/calendar'
 
 // 助手“办事”（v0.7）：跨模块的读与写。写入工具执行前在对话中弹出确认卡片（wrap.ts），
@@ -56,6 +58,14 @@ const SUBJECT_ZH: Record<string, string> = { math: '数学', physics: '物理', 
 
 export function buildDoTools(zh: boolean): { tools: ToolSet; meta: Record<string, ToolMeta> } {
   const tools: ToolSet = {
+    task_create: tool({
+      description: zh ? '请求用户确认触发、指令、工具与结果去向后创建 AI 任务。' : 'Create an AI task after confirming its trigger, instruction, tools and outputs.',
+      inputSchema: TaskSave.omit({ id: true }),
+      execute: async (input) => {
+        const task = await saveTask(input)
+        return zh ? `已创建 AI 任务（${task.id}）。` : `AI task created (${task.id}).`
+      }
+    }),
     plan_list: tool({
       description: zh ? '查询某段时间的日程与复习负荷；可指定方向。排计划需到方向详情的排计划按钮预览。' : 'Read calendar and review load for a time range, optionally for a direction. Scheduling requires the preview in Directions.',
       inputSchema: EventRange.extend({ goalId: z.string().optional() }),
@@ -122,10 +132,11 @@ export function buildDoTools(zh: boolean): { tools: ToolSet; meta: Record<string
             } catch {
               open = false
             }
+            if (!open) return ''
             const head = `${i + 1}. [${zh ? (SUBJECT_ZH[m.subject] ?? m.subject) : m.subject}] ${m.concepts.join('、') || '—'} · ${localDate(new Date(m.createdAt))}`
-            if (!open) return `${head}\n${zh ? '（这道题设为仅本地，内容不提供给 AI）' : '(local-only; content withheld)'}`
             return `${head}\n${zh ? '题目' : 'Q'}：${cut(m.question, 600)}\n${zh ? '正确答案' : 'Answer'}：${cut(m.correctAnswer || '—', 300)}${m.causeReason ? `\n${zh ? '错因' : 'Cause'}：${cut(m.causeReason, 160)}` : ''}`
           })
+          .filter(Boolean)
           .join('\n\n')
       }
     }),
@@ -196,6 +207,13 @@ export function buildDoTools(zh: boolean): { tools: ToolSet; meta: Record<string
   }
 
   const meta: Record<string, ToolMeta> = {
+    task_create: {
+      level: 'write', confirm: true,
+      describe: (i) => ({
+        title: zh ? `创建 AI 任务「${cut(String(i.name ?? ''), 60)}」` : `Create AI task “${cut(String(i.name ?? ''), 60)}”`,
+        detail: taskConfirmation(TaskSave.parse(i), zh)
+      })
+    },
     plan_list: { level: 'read', untrusted: true },
     plan_event_create: { level: 'write', confirm: true, describe: (i) => ({ title: zh ? `新建日程「${cut(String(i.title ?? ''), 60)}」` : `Create event “${cut(String(i.title ?? ''), 60)}”`, detail: `${new Date(Number(i.startAt)).toLocaleString()} — ${new Date(Number(i.endAt)).toLocaleString()}` }) },
     actions_list: { level: 'read' },

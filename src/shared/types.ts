@@ -211,6 +211,7 @@ export type Palette = 'qinglu' | 'celadon' | 'dunhuang'
 export type SidebarPage = 'notes' | 'library' | 'chat'
 
 export interface Settings {
+  tasks: { paused: boolean; launchAtLogin: boolean; keepRunning: boolean }
   plan: { autoComplete: boolean }
   recordingScene?: 'meeting' | 'lecture' | 'thought'
   capture: ReturnType<typeof import('./capture').captureDefaults>
@@ -726,7 +727,7 @@ export interface AgentStep {
   /** 结果摘要或错误 */
   detail?: string
   /** 可跳转的目标（如生成的提案所在笔记） */
-  link?: { type: 'note' | 'source' | 'action' | 'goal' | 'inbox'; id: string }
+  link?: { type: 'note' | 'source' | 'action' | 'goal' | 'inbox' | 'task'; id: string }
   /** 需要用户确认的一步（v0.7） */
   approval?: {
     id: string
@@ -1054,6 +1055,9 @@ export interface JiweiEvents {
   /** 复习卡片或到期数量变化 */
   'review:changed': Record<string, never>
   'plan:changed': Record<string, never>
+  'tasks:changed': Record<string, never>
+  'tasks:run': { taskId: string; runId: string; status: import('./tasks').TaskRun['status'] }
+  'nav:tasks': { taskId: string }
   /** 资料分段已更新 */
   'segments:changed': { sourceId: string }
   /** 文档识别引擎状态 */

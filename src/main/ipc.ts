@@ -3,6 +3,9 @@ import * as plan from './services/plan/calendar'
 import * as planPhases from './services/plan/phases'
 import * as planIcs from './services/plan/ics'
 import * as planSchedule from './services/plan/schedule'
+import * as tasks from './services/tasks/service'
+import { taskToolCatalog } from './services/tasks/tools'
+import { applyResidency } from './services/tasks/residency'
 import * as browserCapture from './services/browser/capture'
 import * as mistakes from './services/mistakes'
 import * as mistakeEntries from './services/mistakeEntries'
@@ -296,6 +299,10 @@ const handlers: Handlers = {
     set: (_, patch) => {
       const before = JSON.stringify(getSettings().ai.recognition ?? null)
       const r = setSettings(patch)
+      if (patch.tasks) {
+        if (patch.tasks.paused !== undefined) tasks.pauseAll(patch.tasks.paused)
+        applyResidency()
+      }
       if (patch.capture) capture.refreshShortcuts()
       // 换了识别引擎或开启插图解读：有待识别页的资料按新设置排队
       if (patch.ai && JSON.stringify(patch.ai.recognition ?? null) !== before) recognize.queuePending()
@@ -418,6 +425,10 @@ const handlers: Handlers = {
     saveDaily: (_, answers) => reflection.saveDaily(answers),
     harvest: (_, id) => reflection.harvestReflection(id),
     commit: (_, id, input) => reflection.commitReflection(id, input)
+  },
+  tasks: {
+    list: () => tasks.listTasks(), save: (_, input) => tasks.saveTask(input), remove: (_, id) => tasks.removeTask(id), run: (_, id) => tasks.queueTask(id), runs: (_, id) => tasks.taskRuns(id), parse: (_, text) => tasks.parseTask(text), recipes: () => tasks.recipes(), tools: async () => (await taskToolCatalog()).info, pauseAll: (_, paused) => tasks.pauseAll(paused),
+    chooseFolder: async () => { const result = await dialog.showOpenDialog({ properties: ['openDirectory'] }); return result.canceled ? null : result.filePaths[0] ?? null }
   },
   plan: {
     schedulePreview: (_, input) => planSchedule.schedulePreview(input),

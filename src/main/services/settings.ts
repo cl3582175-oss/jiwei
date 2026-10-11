@@ -13,6 +13,7 @@ function defaults(): Settings {
   const language: Settings['language'] =
     (process.env.JIWEI_LANG as Settings['language']) || (app.getLocale().toLowerCase().startsWith('zh') ? 'zh-CN' : 'en')
   return {
+    tasks: { paused: false, launchAtLogin: false, keepRunning: false },
     plan: { autoComplete: true },
     language,
     theme: 'system',
@@ -42,13 +43,15 @@ export function getSettings(): Settings {
     ...base,
     ...stored,
     capture: mergeCaptureSettings(stored.capture, process.platform === 'darwin'),
-    money: { ...base.money, ...stored.money }
+    money: { ...base.money, ...stored.money },
+    tasks: { ...base.tasks, ...stored.tasks }
   }
   setMessageLanguage(result.language)
   return result
 }
 
 export function setSettings(patch: SettingsPatch): Settings {
+  if (patch.tasks) patch = { ...patch, tasks: { ...getSettings().tasks, ...patch.tasks } }
   const db = getDb()
   if (patch.capture) patch = { ...patch, capture: { ...getSettings().capture, ...patch.capture } }
   if (patch.money) {

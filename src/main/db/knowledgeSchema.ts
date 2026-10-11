@@ -28,6 +28,8 @@ export {
   goalPhases,
   goalMilestones,
   icsFeeds,
+  aiTasks,
+  aiTaskRuns,
   reviews,
   insights,
   insightVersions,

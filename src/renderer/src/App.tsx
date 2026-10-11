@@ -100,6 +100,7 @@ function useMainEvents(): void {
     []
   )
   useEffect(() => window.jiweiEvents.on('nav:inbox', () => useApp.getState().setView('inbox')), [])
+  useEffect(() => window.jiweiEvents.on('nav:tasks', ({ taskId }) => { useApp.setState({ taskFocusId: taskId }); useApp.getState().openSettings('tasks') }), [])
   // 复盘提醒被点击：每日 → 复盘首页（就地填写）；每周 → 打开本周复盘
   useEffect(
     () =>

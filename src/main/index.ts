@@ -45,6 +45,9 @@ import { pruneAudit } from './services/agent/audit'
 import { startMemoryLearning, stopMemoryLearning } from './services/memoryLearn'
 import { syncAllCards } from './services/review'
 import { startReminders, stopReminders } from './services/reminders'
+import { registerTaskJob } from './services/tasks/runner'
+import { recoverTaskRuns } from './services/tasks/service'
+import { startResidency, stopResidency, attachResidency, isResident } from './services/tasks/residency'
 import { importProvidersForTest } from './services/ai/providers'
 import { initializeBackupSafety, backupOperation } from './services/fullBackup'
 import { setMessageLanguage } from './lib/messages'
@@ -113,6 +116,7 @@ function createWindow(): void {
   })
 
   setMainWindow(win)
+  attachResidency(win)
   win.on('closed', () => {
     void stopPhoneUpload()
   })
@@ -173,6 +177,8 @@ app.whenReady().then(async () => {
   registerProtocol()
   registerIpc()
   registerJobKinds()
+  registerTaskJob()
+  recoverTaskRuns()
   registerAsrJob()
   registerMossJob()
   registerRecording()
@@ -235,6 +241,7 @@ app.whenReady().then(async () => {
   }, HOUR)
 
   createWindow()
+  startResidency(createWindow)
   registerCapture()
   app.on('activate', () => {
     if (!getMainWindow()) createWindow()
@@ -242,7 +249,7 @@ app.whenReady().then(async () => {
 })
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit()
+  if (process.platform !== 'darwin' && !isResident()) app.quit()
 })
 
 // 退出前：让界面推送未保存的编辑 → 完成派生 → 关闭数据库
@@ -254,6 +261,7 @@ app.on('before-quit', (e) => {
   void requestRendererFlush()
     .catch(() => undefined)
     .finally(async () => {
+      stopResidency()
       stopCapture()
       await stopPhoneUpload()
       denyAll()

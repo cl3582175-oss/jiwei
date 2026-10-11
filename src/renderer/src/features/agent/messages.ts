@@ -24,7 +24,7 @@ export const agentZh = {
     bannerDaily: '每日',
     bannerMonthly: '每月'
   },
-  link: { note: '打开笔记', action: '查看行动项', goal: '查看目标', inbox: '打开收件箱' },
+  link: { task: '查看 AI 任务', note: '打开笔记', action: '查看行动项', goal: '查看目标', inbox: '打开收件箱' },
   tabs: { usage: '费用与权限', connections: '连接' },
   usage: {
     intro: '积微每次请求 AI 模型都会记一笔：对话、晨报、阅读注释、错题整理、后台整理……金额按服务商公开价格估算，按你选的币种显示。',
@@ -191,7 +191,7 @@ export const agentEn: typeof agentZh = {
     bannerDaily: 'daily',
     bannerMonthly: 'monthly'
   },
-  link: { note: 'Open note', action: 'View action', goal: 'View goal', inbox: 'Open inbox' },
+  link: { task: 'View AI task', note: 'Open note', action: 'View action', goal: 'View goal', inbox: 'Open inbox' },
   tabs: { usage: 'Spending & access', connections: 'Connections' },
   usage: {
     intro:

@@ -1,6 +1,7 @@
 import { getMainWindow } from '../mainWindow'
 import { checkIcs } from './plan/ics'
 import { checkPlan } from './plan/schedule'
+import { checkTasks } from './tasks/scheduler'
 import { checkInboxSchedule } from './inbox'
 import { Notification } from 'electron'
 import log from 'electron-log/main'
@@ -32,6 +33,7 @@ function notify(kind: 'daily' | 'weekly', title: string, body: string): void {
 }
 
 export function checkReminders(now = new Date()): void {
+  void checkTasks(now.getTime()).catch(() => log.warn('[tasks] scheduler check failed'))
   checkPlan(now.getTime())
   checkIcs(now.getTime())
   checkInboxSchedule(now)

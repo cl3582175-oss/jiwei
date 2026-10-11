@@ -344,9 +344,14 @@ export async function closeAllMcp(): Promise<void> {
 
 /* ——— 给助手的工具 ——— */
 
-async function callTool(serverId: string, name: string, args: Record<string, unknown>, zh: boolean, signal?: AbortSignal): Promise<string> {
+async function callTool(serverId: string, name: string, args: Record<string, unknown>, zh: boolean, signal?: AbortSignal, readOnly = false): Promise<string> {
   await connectServer(serverId)
   const conn = conns.get(serverId)!
+  if (readOnly) {
+    const current = row(serverId), tool = conn.tools.find((t) => t.name === name)
+    if (!current.enabled || !tool || levelFromAnnotations(tool.annotations) !== 'read' || effectivePolicy('read', policies(current)[name]) !== 'auto')
+      throw new Error(tr('工具权限已改变，后台调用已跳过', 'Tool permissions changed; background call skipped'))
+  }
   const r = await conn.client.callTool({ name, arguments: args }, undefined, { timeout: 110_000, signal })
   const text = resultText(r as never, zh)
   if (r.isError) throw new Error(text)
@@ -369,7 +374,7 @@ interface Entry {
   meta: ToolMeta
 }
 
-export async function assistantMcpTools(zh: boolean): Promise<{ tools: ToolSet; meta: Record<string, ToolMeta> }> {
+export async function assistantMcpTools(zh: boolean, options: { readOnly?: boolean; direct?: boolean } = {}): Promise<{ tools: ToolSet; meta: Record<string, ToolMeta> }> {
   const enabled = rows().filter((r) => r.enabled)
   if (!enabled.length) return { tools: {}, meta: {} }
   await Promise.all(
@@ -388,6 +393,7 @@ export async function assistantMcpTools(zh: boolean): Promise<{ tools: ToolSet; 
     const p = policies(r)
     for (const t of conn.tools) {
       const level = levelFromAnnotations(t.annotations)
+      if (options.readOnly && level !== 'read') continue
       const policy = effectivePolicy(level, p[t.name])
       if (policy === 'deny') continue
       const title = t.title ?? t.annotations?.title ?? t.name
@@ -401,6 +407,11 @@ export async function assistantMcpTools(zh: boolean): Promise<{ tools: ToolSet; 
           policy,
           server: r.name,
           untrusted: true,
+          ...(options.readOnly ? { dynamic: () => {
+            const current = rows().find((x) => x.id === r.id), currentTool = conns.get(r.id)?.tools.find((x) => x.name === t.name)
+            const level = currentTool ? levelFromAnnotations(currentTool.annotations) : 'external'
+            return { level, untrusted: true, server: r.name, policy: current?.enabled && currentTool ? effectivePolicy(level, policies(current)[t.name]) : 'deny' }
+          } } : {}),
           describe: (input) => ({
             title: zh ? `使用「${r.name}」的工具：${title}` : `Use “${title}” from ${r.name}`,
             detail: argsText(input)
@@ -411,12 +422,12 @@ export async function assistantMcpTools(zh: boolean): Promise<{ tools: ToolSet; 
   }
   const tools: ToolSet = {}
   const meta: Record<string, ToolMeta> = {}
-  if (entries.length <= DIRECT_LIMIT) {
+  if (options.direct || entries.length <= DIRECT_LIMIT) {
     for (const e of entries) {
       tools[e.exposed] = dynamicTool({
         description: `[${e.server}] ${(e.tool.description ?? e.tool.name).slice(0, 1000)}`,
         inputSchema: jsonSchema(e.tool.inputSchema as never),
-        execute: (input, opts) => callTool(e.serverId, e.tool.name, (input ?? {}) as Record<string, unknown>, zh, opts.abortSignal)
+        execute: (input, opts) => callTool(e.serverId, e.tool.name, (input ?? {}) as Record<string, unknown>, zh, opts.abortSignal, options.readOnly)
       })
       meta[e.exposed] = e.meta
     }

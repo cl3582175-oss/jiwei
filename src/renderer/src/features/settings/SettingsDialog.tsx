@@ -1,3 +1,4 @@
+import { TasksSettings } from '../tasks/TasksSettings'
 import { BackupSettings } from './BackupSettings'
 import { ActivitySettings } from '../today/ActivitySettings'
 import { BrowserSafetySettings } from './BrowserSafetySettings'
@@ -44,7 +45,7 @@ import { Switch } from '@/components/ui/switch'
 import { Logo } from '@/components/Logo'
 
 type Tab =
-  'general' | 'me' | 'learning' | 'ai' | 'skills' | 'lenses' | 'appearance' | 'usage' | 'connections' | 'data' | 'browser' | 'about'
+  'tasks' | 'general' | 'me' | 'learning' | 'ai' | 'skills' | 'lenses' | 'appearance' | 'usage' | 'connections' | 'data' | 'browser' | 'about'
 
 const PALETTES: PaletteId[] = ['qinglu', 'celadon', 'dunhuang']
 
@@ -279,6 +280,7 @@ export function SettingsDialog() {
     { id: 'appearance', icon: <Palette /> },
     { id: 'usage', icon: <Gauge /> },
     { id: 'connections', icon: <Cable /> },
+    { id: 'tasks', icon: <Sparkles /> },
     { id: 'data', icon: <Database /> },
     { id: 'browser', icon: <Monitor /> },
     { id: 'about', icon: <Info /> }
@@ -291,7 +293,7 @@ export function SettingsDialog() {
         {/* 尺寸 760 × 470 ≈ φ */}
         <D.Content className="fixed top-1/2 left-1/2 z-50 flex h-[min(88vh,560px)] w-[min(94vw,906px)] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-2xl border border-border bg-surface shadow-float outline-none data-[state=open]:animate-[dialog-in_220ms_cubic-bezier(0.2,0.9,0.3,1)]">
           <D.Description className="sr-only">{t('settings.title')}</D.Description>
-          <nav className="safety-ui w-[200px] shrink-0 border-r border-border bg-sunken p-3">
+          <nav className="safety-ui w-[200px] shrink-0 overflow-y-auto border-r border-border bg-sunken p-3">
             <D.Title className="px-3 pt-2 pb-4 font-serif text-md font-semibold text-fg">{t('settings.title')}</D.Title>
             {tabs.map((it) => (
               <button
@@ -303,7 +305,7 @@ export function SettingsDialog() {
                 )}
               >
                 {it.icon}
-                {it.id === 'browser'
+                {it.id === 'tasks' ? t('tasks.title') : it.id === 'browser'
                   ? '浏览器'
                   : it.id === 'usage' || it.id === 'connections'
                     ? t(`agent.tabs.${it.id}`)
@@ -312,6 +314,7 @@ export function SettingsDialog() {
             ))}
           </nav>
           <div className="min-w-0 flex-1 overflow-y-auto px-8 py-4">
+            {tab === 'tasks' && <TasksSettings />}
             {tab === 'browser' && <BrowserSafetySettings />}
             {tab === 'general' && <ProfileRow />}
             {tab === 'general' && (
@@ -325,6 +328,16 @@ export function SettingsDialog() {
                   ]}
                 />
               </Row>
+            )}
+            {tab === 'general' && (
+              <>
+                <Row label={t('tasks.login')}>
+                  <Switch checked={s.tasks.launchAtLogin} onCheckedChange={(launchAtLogin) => update.mutate({ tasks: { ...s.tasks, launchAtLogin } })} />
+                </Row>
+                <Row label={t('tasks.keepRunning')}>
+                  <Switch checked={s.tasks.keepRunning} onCheckedChange={(keepRunning) => update.mutate({ tasks: { ...s.tasks, keepRunning } })} />
+                </Row>
+              </>
             )}
             {tab === 'appearance' && (
               <>

@@ -20,6 +20,7 @@ const CONCURRENCY = 2
 const TICK_MS = 1000
 
 export interface JobContext {
+  signal?: AbortSignal
   progress(p: number): void
   /** 在工作进程中执行任务 */
   worker<T>(task: string, payload: unknown, signal?: AbortSignal): Promise<T>
@@ -27,6 +28,8 @@ export interface JobContext {
 }
 
 export interface JobKind<P = unknown> {
+  maxAttempts?: number
+  retryOnRestart?: boolean
   title(payload: P): string
   run(payload: P, ctx: JobContext): Promise<unknown>
   /** 同步协调领域状态，排队中和运行中的显式取消都会调用。 */
@@ -192,6 +195,7 @@ async function execute(r: Row): Promise<void> {
   setStatus(r.id, { status: 'running', attempts: r.attempts + 1, progress: 0 })
   let lastEmit = 0
   const ctx: JobContext = {
+    signal: abort.signal,
     progress: (p) => {
       // 进度事件限流
       if (Date.now() - lastEmit < 200 && p < 1) return
@@ -211,7 +215,7 @@ async function execute(r: Row): Promise<void> {
     const attempts = r.attempts + 1
     const msg = voiceErrorText(e)
     log.warn('[jobs]', r.kind, r.id, 'failed', attempts, msg)
-    if (attempts < MAX_ATTEMPTS) setStatus(r.id, { status: 'queued', error: msg, runAfter: Date.now() + 5000 * 2 ** attempts })
+    if (attempts < (kind.maxAttempts ?? MAX_ATTEMPTS)) setStatus(r.id, { status: 'queued', error: msg, runAfter: Date.now() + 5000 * 2 ** attempts })
     else setStatus(r.id, { status: 'failed', error: msg })
   } finally {
     running.delete(r.id)
@@ -242,6 +246,12 @@ function tick(): void {
 
 export function startJobs(): void {
   stopped = false
+  for (const row of getDb().select().from(jobs).where(eq(jobs.status, 'running')).all()) {
+    if (kinds.get(row.kind)?.retryOnRestart === false)
+      getDb().update(jobs)
+        .set({ status: 'failed', error: 'Interrupted; automatic retry is disabled', updatedAt: Date.now() })
+        .where(eq(jobs.id, row.id)).run()
+  }
   // 上次退出时仍在运行的任务重新排队
   getDb().update(jobs).set({ status: 'queued', updatedAt: Date.now() }).where(eq(jobs.status, 'running')).run()
   timer = setInterval(tick, TICK_MS)

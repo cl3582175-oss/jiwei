@@ -345,6 +345,7 @@ function generate(conversationId: string, messageId: string, input: ChatSend): P
 
 /** 办事工具创建的对象：步骤上给出“查看”入口 */
 const CREATED: Record<string, NonNullable<AgentStep['link']>['type']> = {
+  task_create: 'task',
   note_create: 'note',
   action_create: 'action',
   goal_create: 'goal',

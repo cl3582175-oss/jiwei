@@ -1,5 +1,7 @@
 import { CaptureRectSchema, BrowserCaptureEntriesSchema, type BrowserCaptureFrame, type BrowserCaptureResult } from './browserCapture'
 import { CaptureActionSchema } from './capture'
+import { TaskSave, type AiTask, type TaskRun, type TaskToolInfo, type TaskInput } from './tasks'
+import type { TaskRecipe } from './taskRecipes'
 import type { CaptureState, PhoneStatus } from './capture'
 import type { InboxItem } from './inbox'
 import {
@@ -647,6 +649,18 @@ export const capabilities = {
     }),
     harvest: cap<ReflectionHarvest>()({ description: 'AI 从复盘中提炼洞见、修正与行动项（供确认）', params: [id()] }),
     commit: cap<Reflection>()({ description: '保存确认的洞见、修正与行动项，复盘完成', params: [id(), ['input', S.HarvestCommitSchema]] })
+  },
+  tasks: {
+    list: cap<AiTask[]>()({ description: '列出 AI 任务与最近结果和本月费用', params: none }),
+    save: cap<AiTask>()({ description: '保存触发、工具、输出许可和预算', params: [['input', TaskSave]] }),
+    remove: cap<void>()({ description: '删除任务并取消待运行任务', params: [id()] }),
+    run: cap<string>()({ description: '运行一次已启用的任务；全局暂停时不执行', params: [id()] }),
+    runs: cap<TaskRun[]>()({ description: '任务最近一百条运行记录', params: [id('taskId')] }),
+    parse: cap<TaskInput>()({ description: '一句话解析为可编辑任务预览，不保存', params: [['description', z.string().trim().min(1).max(4000)]] }),
+    recipes: cap<TaskRecipe[]>()({ description: '当前可用的任务配方', params: none }),
+    tools: cap<TaskToolInfo[]>()({ description: '可勾选的只读工具，外部写入不可选', params: none }),
+    pauseAll: cap<void>()({ description: '暂停或恢复所有 AI 任务', params: [['paused', z.boolean()]] }),
+    chooseFolder: cap<string | null>()({ description: '选择非递归监听的任务文件夹', params: none })
   },
   plan: {
     schedulePreview: cap<SchedulePreview>()({ description: '生成经时间与投入校验的排期预览；不写入', params: [['input', ScheduleOptions]] }),

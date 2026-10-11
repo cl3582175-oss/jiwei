@@ -1,3 +1,4 @@
+import { tasksZh } from '../features/tasks/messages'
 import { planZh } from '../features/plan/messages'
 import { agentZh } from '../features/agent/messages'
 import { spendZh } from '../features/agent/spendMessages'
@@ -7,6 +8,7 @@ import { safetyZh } from '../features/settings/safetyMessages'
 import { readingZh } from '../features/reading/messages'
 
 const zhCN = {
+  tasks: tasksZh,
   plan: planZh,
   mistakes: mistakesZh,
   today: todayZh,
@@ -304,7 +306,7 @@ const zhCN = {
     offPeak: '排到 DeepSeek 夜间半价时段',
     recognizeJob: '识别收件箱图片',
     triageJob: '整理收件箱',
-    kind: { text: '文字', screenshot: '截图', photo: '照片', file: '文件', clip: '摘抄' },
+    kind: { task: 'AI 任务', text: '文字', screenshot: '截图', photo: '照片', file: '文件', clip: '摘抄' },
     status: { new: '待整理', suggested: '已有建议', filed: '已归档', dismissed: '已忽略' },
     recognition: {
       pending: '正在识别',

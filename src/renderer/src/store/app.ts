@@ -50,6 +50,7 @@ const emptyContext: WorkspaceContext = {
 }
 
 interface AppState extends Location {
+  taskFocusId: string | null
   goalId: string | null
   scheduleGoal: boolean
   openGoal: (id: string, schedule?: boolean) => void
@@ -160,6 +161,7 @@ export const useApp = create<AppState>((set, get) => {
 
   return {
     view: 'today',
+    taskFocusId: null,
     goalId: null,
     scheduleGoal: false,
     openGoal: (id, schedule = false) => { get().goNav('goals'); set({ goalId: id, scheduleGoal: schedule }) },

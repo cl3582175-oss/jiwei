@@ -19,6 +19,7 @@ export const InboxSuggestionSchema = z.object({
 })
 export type InboxSuggestion = z.infer<typeof InboxSuggestionSchema>
 export const InboxOriginSchema = z.object({
+  taskId: z.string().min(1).optional(), runId: z.string().min(1).optional(),
   recordingSourceId: z.uuid().optional(),
   app: z.string().max(200).optional(),
   windowTitle: z.string().max(500).optional(),
@@ -35,7 +36,7 @@ export const InboxOriginSchema = z.object({
 })
 export const InboxCreateSchema = z
   .object({
-    kind: z.enum(['text', 'screenshot', 'photo', 'file', 'clip']),
+    kind: z.enum(['text', 'screenshot', 'photo', 'file', 'clip', 'task']),
     text: z.string().max(100000).default(''),
     assetId: z
       .string()

@@ -35,7 +35,7 @@ import { useProvidePageContext } from '../assist/pageContext'
 // 「今日」（v0.6.7，默认首页）：回答“今天该做什么”。每张卡片都能直接处理，不放只供观看的数字。
 // 设计见 docs/design/v0.7-platform-and-loop.md §2.2。
 
-const EVENTS = ['plan:changed', 'review:changed', 'inbox:changed', 'mistakes:changed', 'notes:changed', 'reflection:changed', 'sources:changed'] as const
+const EVENTS = ['tasks:changed', 'tasks:run', 'plan:changed', 'review:changed', 'inbox:changed', 'mistakes:changed', 'notes:changed', 'reflection:changed', 'sources:changed'] as const
 
 function greetingKey(): 'morning' | 'noon' | 'afternoon' | 'evening' {
   const h = new Date().getHours()
@@ -527,6 +527,7 @@ export function TodayView() {
           <Briefing onReply={setReply} />
         </div>
 
+        {!!s?.taskResults.length && <section className="mt-8 space-y-2" data-testid="today-task-results"><h2 className="text-sm font-semibold text-fg">{t('tasks.output.briefing')}</h2>{s.taskResults.map((r)=><button key={r.id} className="paper block w-full rounded-xl p-4 text-left" onClick={()=>{useApp.setState({taskFocusId:r.taskId});useApp.getState().openSettings('tasks')}}><p className="text-sm text-fg">{r.name}</p><p className="mt-1 text-xs text-muted">{r.summary}</p></button>)}</section>}
         {!!s?.planLags.length && <section className="mt-8 space-y-2" data-testid="plan-lags">{s.planLags.map((lag) => <div key={lag.goalId} className="paper flex items-center gap-3 rounded-xl p-4"><p className="min-w-0 flex-1 text-sm text-fg">{t('plan.lag', { ...lag })}</p><Button size="sm" onClick={() => useApp.getState().openGoal(lag.goalId, true)}>{t('plan.adjustPlan')}</Button></div>)}</section>}
         {!!s?.schedule.length && <section className="mt-8" data-testid="today-schedule"><h2 className="mb-3 text-sm font-semibold text-fg">{t('plan.schedule')}</h2><ul className="paper divide-y divide-border rounded-2xl px-5">{s.schedule.map((e) => <li key={e.id} className="flex items-center gap-3 py-3 text-sm text-fg"><span className="text-xs text-muted">{e.allDay ? t('plan.allDay') : new Date(e.startAt).toLocaleTimeString(i18n.language, { hour: '2-digit', minute: '2-digit' })}</span><button className="min-w-0 flex-1 truncate text-left" onClick={() => useApp.getState().goNav('calendar')}>{e.title}</button>{e.kind === 'study' && !e.readonly && e.status === 'planned' ? <Button size="sm" onClick={() => void api.plan.eventSave({ ...e, status: 'done' }).catch((err) => toast.error(String(err)))}>{t('plan.done')}</Button> : <span className="text-xs text-subtle">{t(`plan.status.${e.status}`)}</span>}</li>)}</ul></section>}
         {s?.fresh ? (
