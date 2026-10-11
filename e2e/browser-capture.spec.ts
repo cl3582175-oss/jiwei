@@ -44,7 +44,10 @@ test.beforeAll(async () => {
     .getByRole('textbox')
     .fill(base + '/canvas')
   await page.keyboard.press('Enter')
-  await expect.poll(() => page.evaluate(() => window.jiwei.browser.state().then((s) => s.tabs[0]?.loading))).toBe(false)
+  // 等导航真正开始并完成（只看 loading 可能在导航开始前就判定为完成）
+  await expect
+    .poll(() => page.evaluate(() => window.jiwei.browser.state().then((s) => !!s.tabs[0]?.url.endsWith('/canvas') && !s.tabs[0].loading)))
+    .toBe(true)
 })
 test.afterAll(async () => {
   await app?.close()
@@ -238,8 +241,8 @@ test('same-page continuous capture preserves readable native width and fresh sna
       const c = document.querySelector('canvas'); c.height = 2000;
       const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, 1000, 2000);
       x.fillStyle = '#124'; x.font = '20px sans-serif'; x.fillText('同页第一段', 12, 65); x.fillText('同页第二段', 12, 445);
-      x.fillStyle = '#00aa00'; x.fillRect(innerWidth - 100, 40, 40, 40);
-      x.fillStyle = '#0000ff'; x.fillRect(innerWidth - 100, 420, 40, 40);
+      x.fillStyle = '#00aa00'; x.fillRect(380, 40, 40, 40);
+      x.fillStyle = '#0000ff'; x.fillRect(380, 420, 40, 40);
       scrollTo(0, 0);
     })()`)
   })
@@ -305,8 +308,8 @@ test('same-page continuous capture preserves readable native width and fresh sna
   await captureLine('green')
   const card = page.getByTestId('browser-recognition-card')
   await card.getByRole('textbox', { name: '识别文字' }).fill('同页第一段')
-  // 卡片出现后网页保留原可读宽度，而不是仅剩 66px。
-  await expect.poll(async () => (await slot.boundingBox())!.width).toBeGreaterThanOrEqual(baseline.width - 1)
+  // 卡片出现后网页保留可读宽度，而不是仅剩 66px（v0.7.2 起浏览器独占整页，宽屏下卡片停靠在网页右侧）。
+  await expect.poll(async () => (await slot.boundingBox())!.width).toBeGreaterThanOrEqual(Math.min(baseline.width - 1, 480))
   await card.getByRole('button', { name: '加入摘抄' }).click()
   await nativeBounds()
   await reachable('browser-recognition-card')
@@ -345,7 +348,7 @@ test('same-page continuous capture preserves readable native width and fresh sna
   await captureLine('blue')
   await card.getByRole('textbox', { name: '识别文字' }).fill('同页第二段')
   await expect(page.getByTestId('browser-excerpt')).toHaveCount(2)
-  await expect.poll(async () => (await slot.boundingBox())!.width).toBeGreaterThanOrEqual(baseline.width - 1)
+  await expect.poll(async () => (await slot.boundingBox())!.width).toBeGreaterThanOrEqual(Math.min(baseline.width - 1, 480))
   await nativeBounds()
   await reachable('browser-recognition-card')
   await reachable('browser-excerpts')

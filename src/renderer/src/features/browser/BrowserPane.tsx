@@ -1,4 +1,5 @@
 import { LoginSafetyBar, WebsiteNetwork } from './BrowserSafety'
+import { NoteBarButton } from './noteBar'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
@@ -285,6 +286,7 @@ function AddressBar({ tab, capture }: { tab: BrowserTab; capture: () => void }) 
         />
       </form>
       <div className="ml-auto flex items-center gap-1">
+        <NoteBarButton />
         {tab.sensitive ? (
           <Tip label={t('browser.aiOffHint')} side="bottom">
             <span

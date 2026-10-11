@@ -106,7 +106,10 @@ export const SettingsPatchSchema = z.object({
       searchEngine: z.string().url().max(300).optional(),
       aiBlockedSites: z.array(z.string().max(200)).max(500).optional(),
       proactivity: z.enum(['quiet', 'balanced', 'active']).optional(),
-      course: z.object({ autoTimestamp: z.boolean(), autoSlides: z.boolean(), quiz: z.boolean() }).optional()
+      course: z.object({ autoTimestamp: z.boolean(), autoSlides: z.boolean(), quiz: z.boolean() }).optional(),
+      /** 浏览器旁的笔记栏（v0.7.2）：在浏览器的哪一侧、占多少（百分比） */
+      noteSide: z.enum(['left', 'right', 'top', 'bottom']).optional(),
+      noteSize: z.number().min(15).max(85).optional()
     })
     .optional(),
   backup: z.object({ external: ExternalBackupSchema }).optional()

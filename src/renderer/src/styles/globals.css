@@ -795,6 +795,13 @@
   position: absolute;
   inset: 0 -4px;
 }
+.workspace-sep-h {
+  width: auto;
+  height: 1px;
+}
+.workspace-sep-h::after {
+  inset: -4px 0;
+}
 .workspace-sep:hover,
 .workspace-sep[data-separator='active'] {
   background: var(--accent);

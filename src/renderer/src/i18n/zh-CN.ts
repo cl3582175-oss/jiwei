@@ -579,6 +579,20 @@ const zhCN = {
     unavailable: '敏感页面、无痕标签或非网页不允许采集'
   },
   browser: {
+    noteBar: {
+      button: '记笔记',
+      buttonHint: '在浏览器旁边新建或打开一篇笔记',
+      new: '新建笔记',
+      recent: '最近的笔记',
+      search: '搜索其他笔记…',
+      layout: '笔记栏位置',
+      right: '笔记在右',
+      left: '笔记在左',
+      bottom: '笔记在下',
+      top: '笔记在上',
+      close: '关闭笔记栏',
+      untitled: '无标题'
+    },
     title: '浏览器',
     tabs: '标签页',
     newTab: '新标签页',

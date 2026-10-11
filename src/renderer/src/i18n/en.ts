@@ -598,6 +598,20 @@ const en: Messages = {
     unavailable: 'Capture is unavailable on private, sensitive or non-web pages'
   },
   browser: {
+    noteBar: {
+      button: 'Notes',
+      buttonHint: 'Create or open a note beside the browser',
+      new: 'New note',
+      recent: 'Recent notes',
+      search: 'Search other notes…',
+      layout: 'Note position',
+      right: 'Note on the right',
+      left: 'Note on the left',
+      bottom: 'Note below',
+      top: 'Note above',
+      close: 'Close note',
+      untitled: 'Untitled'
+    },
     title: 'Browser',
     tabs: 'Tabs',
     newTab: 'New tab',

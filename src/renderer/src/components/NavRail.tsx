@@ -146,7 +146,7 @@ export function NavRail() {
         <Search />
       </RailButton>
       {/* 侧栏收展：最多四栏并存时，把空间让给资料与笔记 */}
-      {['notes', 'library', 'chat', 'review', 'reflect'].includes(view) && (
+      {['notes', 'library', 'chat', 'review', 'reflect'].includes(view) && !(view === 'notes' && browserOpen) && (
         <RailButton
           label={`${sidebar.collapsed ? t('nav.expandSidebar') : t('nav.collapseSidebar')}  ${modKey}\\`}
           pressed={!sidebar.collapsed}

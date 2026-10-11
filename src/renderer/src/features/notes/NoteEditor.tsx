@@ -342,7 +342,12 @@ function EditorBody({ note: initial }: { note: NoteSummary }) {
               variant="ghost"
               size="icon-sm"
               aria-pressed={browserOpen}
-              onClick={() => (browserOpen ? useApp.getState().closeBrowser() : useApp.getState().openBrowser())}
+              onClick={() => {
+                const app = useApp.getState()
+                if (!browserOpen) return app.openBrowserBeside(note.id)
+                app.closeBrowser()
+                app.openNote(note.id)
+              }}
               aria-label={t('browser.openBeside')}
               className={cn(browserOpen && 'text-accent')}
             >

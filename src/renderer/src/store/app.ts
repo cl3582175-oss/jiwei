@@ -67,6 +67,11 @@ interface AppState extends Location {
   /** 打开浏览器；input 为网址或搜索词时在新标签页打开 */
   openBrowser: (input?: string, opts?: { incognito?: boolean }) => void
   closeBrowser: () => void
+  /** 浏览器旁边的笔记（v0.7.2）：null 时浏览器独占整页 */
+  browserNote: string | null
+  setBrowserNote: (id: string | null) => void
+  /** 从笔记里“在旁边打开浏览器”：浏览器 + 这篇笔记 */
+  openBrowserBeside: (noteId: string) => void
 
   /** 工作区分栏比例（资料栏百分比） */
   sourcePaneSize: number
@@ -172,7 +177,11 @@ export const useApp = create<AppState>((set, get) => {
     },
 
     setView: (view) => get().navigate({ view }),
-    openNote: (noteId) => get().navigate({ view: 'notes', noteId }),
+    // 浏览器打开时，打开的笔记显示在浏览器旁边（v0.7.2）
+    openNote: (noteId) => {
+      if (get().browserOpen) set({ browserNote: noteId })
+      get().navigate({ view: 'notes', noteId })
+    },
     openSource: (sourceId) => {
       if (sourceId) set({ browserOpen: false })
       get().navigate({ view: 'notes', sourceId })
@@ -188,8 +197,15 @@ export const useApp = create<AppState>((set, get) => {
         })
     },
     closeBrowser: () => {
-      set({ browserOpen: false })
+      // 下次从「浏览」进入时浏览器独占整页
+      set({ browserOpen: false, browserNote: null })
       void window.jiwei.browser.setBounds(null)
+    },
+    browserNote: null,
+    setBrowserNote: (browserNote) => set({ browserNote }),
+    openBrowserBeside: (noteId) => {
+      set({ browserNote: noteId })
+      get().openBrowser()
     },
 
     sourcePaneSize: 38.2,

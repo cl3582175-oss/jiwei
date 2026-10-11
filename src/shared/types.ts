@@ -239,6 +239,9 @@ export interface BrowserSettings {
   /** 主动程度：安静 / 适中（默认）/ 积极 */
   proactivity?: 'quiet' | 'balanced' | 'active'
   course?: { autoTimestamp: boolean; autoSlides: boolean; quiz: boolean }
+  /** 浏览器旁的笔记栏（v0.7.2）：在浏览器的哪一侧、占多少（百分比） */
+  noteSide?: 'left' | 'right' | 'top' | 'bottom'
+  noteSize?: number
 }
 
 export interface BrowserVideo {

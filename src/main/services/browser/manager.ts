@@ -670,7 +670,13 @@ export async function freeze(on: boolean): Promise<string | null> {
 /** 保存完整原始帧，裁剪与占位图来自同一次 capturePage，动画不会导致错帧。 */
 export async function beginCaptureFreeze(id: string): Promise<NativeImage> {
   await endCaptureFreeze()
-  const result = await freeze(true)
+  // 界面上的提示气泡、菜单盖住网页时也会请求冻结；两次请求交错会让这一次作废，重试几次
+  let result: string | null = null
+  // 刚打开或刚调整布局时网页视图可能还没就位（截图为空），稍等再试
+  for (let attempt = 0; attempt < 4 && !(result && frozenImage); attempt++) {
+    if (attempt) await new Promise((r) => setTimeout(r, 150 * attempt))
+    result = await freeze(true)
+  }
   if (!result || !frozenImage) {
     await freeze(false)
     throw new Error(captureText('pageChanged'))

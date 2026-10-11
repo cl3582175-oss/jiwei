@@ -6,6 +6,7 @@ import { NoteEditor } from './NoteEditor'
 import { NotesHome } from '../home/NotesHome'
 import { SourcePane } from '../workspace/SourcePane'
 import { BrowserPane } from '../browser/BrowserPane'
+import { BrowserWorkspace } from '../browser/BrowserWorkspace'
 import { FloatingPanel } from '@/components/FloatingPanel'
 import { CollapsibleSidebar, useSidebar } from '@/components/CollapsibleSidebar'
 import { AiPanelBody, AiPanelFloat } from '../assist/AiPanel'
@@ -33,6 +34,8 @@ export function NotesView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pinned])
   const main = noteId ? <NoteEditor noteId={noteId} /> : <NotesHome />
+  // 浏览器（v0.7.2）：独立工作区，不显示笔记分类与搜索栏；笔记按需出现在浏览器旁边
+  if (browserOpen) return <BrowserWorkspace />
   return (
     <div className="flex h-full">
       <CollapsibleSidebar forceCollapsed={focus}>
