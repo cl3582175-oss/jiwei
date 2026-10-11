@@ -687,3 +687,27 @@ export function scanPageTexts(sourceId: string): ScanPageText[] {
       }
     })
 }
+
+/** 仍在识别（排队或进行中）的资料：回答用到它们时要如实说明可能缺少表格、图片与扫描页（v0.7.6） */
+export function recognizingSources(ids: Iterable<string>): { id: string; title: string; progress: number }[] {
+  const list = [...new Set(ids)]
+  if (!list.length) return []
+  const rows = getDb()
+    .select({ key: jobs.dedupeKey, progress: jobs.progress })
+    .from(jobs)
+    .where(
+      and(
+        inArray(
+          jobs.dedupeKey,
+          list.map((id) => `recognize:${id}`)
+        ),
+        inArray(jobs.status, ['queued', 'running'])
+      )
+    )
+    .all()
+  return rows.map((r) => {
+    const id = r.key!.slice('recognize:'.length)
+    const title = getDb().select({ title: sources.title }).from(sources).where(eq(sources.id, id)).get()?.title ?? id
+    return { id, title, progress: r.progress }
+  })
+}

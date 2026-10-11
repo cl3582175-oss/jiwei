@@ -2,10 +2,10 @@ import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { ChevronLeft, GraduationCap, Loader2, CheckCircle2, CircleHelp, CircleAlert, NotebookPen, RotateCcw, Flag } from 'lucide-react'
+import { ChevronLeft, GraduationCap, Loader2, CheckCircle2, CircleHelp, CircleAlert, NotebookPen, RotateCcw, Flag, ArrowRight, History } from 'lucide-react'
 import { PROVIDER_PRESETS, type Effort } from '@shared/ai'
 import type { FeynmanReport } from '@shared/types'
-import { api, cn } from '@/lib/utils'
+import { api, cn, formatRelative } from '@/lib/utils'
 import { useApp } from '@/store/app'
 import { Button } from '@/components/ui/button'
 import { FloatingPanel } from '@/components/FloatingPanel'
@@ -138,6 +138,98 @@ function Report({ r, conversationId, onAgain }: { r: FeynmanReport; conversation
   )
 }
 
+/** 首页（v0.7.6）：从导航进入、还没有正在进行的练习时——挑概念开始，或回看练过的 */
+function FeynmanHomePage() {
+  const { t, i18n } = useTranslation()
+  const [concept, setConcept] = useState('')
+  const { data } = useQuery({ queryKey: ['feynman', 'home'], queryFn: () => api.feynman.home() })
+  const start = (c: string, noteId: string | null = null, cardId: string | null = null): void => {
+    if (c.trim()) useApp.getState().startFeynman({ concept: c.trim(), noteId, cardId })
+  }
+  return (
+    <FloatingPanel flushLeft className="flex flex-col">
+      <header className="drag flex h-[52px] shrink-0 items-center gap-2 border-b border-border/70 pr-[calc(var(--tb-right)+16px)] pl-8">
+        <GraduationCap className="size-4 text-accent" />
+        <h1 className="font-serif text-md font-semibold tracking-wide text-fg">{t('feynman.title')}</h1>
+      </header>
+      <div className="min-h-0 flex-1 overflow-y-auto" data-testid="feynman-home">
+        <div className="mx-auto max-w-[720px] px-8 pt-12 pb-16">
+          <div className="text-center">
+            <span className="mx-auto grid size-12 place-items-center rounded-full bg-accent-soft text-accent">
+              <GraduationCap className="size-6" />
+            </span>
+            <h2 className="mt-4 font-serif text-xl font-semibold text-fg">{t('feynman.home.heading')}</h2>
+            <p className="mx-auto mt-2 max-w-[500px] text-sm leading-relaxed text-muted">{t('feynman.home.sub')}</p>
+          </div>
+          <form
+            className="paper mx-auto mt-7 flex max-w-[560px] items-center gap-2 rounded-2xl py-1.5 pr-1.5 pl-4 shadow-[var(--shadow-2)]"
+            onSubmit={(e) => {
+              e.preventDefault()
+              start(concept)
+            }}
+          >
+            <input
+              autoFocus
+              value={concept}
+              onChange={(e) => setConcept(e.target.value)}
+              placeholder={t('feynman.home.input')}
+              aria-label={t('feynman.home.input')}
+              className="h-9 min-w-0 flex-1 bg-transparent text-sm text-fg outline-none placeholder:text-subtle"
+            />
+            <Button type="submit" variant="primary" size="sm" disabled={!concept.trim()}>
+              {t('feynman.home.start')}
+              <ArrowRight />
+            </Button>
+          </form>
+          {!!data?.suggestions.length && (
+            <section className="mt-8">
+              <h3 className="text-xs font-medium text-muted">{t('feynman.home.suggest')}</h3>
+              <div className="mt-2.5 flex flex-wrap gap-2" data-testid="feynman-suggestions">
+                {data.suggestions.map((sg) => (
+                  <button
+                    key={sg.concept}
+                    onClick={() => start(sg.concept, sg.noteId, sg.cardId)}
+                    className="group inline-flex max-w-full items-center gap-2 rounded-full border border-border bg-surface px-3 py-1.5 text-left text-sm text-fg transition-colors hover:border-accent/50 hover:bg-accent-soft/40"
+                  >
+                    <span className="truncate">{sg.concept}</span>
+                    <span className="shrink-0 text-2xs text-subtle group-hover:text-accent">{t(`feynman.home.reason.${sg.reason}`)}</span>
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
+          <section className="mt-9">
+            <h3 className="flex items-center gap-1.5 text-xs font-medium text-muted">
+              <History className="size-3.5" />
+              {t('feynman.home.history')}
+            </h3>
+            {data && !data.sessions.length ? (
+              <p className="mt-3 rounded-xl border border-dashed border-border px-4 py-8 text-center text-xs text-muted">{t('feynman.home.historyEmpty')}</p>
+            ) : (
+              <ul className="mt-2 divide-y divide-border/60" data-testid="feynman-history">
+                {data?.sessions.map((x) => (
+                  <li key={x.id}>
+                    <button
+                      onClick={() => useApp.getState().startFeynman({ concept: x.concept, noteId: x.noteId, conversationId: x.id })}
+                      className="flex w-full items-center gap-3 rounded-lg px-2 py-2.5 text-left transition-colors hover:bg-surface-hover"
+                    >
+                      <span className="min-w-0 flex-1 truncate text-sm text-fg">{x.concept}</span>
+                      <span className={cn('shrink-0 rounded-full px-2 py-0.5 text-2xs', x.level ? LEVEL_TONE[x.level] : 'bg-sunken text-subtle')}>
+                        {x.level ? t(`memory.concept.${x.level}`) : t('feynman.home.unfinished')}
+                      </span>
+                      <span className="w-20 shrink-0 text-right text-2xs text-subtle">{formatRelative(x.updatedAt, i18n.language)}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        </div>
+      </div>
+    </FloatingPanel>
+  )
+}
+
 export function FeynmanView() {
   const { t } = useTranslation()
   const qc = useQueryClient()
@@ -159,7 +251,7 @@ export function FeynmanView() {
     if (el) el.scrollTop = el.scrollHeight
   }, [msgs, report, finishing])
 
-  if (!session) return null
+  if (!session) return <FeynmanHomePage />
   const concept = session.concept
 
   // 学生的回复要快：关闭思考（服务商不支持关闭时取最低档）
@@ -208,7 +300,7 @@ export function FeynmanView() {
   return (
     <FloatingPanel flushLeft className="flex flex-col">
       <header className="drag flex h-[52px] shrink-0 items-center gap-2 border-b border-border/70 pr-[calc(var(--tb-right)+16px)] pl-4">
-        <Button size="icon-sm" variant="ghost" className="no-drag" aria-label={t('nav.back')} onClick={() => useApp.getState().back()}>
+        <Button size="icon-sm" variant="ghost" className="no-drag" aria-label={t('feynman.home.all')} onClick={() => useApp.getState().closeFeynman()}>
           <ChevronLeft />
         </Button>
         <GraduationCap className="size-4 text-accent" />

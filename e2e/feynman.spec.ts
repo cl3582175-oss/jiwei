@@ -24,7 +24,7 @@ test.afterAll(async () => {
   await app?.close()
 })
 
-test('start from the command palette; back returns', async () => {
+test('start from the command palette; back to the Feynman home', async () => {
   await page.keyboard.press('ControlOrMeta+k')
   await page.keyboard.type('机会成本')
   await page.getByRole('option', { name: /费曼练习：把「机会成本」讲给 AI 听/ }).click()
@@ -32,8 +32,10 @@ test('start from the command palette; back returns', async () => {
   await expect(page.getByTestId('feynman-opener')).toContainText('机会成本')
   await expect(page.getByRole('button', { name: '我讲完了，看看哪里没讲清楚' })).toBeDisabled()
   if (shots) await page.screenshot({ path: join(shots, '131-feynman-start.png') })
-  await page.getByRole('button', { name: '后退' }).first().click()
+  // v0.7.6：左上角回到费曼练习首页
+  await page.getByRole('button', { name: '全部练习' }).click()
   await expect(page.getByRole('heading', { name: '把「机会成本」讲给小微听' })).toHaveCount(0)
+  await expect(page.getByTestId('feynman-home')).toBeVisible()
 })
 
 test('explain to the student, get diagnosed, add gaps to the note (live)', async () => {

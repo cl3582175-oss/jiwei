@@ -25,6 +25,7 @@ import { registerAsrJob } from './services/asr'
 import { registerMossJob, stopMoss } from './services/moss'
 import { registerRecording } from './services/recording'
 import { registerLensJobs } from './services/lenses'
+import { registerDigestJob } from './services/digest'
 import { stopVoiceprint } from './services/voiceprint'
 import { pruneJobs, setOffPeakPolicy, startJobs, stopJobs } from './services/jobs'
 import { hasOffPeak } from './services/agent/pricing'
@@ -177,6 +178,7 @@ app.whenReady().then(async () => {
   registerRecording()
   registerLensJobs()
   registerRecognizeJob()
+  registerDigestJob()
   // 低谷时段运行（v0.7.5）：开启后，可延后的后台任务在 DeepSeek 高峰期排到下一个低谷
   setOffPeakPolicy((at) => {
     const s = getSettings()

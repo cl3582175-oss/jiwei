@@ -190,6 +190,27 @@ function Body({ source }: { source: Source }) {
   return <Centered icon={<FileQuestion />} text={t('workspace.unsupported')} />
 }
 
+/** 检索准备情况（v0.7.6）：让用户看得见资料已进入知识库、语义索引建到哪里 */
+function IndexChip({ sourceId }: { sourceId: string }) {
+  const { t } = useTranslation()
+  const { data: s } = useQuery({
+    queryKey: ['source', sourceId, 'index'],
+    queryFn: () => api.sources.indexStatus(sourceId),
+    refetchInterval: (q) => (q.state.data && q.state.data.semantic && q.state.data.embedded < q.state.data.segments ? 4000 : false)
+  })
+  if (!s || !s.segments) return null
+  const pct = Math.floor((s.embedded / s.segments) * 100)
+  const label = !s.semantic ? t('workspace.index.off') : pct >= 98 ? t('workspace.index.ready') : t('workspace.index.building', { pct })
+  return (
+    <Tip label={s.semantic ? t('workspace.index.hint', { done: s.embedded, total: s.segments }) : t('workspace.index.hintOff')} side="bottom">
+      <span className="no-drag" data-testid="source-index">
+        {' · '}
+        <span className={cn(s.semantic && pct >= 98 ? 'text-accent' : 'text-subtle')}>{label}</span>
+      </span>
+    </Tip>
+  )
+}
+
 export function SourcePane({ sourceId }: { sourceId: string }) {
   const { t } = useTranslation()
   const openSource = useApp((s) => s.openSource)
@@ -211,6 +232,7 @@ export function SourcePane({ sourceId }: { sourceId: string }) {
             {t(`library.kinds.${source.kind}`)}
             {source.size ? ` · ${formatBytes(source.size)}` : ''}
             {source.author ? ` · ${source.author}` : ''}
+            <IndexChip sourceId={source.id} />
           </p>
         </div>
         <div className="no-drag flex items-center gap-0.5">

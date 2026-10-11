@@ -44,6 +44,8 @@ export interface AgentSession {
   hits: SearchHit[]
   /** 本轮加载过的技能 */
   skills: string[]
+  /** 用户正在看的资料：检索时优先（v0.7.6） */
+  preferSource?: string | null
 }
 
 type NoteCheck = { title: string } | null
@@ -145,7 +147,7 @@ const mustNote = (noteId: string, zh: boolean): string => {
   return n.title
 }
 
-const NestedSchema: z.ZodType<NestedNode & { segmentId?: string }> = z.lazy(() =>
+export const NestedSchema: z.ZodType<NestedNode & { segmentId?: string }> = z.lazy(() =>
   z.object({
     text: z.string().min(1).max(200),
     segmentId: z.string().max(64).optional().describe('来自资料时：对应的片段 ID'),
@@ -154,7 +156,7 @@ const NestedSchema: z.ZodType<NestedNode & { segmentId?: string }> = z.lazy(() =
 ) as never
 
 /** 模型给出的嵌套树 → 导图数据（segmentId → 原文锚点） */
-function buildMindmap(tree: NestedNode & { segmentId?: string }): { data: ReturnType<typeof fromNested>; segs: string[] } {
+export function buildMindmap(tree: NestedNode & { segmentId?: string }): { data: ReturnType<typeof fromNested>; segs: string[] } {
   const segs: string[] = []
   const conv = (n: NestedNode & { segmentId?: string; children?: (NestedNode & { segmentId?: string })[] }): NestedNode => {
     if (n.segmentId) segs.push(n.segmentId)
@@ -250,7 +252,7 @@ export function buildTools(s: AgentSession): ToolSet {
           : "Search the user's knowledge base (notes + sources). Results are numbered; cite as [n].",
         inputSchema: RecordingFiltersSchema.extend({ query: z.string().min(1).max(500) }),
         execute: async ({ query, ...filters }) => {
-          const hits = await retrieve(query, s.scope, 6, filters)
+          const hits = await retrieve(query, s.scope, 6, filters, s.preferSource)
           return hits.length ? numberHits(s, hits) : zh ? '没有找到相关内容。' : 'Nothing found.'
         }
       }),
@@ -703,7 +705,13 @@ export function stepLabel(name: string, input: unknown, zh: boolean): Pick<Agent
     browser_links: ['查看网页链接', 'Listing links'],
     browser_open: [`打开网页：${q('url')}`, `Opening: ${q('url')}`],
     browser_tabs: ['查看标签页', 'Listing tabs'],
-    mcp_find_tools: [`查找外部工具：${q('query')}`, `Finding external tools: ${q('query')}`]
+    mcp_find_tools: [`查找外部工具：${q('query')}`, `Finding external tools: ${q('query')}`],
+    ask_user: [`问你：${q('question')}`, `Asking you: ${q('question')}`],
+    source_outline: ['查看资料的规模与章节', 'Checking source size and chapters'],
+    source_digest: [
+      `后台整理资料：${{ mindmap: '思维导图', summary: '总结', outline: '康奈尔提纲' }[String(i.task)] ?? ''}`,
+      `Background digest: ${String(i.task ?? '')}`
+    ]
   }
   if (name.startsWith('mcp__')) {
     const [, server, tool] = name.split('__')

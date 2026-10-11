@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useState, type DragEvent, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -37,6 +37,9 @@ export function categoryPaths(cats: Category[]): Map<string, string> {
   return out
 }
 
+/** 拖动笔记时的数据类型（v0.7.6：把笔记拖到分类上即移动） */
+export const NOTE_DRAG_TYPE = 'application/x-jiwei-notes'
+
 /** 侧栏筛选行（全部 / 置顶 / 分类 / 标签 共用样式） */
 export function FilterRow({
   active,
@@ -45,7 +48,8 @@ export function FilterRow({
   onClick,
   trailing,
   depth = 0,
-  leading
+  leading,
+  onDropNotes
 }: {
   active: boolean
   icon: ReactNode
@@ -54,16 +58,38 @@ export function FilterRow({
   trailing?: ReactNode
   depth?: number
   leading?: ReactNode
+  /** 可以把笔记拖到这一行上（分类、未分类） */
+  onDropNotes?: (ids: string[]) => void
 }) {
+  const [over, setOver] = useState(false)
+  const accepts = (e: DragEvent): boolean => !!onDropNotes && e.dataTransfer.types.includes(NOTE_DRAG_TYPE)
   return (
     <div
       role="button"
       tabIndex={0}
+      onDragOver={(e) => {
+        if (!accepts(e)) return
+        e.preventDefault()
+        e.dataTransfer.dropEffect = 'move'
+        setOver(true)
+      }}
+      onDragLeave={() => setOver(false)}
+      onDrop={(e) => {
+        setOver(false)
+        if (!accepts(e)) return
+        e.preventDefault()
+        try {
+          onDropNotes!(JSON.parse(e.dataTransfer.getData(NOTE_DRAG_TYPE)) as string[])
+        } catch {
+          /* 不是笔记 */
+        }
+      }}
       onClick={onClick}
       onKeyDown={(e) => e.key === 'Enter' && onClick()}
       style={{ paddingLeft: 10 + depth * 16 }}
       className={cn(
         'group flex h-8 cursor-default items-center gap-2 rounded-md pr-2 text-sm transition-colors [&>svg]:size-4 [&>svg]:shrink-0',
+        over && 'bg-accent-soft ring-1 ring-accent/50',
         active
           ? 'bg-surface text-fg shadow-card [&>svg]:text-accent'
           : 'text-muted hover:bg-surface-hover hover:text-fg [&>svg]:text-subtle'
@@ -85,9 +111,11 @@ interface TreeProps {
   onRemoved?: (id: string) => void
   /** 显示在“分类”标题下方、分类列表之前的固定行 */
   leading?: ReactNode
+  /** 把笔记拖到分类上（v0.7.6） */
+  onDropNotes?: (categoryId: string, ids: string[]) => void
 }
 
-export function CategoryTree({ kind, activeId, onSelect, onRemoved, leading }: TreeProps) {
+export function CategoryTree({ kind, activeId, onSelect, onRemoved, leading, onDropNotes }: TreeProps) {
   const { t } = useTranslation()
   const qc = useQueryClient()
   const { data: cats = [] } = useCategories(kind)
@@ -135,6 +163,7 @@ export function CategoryTree({ kind, activeId, onSelect, onRemoved, leading }: T
           depth={depth}
           active={activeId === c.id}
           onClick={() => onSelect(c.id)}
+          onDropNotes={onDropNotes ? (ids) => onDropNotes(c.id, ids) : undefined}
           leading={
             <button
               onClick={(e) => {

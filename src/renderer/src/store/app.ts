@@ -91,8 +91,11 @@ interface AppState extends Location {
   openUsage: () => void
 
   /** 复习页的标签：今日复习 / 掌握度地图 / 学习目标 */
-  reviewTab: 'today' | 'mistakes' | 'mastery'
-  setReviewTab: (t: 'today' | 'mistakes' | 'mastery') => void
+  reviewTab: 'today' | 'cards' | 'mistakes' | 'mastery'
+  setReviewTab: (t: 'today' | 'cards' | 'mistakes' | 'mastery') => void
+  /** 自选复习（v0.7.6）：从卡片库选中的卡片，按顺序复习；null 为按计划的今日复习 */
+  reviewQueue: string[] | null
+  startReviewQueue: (ids: string[] | null) => void
 
   /** 复盘页中打开的复盘（null 为复盘首页） */
   reflectionId: string | null
@@ -102,6 +105,8 @@ interface AppState extends Location {
   feynman: { conversationId: string | null; concept: string; noteId: string | null; cardId: string | null } | null
   /** 开始（或继续）一次费曼练习 */
   startFeynman: (f: { concept: string; noteId?: string | null; cardId?: string | null; conversationId?: string | null }) => void
+  /** 回到费曼练习首页（v0.7.6） */
+  closeFeynman: () => void
   setFeynmanConversation: (id: string) => void
 
   /** 当前 AI 对话（null 为新对话） */
@@ -120,6 +125,9 @@ interface AppState extends Location {
 
   noteFilter: NoteFilter
   setNoteFilter: (f: NoteFilter) => void
+  /** 笔记列表的多选（v0.7.6）：放在全局，列表栏在书脊与常驻之间切换时不丢 */
+  noteSelection: string[]
+  setNoteSelection: (ids: string[]) => void
   noteSort: NoteSort
   setNoteSort: (s: NoteSort) => void
   settingsOpen: boolean
@@ -185,8 +193,12 @@ export const useApp = create<AppState>((set, get) => {
       get().navigate({ view: 'notes', noteId })
     },
     openSource: (sourceId) => {
+      const s = get()
+      // 在笔记旁打开（笔记页里正开着一篇笔记，如点了笔记里的引用）：资料放在这篇笔记左边；
+      // 从资料库、今日、对话等其他地方打开：右边是这份资料的记笔记起始页，而不是上次打开的笔记（v0.7.6）
+      const beside = s.view === 'notes' && !!s.noteId && !s.browserOpen
       if (sourceId) set({ browserOpen: false })
-      get().navigate({ view: 'notes', sourceId })
+      get().navigate({ view: 'notes', sourceId, ...(sourceId && !beside ? { noteId: null } : {}) })
     },
     browserOpen: false,
     openBrowser: (input, opts) => {
@@ -231,6 +243,11 @@ export const useApp = create<AppState>((set, get) => {
 
     reviewTab: 'today',
     setReviewTab: (reviewTab) => set({ reviewTab }),
+    reviewQueue: null,
+    startReviewQueue: (ids) => {
+      set({ reviewQueue: ids && ids.length ? ids : null, reviewTab: 'today' })
+      if (ids?.length && get().view !== 'review') get().navigate({ view: 'review' })
+    },
 
     reflectionId: null,
     openReflection: (reflectionId) => {
@@ -245,6 +262,7 @@ export const useApp = create<AppState>((set, get) => {
       })
       get().navigate({ view: 'feynman' })
     },
+    closeFeynman: () => set({ feynman: null }),
     setFeynmanConversation: (id) => set((s) => (s.feynman ? { feynman: { ...s.feynman, conversationId: id } } : {})),
 
     conversationId: null,
@@ -276,7 +294,9 @@ export const useApp = create<AppState>((set, get) => {
     setHighlight: (highlight) => set({ highlight }),
 
     noteFilter: { type: 'all' },
-    setNoteFilter: (noteFilter) => set({ noteFilter }),
+    setNoteFilter: (noteFilter) => set({ noteFilter, noteSelection: [] }),
+    noteSelection: [],
+    setNoteSelection: (noteSelection) => set({ noteSelection }),
     noteSort: 'edited',
     setNoteSort: (noteSort) => set({ noteSort }),
     settingsOpen: false,

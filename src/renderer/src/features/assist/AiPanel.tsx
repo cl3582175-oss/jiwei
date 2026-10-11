@@ -13,7 +13,7 @@ import { useApp } from '@/store/app'
 import { useNote } from '@/lib/queries'
 import { Button } from '@/components/ui/button'
 import { Menu, MenuContent, MenuTrigger, Tip } from '@/components/ui/primitives'
-import { MessageItem } from '../chat/MessageItem'
+import { MessageItem, REPLY_EVENT } from '../chat/MessageItem'
 import { errText, sendChat, useChatThread, useModelChoice } from '../chat/useChat'
 import { ModelPicker } from '../ai/ModelPicker'
 import { EffortPicker } from '../ai/EffortPicker'
@@ -189,6 +189,33 @@ export function AiPanelBody({ pinned }: { pinned: boolean }) {
       setPreparing(false)
     }
   }
+  // 预填的问题（v0.7.6）：资料起始页选好了范围时直接发出，否则放进输入框等用户确认
+  const draft = useAssist((s) => s.panelDraft)
+  const ready = !!choice.providerId && !!choice.model
+  useEffect(() => {
+    // 面板刚打开时模型选择可能还没读出来：等就绪再发
+    if (!draft || (useAssist.getState().panelAutoSend && !ready)) return
+    const auto = useAssist.getState().panelAutoSend
+    useAssist.getState().setPanel({ panelDraft: null, panelAutoSend: false })
+    if (auto) void sendRef.current(draft)
+    else {
+      setText(draft)
+      requestAnimationFrame(() => input.current?.focus())
+    }
+  }, [draft, ready])
+
+  // 点了 AI 选择题的选项（v0.7.6）：当作用户的回答发出
+  const sendRef = useRef(send)
+  sendRef.current = send
+  useEffect(() => {
+    const onReply = (e: Event): void => {
+      const d = (e as CustomEvent<{ conversationId: string; text: string }>).detail
+      if (d.conversationId === conversationId) void sendRef.current(d.text)
+    }
+    window.addEventListener(REPLY_EVENT, onReply)
+    return () => window.removeEventListener(REPLY_EVENT, onReply)
+  }, [conversationId])
+
 
   return (
     <div className="flex h-full flex-col" role="complementary" aria-label={t('assist.panel')}>
@@ -257,7 +284,7 @@ export function AiPanelBody({ pinned }: { pinned: boolean }) {
             </div>
           </div>
         ) : (
-          msgs.map((m, i) => <MessageItem key={m.id} m={m} compact grounded={msgs[i - 1]?.contextual} />)
+          msgs.map((m, i) => <MessageItem key={m.id} m={m} compact grounded={msgs[i - 1]?.contextual} last={i === msgs.length - 1} />)
         )}
       </div>
 

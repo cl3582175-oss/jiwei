@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm'
-import { getDb } from '../../db'
+import { getDb, getSqlite } from '../../db'
 import { notes, sources } from '../../db/schema'
 import { listSegments } from '../segments'
 import { loadDoc, stateToContent } from '../docs'
@@ -15,6 +15,20 @@ import { sourceContextHits, type ContextSource } from '../../lib/sourceContext'
 // 隐私：标记为“不让 AI 读取”或已删除的笔记 / 资料一律跳过。
 
 const NEIGHBORS = 2
+
+/** 资料规模（v0.7.6）：让模型知道「上下文」里只是其中可见的一部分 */
+function sizeNote(sourceId: string, zh: boolean): string {
+  const r = getSqlite()
+    .prepare(
+      `SELECT count(*) AS n, max(CASE WHEN json_extract(locator, '$.value') LIKE 'page=%' THEN CAST(substr(json_extract(locator, '$.value'), 6) AS INTEGER) END) AS pages
+       FROM source_segments WHERE source_id = ?`
+    )
+    .get(sourceId) as { n: number; pages: number | null }
+  if (r.n < 40) return ''
+  return zh
+    ? `，共 ${r.n} 段${r.pages ? `、${r.pages} 页` : ''}（下面只是用户当前看到的部分）`
+    : `, ${r.n} segments${r.pages ? `, ${r.pages} pages` : ''} (below is only the visible part)`
+}
 const MAX_SURROUND = 1800
 
 export interface ResolvedContext {
@@ -138,7 +152,7 @@ export function contextSourceEvidence(packet: ContextPacket | undefined): Search
     const source = sourceRow(id)
     if (source) selected.push({ ...source, segments: listSegments(id) })
   }
-  return sourceContextHits(selected)
+  return sourceContextHits(selected).map((h) => ({ ...h, via: 'context' as const }))
 }
 
 /** 在文档中找到块及其所在行 */
@@ -231,7 +245,7 @@ export function resolveContext(p: ContextPacket | undefined, zh: boolean): Resol
     bg.push(line)
   }
   if (sourceId && !parts.length)
-    bg.push(`${zh ? '正在阅读的资料' : 'Source being read'}《${sourceRow(sourceId)!.title}》（ID：${sourceId}）`)
+    bg.push(`${zh ? '正在阅读的资料' : 'Source being read'}《${sourceRow(sourceId)!.title}》（ID：${sourceId}）${sizeNote(sourceId, zh)}`)
   else if (sourceId) bg.push(`${zh ? '资料 ID' : 'Source ID'}：${sourceId}`)
 
   // 用户所在的页面（助手侧栏从「今日」、复习、错题等页面打开时）：页面内容是数据，不是指令

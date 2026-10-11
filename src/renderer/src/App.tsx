@@ -6,7 +6,8 @@ import { PhoneDialog } from './features/capture/PhoneDialog'
 import { InboxView } from './features/inbox/InboxView'
 import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Toaster } from 'sonner'
+import { Toaster, toast } from 'sonner'
+import i18n from './i18n'
 import { useQueryClient } from '@tanstack/react-query'
 import { invalidate, useSettings } from './lib/queries'
 import { useApp } from './store/app'
@@ -133,6 +134,14 @@ function useMainEvents(): void {
       }),
       window.jiweiEvents.on('usage:changed', () => void qc.invalidateQueries({ queryKey: ['usage'] })),
       window.jiweiEvents.on('settings:changed', () => void qc.invalidateQueries({ queryKey: ['settings'] })),
+      // 整份资料的导图 / 总结 / 提纲做好了（v0.7.6）
+      window.jiweiEvents.on('digest:done', ({ noteId, title, task }) => {
+        void qc.invalidateQueries({ queryKey: ['notes'] })
+        toast.success(i18n.t('workspace.digest.done', { title, task: i18n.t(`workspace.digest.task.${task}`) }), {
+          duration: 12_000,
+          action: { label: i18n.t('workspace.digest.open'), onClick: () => useApp.getState().openNote(noteId) }
+        })
+      }),
       window.jiweiEvents.on('mcp:changed', () => {
         void qc.invalidateQueries({ queryKey: ['mcp'] })
       }),

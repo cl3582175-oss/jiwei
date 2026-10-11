@@ -15,7 +15,8 @@ import {
   LoaderCircle,
   CircleX,
   ListChecks,
-  ArrowUpRight
+  ArrowUpRight,
+  Library
 } from 'lucide-react'
 import type { AgentStep, ChatMessage, Citation } from '@shared/types'
 import { cn, formatDate } from '@/lib/utils'
@@ -180,6 +181,7 @@ function CitationCard({ c }: { c: Citation }) {
             </span>
           )}
           {c.origin === 'ai' && <Sparkles className="size-3 shrink-0 text-subtle" />}
+          {c.via && <span className="shrink-0 rounded bg-sunken px-1 text-2xs text-subtle">{t(`chat.via.${c.via}`)}</span>}
           <span className="ml-auto shrink-0 text-2xs text-subtle">{date ? formatDate(date, i18n.language) : ''}</span>
         </span>
         <span className="mt-0.5 line-clamp-2 block text-2xs leading-relaxed text-muted">{c.snippet.replace(/^#{1,6}\s+/gm, '')}</span>
@@ -188,11 +190,99 @@ function CitationCard({ c }: { c: Citation }) {
   )
 }
 
+/** 回复选择题（v0.7.6）：对话页与 AI 面板监听这个事件，把选项当作用户的回答发出 */
+export const REPLY_EVENT = 'jiwei:reply'
+export function replyInConversation(conversationId: string, text: string): void {
+  window.dispatchEvent(new CustomEvent(REPLY_EVENT, { detail: { conversationId, text } }))
+}
+
+/** AI 的选择题（ask_user）：只有最新一条回答上的可以点 */
+function Choices({ step, conversationId, active }: { step: AgentStep; conversationId: string; active: boolean }) {
+  const [picked, setPicked] = useState<string | null>(null)
+  if (!step.choices) return null
+  return (
+    <div className="mt-3 flex flex-wrap gap-2" role="group" aria-label={step.choices.question} data-testid="ask-choices">
+      {step.choices.options.map((o) => (
+        <button
+          key={o}
+          disabled={!active || !!picked}
+          onClick={() => {
+            setPicked(o)
+            replyInConversation(conversationId, o)
+          }}
+          className={cn(
+            'rounded-full border px-3.5 py-1.5 text-sm transition-colors',
+            picked === o
+              ? 'border-accent bg-accent-soft text-accent'
+              : 'border-border bg-surface text-fg enabled:hover:border-accent/50 enabled:hover:bg-accent-soft/40 disabled:opacity-50'
+          )}
+        >
+          {o}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+/** 依据（v0.7.6）：默认折叠成一行，不抢回答正文的视觉；展开后列出引用的笔记与资料片段 */
+function Basis({ citations }: { citations: Citation[] }) {
+  const { t } = useTranslation()
+  const [open, setOpen] = useState(false)
+  const counts = new Map<string, number>()
+  for (const c of citations) if (c.via) counts.set(c.via, (counts.get(c.via) ?? 0) + 1)
+  const order = ['keyword', 'semantic', 'both', 'context'] as const
+  return (
+    <div className="mt-3" data-testid="answer-basis">
+      <Tip label={t('chat.basisHint')} side="top">
+        <button
+          onClick={() => setOpen(!open)}
+          aria-expanded={open}
+          aria-label={open ? t('chat.basisHide') : t('chat.basisShow')}
+          className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs text-subtle transition-colors hover:bg-surface-hover hover:text-fg"
+        >
+          <Library className="size-3.5" />
+          {t('chat.basis', { count: citations.length })}
+          {counts.size > 0 && (
+            <span className="text-2xs text-subtle/80">
+              ·{' '}
+              {order
+                .filter((k) => counts.get(k))
+                .map((k) => `${t(`chat.via.${k}`)} ${counts.get(k)}`)
+                .join(' · ')}
+            </span>
+          )}
+          <ChevronRight className={cn('size-3 transition-transform', open && 'rotate-90')} />
+        </button>
+      </Tip>
+      {open && (
+        <div className="mt-1.5 rounded-xl border border-border bg-surface/60 py-1">
+          {citations.map((c) => (
+            <CitationCard key={c.n} c={c} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 /**
  * compact：就地卡片中使用，隐藏用量信息。
  * plain：不是知识库问答（费曼练习、复盘追问），不显示“没有引用知识库”的提示。
  */
-export function MessageItem({ m, compact, plain, grounded }: { m: ChatMessage; compact?: boolean; plain?: boolean; grounded?: boolean }) {
+export function MessageItem({
+  m,
+  compact,
+  plain,
+  grounded,
+  last
+}: {
+  m: ChatMessage
+  compact?: boolean
+  plain?: boolean
+  grounded?: boolean
+  /** 最新一条：其中的选择题可以点 */
+  last?: boolean
+}) {
   const { t } = useTranslation()
   const money = useMoney()
   const [copied, setCopied] = useState(false)
@@ -250,6 +340,11 @@ export function MessageItem({ m, compact, plain, grounded }: { m: ChatMessage; c
       ) : (
         streaming && !m.reasoning && !m.steps.length && <div className="h-5 w-16 animate-pulse rounded bg-sunken" />
       )}
+      {m.status === 'done' &&
+        m.steps
+          .filter((s) => s.choices)
+          .slice(-1)
+          .map((s) => <Choices key={s.id} step={s} conversationId={m.conversationId} active={!!last} />)}
       {m.status === 'error' && budgetKind(m.error) && <BudgetNotice error={m.error!} />}
       {m.status === 'error' && !budgetKind(m.error) && (
         <div className="mt-2 flex items-start gap-2 rounded-lg bg-danger-soft px-3 py-2 text-xs text-danger">
@@ -259,14 +354,7 @@ export function MessageItem({ m, compact, plain, grounded }: { m: ChatMessage; c
       )}
       {m.status === 'stopped' && <p className="mt-2 text-2xs text-subtle">{t('chat.stopped')}</p>}
 
-      {m.citations.length > 0 && (
-        <div className="mt-3 rounded-xl border border-border bg-surface/60 py-1">
-          <p className="px-3 pt-1.5 pb-0.5 text-2xs tracking-wide text-subtle">{t('chat.fromKb', { count: m.citations.length })}</p>
-          {m.citations.map((c) => (
-            <CitationCard key={c.n} c={c} />
-          ))}
-        </div>
-      )}
+      {m.citations.length > 0 && <Basis citations={m.citations} />}
       {!plain && !grounded && m.status === 'done' && m.citations.length === 0 && m.steps.length === 0 && m.content && (
         <p className="mt-2 text-2xs text-subtle">{t('chat.generalOnly')}</p>
       )}

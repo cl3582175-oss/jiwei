@@ -18,7 +18,7 @@ import { InkMountains } from '@/components/Illustrations'
 import { ModelPicker } from '../ai/ModelPicker'
 import { EffortPicker } from '../ai/EffortPicker'
 import { ScopePicker } from './ScopePicker'
-import { MessageItem } from './MessageItem'
+import { MessageItem, REPLY_EVENT } from './MessageItem'
 import { errText, sendChat, useChatThread, useModelChoice } from './useChat'
 
 function ChatSidebar() {
@@ -216,6 +216,18 @@ function ChatPanel() {
       toast.error(errText(e))
     }
   }
+  // 点了 AI 选择题的选项（v0.7.6）：当作用户的回答发出
+  const sendRef = useRef(send)
+  sendRef.current = send
+  useEffect(() => {
+    const onReply = (e: Event): void => {
+      const d = (e as CustomEvent<{ conversationId: string; text: string }>).detail
+      if (d.conversationId === conversationId) void sendRef.current(d.text)
+    }
+    window.addEventListener(REPLY_EVENT, onReply)
+    return () => window.removeEventListener(REPLY_EVENT, onReply)
+  }, [conversationId])
+
 
   // 「今日」输入框与晨报回复：进入助手页后自动发送（模型就绪后发送一次）
   const draftSent = useRef(false)
@@ -287,7 +299,7 @@ function ChatPanel() {
             </div>
           )}
           {msgs.map((m, i) => (
-            <MessageItem key={m.id} m={m} grounded={msgs[i - 1]?.contextual} />
+            <MessageItem key={m.id} m={m} grounded={msgs[i - 1]?.contextual} last={i === msgs.length - 1} />
           ))}
         </div>
       </div>

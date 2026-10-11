@@ -8,7 +8,7 @@ import { newId } from '../lib/ids'
 import { emit } from '../events'
 import { nodesToMarkdown } from '../lib/markdown'
 import { embedMarkdown } from '../lib/exportFormats'
-import type { AnswerCheck, DocNode, ReviewCard, ReviewRating, ReviewStats } from '@shared/types'
+import type { AnswerCheck, CardFilter, CardListItem, DocNode, ReviewCard, ReviewRating, ReviewStats } from '@shared/types'
 import { deviceId } from './device'
 import { getSettings } from './settings'
 import { loadDoc, stateToContent, stateToJSON } from './docs'
@@ -475,4 +475,65 @@ export function dueQuestions(limit = 20): { noteId: string; noteTitle: string; q
     .all()
     .map((r) => ({ noteId: r.c.noteId, noteTitle: r.title, question: rowContent(r.c.noteId, r.c.blockId)?.question ?? '', due: r.c.due }))
     .filter((q) => q.question)
+}
+
+/* ————————————————— 卡片库（v0.7.6） ————————————————— */
+
+/** 列出卡片（问题取线索栏文字，不加载笔记正文）：按到期时间排序 */
+export function listCards(filter: CardFilter = 'all', search = ''): CardListItem[] {
+  const endOfDay = startOfDay() + DAY
+  const where = [isNull(cards.deletedAt), isNull(notes.deletedAt), eq(notes.reviewExcluded, false)]
+  if (filter === 'suspended') where.push(eq(cards.suspended, true))
+  else if (filter !== 'all') where.push(eq(cards.suspended, false))
+  if (filter === 'new') where.push(eq(cards.state, State.New))
+  if (filter === 'learning') where.push(inArray(cards.state, [State.Learning, State.Relearning]))
+  if (filter === 'review') where.push(eq(cards.state, State.Review))
+  if (filter === 'due') where.push(sql`${cards.state} != ${State.New}`, lte(cards.due, endOfDay))
+  if (filter === 'weak') where.push(sql`(${cards.lapses} > 0 OR ${cards.state} = ${State.Relearning})`)
+  const question = sql<string>`coalesce((SELECT group_concat(b.text, ' ') FROM blocks b WHERE b.row_id = ${cards.blockId} AND b.section = 'cue' AND b.deleted_at IS NULL), '')`
+  const rows = getDb()
+    .select({ c: cards, title: notes.title, categoryId: notes.categoryId, question })
+    .from(cards)
+    .innerJoin(notes, eq(notes.id, cards.noteId))
+    .where(and(...where))
+    .orderBy(filter === 'weak' ? sql`${cards.lapses} DESC` : asc(cards.due))
+    .limit(3000)
+    .all()
+  const q = search.trim().toLowerCase()
+  return rows
+    .map((r) => ({
+      id: r.c.id,
+      noteId: r.c.noteId,
+      rowId: r.c.blockId,
+      noteTitle: r.title,
+      categoryId: r.categoryId,
+      kind: r.c.kind,
+      question: r.question.trim() || r.title,
+      state: STATE_NAME[r.c.state] ?? 'new',
+      due: r.c.due,
+      reps: r.c.reps,
+      lapses: r.c.lapses,
+      suspended: r.c.suspended,
+      isDue: r.c.state !== State.New && r.c.due <= endOfDay
+    }))
+    .filter((c) => !q || c.question.toLowerCase().includes(q) || c.noteTitle.toLowerCase().includes(q))
+}
+
+/** 这张卡片现在是否到了该复习的时候（到期的复习卡、学习中的卡）——自选复习时只有它们计入排期 */
+export function isScheduledNow(id: string): boolean {
+  const c = getDb().select().from(cards).where(eq(cards.id, id)).get()
+  if (!c) return false
+  if (c.state === State.Learning || c.state === State.Relearning) return c.due <= Date.now() + LEARN_AHEAD
+  return c.state === State.Review && c.due <= startOfDay() + DAY
+}
+
+/** 练习（不计入排期）：没到期的卡片自选复习时只记活动，不改变下次复习时间 */
+export function practiceCard(id: string, durationMs?: number): void {
+  const c = getDb().select({ kind: cards.kind, mistakeId: cards.mistakeId }).from(cards).where(eq(cards.id, id)).get()
+  if (!c) return
+  recordEvent(c.kind === 'mistake' ? 'practice' : 'review', {
+    refType: c.kind === 'mistake' ? 'mistake' : 'card',
+    refId: c.kind === 'mistake' ? c.mistakeId : id,
+    durationMs: Math.min(Math.max(durationMs ?? 0, 0), 5 * 60_000)
+  })
 }

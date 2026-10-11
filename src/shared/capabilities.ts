@@ -95,6 +95,8 @@ import type {
   NoteConnections,
   KnowledgeGraph,
   ReviewCard,
+  CardListItem,
+  FeynmanHome,
   ReviewStats,
   AnswerCheck,
   MemorySettings,
@@ -521,6 +523,15 @@ export const capabilities = {
   sources: {
     list: cap<Source[]>()({ description: '按条件列出 / 检索资料', params: [['query', S.SourceQuerySchema]], ai: { effect: 'read' } }),
     get: cap<Source | null>()({ description: '读取资料信息', params: [id()], ai: { effect: 'read' } }),
+    notes: cap<{ id: string; title: string; updatedAt: number }[]>()({ description: '与这份资料关联的笔记', params: [id()] }),
+    outline: cap<{ title: string; page: number | null; ordinal: number }[]>()({
+      description: '资料的章节目录（识别出的标题）',
+      params: [id()]
+    }),
+    indexStatus: cap<{ segments: number; embedded: number; semantic: boolean }>()({
+      description: '资料的检索准备情况：可检索的分段数、已建语义索引的分段数',
+      params: [id()]
+    }),
     importDialog: cap<ImportResult>()({ description: '通过对话框导入文件', params: [['categoryId', S.Id.nullable().optional()]] }),
     importPaths: cap<ImportResult>()({
       description: '按路径导入文件（拖拽）',
@@ -689,6 +700,7 @@ export const capabilities = {
   },
   feynman: {
     get: cap<Conversation | null>()({ description: '读取一次费曼练习（含诊断报告）', params: [id()] }),
+    home: cap<FeynmanHome>()({ description: '费曼练习首页：历史练习与推荐的概念', params: none }),
     finish: cap<FeynmanReport>()({ description: '结束费曼练习并诊断：讲清楚了什么、漏洞、错误、建议的复习问题', params: [id()] }),
     addCues: cap<{ noteId: string; created: boolean }>()({
       description: '把选中的复习问题补进笔记（成为复习卡片）',
@@ -701,6 +713,18 @@ export const capabilities = {
       params: [['exclude', z.array(S.Id).max(500)]]
     }),
     get: cap<ReviewCard | null>()({ description: '读取一张卡片', params: [id()] }),
+    list: cap<CardListItem[]>()({
+      description: '卡片库：按状态筛选、搜索问题或笔记标题',
+      params: [
+        ['filter', z.enum(['all', 'due', 'new', 'learning', 'review', 'suspended', 'weak'])],
+        ['search', z.string().max(200).optional()]
+      ]
+    }),
+    scheduledNow: cap<boolean>()({ description: '这张卡片现在是否该复习（自选复习时只有它计入排期）', params: [id()] }),
+    practice: cap<void>()({
+      description: '练习一张没到期的卡片：只记活动，不改变复习排期',
+      params: [id(), ['durationMs', z.number().int().min(0).optional()]]
+    }),
     stats: cap<ReviewStats>()({ description: '复习统计：到期数量、今日已复习、连续天数、记住比例', params: none }),
     rate: cap<ReviewCard | null>()({
       description: '为卡片评分（1 忘了 2 困难 3 记得 4 轻松）',

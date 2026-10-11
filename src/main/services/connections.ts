@@ -311,3 +311,14 @@ export function linkMention(noteId: string, mentionNoteId: string, blockId: stri
   if (!me.ok || !me.title.trim()) return false
   return setTextLink(mentionNoteId, blockId, me.title.trim(), undo ? null : `jiwei://note/${noteId}`)
 }
+
+/** 与某份资料关联的笔记（手动关联、正文里引用了它）：资料起始页上“接着写”（v0.7.6） */
+export function notesForSource(sourceId: string): { id: string; title: string; updatedAt: number }[] {
+  return getSqlite()
+    .prepare(
+      `SELECT DISTINCT n.id, n.title, n.updated_at AS updatedAt FROM links l JOIN notes n ON n.id = l.from_id
+       WHERE l.from_type = 'note' AND l.to_type = 'source' AND l.to_id = ? AND l.deleted_at IS NULL AND n.deleted_at IS NULL
+       ORDER BY n.updated_at DESC LIMIT 20`
+    )
+    .all(sourceId) as { id: string; title: string; updatedAt: number }[]
+}

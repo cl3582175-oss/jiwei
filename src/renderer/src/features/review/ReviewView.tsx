@@ -3,16 +3,17 @@ import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Streamdown } from 'streamdown'
 import { toast } from 'sonner'
-import { BrainCircuit, Flame, Layers, NotebookText, PauseCircle, Sparkles, Undo2, Loader2, CheckCircle2, Target, GraduationCap, Flag } from 'lucide-react'
+import { BrainCircuit, Flame, Layers, NotebookText, PauseCircle, Sparkles, Undo2, Loader2, CheckCircle2, Target, GraduationCap, Flag, ListChecks, ChevronRight } from 'lucide-react'
 import type { AnswerCheck, ReviewCard, ReviewRating } from '@shared/types'
 import { api, cn } from '@/lib/utils'
 import { useApp } from '@/store/app'
 import { Button } from '@/components/ui/button'
-import { EmptyState, Kbd } from '@/components/ui/primitives'
+import { EmptyState, Kbd, Tip } from '@/components/ui/primitives'
 import { FloatingPanel } from '@/components/FloatingPanel'
 import { InkLeaf } from '@/components/Illustrations'
 import { errText } from '../chat/useChat'
 import { MasteryPanel } from './MasteryView'
+import { CardLibrary } from './CardLibrary'
 import { MistakesView } from '../mistakes/MistakesView'
 import { useProvidePageContext } from '../assist/pageContext'
 import { RichMistake } from '../mistakes/RichMistake'
@@ -115,7 +116,13 @@ function ReviewToday() {
   const [check, setCheck] = useState<AnswerCheck | null>(null)
   const [checking, setChecking] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [session, setSession] = useState({ done: 0, again: 0 })
+  const [session, setSession] = useState({ done: 0, again: 0, practice: 0 })
+  // 自选复习（v0.7.6）：按卡片库选中的顺序；没到期的卡片默认只算练习
+  const queue = useApp((s) => s.reviewQueue)
+  const pos = useRef(0)
+  const [countAll, setCountAll] = useState(false)
+  const [listOpen, setListOpen] = useState(false)
+  const { data: todayCards = [] } = useQuery({ queryKey: ['reviewCards', 'due', ''], queryFn: () => api.review.list('due'), enabled: !queue })
   const seen = useRef<string[]>([])
   const shownAt = useRef(Date.now())
   const last = useRef<string | null>(null)
@@ -127,9 +134,22 @@ function ReviewToday() {
     setCheck(null)
     shownAt.current = Date.now()
   }, [])
-  const loadNext = useCallback(async () => show(await api.review.next(seen.current.slice(-1))), [show])
+  const loadNext = useCallback(async () => {
+    if (queue) {
+      // 跳过已删除的卡片
+      while (pos.current < queue.length) {
+        const c = await api.review.get(queue[pos.current])
+        if (c) return show(c)
+        pos.current++
+      }
+      return show(null)
+    }
+    show(await api.review.next(seen.current.slice(-1)))
+  }, [show, queue])
 
   useEffect(() => {
+    pos.current = 0
+    setSession({ done: 0, again: 0, practice: 0 })
     void loadNext()
   }, [loadNext])
 
@@ -138,16 +158,23 @@ function ReviewToday() {
       if (!card || busy) return
       setBusy(true)
       try {
-        await api.review.rate(card.id, r, Date.now() - shownAt.current, card.variantId)
-        last.current = card.id
+        const counted = !queue || countAll || (await api.review.scheduledNow(card.id))
+        if (counted) {
+          await api.review.rate(card.id, r, Date.now() - shownAt.current, card.variantId)
+          last.current = card.id
+        } else {
+          await api.review.practice(card.id, Date.now() - shownAt.current)
+          last.current = null
+        }
         seen.current.push(card.id)
-        setSession((s) => ({ done: s.done + 1, again: s.again + (r === 1 ? 1 : 0) }))
+        if (queue) pos.current++
+        setSession((s) => ({ done: s.done + 1, again: s.again + (r === 1 ? 1 : 0), practice: s.practice + (counted ? 0 : 1) }))
         await loadNext()
       } finally {
         setBusy(false)
       }
     },
-    [card, busy, loadNext]
+    [card, busy, loadNext, queue, countAll]
   )
 
   const undo = useCallback(async () => {
@@ -219,12 +246,50 @@ function ReviewToday() {
   const now = Date.now()
   return (
     <>
-        {stats && (
+        {queue && (
+          <div className="mx-auto flex max-w-[720px] flex-wrap items-center gap-x-4 gap-y-2 px-10 pt-6" data-testid="review-queue">
+            <span className="rounded-full bg-accent-soft px-2.5 py-0.5 text-xs font-medium text-accent">{t('review.queue.title')}</span>
+            <span className="text-xs text-muted tabular-nums">{t('review.queue.progress', { n: Math.min(pos.current + 1, queue.length), total: queue.length })}</span>
+            <Tip label={t('review.queue.countHint')}>
+              <label className="ml-auto flex items-center gap-1.5 text-xs text-muted">
+                <input type="checkbox" checked={countAll} onChange={(e) => setCountAll(e.target.checked)} className="accent-[var(--accent)]" />
+                {t('review.queue.count')}
+              </label>
+            </Tip>
+            <Button size="sm" variant="ghost" onClick={() => useApp.getState().startReviewQueue(null)}>
+              {t('review.queue.exit')}
+            </Button>
+          </div>
+        )}
+        {stats && !queue && (
           <div className="mx-auto flex max-w-[720px] flex-wrap gap-x-8 gap-y-3 px-10 pt-7">
             <Stat icon={<Layers />} label={t('review.statDue')} value={stats.due} />
             <Stat icon={<CheckCircle2 />} label={t('review.statToday')} value={stats.reviewedToday} />
             <Stat icon={<Flame />} label={t('review.statStreak')} value={t('review.days', { count: stats.streak })} />
             <Stat icon={<Target />} label={t('review.statRetention')} value={stats.retention === null ? '—' : `${Math.round(stats.retention * 100)}%`} />
+          </div>
+        )}
+        {!queue && todayCards.length > 0 && (
+          <div className="mx-auto max-w-[720px] px-10 pt-4">
+            <button
+              onClick={() => setListOpen(!listOpen)}
+              aria-expanded={listOpen}
+              className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs text-subtle hover:bg-surface-hover hover:text-fg"
+            >
+              <ListChecks className="size-3.5" />
+              {listOpen ? t('review.todayListHide') : t('review.todayList', { count: todayCards.length })}
+              <ChevronRight className={cn('size-3 transition-transform', listOpen && 'rotate-90')} />
+            </button>
+            {listOpen && (
+              <ul className="mt-2 max-h-64 divide-y divide-border/60 overflow-y-auto rounded-xl border border-border bg-surface/60 px-3" data-testid="review-today-list">
+                {todayCards.map((c) => (
+                  <li key={c.id} className="flex items-center gap-3 py-1.5 text-sm">
+                    <span className="min-w-0 flex-1 truncate text-fg">{c.question}</span>
+                    <span className="max-w-[40%] shrink-0 truncate text-2xs text-subtle">{c.noteTitle}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         )}
 
@@ -238,13 +303,30 @@ function ReviewToday() {
               <div className="mx-auto grid size-14 place-items-center rounded-full bg-accent-soft text-accent">
                 <CheckCircle2 className="size-7" />
               </div>
-              <h2 className="mt-5 font-serif text-xl font-semibold text-fg">{t('review.doneTitle')}</h2>
+              <h2 className="mt-5 font-serif text-xl font-semibold text-fg">{queue ? t('review.queue.doneTitle') : t('review.doneTitle')}</h2>
+              {queue ? (
+                <>
+                  <p className="mt-2 text-sm leading-relaxed text-muted">{t('review.queue.done', { count: session.done, practice: session.practice })}</p>
+                  <Button
+                    className="mt-6"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      useApp.getState().startReviewQueue(null)
+                      useApp.getState().setReviewTab('cards')
+                    }}
+                  >
+                    {t('review.queue.back')}
+                  </Button>
+                </>
+              ) : (<>
               <p className="mt-2 text-sm leading-relaxed text-muted">
                 {session.done > 0 ? t('review.doneSession', { count: session.done, again: session.again }) : t('review.nothingDue')}
               </p>
               <p className="mt-1 text-sm text-muted">
                 {stats?.laterToday ? t('review.laterToday', { count: stats.laterToday }) : t('review.tomorrow', { count: stats?.tomorrow ?? 0 })}
               </p>
+              </>)}
               {last.current && (
                 <Button className="mt-6" variant="ghost" size="sm" onClick={() => void undo()}>
                   <Undo2 />
@@ -395,7 +477,7 @@ function ReviewToday() {
   )
 }
 
-type Tab = 'today' | 'mistakes' | 'mastery'
+type Tab = 'today' | 'cards' | 'mistakes' | 'mastery'
 
 export function ReviewView() {
   const { t } = useTranslation()
@@ -405,7 +487,7 @@ export function ReviewView() {
       <header className="drag flex h-[52px] shrink-0 items-center gap-6 border-b border-border/70 pr-[calc(var(--tb-right)+16px)] pl-8">
         <h1 className="font-serif text-md font-semibold tracking-wide text-fg">{t('review.title')}</h1>
         <div role="tablist" className="no-drag inline-flex rounded-lg bg-sunken p-0.5">
-          {(['today', 'mistakes', 'mastery'] as Tab[]).map((k) => (
+          {(['today', 'cards', 'mistakes', 'mastery'] as Tab[]).map((k) => (
             <button
               key={k}
               role="tab"
@@ -420,6 +502,7 @@ export function ReviewView() {
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto">
         {tab === 'today' && <ReviewToday />}
+        {tab === 'cards' && <CardLibrary />}
         {tab === 'mistakes' && <MistakesView />}
         {tab === 'mastery' && (
           <div className="mx-auto max-w-[920px] px-10 pt-8 pb-16">

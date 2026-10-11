@@ -251,7 +251,16 @@ function weight(h: SearchHit): number {
 }
 
 /** 检索知识库，返回按相关度与时间加权排序的片段 */
-export async function retrieve(query: string, scope: ChatScope, limit = 8, filters: RecordingFilters = {}): Promise<SearchHit[]> {
+/**
+ * prefer：用户正在看的资料（v0.7.6）——同等相关时优先它的片段，问“这本书里……”时不被别的资料挤掉
+ */
+export async function retrieve(
+  query: string,
+  scope: ChatScope,
+  limit = 8,
+  filters: RecordingFilters = {},
+  prefer?: string | null
+): Promise<SearchHit[]> {
   if (scope.type === 'none' || !query.trim()) return []
   const [kw, vec] = await Promise.all([
     Promise.resolve(keywordHits(query, limit, filters)),
@@ -262,8 +271,11 @@ export async function retrieve(query: string, scope: ChatScope, limit = 8, filte
   // 向量命中权重略高：语义相关比字面重合更可靠
   vec.forEach((k, i) => rrf.set(k, (rrf.get(k) ?? 0) + 1.2 / (RRF_K + i)))
   const hits = hydrate([...rrf.keys()], scope)
+  const kwSet = new Set(kw)
+  const vecSet = new Set(vec)
+  const via = (k: Key): SearchHit['via'] => (kwSet.has(k) && vecSet.has(k) ? 'both' : vecSet.has(k) ? 'semantic' : 'keyword')
   return [...hits.entries()]
-    .map(([k, h]) => ({ ...h, score: (rrf.get(k) ?? 0) * weight(h) }))
+    .map(([k, h]) => ({ ...h, via: via(k), score: (rrf.get(k) ?? 0) * weight(h) * (prefer && h.parentId === prefer ? 1.6 : 1) }))
     .sort((a, b) => b.score - a.score)
     .slice(0, limit)
 }

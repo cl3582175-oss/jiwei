@@ -498,6 +498,16 @@ const en: Messages = {
     summary: 'Summary',
     summaryHint: 'Sum up the core of this page in a few sentences',
     moveTo: 'Move to',
+    open: 'Open',
+    noteActions: 'Note actions',
+    selected: '{{count}} selected',
+    clearSelection: 'Clear selection',
+    selectHint: '⌘-click to select several, Shift-click for a range; or drag notes onto a category',
+    movedTo: 'Moved to “{{name}}”',
+    movedMany: 'Moved {{count}} notes to “{{name}}”',
+    deleteMany: 'Delete these {{count}} notes?',
+    deletedMany: 'Moved {{count}} notes to Recently Deleted',
+    pinMany: 'Pin these {{count}}',
     deleteTitle: 'Delete this note?',
     deleteDesc: 'It will move to Recently Deleted and can be restored within 30 days.',
     deleted: 'Moved to Recently Deleted',
@@ -669,6 +679,36 @@ const en: Messages = {
     }
   },
   workspace: {
+    digest: {
+      done: 'The {{task}} of “{{title}}” is ready as a proposal in your note',
+      open: 'Open note',
+      task: { mindmap: 'mind map', summary: 'summary', outline: 'Cornell outline' }
+    },
+    start: {
+      heading: 'Take notes on this source',
+      sub: '"{{title}}" is on the left; write your notes here.',
+      blank: 'New note',
+      noteTitle: 'Notes on {{title}}',
+      draft: 'Let AI draft an outline',
+      draftHint: 'Pick a scope (the whole source or a chapter); AI drafts the outline as a proposal in a new note for you to confirm.',
+      scope: 'Which part?',
+      whole: 'Whole source',
+      segments: '{{count}} segments',
+      free: "I'll say it in the chat",
+      pages: ' (pp. {{from}}–{{to}})',
+      wholePrompt: 'Draft a Cornell note outline for the whole of "{{title}}"',
+      chapterPrompt: 'Draft a Cornell note outline for the chapter "{{chapter}}"{{pages}} of "{{title}}", using only that chapter',
+      freePrompt: 'Draft a note outline for "{{title}}": ',
+      continue: 'Continue writing'
+    },
+    index: {
+      ready: 'In knowledge base',
+      building: 'Semantic index {{pct}}%',
+      off: 'Keyword search only',
+      hint: 'Text is keyword-searchable as soon as it is extracted; the local embedding model builds a semantic index in the background ({{done}}/{{total}} segments) so differently worded content is found too.',
+      hintOff:
+        'Text is keyword-searchable. The local embedding model is not ready, so semantic search is unavailable (Settings → AI models → Knowledge search).'
+    },
     recog: {
       pending: '{{count}} pages need recognition ({{detail}})',
       scan: '{{count}} scanned',
@@ -895,6 +935,12 @@ const en: Messages = {
     thought: 'Reasoning',
     thoughtFor: 'Reasoning ({{s}} s)',
     fromKb: 'From your knowledge base · {{count}}',
+    basis: 'Sources · {{count}} from your knowledge base',
+    basisShow: 'Show sources',
+    basisHide: 'Hide sources',
+    basisHint:
+      'Keyword: literal matches; semantic: similar meaning found by the local embedding model; open in workspace: the source you have open',
+    via: { keyword: 'keyword', semantic: 'semantic', both: 'keyword + semantic', context: 'open in workspace' },
     generalOnly: "This answer doesn't cite your knowledge base; it comes from the model's general knowledge.",
     copy: 'Copy',
     effortLabel: 'Thinking: {{level}}',
@@ -1323,7 +1369,19 @@ const en: Messages = {
     addCues: 'Add to note ({{count}} questions)',
     added: 'Added {{count}} questions to your note',
     openNote: 'Open note',
-    again: 'Explain again'
+    again: 'Explain again',
+    home: {
+      heading: 'Explain it to Wei',
+      sub: 'Pick a concept and explain it in your own words to a student who knows nothing about it. Wherever you get stuck is what you have not mastered yet.',
+      input: 'Which concept do you want to explain?',
+      start: 'Start',
+      suggest: 'Suggested',
+      reason: { weak: 'often forgotten', recent: 'recently learned', mistake: 'weak spot' },
+      history: 'Past sessions',
+      historyEmpty: 'No sessions yet. Pick a concept above to start.',
+      unfinished: 'Unfinished',
+      all: 'All sessions'
+    }
   },
   graph: {
     title: 'Knowledge graph',
@@ -1380,7 +1438,43 @@ const en: Messages = {
     noAnswer: 'The note column of this row is empty.',
     rateLabel: 'Rating',
     pageCard: 'Reviewing this card from “{{title}}”:',
-    tabs: { today: 'Today', mastery: 'Mastery', goals: 'Goals' },
+    tabs: { today: 'Today', cards: 'Cards', mastery: 'Mastery', goals: 'Goals' },
+    todayList: "Today's {{count}} cards",
+    todayListHide: 'Hide list',
+    cards: {
+      filter: {
+        due: 'Due today',
+        new: 'New',
+        learning: 'Learning',
+        review: 'In review',
+        weak: 'Often forgotten',
+        suspended: 'Suspended',
+        all: 'All'
+      },
+      search: 'Search questions or notes',
+      empty: 'No matching cards.',
+      count: '{{count}} cards',
+      selected: '{{count}} selected',
+      selectAll: 'Select all',
+      selectNote: "Select this note's cards",
+      start: 'Review these',
+      suspend: 'Suspend',
+      resume: 'Resume',
+      due: { overdue: 'Overdue', today: 'Today', inDays: 'In {{count}} days', new: 'Not started' },
+      lapses: 'Forgotten {{count}}×',
+      hint: 'Check cards and click “Review these”. Cards that are not due are practiced without changing their schedule.'
+    },
+    queue: {
+      title: 'Custom review',
+      progress: 'Card {{n}} of {{total}}',
+      count: 'Count early cards toward the schedule',
+      countHint: 'By default, cards that are not due are practice only and keep their schedule; check to record them as real reviews',
+      practice: 'Practice',
+      exit: 'End custom review',
+      doneTitle: 'This set is done',
+      done: 'Reviewed {{count}} cards; {{practice}} were practice (schedule unchanged).',
+      back: 'Back to cards'
+    },
     rating: { 1: 'Again', 2: 'Hard', 3: 'Good', 4: 'Easy' },
     iv: { min: '{{count}} min', hour: '{{count}} h', day: '{{count}} d', month: '{{count}} mo', year: '{{count}} y' },
     history: 'Reviewed {{reps}}× · forgot {{lapses}}×',

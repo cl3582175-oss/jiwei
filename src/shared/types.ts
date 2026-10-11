@@ -729,6 +729,8 @@ export interface AgentStep {
   }
   /** 来自外部 MCP 服务器时的服务器名称 */
   server?: string
+  /** AI 向用户提的选择题（v0.7.6，ask_user）：界面显示为可点的选项 */
+  choices?: { question: string; options: string[] }
 }
 
 /** 回答引用的知识库片段 */
@@ -748,6 +750,8 @@ export interface Citation {
   updatedAt: number | null
   status: KnowledgeStatus | null
   origin: 'user' | 'ai' | 'ai_reviewed' | null
+  /** 怎么找到的（v0.7.6） */
+  via?: HitVia
 }
 
 export interface ChatMessage {
@@ -829,6 +833,32 @@ export interface ReviewCard {
   lastReview: number | null
   /** 各评分对应的下次复习时间（毫秒时间戳） */
   next: Record<ReviewRating, number>
+}
+
+/** 卡片库中的一行（v0.7.6）：不加载笔记正文，问题取自线索栏 */
+export interface CardListItem {
+  id: string
+  noteId: string
+  /** 卡片对应的笔记行 */
+  rowId: string
+  noteTitle: string
+  categoryId: string | null
+  kind: 'cornell' | 'mistake'
+  question: string
+  state: ReviewCard['state']
+  due: number
+  reps: number
+  lapses: number
+  suspended: boolean
+  /** 今天到期（含学习中、今天能学的新卡不算） */
+  isDue: boolean
+}
+export type CardFilter = 'all' | 'due' | 'new' | 'learning' | 'review' | 'suspended' | 'weak'
+
+/** 费曼练习首页（v0.7.6） */
+export interface FeynmanHome {
+  sessions: { id: string; concept: string; noteId: string | null; level: FeynmanReport['level'] | null; updatedAt: number }[]
+  suggestions: { concept: string; noteId: string | null; cardId: string | null; reason: 'weak' | 'recent' | 'mistake' }[]
 }
 
 export interface ReviewStats {
@@ -929,7 +959,10 @@ export interface SearchHit {
   updatedAt: number | null
   status: KnowledgeStatus | null
   origin: 'user' | 'ai' | 'ai_reviewed' | null
+  /** 怎么找到的（v0.7.6）：关键词、语义（本地向量）、两者都命中、用户正指着的内容 */
+  via?: HitVia
 }
+export type HitVia = 'keyword' | 'semantic' | 'both' | 'context'
 
 /** 语音转写引擎状态 */
 export interface AsrStatus {
@@ -1052,6 +1085,8 @@ export interface JiweiEvents {
   /** 花费接近上限（v0.7.5）：spent、limit 为美元 */
   /** 主进程改了设置（如后台更新汇率），界面重新读取（v0.7.5） */
   'settings:changed': Record<string, never>
+  /** 整份资料的导图 / 总结 / 提纲已作为提案放进笔记（v0.7.6） */
+  'digest:done': { noteId: string; title: string; task: 'mindmap' | 'summary' | 'outline' }
   'usage:alert': { kind: 'daily' | 'monthly'; spent: number; limit: number }
   'agent:approval': import('./agent').ApprovalRequest
   'agent:approval-done': { id: string; messageId: string; allow: boolean }

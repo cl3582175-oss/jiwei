@@ -4,6 +4,7 @@ import { useApp } from '@/store/app'
 import { NotesSidebar } from './NotesSidebar'
 import { NoteEditor } from './NoteEditor'
 import { NotesHome } from '../home/NotesHome'
+import { SourceStart } from './SourceStart'
 import { SourcePane } from '../workspace/SourcePane'
 import { BrowserWorkspace } from '../browser/BrowserWorkspace'
 import { FloatingPanel } from '@/components/FloatingPanel'
@@ -30,8 +31,9 @@ export function NotesView() {
   const windowWidth = useWindowWidth()
   const filterLabel = useNoteFilterLabel()
   // 空间不够时自动收成书脊（不改用户设置）：整理审阅、钉住 AI 面板、资料与笔记并排而窗口较窄
-  const cramped = focus || pinned || windowWidth < 1100 || (!!left && windowWidth < 1280)
-  const main = noteId ? <NoteEditor noteId={noteId} /> : <NotesHome />
+  const cramped = focus || pinned || windowWidth < 1100 || (!!left && (windowWidth < 1280 || !noteId))
+  // 打开了资料但没有笔记：右边是这份资料的记笔记起始页（v0.7.6）
+  const main = noteId ? <NoteEditor noteId={noteId} /> : left && sourceId ? <SourceStart sourceId={sourceId} /> : <NotesHome />
   // 浏览器（v0.7.2）：独立工作区，不显示笔记分类与搜索栏；笔记按需出现在浏览器旁边
   if (browserOpen) return <BrowserWorkspace />
   return (

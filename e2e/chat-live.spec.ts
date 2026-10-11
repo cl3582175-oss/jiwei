@@ -65,7 +65,7 @@ test('answer with knowledge-base citations (thinking off)', async () => {
   await page.getByRole('radio', { name: '关闭' }).click()
   await ask('学习后一天大概会遗忘多少？应该怎么复习？请用我的笔记和资料回答。')
   await expect(lastAnswer().locator('.cite-chip').first()).toBeVisible({ timeout: 90_000 })
-  await expect(lastAnswer().getByText(/来自你的知识库/)).toBeVisible({ timeout: 90_000 })
+  await expect(lastAnswer().getByText(/依据 · 知识库/)).toBeVisible({ timeout: 90_000 })
   await expect(lastAnswer().getByText(/tokens/)).toBeVisible({ timeout: 30_000 })
   if (shots) await page.screenshot({ path: join(shots, '61-chat-answer.png') })
 })

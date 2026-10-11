@@ -243,3 +243,17 @@ export function clearIndex(): void {
   getSqlite().exec('DELETE FROM vec_chunks')
   getDb().delete(chunks).run()
 }
+
+/** 一份资料的检索准备情况（v0.7.6）：文字分段立即可按关键词检索；语义索引由本地向量模型在后台建立 */
+export async function sourceIndexStatus(sourceId: string): Promise<{ segments: number; embedded: number; semantic: boolean }> {
+  const sqlite = getSqlite()
+  const segments = (
+    sqlite.prepare("SELECT count(*) AS n FROM source_segments WHERE source_id = ? AND trim(text) <> ''").get(sourceId) as { n: number }
+  ).n
+  const embedded = (
+    sqlite.prepare("SELECT count(DISTINCT owner_id) AS n FROM chunks WHERE parent_type = 'source' AND parent_id = ?").get(sourceId) as {
+      n: number
+    }
+  ).n
+  return { segments, embedded: Math.min(embedded, segments), semantic: await isReady().catch(() => false) }
+}

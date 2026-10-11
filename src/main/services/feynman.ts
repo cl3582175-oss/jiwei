@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm'
+import { and, desc, eq, isNull, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { getDb } from '../db'
 import { conversations, messages, notes } from '../db/schema'
@@ -6,7 +6,7 @@ import { nodeText } from '../lib/derive'
 import { isConceptLike, normConcept } from '../lib/learner'
 import { markdownToNodes } from '../lib/markdown'
 import { emit } from '../events'
-import type { FeynmanInfo, FeynmanReport } from '@shared/types'
+import type { FeynmanHome, FeynmanInfo, FeynmanReport } from '@shared/types'
 import { getSettings } from './settings'
 import { loadDoc, stateToContent } from './docs'
 import { createNote, getNote } from './notes'
@@ -14,6 +14,7 @@ import { createProposal } from './proposals'
 import { conceptsIn, describeConcept, recordConcept } from './learner'
 import { getMemorySettings } from './memory'
 import { retrieve } from './ai/retrieve'
+import { listCards } from './review'
 import { loadSkill } from './ai/skills'
 import { structured } from './ai/structured'
 
@@ -189,4 +190,45 @@ export function addFeynmanCues(conversationId: string, indices: number[]): { not
     auto: true
   })
   return { noteId, created }
+}
+
+/* ——— 首页（v0.7.6）：从导航进入时显示历史练习与推荐的概念 ——— */
+
+export function feynmanHome(): FeynmanHome {
+  const db = getDb()
+  const sessions = db
+    .select({ id: conversations.id, meta: conversations.meta, updatedAt: conversations.updatedAt })
+    .from(conversations)
+    .where(and(eq(conversations.kind, 'feynman'), isNull(conversations.deletedAt)))
+    .orderBy(desc(conversations.updatedAt))
+    .limit(30)
+    .all()
+    .flatMap((c) => {
+      const m = parseMeta(c.meta)
+      return m ? [{ id: c.id, concept: m.concept, noteId: m.noteId, level: m.report?.level ?? null, updatedAt: c.updatedAt }] : []
+    })
+  const practiced = new Set(sessions.map((s) => normConcept(s.concept)))
+  const suggestions: FeynmanHome['suggestions'] = []
+  const push = (s: FeynmanHome['suggestions'][number]): void => {
+    const key = normConcept(s.concept)
+    if (!s.concept.trim() || practiced.has(key) || suggestions.some((x) => normConcept(x.concept) === key)) return
+    suggestions.push({ ...s, concept: clip(s.concept.replace(/\s+/g, ' ').trim(), 40) })
+  }
+  // 常忘的卡片：遗忘次数多、正在重学
+  for (const c of listCards('weak').filter((c) => c.kind === 'cornell').slice(0, 8)) {
+    if (suggestions.length >= 4) break
+    push({ concept: c.question, noteId: c.noteId, cardId: c.id, reason: 'weak' })
+  }
+  // 最近学的笔记
+  for (const n of db
+    .select({ id: notes.id, title: notes.title })
+    .from(notes)
+    .where(and(isNull(notes.deletedAt), eq(notes.aiExcluded, false), sql`${notes.title} <> ''`))
+    .orderBy(desc(notes.updatedAt))
+    .limit(6)
+    .all()) {
+    if (suggestions.length >= 7) break
+    push({ concept: n.title, noteId: n.id, cardId: null, reason: 'recent' })
+  }
+  return { sessions, suggestions }
 }

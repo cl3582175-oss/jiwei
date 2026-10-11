@@ -49,7 +49,7 @@ import { requestRendererFlush, resolveFlush } from './lifecycle'
 import * as providers from './services/ai/providers'
 import * as chat from './services/ai/chat'
 import * as embedding from './services/ai/embedding'
-import { clearIndex, indexStats, requestIndex } from './services/ai/indexer'
+import { clearIndex, indexStats, requestIndex, sourceIndexStatus } from './services/ai/indexer'
 import { retrieve } from './services/ai/retrieve'
 import * as memory from './services/memory'
 import * as learner from './services/learner'
@@ -59,6 +59,7 @@ import * as feynman from './services/feynman'
 import * as reflection from './services/reflection'
 import * as progress from './services/progress'
 import * as connections from './services/connections'
+import { sourceOutline } from './services/digest'
 import { knowledgeGraph } from './services/graph'
 import * as asr from './services/asr'
 import * as recognize from './services/recognize'
@@ -365,6 +366,9 @@ const handlers: Handlers = {
   sources: {
     list: (_, q) => sources.listSources(q),
     get: (_, id) => sources.getSource(id),
+    indexStatus: (_, id) => sourceIndexStatus(id),
+    notes: (_, id) => connections.notesForSource(id),
+    outline: (_, id) => sourceOutline(id),
     importDialog: ({ win }, categoryId) => sources.importDialog(win, categoryId),
     importPaths: (_, paths, categoryId) => sources.importPaths(paths, categoryId),
     addUrl: (_, url, title, categoryId) => sources.addUrl(url, title, categoryId),
@@ -444,12 +448,16 @@ const handlers: Handlers = {
   },
   feynman: {
     get: (_, id) => chat.getConversation(id),
+    home: () => feynman.feynmanHome(),
     finish: (_, id) => feynman.finishFeynman(id),
     addCues: (_, id, indices) => feynman.addFeynmanCues(id, indices)
   },
   review: {
     next: (_, exclude) => review.nextCard(exclude),
     get: (_, id) => review.getCard(id),
+    list: (_, filter, search) => review.listCards(filter, search),
+    scheduledNow: (_, id) => review.isScheduledNow(id),
+    practice: (_, id, durationMs) => review.practiceCard(id, durationMs),
     stats: () => review.reviewStats(),
     rate: (_, id, rating, durationMs, variantId) => review.rate(id, rating, durationMs, variantId),
     undo: (_, id) => review.undoRating(id),

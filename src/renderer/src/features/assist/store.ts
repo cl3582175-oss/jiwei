@@ -44,7 +44,11 @@ interface AssistState {
   panelOpen: boolean
   panelPinned: boolean
   panelConversationId: string | null
-  setPanel: (p: Partial<Pick<AssistState, 'panelOpen' | 'panelPinned' | 'panelConversationId'>>) => void
+  /** 预填到 AI 面板输入框的文字（v0.7.6，用户确认后再发送） */
+  panelDraft: string | null
+  /** 预填后直接发送（范围已由用户在界面上选定） */
+  panelAutoSend: boolean
+  setPanel: (p: Partial<Pick<AssistState, 'panelOpen' | 'panelPinned' | 'panelConversationId' | 'panelDraft' | 'panelAutoSend'>>) => void
 }
 
 export const useAssist = create<AssistState>((set) => ({
@@ -58,6 +62,8 @@ export const useAssist = create<AssistState>((set) => ({
   panelOpen: false,
   panelPinned: false,
   panelConversationId: null,
+  panelDraft: null,
+  panelAutoSend: false,
   setPanel: (p) => set(p)
 }))
 
