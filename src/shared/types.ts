@@ -227,6 +227,8 @@ export interface Settings {
   ai: AiSettings
   /** 费用上限（v0.7） */
   budget: import('./agent').Budget
+  /** 币种、汇率、省钱选项（v0.7.5） */
+  money: import('./money').MoneySettings
   /** 积微作为 MCP 服务端（v0.7） */
   mcpServe: import('./agent').McpServeSettings
   /** 内置浏览器（v0.6.0） */
@@ -379,6 +381,8 @@ export interface Job {
   title: string
   /** 去重键（如 transcribe:<资料 ID>），界面据此找到某份资料的任务 */
   key: string | null
+  /** 最早开始时间：排到低谷时段的任务在此之前不运行（v0.7.5） */
+  runAfter: number
   createdAt: number
   updatedAt: number
 }
@@ -1045,6 +1049,10 @@ export interface JiweiEvents {
   'activity:pulse': { source: 'browser'; playing: boolean | null }
   /** v0.7 智能体底座：记账变化、等待确认、确认已处理、审计新增、MCP 状态变化 */
   'usage:changed': Record<string, never>
+  /** 花费接近上限（v0.7.5）：spent、limit 为美元 */
+  /** 主进程改了设置（如后台更新汇率），界面重新读取（v0.7.5） */
+  'settings:changed': Record<string, never>
+  'usage:alert': { kind: 'daily' | 'monthly'; spent: number; limit: number }
   'agent:approval': import('./agent').ApprovalRequest
   'agent:approval-done': { id: string; messageId: string; allow: boolean }
   'agent:audit': Record<string, never>

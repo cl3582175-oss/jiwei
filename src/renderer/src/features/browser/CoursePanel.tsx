@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useMoney } from '@/lib/money'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -20,6 +21,7 @@ import { requestTimestamp } from './courseNotes'
 
 export function CoursePanel({ tab }: { tab: BrowserTab }) {
   const { t } = useTranslation()
+  const money = useMoney()
   const qc = useQueryClient()
   const root = useRef<HTMLDivElement>(null),
     list = useRef<HTMLDivElement>(null)
@@ -332,7 +334,7 @@ export function CoursePanel({ tab }: { tab: BrowserTab }) {
           () => void organize(),
           undefined,
           organizing,
-          t('course.estimate', { cost: estimate == null ? t('course.costUnknown') : `$${estimate.toFixed(4)}` })
+          t('course.estimate', { cost: estimate == null ? t('course.costUnknown') : money.format(estimate) })
         )}
         {tool('quiz', <Brain />, () => configure({ quiz: !tab.course.quiz }), tab.course.quiz)}
         {tool(

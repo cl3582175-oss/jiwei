@@ -3,7 +3,7 @@ import { canonicalUrl } from '@shared/browserUrl'
 import type { NoteSort, WorkspaceContext } from '@shared/types'
 import { toast } from 'sonner'
 
-export type View = 'today' | 'recording' | 'inbox' | 'notes' | 'library' | 'chat' | 'review' | 'goals' | 'reflect' | 'graph' | 'feynman' | 'trash'
+export type View = 'today' | 'recording' | 'inbox' | 'notes' | 'library' | 'chat' | 'review' | 'goals' | 'reflect' | 'graph' | 'feynman' | 'trash' | 'usage'
 
 /**
  * 导航五组（v0.6.7，设计见 docs/design/v0.7-platform-and-loop.md §2.1）：今日 · 收集 · 学习 · 计划（创作在 v0.9 加入）。
@@ -20,7 +20,7 @@ export const NAV_GROUPS: Record<NavGroup, NavItem[]> = {
 /** 当前所在的导航条目（浏览器显示在笔记工作区左栏，算作“收集 · 浏览器”） */
 export function currentNavItem(s: { view: View; browserOpen: boolean }): NavItem | null {
   if (s.view === 'notes' && s.browserOpen) return 'browser'
-  if (s.view === 'chat' || s.view === 'trash') return null
+  if (s.view === 'chat' || s.view === 'trash' || s.view === 'usage') return null
   return s.view as NavItem
 }
 export const groupOf = (item: NavItem): NavGroup => (Object.keys(NAV_GROUPS) as NavGroup[]).find((g) => NAV_GROUPS[g].includes(item))!
@@ -87,6 +87,8 @@ interface AppState extends Location {
   graphFocus: string | null
   setGraphFocus: (key: string | null) => void
   openGraph: (focus?: string | null) => void
+  /** 用量看板（v0.7.5）：从设置进入时先关闭设置 */
+  openUsage: () => void
 
   /** 复习页的标签：今日复习 / 掌握度地图 / 学习目标 */
   reviewTab: 'today' | 'mistakes' | 'mastery'
@@ -221,6 +223,10 @@ export const useApp = create<AppState>((set, get) => {
     openGraph: (focus) => {
       set({ graphFocus: focus ?? null })
       get().navigate({ view: 'graph' })
+    },
+    openUsage: () => {
+      set({ settingsOpen: false })
+      get().navigate({ view: 'usage' })
     },
 
     reviewTab: 'today',

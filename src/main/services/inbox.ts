@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs'
+import { costOf, hasOffPeak } from './agent/pricing'
 import { captureText } from './capture/messages'
 import { getMainWindow } from '../mainWindow'
 import { createHash } from 'node:crypto'
@@ -35,7 +36,6 @@ import { enqueue, registerJobKind, retryOrEnqueue } from './jobs'
 import { localRecognizerInstalled, recognizeRegionDetailed } from './recognize'
 import { structured } from './ai/structured'
 import { similarTo } from './ai/retrieve'
-import { estimateCost, MODEL_PRICES } from '@shared/ai'
 
 const changed = (): void => emit('inbox:changed', {})
 const row = (id: string) => getDb().select().from(inboxItems).where(eq(inboxItems.id, id)).get()
@@ -288,10 +288,10 @@ export function complete(proposalId: string, update: Uint8Array): InboxItem[] {
 }
 
 export function estimate(): number | null {
-  const model = getSettings().ai.chat.model
+  const { providerId, model } = getSettings().ai.chat
   const count = list().filter((i) => i.status === 'new' && !i.filedTo).length
   return model
-    ? estimateCost(model, { inputTokens: count * 5000, outputTokens: count * 1000, reasoningTokens: 0, cachedInputTokens: 0 })
+    ? costOf(providerId, model, { inputTokens: count * 5000, outputTokens: count * 1000, reasoningTokens: 0, cachedInputTokens: 0 }).cost
     : null
 }
 let triaging: Promise<number> | null = null
@@ -423,7 +423,7 @@ export function checkInboxSchedule(now = new Date()): void {
   const s = getSettings(),
     day = scheduleDay(now, s.capture.time, getMeta('inboxScheduledDay'))
   if (!s.capture.daily || !day || !s.ai.chat.providerId || !s.ai.chat.model || !list().some((i) => i.status === 'new' && !i.filedTo)) return
-  const runAfter = s.capture.offPeak && MODEL_PRICES[s.ai.chat.model]?.offPeak === 'deepseek' ? nextOffPeak(now.getTime()) : now.getTime()
+  const runAfter = s.capture.offPeak && hasOffPeak(s.ai.chat.providerId, s.ai.chat.model) ? nextOffPeak(now.getTime()) : now.getTime()
   getDb().transaction(() => {
     enqueue('inbox.triage', {}, { dedupeKey: 'inbox.daily', runAfter })
     setMeta('inboxScheduledDay', day)
@@ -496,14 +496,14 @@ export function registerInboxJobs(): void {
           .digest('hex')
         const after = Date.now() + delay
         const runAfter =
-          s.capture.offPeak && s.ai.chat.model && MODEL_PRICES[s.ai.chat.model]?.offPeak === 'deepseek' ? nextOffPeak(after) : after
+          s.capture.offPeak && hasOffPeak(s.ai.chat.providerId, s.ai.chat.model) ? nextOffPeak(after) : after
         enqueue('inbox.triage', { ids: deferredIds }, { dedupeKey: `inbox.wait:${key}`, runAfter })
       }
       if (!s.ai.chat.providerId || !s.ai.chat.model) {
         defer([...pending], 300_000)
         return { deferred: pending.size }
       }
-      if (ids && s.capture.offPeak && MODEL_PRICES[s.ai.chat.model]?.offPeak === 'deepseek' && nextOffPeak(Date.now()) > Date.now()) {
+      if (ids && s.capture.offPeak && hasOffPeak(s.ai.chat.providerId, s.ai.chat.model) && nextOffPeak(Date.now()) > Date.now()) {
         defer([...pending])
         return { deferred: pending.size }
       }

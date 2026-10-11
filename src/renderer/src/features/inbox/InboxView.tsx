@@ -1,4 +1,5 @@
 import { requestPhoneUpload } from '../capture/PhoneDialog'
+import { useMoney } from '@/lib/money'
 import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
@@ -25,6 +26,7 @@ export function useInbox() {
   return useQuery({ queryKey: ['inbox'], queryFn: () => api.inbox.list() })
 }
 export function InboxView() {
+  const money = useMoney()
   const { t, i18n } = useTranslation(),
     { data: items = [] } = useInbox(),
     { data: settings } = useSettings()
@@ -109,7 +111,7 @@ export function InboxView() {
                 ? t('inbox.noModel')
                 : cost == null
                   ? t('inbox.costUnknown')
-                  : t('inbox.cost', { cost: cost.toFixed(4) })
+                  : t('inbox.cost', { cost: money.format(cost) })
             }
             onClick={() => (settings?.ai.chat.model ? void run(() => api.inbox.triage()) : useApp.getState().openSettings('ai'))}
           >

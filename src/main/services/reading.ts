@@ -1,8 +1,8 @@
 import { ipcMain, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
+import { costOf } from './agent/pricing'
 import { eq, inArray, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { canonicalUrl } from '@shared/browserUrl'
-import { estimateCost } from '@shared/ai'
 import { ReadingBatchSchema, ReadingConfigureSchema, ReadingOutputSchema, shortGloss, READING_CACHE_BYTES, READING_STYLE_VERSION, normalizedReadingText, readingLanguage, readingParts, type ReadingBatch, type ReadingBatchResult, type ReadingConfigure, type ReadingEstimate, type ReadingState, type ReadingTarget, type ReadingAnnotation } from '@shared/reading'
 import { getDb } from '../db'
 import { settings, translationCache } from '../db/schema'
@@ -103,7 +103,7 @@ export async function estimate(target: ReadingTarget): Promise<ReadingEstimate> 
   const info = target.kind==='browser' ? pageInfos.get(target.id) : null
   const characters=paragraphs?.reduce((n,p)=>n+p.length,0) ?? info?.characters ?? 0, count=paragraphs?.length ?? info?.paragraphs ?? 0
   const configured=getSettings().ai.chat, model=configured.providerId && configured.model ? quickModel(configured.providerId,configured.model) : null
-  return {characters,paragraphs:count,model,cost:model?estimateCost(model,{inputTokens:Math.ceil(characters/3)+800,outputTokens:Math.ceil(characters/2),cachedInputTokens:0,reasoningTokens:0}):null}
+  return {characters,paragraphs:count,model,cost:model?costOf(configured.providerId,model,{inputTokens:Math.ceil(characters/3)+800,outputTokens:Math.ceil(characters/2),cachedInputTokens:0,reasoningTokens:0}).cost:null}
 }
 export function cacheStats(): {bytes:number;entries:number} {
   const total=getDb().select({bytes:sql<number>`coalesce(sum(${translationCache.bytes}),0)`,entries:sql<number>`count(*)`}).from(translationCache).get()!
@@ -175,7 +175,7 @@ export async function translate(raw:ReadingBatch):Promise<ReadingBatchResult> {
         prompt:`Translate into ${input.targetLanguage}; translation=${pending.some((item)=>item.translateNeeded)}. Follow each paragraph's translate flag; do not retranslate translate=false paragraphs. Do not annotate other words.\n<reading_data>\n${JSON.stringify(pending.map(({paragraph,missingCandidates,translateNeeded})=>({id:paragraph.id,text:paragraph.text,translate:translateNeeded,candidates:missingCandidates.map((candidate)=>candidate.word)})))}\n</reading_data>`,
         schema:ReadingOutputSchema,signal:AbortSignal.any([controller.signal,AbortSignal.timeout(90000)]),guard,
         onUsage:(measured)=>{
-          const u={inputTokens:measured.inputTokens ?? 0,outputTokens:measured.outputTokens ?? 0,reasoningTokens:measured.outputTokenDetails.reasoningTokens ?? 0,cachedInputTokens:measured.inputTokenDetails.cacheReadTokens ?? 0},cost=estimateCost(model,u)
+          const u={inputTokens:measured.inputTokens ?? 0,outputTokens:measured.outputTokens ?? 0,reasoningTokens:measured.outputTokenDetails.reasoningTokens ?? 0,cachedInputTokens:measured.inputTokenDetails.cacheReadTokens ?? 0},cost=costOf(configured.providerId,model,u).cost
           estimatedCost=estimatedCost===null||cost===null?null:estimatedCost+cost
           // 这里只记录用量，不持久化原文、网址之外的网页数据；即使结果被取消，实际发生的费用仍可查。
           if(getDb()!==identity)return

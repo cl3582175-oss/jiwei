@@ -1,4 +1,5 @@
 import { agentZh } from '../features/agent/messages'
+import { spendZh } from '../features/agent/spendMessages'
 import { mistakesZh } from '../features/mistakes/messages'
 import { todayZh } from '../features/today/messages'
 import { safetyZh } from '../features/settings/safetyMessages'
@@ -9,6 +10,7 @@ const zhCN = {
   today: todayZh,
   safety: safetyZh,
   agent: agentZh,
+  spend: spendZh,
   reading: readingZh,
   learning: {
     pendingProposal: '此提案须在错题或阅读入口完成审阅与确认。',
@@ -286,7 +288,7 @@ const zhCN = {
     emptyHint: '在其他应用用快捷记录或截图捕捉灵感，也可以手机扫码上传纸面笔记。按 ⌘0 / Ctrl+0 随时回到收件箱。',
     noModel: '请先在设置中选择 AI 模型；仍可手动归档。',
     costUnknown: '预估费用未知，以服务商账单为准',
-    cost: '预估费用约 ${{cost}}，以实际用量为准',
+    cost: '预估费用约 {{cost}}，以实际用量为准',
     original: '捕捉原图',
     phone: '手机',
     wrongQuestion: '错题标记',

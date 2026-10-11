@@ -107,7 +107,7 @@ export function recognitionSettings(): RecognitionSettings {
 const localModel = (): LocalModel => LOCAL_MODELS[recognitionSettings().localModel ?? 'fast']
 
 /** 云端看图模型：设置中指定的，否则默认对话模型（能看图时），否则同一服务商中能看图的模型 */
-function visionModel(): { providerId: string; model: string } | null {
+export function visionModel(): { providerId: string; model: string } | null {
   const r = recognitionSettings()
   if (r.providerId && r.model) return capsFor(r.providerId, r.model).vision ? { providerId: r.providerId, model: r.model } : null
   const chat = getSettings().ai.chat
@@ -557,6 +557,7 @@ const activeSources = new Set<string>()
 export function registerRecognizeJob(): void {
   registerNoteImageJob()
   registerJobKind<{ sourceId: string }>('source.recognize', {
+    offPeak: true,
     title: ({ sourceId }) =>
       `识别资料：${getDb().select({ title: sources.title }).from(sources).where(eq(sources.id, sourceId)).get()?.title ?? sourceId}`,
     async run({ sourceId }, ctx) {

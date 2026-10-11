@@ -19,6 +19,7 @@ import { TrashView } from './features/trash/TrashView'
 import { ChatView } from './features/chat/ChatView'
 import { ReviewView } from './features/review/ReviewView'
 import { GoalsPage } from './features/review/GoalsView'
+import { UsageDashboard, useUsageAlerts } from './features/agent/UsageDashboard'
 import { FeynmanView } from './features/feynman/FeynmanView'
 import { ReflectView } from './features/reflect/ReflectView'
 import { GraphView } from './features/graph/GraphView'
@@ -131,6 +132,7 @@ function useMainEvents(): void {
         useApp.getState().openConversation(conversationId)
       }),
       window.jiweiEvents.on('usage:changed', () => void qc.invalidateQueries({ queryKey: ['usage'] })),
+      window.jiweiEvents.on('settings:changed', () => void qc.invalidateQueries({ queryKey: ['settings'] })),
       window.jiweiEvents.on('mcp:changed', () => {
         void qc.invalidateQueries({ queryKey: ['mcp'] })
       }),
@@ -157,6 +159,7 @@ function useMainEvents(): void {
 }
 
 export function App() {
+  useUsageAlerts()
   const theme = useThemeSync()
   useMainEvents()
   useCaptureEvents()
@@ -203,6 +206,7 @@ export function App() {
             {view === 'chat' && <ChatView />}
             {view === 'review' && <ReviewView />}
             {view === 'goals' && <GoalsPage />}
+            {view === 'usage' && <UsageDashboard />}
             {view === 'feynman' && <FeynmanView />}
             {view === 'reflect' && <ReflectView />}
             {view === 'graph' && <GraphView />}

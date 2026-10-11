@@ -897,9 +897,17 @@ export const aiUsage = sqliteTable(
     outputTokens: integer('output_tokens').notNull().default(0),
     reasoningTokens: integer('reasoning_tokens').notNull().default(0),
     cachedInputTokens: integer('cached_input_tokens').notNull().default(0),
-    cost: real('cost')
+    cost: real('cost'),
+    /** v0.7.5：同一次运行（一次回答、一个后台任务）的多次调用共用一个 run_id */
+    runId: text('run_id'),
+    conversationId: text('conversation_id'),
+    durationMs: integer('duration_ms'),
+    /** 记账时的服务商名称（服务商删除后看板仍能显示） */
+    providerName: text('provider_name'),
+    /** 低谷时段省下的钱（美元） */
+    saved: real('saved').notNull().default(0)
   },
-  (t) => [index('ai_usage_date_idx').on(t.date)]
+  (t) => [index('ai_usage_date_idx').on(t.date), index('ai_usage_run_idx').on(t.runId)]
 )
 
 /** 审计日志：每次工具调用（助手、MCP 客户端访问积微、助手使用外部工具）一条 */

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useMoney } from '@/lib/money'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { Check, Copy, SlidersHorizontal, GraduationCap, Lightbulb, Loader2, Play, Plus, Save, Sparkles, Users, X } from 'lucide-react'
@@ -42,6 +43,7 @@ export function LensPanel({
   onEvidence: (s: EvidenceSentence) => void
   onClose: () => void
 }) {
+  const money = useMoney()
   const { t, i18n } = useTranslation(),
     qc = useQueryClient(),
     { data: settings } = useSettings()
@@ -385,7 +387,7 @@ export function LensPanel({
         {estimate?.offPeak && (
           <p className="text-2xs text-muted">
             {t('lens.estimate', {
-              cost: estimate.cost === null ? t('lens.unknownCost') : `¥${estimate.cost.toFixed(4)}`,
+              cost: estimate.cost === null ? t('lens.unknownCost') : money.format(estimate.cost),
               time: new Date(estimate.runAfter).toLocaleString(i18n.language)
             })}
           </p>

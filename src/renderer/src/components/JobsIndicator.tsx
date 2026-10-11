@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Popover } from 'radix-ui'
-import { Loader2, CircleAlert, RotateCw, X, Check } from 'lucide-react'
+import { Loader2, CircleAlert, RotateCw, X, Check, Clock } from 'lucide-react'
 import { api, cn } from '@/lib/utils'
 import { Tip } from './ui/primitives'
 
@@ -59,7 +59,9 @@ export function JobsIndicator() {
           {recent.map((j) => (
             <div key={j.id} className="flex items-center gap-2.5 rounded-md px-2 py-2 text-sm">
               <span className="shrink-0 [&_svg]:size-4">
-                {j.status === 'running' || j.status === 'queued' ? (
+                {j.status === 'queued' && j.runAfter > Date.now() + 60_000 ? (
+                  <Clock className="text-subtle" />
+                ) : j.status === 'running' || j.status === 'queued' ? (
                   <Loader2 className="animate-spin text-accent" />
                 ) : j.status === 'failed' ? (
                   <CircleAlert className="text-danger" />
@@ -71,6 +73,16 @@ export function JobsIndicator() {
               </span>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-fg">{t(j.title, { defaultValue: j.title })}</p>
+                {j.status === 'queued' && j.runAfter > Date.now() + 60_000 && (
+                  <p className="text-2xs text-subtle" data-testid="job-offpeak">
+                    {t('spend.jobs.offPeak', {
+                      time: new Date(j.runAfter).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+                    })}
+                    <button onClick={() => void api.jobs.runNow(j.id)} className="ml-2 text-accent hover:underline">
+                      {t('spend.jobs.runNow')}
+                    </button>
+                  </p>
+                )}
                 {j.status === 'canceled' && j.kind === 'inbox.recognize' && (
                   <p className="text-2xs text-subtle">{t('inbox.recognition.canceled')}</p>
                 )}

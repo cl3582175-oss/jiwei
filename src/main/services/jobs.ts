@@ -33,6 +33,8 @@ export interface JobKind<P = unknown> {
   onCancel?(payload: P): void
   /** 显式重试重新排队时同步领域状态。 */
   onRetry?(payload: P): void
+  /** 耗时较长、可以等到低谷时段再跑（v0.7.5，用户开启“低谷时段运行”后生效） */
+  offPeak?: boolean
 }
 
 const kinds = new Map<string, JobKind>()
@@ -43,6 +45,11 @@ const executions = new Set<Promise<void>>()
 let timer: NodeJS.Timeout | null = null
 /** 退出时置位：之后不再调度任何任务、不再写库 */
 let stopped = false
+/** 低谷时段策略：返回最早开始时间（由 index.ts 按设置注入，避免本模块依赖设置与价格） */
+let offPeakPolicy: ((at: number) => number) | null = null
+export function setOffPeakPolicy(fn: ((at: number) => number) | null): void {
+  offPeakPolicy = fn
+}
 
 export function registerJobKind<P>(kind: string, def: JobKind<P>): void {
   kinds.set(kind, def as JobKind)
@@ -126,6 +133,7 @@ function toJob(r: Row): Job {
     error: r.error,
     title,
     key: r.dedupeKey,
+    runAfter: r.runAfter,
     createdAt: r.createdAt,
     updatedAt: r.updatedAt
   }
@@ -144,12 +152,14 @@ export function enqueue(kind: string, payload: unknown, opts?: { dedupeKey?: str
   }
   const now = Date.now()
   const id = newId()
+  let runAfter = opts?.runAfter ?? now
+  if (kinds.get(kind)?.offPeak && offPeakPolicy) runAfter = Math.max(runAfter, offPeakPolicy(now))
   db.insert(jobs)
     .values({
       id,
       kind,
       payload: JSON.stringify(payload),
-      runAfter: opts?.runAfter ?? now,
+      runAfter,
       dedupeKey: opts?.dedupeKey ?? null,
       createdAt: now,
       updatedAt: now
@@ -280,6 +290,14 @@ export function retryJob(id: string): void {
   })
   // 排队中取消的任务没有 execute.finally 清理标记；运行中的旧尝试则必须继续保持取消，防止迟到写回。
   if (!running.has(id)) canceled.delete(id)
+  setImmediate(tick)
+}
+
+/** 排到低谷时段的任务：现在就开始 */
+export function runJobNow(id: string): void {
+  const job = getDb().select().from(jobs).where(eq(jobs.id, id)).get()
+  if (!job || job.status !== 'queued') return
+  setStatus(id, { runAfter: Date.now() })
   setImmediate(tick)
 }
 

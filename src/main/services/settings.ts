@@ -4,13 +4,16 @@ import { app, nativeTheme } from 'electron'
 import { getDb } from '../db'
 import { settings } from '../db/schema'
 import type { Settings } from '@shared/types'
-import { DEFAULT_BUDGET, DEFAULT_MCP_PORT } from '@shared/agent'
+import { DEFAULT_BUDGET, DEFAULT_MCP_PORT, type Budget } from '@shared/agent'
+import { defaultMoney, fromUsd, rateOf, toUsd } from '@shared/money'
 import type { SettingsPatch } from '@shared/schemas'
 
 function defaults(): Settings {
+  // JIWEI_LANG 便于测试固定界面语言
+  const language: Settings['language'] =
+    (process.env.JIWEI_LANG as Settings['language']) || (app.getLocale().toLowerCase().startsWith('zh') ? 'zh-CN' : 'en')
   return {
-    // JIWEI_LANG 便于测试固定界面语言
-    language: (process.env.JIWEI_LANG as Settings['language']) || (app.getLocale().toLowerCase().startsWith('zh') ? 'zh-CN' : 'en'),
+    language,
     theme: 'system',
     capture: captureDefaults(process.platform === 'darwin'),
     palette: 'qinglu',
@@ -24,6 +27,8 @@ function defaults(): Settings {
     // 复习：每天最多 20 张新卡，目标记忆保持率 90%（FSRS 默认）
     review: { newPerDay: 20, retention: 0.9 },
     budget: DEFAULT_BUDGET,
+    // 币种：中文界面默认人民币
+    money: defaultMoney(language),
     mcpServe: { enabled: false, port: DEFAULT_MCP_PORT }
   }
 }
@@ -31,7 +36,13 @@ function defaults(): Settings {
 export function getSettings(): Settings {
   const rows = getDb().select().from(settings).all()
   const stored = Object.fromEntries(rows.map((r) => [r.key, JSON.parse(r.value)]))
-  const result: Settings = { ...defaults(), ...stored, capture: mergeCaptureSettings(stored.capture, process.platform === 'darwin') }
+  const base = defaults()
+  const result: Settings = {
+    ...base,
+    ...stored,
+    capture: mergeCaptureSettings(stored.capture, process.platform === 'darwin'),
+    money: { ...base.money, ...stored.money }
+  }
   setMessageLanguage(result.language)
   return result
 }
@@ -39,6 +50,15 @@ export function getSettings(): Settings {
 export function setSettings(patch: SettingsPatch): Settings {
   const db = getDb()
   if (patch.capture) patch = { ...patch, capture: { ...getSettings().capture, ...patch.capture } }
+  if (patch.money) {
+    const current = getSettings()
+    const money = { ...current.money, ...patch.money }
+    patch = { ...patch, money }
+    // 换显示币种时，上限一并换算成新币种（之后汇率变动不再改变上限数字）
+    const budget = patch.budget ?? current.budget
+    if ((budget.currency ?? 'USD') !== money.currency && rateOf(money.currency, money))
+      patch = { ...patch, budget: convertBudget(budget, money) }
+  }
   db.transaction((tx) => {
     for (const [key, value] of Object.entries(patch)) {
       if (value === undefined) continue
@@ -51,6 +71,18 @@ export function setSettings(patch: SettingsPatch): Settings {
   const next = getSettings()
   applyNativeTheme(next)
   return next
+}
+
+function convertBudget(b: Budget, money: Settings['money']): Budget {
+  const from = b.currency ?? 'USD'
+  const conv = (v: number | null): number | null => {
+    if (v === null) return null
+    const usd = toUsd(v, from, money)
+    if (usd === null) return v
+    const next = fromUsd(usd, money.currency, money)
+    return next >= 100 ? Math.round(next) : Math.round(next * 100) / 100
+  }
+  return { perRun: conv(b.perRun), daily: conv(b.daily), monthly: conv(b.monthly), currency: money.currency }
 }
 
 /** 同步原生主题，使系统菜单、滚动条等跟随应用主题 */

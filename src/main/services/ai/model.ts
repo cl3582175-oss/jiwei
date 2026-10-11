@@ -80,18 +80,20 @@ function meter(providerId: string, model: string): LanguageModelMiddleware {
     wrapGenerate: async ({ doGenerate }) => {
       checkBudget()
       const run = currentRun()
+      const t0 = Date.now()
       const result = await doGenerate()
-      recordUsage(providerId, model, toUsage(result.usage), run)
+      recordUsage(providerId, model, toUsage(result.usage), run, Date.now() - t0)
       return result
     },
     wrapStream: async ({ doStream }) => {
       checkBudget()
       const run = currentRun()
+      const t0 = Date.now()
       const result = await doStream()
       const stream = result.stream.pipeThrough(
         new TransformStream({
           transform(part, controller) {
-            if (part.type === 'finish') recordUsage(providerId, model, toUsage(part.usage), run)
+            if (part.type === 'finish') recordUsage(providerId, model, toUsage(part.usage), run, Date.now() - t0)
             controller.enqueue(part)
           }
         })

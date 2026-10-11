@@ -1,4 +1,5 @@
 import { agentEn } from '../features/agent/messages'
+import { spendEn } from '../features/agent/spendMessages'
 import type { Messages } from './zh-CN'
 import { mistakesEn } from '../features/mistakes/messages'
 import { todayEn } from '../features/today/messages'
@@ -9,6 +10,7 @@ const en: Messages = {
   today: todayEn,
   safety: safetyEn,
   agent: agentEn,
+  spend: spendEn,
   reading: readingEn,
   learning: {
     pendingProposal: 'Complete this reviewed proposal from the mistake or reading view.',
@@ -298,7 +300,7 @@ const en: Messages = {
       'Use quick capture or screenshots in other apps, or scan with your phone to upload paper notes. Press ⌘0 / Ctrl+0 to return to your inbox.',
     noModel: 'Choose an AI model in settings. Manual filing remains available.',
     costUnknown: 'Cost estimate unavailable; actual provider charges apply',
-    cost: 'Estimated cost: ${{cost}}; actual usage may vary',
+    cost: 'Estimated cost: {{cost}}; actual usage may vary',
     original: 'Original capture',
     phone: 'Phone',
     wrongQuestion: 'Wrong question',

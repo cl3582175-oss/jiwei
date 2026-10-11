@@ -1,12 +1,16 @@
 import { z } from 'zod'
+import { CurrencyCode } from './money'
 
 // 智能体底座（v0.7）：费用上限、工具级别与策略、确认、审计、MCP 双向。
 
 /* ——— 费用 ——— */
 
-const Usd = z.number().min(0).max(10_000).nullable()
-/** 费用上限（美元，null 为不限）：单次回答、每天、每月 */
-export const BudgetSchema = z.object({ perRun: Usd, daily: Usd, monthly: Usd })
+const Amount = z.number().min(0).max(100_000_000).nullable()
+/**
+ * 费用上限（null 为不限）：单次回答、每天、每月。
+ * 金额按 currency 计（v0.7.5 起与显示币种一致；更早的设置没有 currency，按美元）。
+ */
+export const BudgetSchema = z.object({ perRun: Amount, daily: Amount, monthly: Amount, currency: CurrencyCode.optional() })
 export type Budget = z.infer<typeof BudgetSchema>
 export const DEFAULT_BUDGET: Budget = { perRun: null, daily: null, monthly: null }
 
@@ -18,6 +22,14 @@ export interface UsageBucket {
   outputTokens: number
   /** 价格未知（未计入费用）的调用次数 */
   unpriced: number
+}
+export interface UsageForecast {
+  /** 按本月节奏估算的月底花费（美元） */
+  projected: number
+  daysElapsed: number
+  daysInMonth: number
+  /** 每月上限（美元）；未设为 null */
+  monthlyLimit: number | null
 }
 export interface UsageSummary {
   today: number
@@ -33,6 +45,103 @@ export interface UsageSummary {
   overrideToday: boolean
   /** 当前是否处于超限状态 */
   blocked: 'daily' | 'monthly' | null
+  forecast: UsageForecast
+}
+
+/* ——— 用量看板（v0.7.5） ——— */
+
+const Day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
+export const UsageRangeSchema = z.object({ from: Day, to: Day })
+export type UsageRange = z.infer<typeof UsageRangeSchema>
+export const UsageFilterSchema = UsageRangeSchema.extend({
+  /** 用途（原始键，如 inbox.triage）；看板上的分组展开为多个 */
+  purposes: z.array(z.string().max(80)).max(50).optional(),
+  caller: z.string().max(200).optional(),
+  providerId: z.string().max(64).optional(),
+  model: z.string().max(200).optional(),
+  offset: z.number().int().min(0).optional(),
+  limit: z.number().int().min(1).max(500).optional()
+})
+export type UsageFilter = z.infer<typeof UsageFilterSchema>
+
+export interface UsageTotals {
+  cost: number
+  calls: number
+  inputTokens: number
+  outputTokens: number
+  cachedInputTokens: number
+  reasoningTokens: number
+  unpriced: number
+  /** 低谷时段省下的钱（美元） */
+  saved: number
+}
+export interface UsageProvider {
+  /** 服务商 ID；已删除的服务商仍按记账时的 ID 归组 */
+  id: string
+  name: string
+  kind: string | null
+  deleted: boolean
+  cost: number
+  calls: number
+  tokens: number
+  unpriced: number
+  models: UsageBucket[]
+}
+export interface UsageRun {
+  runId: string
+  at: number
+  purpose: string
+  caller: string
+  conversationId: string | null
+  /** 对话标题；后台任务为 null */
+  title: string | null
+  cost: number
+  calls: number
+  tokens: number
+  models: string[]
+}
+export interface UsageCall {
+  id: string
+  at: number
+  purpose: string
+  caller: string
+  providerId: string | null
+  providerName: string | null
+  model: string
+  inputTokens: number
+  outputTokens: number
+  cachedInputTokens: number
+  reasoningTokens: number
+  cost: number | null
+  saved: number
+  durationMs: number | null
+  conversationId: string | null
+}
+export interface UsageDashboard {
+  range: UsageRange
+  totals: UsageTotals
+  /** 上一个同样长度的时段 */
+  previous: UsageTotals
+  /** 每天按服务商：{ 服务商 ID: [花费, token] } */
+  days: { date: string; cost: number; tokens: number; calls: number; providers: Record<string, [number, number]> }[]
+  providers: UsageProvider[]
+  byPurpose: UsageBucket[]
+  byCaller: UsageBucket[]
+  topRuns: UsageRun[]
+  forecast: UsageForecast
+  budget: Budget
+}
+export interface ProviderBalance {
+  providerId: string
+  name: string
+  kind: string
+  ok: boolean
+  /** 余额（按服务商返回的币种） */
+  amount?: number
+  currency?: string
+  /** 赠送 / 充值等分项说明 */
+  detail?: string
+  error?: string
 }
 
 /* ——— 工具级别与策略 ——— */

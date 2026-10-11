@@ -1,3 +1,4 @@
+import { toUsd, type MoneySettings } from './money'
 // AI 服务商预设、统一的“思考强度”与各家参数映射。
 //
 // 思考强度对用户统一为五档：关闭 / 低 / 中 / 高 / 极限。
@@ -142,16 +143,123 @@ export const PROVIDER_PRESETS: Record<ProviderKind, ProviderPreset> = {
 export const PROVIDER_ORDER: ProviderKind[] = ['deepseek', 'qwen', 'moonshot', 'zhipu', 'openai', 'anthropic', 'google', 'ollama', 'custom']
 
 /**
- * 模型价格（美元 / 百万 token，高峰期标价），用于费用估算。未知模型不显示费用。
- * DeepSeek 官网标价，2026-10-09 查证；如有变动以官网为准。
- *   - deepseek-flash（V4.1-Flash，能看图）；旧名 deepseek-v4-flash / deepseek-v4-flash-vision-exp 路由到它，同价
- *   - deepseek-v4-pro（V4-Pro-0813，纯文本）
+ * 模型单价（每百万 token），用于费用估算。currency 为服务商的标价币种，记账时按汇率换成美元。
+ *   - input：未命中缓存的输入；cachedInput：命中缓存的输入（不设则按 input 计）；output：输出（含思考）
+ *   - offPeak：有错峰折扣的服务商（目前只有 DeepSeek，低谷半价）
  */
-export const MODEL_PRICES: Record<string, { input: number; cachedInput?: number; output: number; offPeak?: 'deepseek' }> = {
-  'deepseek-flash': { input: 0.3, cachedInput: 0.006, output: 1.2, offPeak: 'deepseek' },
-  'deepseek-v4-flash': { input: 0.3, cachedInput: 0.006, output: 1.2, offPeak: 'deepseek' },
-  'deepseek-v4-flash-vision-exp': { input: 0.3, cachedInput: 0.006, output: 1.2, offPeak: 'deepseek' },
-  'deepseek-v4-pro': { input: 1.32, cachedInput: 0.044, output: 3.96, offPeak: 'deepseek' }
+export interface ModelPrice {
+  currency: string
+  input: number
+  cachedInput?: number
+  output: number
+  offPeak?: 'deepseek'
+}
+
+/** 价格来源：用户在「AI 模型」里填写的 / 内置官网价 / 内置参考价（二手资料，请核对） */
+export type PriceSource = 'custom' | 'official' | 'reference'
+
+const usd = (input: number, cachedInput: number | undefined, output: number): ModelPrice => ({
+  currency: 'USD',
+  input,
+  cachedInput,
+  output
+})
+const cny = (input: number, cachedInput: number | undefined, output: number): ModelPrice => ({
+  currency: 'CNY',
+  input,
+  cachedInput,
+  output
+})
+
+/**
+ * 内置模型价格（高峰期 / 标准档 / 最低阶梯标价），2026-10-11 查证，以官网为准：
+ *   - DeepSeek：api-docs.deepseek.com（美元标价；低谷半价）
+ *   - OpenAI / Anthropic / Google：各官网定价页（美元）
+ *   - Kimi：platform.kimi.com（人民币）
+ *   - 通义千问：阿里云百炼北京地域（人民币）；缓存命中价官网未列，按隐式缓存 20% 估算
+ *   - 智谱：官网定价页无法读取，取多个转售平台一致的报价，标为参考价
+ */
+export const MODEL_PRICES: Record<string, ModelPrice> = {
+  'deepseek-flash': { ...usd(0.3, 0.006, 1.2), offPeak: 'deepseek' },
+  'deepseek-v4-flash': { ...usd(0.3, 0.006, 1.2), offPeak: 'deepseek' },
+  'deepseek-v4-flash-vision-exp': { ...usd(0.3, 0.006, 1.2), offPeak: 'deepseek' },
+  'deepseek-v4-pro': { ...usd(1.32, 0.044, 3.96), offPeak: 'deepseek' },
+  'gpt-6-astra': usd(10, 1, 50),
+  'gpt-6.1-sol': usd(2, 0.1, 10),
+  'gpt-6-sol': usd(2, 0.2, 10),
+  'gpt-6-luna': usd(0.1, 0.01, 0.5),
+  'gpt-5.6-sol': usd(4, 0.4, 20),
+  'gpt-5.6-terra': usd(2, 0.2, 12),
+  'gpt-5.6-luna': usd(0.2, 0.02, 1.2),
+  'gpt-5.5': usd(5, 0.5, 30),
+  'gpt-5.4': usd(2.5, 0.25, 15),
+  'gpt-5.4-mini': usd(0.75, 0.075, 4.5),
+  'gpt-5.4-nano': usd(0.2, 0.02, 1.25),
+  'gpt-5.2': usd(1.75, 0.175, 14),
+  'gpt-5.1': usd(1.25, 0.125, 10),
+  'gpt-5': usd(1.25, 0.125, 10),
+  'gpt-5-mini': usd(0.25, 0.025, 2),
+  'gpt-5-nano': usd(0.05, 0.005, 0.4),
+  'gpt-4.1': usd(2, 0.5, 8),
+  'gpt-4.1-mini': usd(0.4, 0.1, 1.6),
+  'gpt-4.1-nano': usd(0.1, 0.025, 0.4),
+  'gpt-4o': usd(2.5, 1.25, 10),
+  'gpt-4o-mini': usd(0.15, 0.075, 0.6),
+  'claude-fable-5-1': usd(10, 0.25, 50),
+  'claude-fable-5': usd(10, 1, 50),
+  'claude-opus-5-5': usd(4, 0.2, 20),
+  'claude-opus-5': usd(5, 0.5, 25),
+  'claude-opus-4-8': usd(5, 0.5, 25),
+  'claude-opus-4-7': usd(5, 0.5, 25),
+  'claude-opus-4-6': usd(5, 0.5, 25),
+  'claude-opus-4-5': usd(5, 0.5, 25),
+  'claude-sonnet-5-5': usd(2, 0.1, 10),
+  'claude-sonnet-5': usd(2, 0.2, 10),
+  'claude-sonnet-4-6': usd(3, 0.3, 15),
+  'claude-sonnet-4-5': usd(3, 0.3, 15),
+  'claude-haiku-5-5': usd(0.1, 0.01, 0.5),
+  'claude-haiku-4-5': usd(1, 0.1, 5),
+  'gemini-3.8-flash': usd(0.75, 0.075, 3.75),
+  'gemini-3.6-flash': usd(0.75, 0.075, 3.75),
+  'gemini-3.5-flash-lite': usd(0.3, 0.03, 2.5),
+  'gemini-3.1-flash-lite': usd(0.25, 0.025, 1.5),
+  'gemini-3.1-pro-preview': usd(2, 0.2, 12),
+  'gemini-3-flash-preview': usd(0.5, 0.05, 3),
+  'gemini-2.5-pro': usd(1.25, 0.125, 10),
+  'gemini-2.5-flash': usd(0.3, 0.03, 2.5),
+  'gemini-2.5-flash-lite': usd(0.1, 0.01, 0.4),
+  'kimi-k3': cny(20, 2, 100),
+  'kimi-k2.7-code': cny(6.5, 1.3, 27),
+  'kimi-k2.7-code-highspeed': cny(13, 2.6, 54),
+  'kimi-k2.6': cny(6.5, 1.1, 27),
+  'qwen3.8-max': cny(12, 2.4, 36),
+  'qwen3.8-flash': cny(0.8, 0.1, 2.7),
+  'qwen3.7-plus': cny(2, 0.4, 8),
+  'qwen3.6-plus': cny(2, 0.4, 12),
+  'qwen-max': cny(2.4, 0.48, 9.6),
+  'qwen-plus': cny(0.8, 0.16, 2),
+  'qwen-flash': cny(0.15, 0.03, 1.5),
+  'glm-5.3': cny(8, 2, 28),
+  'glm-5.3-flash': cny(0.8, 0.23, 2.8)
+}
+
+/** 二手资料的参考价（界面上提示“请核对”） */
+const REFERENCE_PRICES = new Set(['glm-5.3', 'glm-5.3-flash', 'qwen3.8-max', 'qwen3.7-plus'])
+
+/** 带日期后缀的模型名（gpt-5.4-2026-03-05、claude-sonnet-4-5-20250929）按基础名查价 */
+function presetKey(model: string): string | null {
+  const m = model.toLowerCase()
+  if (MODEL_PRICES[m]) return m
+  const base = m.replace(/[-@](\d{8}|\d{4}-\d{2}-\d{2}|latest)$/, '')
+  return MODEL_PRICES[base] ? base : null
+}
+
+/** 某模型的价格：用户填写的优先，否则用内置价格；都没有时为 null */
+export function resolvePrice(model: string, custom?: ModelPrice | null): { price: ModelPrice; source: PriceSource } | null {
+  if (custom) return { price: custom, source: 'custom' }
+  const key = presetKey(model)
+  if (!key) return null
+  return { price: MODEL_PRICES[key], source: REFERENCE_PRICES.has(key) ? 'reference' : 'official' }
 }
 
 /**
@@ -173,12 +281,33 @@ export interface Usage {
   cachedInputTokens: number
 }
 
-export function estimateCost(model: string, u: Usage, at = Date.now()): number | null {
-  const p = MODEL_PRICES[model]
-  if (!p) return null
+/** 按标价币种计算的费用（未换算） */
+export function priceCost(p: ModelPrice, u: Usage, at = Date.now()): number {
   const uncached = Math.max(0, u.inputTokens - u.cachedInputTokens)
   const full = (uncached * p.input + u.cachedInputTokens * (p.cachedInput ?? p.input) + u.outputTokens * p.output) / 1_000_000
   return p.offPeak === 'deepseek' && !isDeepSeekPeak(at) ? full / 2 : full
+}
+
+/**
+ * 估算费用（美元）：price 不传时用内置价格；标价不是美元时按汇率换算（rates 不传用内置参考汇率）。
+ * 价格或汇率未知时为 null。
+ */
+export function estimateCost(
+  model: string,
+  u: Usage,
+  at = Date.now(),
+  price?: ModelPrice | null,
+  money?: Pick<MoneySettings, 'rates'> | null
+): number | null {
+  const p = price ?? resolvePrice(model)?.price
+  if (!p) return null
+  return toUsd(priceCost(p, u, at), p.currency, money)
+}
+
+/** 高峰期价格与实际价格之差（美元）：低谷时段省下的钱 */
+export function offPeakSaving(p: ModelPrice, u: Usage, at: number, money?: Pick<MoneySettings, 'rates'> | null): number {
+  if (p.offPeak !== 'deepseek' || isDeepSeekPeak(at)) return 0
+  return toUsd(priceCost(p, u, at), p.currency, money) ?? 0
 }
 
 /* ——— 模型能力 ——— */
@@ -194,6 +323,8 @@ export type ModelTier = 'basic' | 'strong'
 export interface ModelCapsOverride {
   vision?: boolean
   tier?: ModelTier
+  /** 用户填写的价格（v0.7.5），优先于内置价格 */
+  price?: ModelPrice
 }
 export interface ModelCaps {
   vision: boolean

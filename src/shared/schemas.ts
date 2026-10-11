@@ -1,5 +1,6 @@
 import { CaptureSettingsSchema } from './capture'
 import { BudgetSchema, McpServeSettingsSchema } from './agent'
+import { CurrencyCode, MoneySettingsSchema } from './money'
 export { InboxCreateSchema, InboxUpdateSchema, InboxAcceptSchema } from './inbox'
 import { z } from 'zod'
 import { ExternalBackupSchema } from './backup'
@@ -89,6 +90,8 @@ export const SettingsPatchSchema = z.object({
   ai: z.lazy(() => AiSettingsSchema).optional(),
   /** 费用上限（v0.7） */
   budget: z.lazy(() => BudgetSchema).optional(),
+  /** 币种、汇率、省钱选项（v0.7.5） */
+  money: z.lazy(() => MoneySettingsSchema).optional(),
   /** 积微作为 MCP 服务端（v0.7） */
   mcpServe: z.lazy(() => McpServeSettingsSchema).optional(),
   reflection: z
@@ -210,7 +213,23 @@ export const ProviderInputSchema = z.object({
   enabled: z.boolean().optional(),
   /** 逐个模型改写能力（看图、强 / 普通）；某项不设表示按名称自动判断 */
   modelCaps: z
-    .record(z.string().max(200), z.object({ vision: z.boolean().optional(), tier: z.enum(['basic', 'strong']).optional() }))
+    .record(
+      z.string().max(200),
+      z.object({
+        vision: z.boolean().optional(),
+        tier: z.enum(['basic', 'strong']).optional(),
+        /** 每百万 token 单价（v0.7.5） */
+        price: z
+          .object({
+            currency: CurrencyCode,
+            input: z.number().min(0).max(10_000),
+            cachedInput: z.number().min(0).max(10_000).optional(),
+            output: z.number().min(0).max(10_000),
+            offPeak: z.literal('deepseek').optional()
+          })
+          .optional()
+      })
+    )
     .optional()
 })
 export type ProviderInput = z.infer<typeof ProviderInputSchema>

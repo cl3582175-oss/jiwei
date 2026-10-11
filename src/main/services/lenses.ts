@@ -1,4 +1,5 @@
 import { and, desc, eq, inArray, isNull } from 'drizzle-orm'
+import { costOf, hasOffPeak } from './agent/pricing'
 import { createHash } from 'crypto'
 import { z } from 'zod'
 import { getDb } from '../db'
@@ -20,7 +21,7 @@ import { mergeLensItems, splitLensTranscript } from '../lib/lensChunks'
 import { validateEvidence } from '../lib/lensEvidence'
 import { resolveLensOwner } from '../lib/lensLanding'
 import { seriesContext, listSeries } from './series'
-import { estimateCost, isDeepSeekPeak, MODEL_PRICES } from '@shared/ai'
+import { isDeepSeekPeak } from '@shared/ai'
 import { nextOffPeak } from '@shared/inbox'
 import {
   LensEntrySchema,
@@ -158,21 +159,21 @@ export function guessScene(sourceId: string): Promise<SceneGuess | null> {
   return request
 }
 export function estimate(sourceId: string): { cost: number | null; runAfter: number; offPeak: boolean } {
-  const model = getSettings().ai.chat.model,
+  const { providerId, model } = getSettings().ai.chat,
     chars = lensSentences(sourceId).reduce((n, s) => n + s.text.length + 60, 0),
     segments = Math.max(1, Math.ceil(chars / 12000)),
     now = Date.now()
   return {
     cost: model
-      ? estimateCost(model, {
+      ? costOf(providerId, model, {
           inputTokens: chars + segments * 2000,
           outputTokens: segments * 3000,
           reasoningTokens: 0,
           cachedInputTokens: 0
-        })
+        }, now).cost
       : null,
     runAfter: nextOffPeak(now),
-    offPeak: !!model && MODEL_PRICES[model]?.offPeak === 'deepseek' && isDeepSeekPeak(now)
+    offPeak: hasOffPeak(providerId, model) && isDeepSeekPeak(now)
   }
 }
 export function runLens(raw: z.infer<typeof LensRun>): Derivation {
@@ -209,7 +210,7 @@ export function runLens(raw: z.infer<typeof LensRun>): Derivation {
   if (!lensSentences(input.sourceId).length) throw new Error(lensMessage('transcript'))
   const id = newId(),
     now = Date.now(),
-    runAfter = input.offPeak && MODEL_PRICES[model.model]?.offPeak === 'deepseek' ? nextOffPeak(now) : now
+    runAfter = input.offPeak && hasOffPeak(providerId, modelId) ? nextOffPeak(now) : now
   db.transaction(() => {
     db.insert(derivations)
       .values({

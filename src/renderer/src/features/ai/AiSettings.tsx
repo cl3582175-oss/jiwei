@@ -32,6 +32,7 @@ import { Button } from '@/components/ui/button'
 import { Input, Menu, MenuContent, MenuItem, MenuTrigger, Tip } from '@/components/ui/primitives'
 import { confirm } from '@/components/ui/confirm'
 import { EffortPicker } from './EffortPicker'
+import { PriceChip } from './PriceEditor'
 import { ModelPicker } from './ModelPicker'
 import { Switch } from '@/components/ui/switch'
 import { useRecognitionEvents } from '../workspace/RecognitionBar'
@@ -61,6 +62,7 @@ function ModelRow({
     const next: ModelCapsOverride = { ...p.modelCaps[model], ...patch }
     if (next.vision === caps.auto.vision) delete next.vision
     if (next.tier === caps.auto.tier) delete next.tier
+    if (!next.price) delete next.price
     const all = { ...p.modelCaps, [model]: next }
     if (!Object.keys(next).length) delete all[model]
     onCaps(all)
@@ -76,6 +78,14 @@ function ModelRow({
   return (
     <li className="group flex h-9 items-center gap-2 rounded-lg px-2.5 hover:bg-surface-hover" data-model={model}>
       <span className="min-w-0 flex-1 truncate font-mono text-xs text-fg">{model}</span>
+      <PriceChip
+        model={model}
+        custom={p.modelCaps[model]?.price}
+        onSave={(price) => {
+          set({ price })
+          toast.success(t('spend.price.saved'))
+        }}
+      />
       <Tip label={`${caps.vision ? t('ai.caps.visionOn') : t('ai.caps.visionOff')} · ${how('vision')}`}>
         <button
           className={chip(caps.vision, custom('vision'))}

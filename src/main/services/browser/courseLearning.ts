@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm'
+import { costOf } from '../agent/pricing'
 import { z } from 'zod'
-import { estimateCost } from '@shared/ai'
 import { segmentTime, supportedRows, type CourseSegment } from '@shared/course'
 import { fmtTime } from '@shared/context'
 import type { CourseQuiz, DocNode, Segment } from '@shared/types'
@@ -140,12 +140,12 @@ export function organizeEstimate(sourceId: string): number | null {
   if (!chat.model) return null
   const chunks = chunkCourseEvidence(source.segments)
   const calls = chunks.length > 1 ? chunks.length + 1 : 1
-  return estimateCost(chat.providerId ? quickModel(chat.providerId, chat.model) : chat.model, {
+  return costOf(chat.providerId, chat.providerId ? quickModel(chat.providerId, chat.model) : chat.model, {
     inputTokens: Math.ceil(text.length * 1.2 + calls * 800),
     outputTokens: calls * 1600,
     reasoningTokens: 0,
     cachedInputTokens: 0
-  })
+  }).cost
 }
 
 export async function organizeCourse(sourceId: string, noteId: string | null): Promise<{ noteId: string; proposalId: string }> {

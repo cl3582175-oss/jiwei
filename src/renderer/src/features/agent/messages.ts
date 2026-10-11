@@ -27,7 +27,7 @@ export const agentZh = {
   link: { note: '打开笔记', action: '查看行动项', goal: '查看目标', inbox: '打开收件箱' },
   tabs: { usage: '费用与权限', connections: '连接' },
   usage: {
-    intro: '积微每次请求 AI 模型都会记一笔：对话、晨报、阅读注释、错题整理、后台整理……金额按服务商公开价格估算（美元）。',
+    intro: '积微每次请求 AI 模型都会记一笔：对话、晨报、阅读注释、错题整理、后台整理……金额按服务商公开价格估算，按你选的币种显示。',
     month: '本月',
     today: '今天',
     calls: '{{count}} 次调用',
@@ -194,7 +194,7 @@ export const agentEn: typeof agentZh = {
   tabs: { usage: 'Spending & access', connections: 'Connections' },
   usage: {
     intro:
-      'Every AI request is recorded — chat, daily brief, reading glosses, mistakes, background sorting… Amounts are estimated from public prices (USD).',
+      'Every AI request is recorded — chat, daily brief, reading glosses, mistakes, background sorting… Amounts are estimated from public prices and shown in your currency.',
     month: 'This month',
     today: 'Today',
     calls: '{{count}} calls',

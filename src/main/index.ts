@@ -19,14 +19,18 @@ import { flushAll, pruneRevisions, rebuildNoteImageReferences } from './services
 import { requestRendererFlush } from './lifecycle'
 import { ensureIdentity } from './services/device'
 import { registerJobKinds, resegmentEmptyPdfs } from './services/jobKinds'
-import { registerRecognizeJob } from './services/recognize'
+import { registerRecognizeJob, visionModel } from './services/recognize'
 import { registerBrowser } from './services/browser'
 import { registerAsrJob } from './services/asr'
 import { registerMossJob, stopMoss } from './services/moss'
 import { registerRecording } from './services/recording'
 import { registerLensJobs } from './services/lenses'
 import { stopVoiceprint } from './services/voiceprint'
-import { pruneJobs, startJobs, stopJobs } from './services/jobs'
+import { pruneJobs, setOffPeakPolicy, startJobs, stopJobs } from './services/jobs'
+import { hasOffPeak } from './services/agent/pricing'
+import { startRateUpdates } from './services/agent/rates'
+import { isDeepSeekPeak } from '@shared/ai'
+import { nextOffPeak } from '@shared/inbox'
 import { reconcilePeopleReferences } from './services/people'
 import { emit } from './events'
 import { registerIndexJob, requestIndex } from './services/ai/indexer'
@@ -173,6 +177,14 @@ app.whenReady().then(async () => {
   registerRecording()
   registerLensJobs()
   registerRecognizeJob()
+  // 低谷时段运行（v0.7.5）：开启后，可延后的后台任务在 DeepSeek 高峰期排到下一个低谷
+  setOffPeakPolicy((at) => {
+    const s = getSettings()
+    if (!s.money.offPeakJobs || !isDeepSeekPeak(at)) return at
+    const vm = visionModel()
+    return hasOffPeak(s.ai.chat.providerId, s.ai.chat.model) || (vm && hasOffPeak(vm.providerId, vm.model)) ? nextOffPeak(at) : at
+  })
+  startRateUpdates()
   registerBrowser()
   registerIndexJob()
   registerInboxJobs()

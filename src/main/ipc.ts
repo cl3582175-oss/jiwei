@@ -74,6 +74,9 @@ import { exportNote } from './services/exportNote'
 import { registerSandbox } from './services/sandbox'
 import * as skills from './services/ai/skills'
 import * as usage from './services/agent/usage'
+import * as balance from './services/agent/balance'
+import * as rates from './services/agent/rates'
+import { displayCurrency, fromUsd } from '@shared/money'
 import * as approval from './services/agent/approval'
 import * as auditLog from './services/agent/audit'
 import * as mcpClient from './services/mcp/client'
@@ -350,7 +353,8 @@ const handlers: Handlers = {
   jobs: {
     list: () => jobs.listJobs(),
     cancel: (_, id) => jobs.cancelJob(id),
-    retry: (_, id) => jobs.retryJob(id)
+    retry: (_, id) => jobs.retryJob(id),
+    runNow: (_, id) => jobs.runJobNow(id)
   },
   sandbox: {
     register: (_, html) => registerSandbox(html)
@@ -377,7 +381,11 @@ const handlers: Handlers = {
   },
   providers: {
     list: () => providers.listProviders(),
-    save: (_, input) => providers.saveProvider(input),
+    save: (_, input) => {
+      const saved = providers.saveProvider(input)
+      if (input.modelCaps) usage.backfillUnpriced(saved.id)
+      return saved
+    },
     remove: (_, id) => providers.removeProvider(id),
     fetchModels: (_, id) => providers.fetchModels(id),
     test: (_, id) => providers.testProvider(id)
@@ -591,7 +599,29 @@ const handlers: Handlers = {
   usage: {
     summary: () => usage.usageSummary(),
     allowToday: () => usage.allowToday(),
-    clear: () => usage.clearUsage()
+    clear: () => usage.clearUsage(),
+    dashboard: (_, range) => usage.dashboard(range),
+    calls: (_, filter) => usage.calls(filter),
+    exportCsv: async ({ win }, filter) => {
+      const opts = {
+        defaultPath: join(app.getPath('documents'), `jiwei-usage-${filter.from}-${filter.to}.csv`),
+        filters: [{ name: 'CSV', extensions: ['csv'] }]
+      }
+      const testDir = !app.isPackaged ? process.env.JIWEI_EXPORT_DIR : undefined
+      const file = testDir
+        ? join(testDir, basename(opts.defaultPath))
+        : (win ? await dialog.showSaveDialog(win, opts) : await dialog.showSaveDialog(opts)).filePath
+      if (!file) return null
+      const money = getSettings().money
+      const code = displayCurrency(money)
+      await writeFile(
+        file,
+        usage.callsCsv(filter, (v) => fromUsd(v, code, money), code)
+      )
+      return file
+    },
+    balances: () => balance.balances(),
+    updateRates: () => rates.updateRates()
   },
   agent: {
     decide: (_, d) => approval.decide(d.id, d.allow),

@@ -44,8 +44,14 @@ import {
   type McpClientSecret,
   type McpServeStatus,
   type McpServerInfo,
-  type UsageSummary
+  type UsageSummary,
+  type UsageDashboard,
+  type UsageCall,
+  type ProviderBalance,
+  UsageRangeSchema,
+  UsageFilterSchema
 } from './agent'
+import type { MoneySettings } from './money'
 import { RestoreSchema, type BackupPreview, type BackupStatus, type RecordingCryptoStatus } from './backup'
 import { NetworkRuleSchema, DomainSchema, type NetworkRule } from './browserSafety'
 import * as M from './mistakes'
@@ -554,7 +560,8 @@ export const capabilities = {
   jobs: {
     list: cap<Job[]>()({ description: '列出后台任务', params: none }),
     cancel: cap<void>()({ description: '取消后台任务', params: [id()] }),
-    retry: cap<void>()({ description: '重试失败的后台任务', params: [id()] })
+    retry: cap<void>()({ description: '重试失败的后台任务', params: [id()] }),
+    runNow: cap<void>()({ description: '排到低谷时段的任务现在就开始', params: [id()] })
   },
   trash: {
     list: cap<TrashItem[]>()({ description: '列出最近删除', params: none }),
@@ -898,7 +905,15 @@ export const capabilities = {
   usage: {
     summary: cap<UsageSummary>()({ description: '本月 AI 花费、每日柱状、按用途与模型分项、上限状态', params: none }),
     allowToday: cap<void>()({ description: '达到上限后今天继续使用', params: none }),
-    clear: cap<void>()({ description: '清除 AI 记账', params: none })
+    clear: cap<void>()({ description: '清除 AI 记账', params: none }),
+    dashboard: cap<UsageDashboard>()({
+      description: '用量看板：时段内的总量、对比、趋势、服务商、用途、最贵的几次',
+      params: [['range', UsageRangeSchema]]
+    }),
+    calls: cap<{ rows: UsageCall[]; total: number }>()({ description: '用量明细（分页、筛选）', params: [['filter', UsageFilterSchema]] }),
+    exportCsv: cap<string | null>()({ description: '把用量明细导出为 CSV，返回文件路径', params: [['filter', UsageFilterSchema]] }),
+    balances: cap<ProviderBalance[]>()({ description: '查询服务商余额（DeepSeek、Kimi）', params: none }),
+    updateRates: cap<MoneySettings>()({ description: '联网更新汇率', params: none })
   },
   agent: {
     decide: cap<boolean>()({ description: '确认卡片：允许或拒绝', params: [['decision', ApprovalDecisionSchema]] }),

@@ -1,4 +1,5 @@
 import { useMemo, useState, type ReactNode } from 'react'
+import { useMoney } from '@/lib/money'
 import { useTranslation } from 'react-i18next'
 import { Streamdown } from 'streamdown'
 import {
@@ -193,6 +194,7 @@ function CitationCard({ c }: { c: Citation }) {
  */
 export function MessageItem({ m, compact, plain, grounded }: { m: ChatMessage; compact?: boolean; plain?: boolean; grounded?: boolean }) {
   const { t } = useTranslation()
+  const money = useMoney()
   const [copied, setCopied] = useState(false)
   const byN = useMemo(() => new Map(m.citations.map((c) => [c.n, c])), [m.citations])
   // 引用标记 [n] → 可点击的编号（代码块中的不处理）
@@ -280,7 +282,7 @@ export function MessageItem({ m, compact, plain, grounded }: { m: ChatMessage; c
             <span>
               · {fmtTokens(m.usage.inputTokens)} → {fmtTokens(m.usage.outputTokens)} tokens
               {m.usage.reasoningTokens ? `（${t('chat.reasoningTokens', { n: fmtTokens(m.usage.reasoningTokens) })}）` : ''}
-              {m.usage.cost !== null ? ` · ≈$${m.usage.cost.toFixed(4)}` : ''} · {(m.usage.durationMs / 1000).toFixed(1)}s
+              {m.usage.cost !== null ? ` · ≈${money.format(m.usage.cost)}` : ''} · {(m.usage.durationMs / 1000).toFixed(1)}s
             </span>
           )}
         </div>

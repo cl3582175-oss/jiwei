@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useMoney } from '@/lib/money'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Languages, Check, BookOpenText } from 'lucide-react'
@@ -20,6 +21,7 @@ export function useReadingState(target:ReadingTarget) {
 }
 export function ReadingControls({target,state:supplied}:{target:ReadingTarget;state?:ReadingState|null}) {
   const {t}=useTranslation(),qc=useQueryClient(),query=useReadingState(target),state=supplied ?? query.data
+  const money = useMoney()
   const [desired,setDesired]=useState<{mode:ReadingMode;annotations:boolean}|null>(null),[estimate,setEstimate]=useState<ReadingEstimate|null>(null),[threshold,setThreshold]=useState<number>(DEFAULT_VOCAB_THRESHOLD),[initial,setInitial]=useState(false),[skip,setSkip]=useState(false),[busy,setBusy]=useState(false)
   const change=async(mode:ReadingMode,annotations:boolean):Promise<void>=>{
     try {
@@ -48,7 +50,7 @@ export function ReadingControls({target,state:supplied}:{target:ReadingTarget;st
       {state.error&&<><MenuSeparator /><MenuItem onSelect={()=>void apply(state.mode,state.annotations)}>{t('reading.retry')}</MenuItem></>}
     </MenuContent></Menu>
     <Dialog open={!!desired} onOpenChange={(open)=>!open&&setDesired(null)}><DialogContent title={t('reading.costTitle')}>
-      <p className="mt-3 text-sm leading-relaxed text-muted">{t('reading.cost',{characters:estimate?.characters ?? 0,paragraphs:estimate?.paragraphs ?? 0,cost:estimate?.cost===null?t('reading.unknownCost'):`$${(estimate?.cost ?? 0).toFixed(4)}`})}</p>
+      <p className="mt-3 text-sm leading-relaxed text-muted">{t('reading.cost',{characters:estimate?.characters ?? 0,paragraphs:estimate?.paragraphs ?? 0,cost:estimate?.cost===null?t('reading.unknownCost'):money.format(estimate?.cost ?? 0)})}</p>
       {initial&&<fieldset className="mt-5"><legend className="text-sm font-medium text-fg">{t('reading.initialLevel')}</legend><p className="mt-1 text-xs leading-relaxed text-muted">{t('reading.initialLevelHint')}</p>
         <div role="radiogroup" aria-label={t('reading.initialLevel')} className="mt-3 grid grid-cols-2 gap-2">{VOCAB_LEVELS.map((level)=><button key={level.id} type="button" role="radio" aria-checked={threshold===level.threshold} onClick={()=>setThreshold(level.threshold)} className={cn('rounded-xl border px-3.5 py-2.5 text-left transition-colors',threshold===level.threshold?'border-accent bg-accent-soft':'border-border hover:bg-surface-hover')}><span className="block text-sm font-medium text-fg">{t(`reading.levels.${level.id}`)}</span><span className="block text-xs text-muted">{t(`reading.levelHints.${level.id}`)}</span></button>)}</div>
       </fieldset>}

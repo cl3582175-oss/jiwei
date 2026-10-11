@@ -85,15 +85,14 @@ export function saveProvider(input: ProviderInput): ProviderInfo {
   const db = getDb()
   const now = Date.now()
   const preset = PROVIDER_PRESETS[input.kind]
-  const baseUrl = (input.baseUrl ?? preset.baseURL).trim().replace(/\/+$/, '')
-  if (!/^https?:\/\//.test(baseUrl)) throw new Error('请填写以 http:// 或 https:// 开头的接口地址')
-  const patch: Partial<Row> = {
-    kind: input.kind,
-    name: input.name?.trim() || preset.name,
-    baseUrl,
-    updatedAt: now,
-    updatedBy: deviceId()
+  // 更新时只改传入的字段：只改模型能力 / 价格时不能把名称和接口地址重置为预设值
+  const patch: Partial<Row> = { kind: input.kind, updatedAt: now, updatedBy: deviceId() }
+  if (!input.id || input.baseUrl !== undefined) {
+    const baseUrl = (input.baseUrl ?? preset.baseURL).trim().replace(/\/+$/, '')
+    if (!/^https?:\/\//.test(baseUrl)) throw new Error('请填写以 http:// 或 https:// 开头的接口地址')
+    patch.baseUrl = baseUrl
   }
+  if (!input.id || input.name !== undefined) patch.name = input.name?.trim() || preset.name
   if (input.apiKey !== undefined) patch.apiKeyEnc = input.apiKey ? encrypt(input.apiKey.trim()) : null
   if (input.models) patch.models = JSON.stringify([...new Set(input.models.map((m) => m.trim()).filter(Boolean))])
   if (input.sendEffort !== undefined) patch.sendEffort = input.sendEffort
@@ -118,7 +117,7 @@ export function saveProvider(input: ProviderInput): ProviderInfo {
       id,
       kind: input.kind,
       name: patch.name!,
-      baseUrl,
+      baseUrl: patch.baseUrl!,
       models: patch.models ?? JSON.stringify(preset.models),
       createdAt: now,
       updatedAt: now

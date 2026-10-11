@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { Command } from 'cmdk'
 import { Dialog as D } from 'radix-ui'
 import { useTranslation } from 'react-i18next'
-import { NotebookText, PenLine, Library, Settings, Trash2, Search, Home, Layers, GraduationCap, Sprout, Network, Globe, Sun, Sparkles, Target } from 'lucide-react'
+import { NotebookText, PenLine, Library, Settings, Trash2, Search, Home, Layers, GraduationCap, Sprout, Network, Globe, Sun, Sparkles, Target, BarChart3 } from 'lucide-react'
 import { useApp } from '@/store/app'
 import { useNotes } from '@/lib/queries'
 import { useCreateNote } from '@/lib/shortcuts'
@@ -12,6 +12,9 @@ import { Kbd } from '@/components/ui/primitives'
 
 const itemCls =
   'flex h-10 cursor-default items-center gap-3 rounded-lg px-3 text-sm text-fg data-[selected=true]:bg-accent-soft data-[selected=true]:text-accent [&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:text-subtle data-[selected=true]:[&_svg]:text-accent'
+
+/** 搜到用量看板的词（v0.7.5） */
+const USAGE_WORDS = ['用量', '费用', '花费', '花销', 'token', 'usage', 'cost', 'spend', '账单', '余额']
 
 export function CommandPalette() {
   const { t } = useTranslation()
@@ -89,6 +92,10 @@ export function CommandPalette() {
                     <Target />
                     <span className="flex-1">{t('nav.goals')}</span>
                   </Command.Item>
+                  <Command.Item className={itemCls} onSelect={run(() => useApp.getState().openUsage())}>
+                    <BarChart3 />
+                    <span className="flex-1">{t('spend.dash.title')}</span>
+                  </Command.Item>
                   <Command.Item className={itemCls} onSelect={run(() => setView('reflect'))}>
                     <Sprout />
                     <span className="flex-1">{t('nav.reflect')}</span>
@@ -107,6 +114,17 @@ export function CommandPalette() {
                     <Settings />
                     <span className="flex-1">{t('nav.settings')}</span>
                     <Kbd>{modKey},</Kbd>
+                  </Command.Item>
+                </Command.Group>
+              )}
+              {USAGE_WORDS.some((w) => w.includes(q.trim().toLowerCase()) || q.trim().toLowerCase().includes(w)) && q.trim() && (
+                <Command.Group
+                  heading={t('palette.actions')}
+                  className="[&_[cmdk-group-heading]]:px-3 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-2xs [&_[cmdk-group-heading]]:text-subtle"
+                >
+                  <Command.Item value="usage-dashboard" className={itemCls} onSelect={run(() => useApp.getState().openUsage())}>
+                    <BarChart3 />
+                    <span className="flex-1">{t('spend.dash.title')}</span>
                   </Command.Item>
                 </Command.Group>
               )}

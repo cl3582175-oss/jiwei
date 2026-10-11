@@ -7,7 +7,7 @@ import { newId } from '../../lib/ids'
 import { deviceId } from '../device'
 import { emit } from '../../events'
 import { getSettings } from '../settings'
-import { estimateCost, type Effort, type ModelTier, type Usage } from '@shared/ai'
+import { type Effort, type ModelTier, type Usage } from '@shared/ai'
 import type { ChatScope, ChatSend } from '@shared/schemas'
 import type { Anchor } from '@shared/context'
 import type { AgentStep, ChatMessage, Citation, Conversation } from '@shared/types'
@@ -28,6 +28,8 @@ import { coachSystem, coachTurn, ensureCoachMaterial, type CoachMeta } from '../
 import { Notification } from 'electron'
 import { withRun } from '../agent/context'
 import { guardTools, type ToolMeta } from '../agent/wrap'
+import { perRunLimit } from '../agent/usage'
+import { costOf } from '../agent/pricing'
 import { BUILTIN_META, buildDoTools, isProposalTool } from './doTools'
 import { assistantMcpTools } from '../mcp/client'
 import { getMainWindow } from '../../mainWindow'
@@ -329,7 +331,7 @@ export function send(input: ChatSend): SendResult {
 function generate(conversationId: string, messageId: string, input: ChatSend): Promise<void> {
   const kind =
     getDb().select({ kind: conversations.kind }).from(conversations).where(eq(conversations.id, conversationId)).get()?.kind ?? 'chat'
-  return withRun({ purpose: kind, caller: 'assistant', conversationId, messageId, perRun: getSettings().budget.perRun }, () =>
+  return withRun({ purpose: kind, caller: 'assistant', conversationId, messageId, perRun: perRunLimit() }, () =>
     generateRun(conversationId, messageId, input)
   )
 }
@@ -612,7 +614,7 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
     usage.outputTokens = u.outputTokens ?? 0
     usage.reasoningTokens = u.outputTokenDetails?.reasoningTokens ?? 0
     usage.cachedInputTokens = u.inputTokenDetails?.cacheReadTokens ?? 0
-    finish('done', null, { ...usage, cost: estimateCost(input.model, usage), durationMs: Date.now() - t0 })
+    finish('done', null, { ...usage, cost: costOf(input.providerId, input.model, usage).cost, durationMs: Date.now() - t0 })
     if (!session.incognito) scheduleExtract(conversationId)
     if (Date.now() - t0 > 20_000) notifyDone(conversationId, conv.title, zh)
   } catch (e) {

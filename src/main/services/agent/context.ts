@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
+import { randomUUID } from 'node:crypto'
 
 // 调用上下文：一次对话回答、一个后台任务、一次 MCP 请求，各自带着“用途、调用方、本次花费、是否读过外部内容”。
 // 记账（usage.ts）和工具权限（wrap.ts）都从这里读，不需要层层传参。
@@ -11,6 +12,8 @@ export interface RunState {
 }
 
 export interface AgentRun {
+  /** 运行 ID：同一次运行的多次模型调用在看板上归为一次（v0.7.5） */
+  id: string
   /** 记账用途：chat、inbox.triage、reading…… */
   purpose: string
   /** 调用方：assistant、job、mcp:<客户端名>、app */
@@ -30,9 +33,9 @@ export function currentRun(): AgentRun | undefined {
 }
 
 /** 开始一次新的运行（花费与污点状态从零开始） */
-export function withRun<T>(run: Omit<Partial<AgentRun>, 'state'> & Pick<AgentRun, 'purpose'>, fn: () => T): T {
+export function withRun<T>(run: Omit<Partial<AgentRun>, 'state' | 'id'> & Pick<AgentRun, 'purpose'>, fn: () => T): T {
   const parent = store.getStore()
-  return store.run({ caller: parent?.caller ?? 'app', ...run, state: { cost: 0, tainted: false } }, fn)
+  return store.run({ caller: parent?.caller ?? 'app', ...run, id: randomUUID(), state: { cost: 0, tainted: false } }, fn)
 }
 
 /** 只改用途：沿用外层的调用方与运行状态；没有外层时开始新的运行 */
