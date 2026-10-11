@@ -1,4 +1,5 @@
 import { discoverEn } from '../features/discover/messages'
+import { advisorEn } from '../features/advisor/messages'
 import { tasksEn } from '../features/tasks/messages'
 import { mailEn } from '../features/tasks/mailMessages'
 import { planEn } from '../features/plan/messages'
@@ -11,6 +12,7 @@ import { safetyEn } from '../features/settings/safetyMessages'
 import { readingEn } from '../features/reading/messages'
 const en: Messages = {
   discover: discoverEn,
+  advisor: advisorEn,
   tasks: tasksEn,
   mail: mailEn,
   plan: planEn,
@@ -422,7 +424,9 @@ const en: Messages = {
     assistantPanel: 'side panel',
     feynman: 'Feynman practice',
     goals: 'Directions',
-    groups: { collect: 'Collect', learn: 'Learn', plan: 'Plan' },
+    groups: { collect: 'Collect', learn: 'Learn', create: 'Create', plan: 'Plan' },
+    advisor: 'Advisor',
+    works: 'Works',
     browser: 'Browse',
     chat: 'Jiwei Assistant',
     collapseSidebar: 'Hide list',

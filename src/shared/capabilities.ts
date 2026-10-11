@@ -34,6 +34,7 @@ import {
   type VoiceStatus
 } from './recording'
 import { z } from 'zod'
+import { AdvisorAskSchema, DecideSchema, ReviewDecisionSchema, type Decision } from './advisor'
 import { EventRange, EventSave, PhaseSave, MilestoneSave, IcsSave, ScheduleOptions, type SchedulePreview, type GoalPhase, type GoalMilestone, type IcsFeed, type PlanEvent, type ReviewForecast } from './plan'
 import { ActivityBatchSchema, type TodayBriefing, type TodaySummary } from './activity'
 import {
@@ -651,6 +652,21 @@ export const capabilities = {
     }),
     harvest: cap<ReflectionHarvest>()({ description: 'AI 从复盘中提炼洞见、修正与行动项（供确认）', params: [id()] }),
     commit: cap<Reflection>()({ description: '保存确认的洞见、修正与行动项，复盘完成', params: [id(), ['input', S.HarvestCommitSchema]] })
+  },
+  advisor: {
+    list: cap<Decision[]>()({ description: '决策日志：全部决策（未删除）', params: none }),
+    get: cap<Decision>()({ description: '读取一条决策及其备忘录（依据会复核是否仍可用）', params: [id('id')] }),
+    due: cap<Decision[]>()({ description: '已到回看日期、尚未回看的决策', params: none }),
+    ask: cap<Decision>()({ description: '提出一个问题：检索知识库依据并生成决策备忘录（花费 AI 费用）', params: [['input', AdvisorAskSchema]] }),
+    regenerate: cap<Decision>()({ description: '重新生成决策备忘录（花费 AI 费用）', params: [id('id')] }),
+    weights: cap<Decision>()({
+      description: '调整决策矩阵的准则权重（null 恢复建议权重）',
+      params: [id('id'), ['weights', z.record(z.string().max(40), z.number().int().min(0).max(5)).nullable()]]
+    }),
+    decide: cap<Decision>()({ description: '记录选定的选项、当时的预期与回看日期', params: [['input', DecideSchema]] }),
+    review: cap<Decision>()({ description: '回看：记录实际结果、预期准确度与教训，可生成复习卡片', params: [['input', ReviewDecisionSchema]] }),
+    status: cap<Decision>()({ description: '把决策设为草稿或放弃', params: [id('id'), ['status', z.enum(['draft', 'dropped'])]] }),
+    remove: cap<void>()({ description: '删除一条决策', params: [id('id')] })
   },
   discover: {
     feeds: cap<Feed[]>()({ description: '订阅源及最近抓取状态', params: none }),

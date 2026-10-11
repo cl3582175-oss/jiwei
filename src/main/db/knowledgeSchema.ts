@@ -18,6 +18,7 @@ export {
   annotations,
   activity,
   activityEvents,
+  decisions,
   settings,
   users,
   devices,

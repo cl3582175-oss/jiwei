@@ -13,6 +13,7 @@ import * as discoverItems from './services/discover/items'
 import * as discoverDaily from './services/discover/daily'
 import * as discoverPath from './services/discover/path'
 import * as discoverPodcast from './services/discover/podcast'
+import * as advisor from './services/advisor'
 import * as discoverTts from './services/discover/tts'
 import * as localSpeech from './services/discover/localSpeech'
 import { MAIL_PRESETS } from '@shared/mail'
@@ -435,6 +436,18 @@ const handlers: Handlers = {
     saveDaily: (_, answers) => reflection.saveDaily(answers),
     harvest: (_, id) => reflection.harvestReflection(id),
     commit: (_, id, input) => reflection.commitReflection(id, input)
+  },
+  advisor: {
+    list: () => advisor.listDecisions(),
+    get: (_, id) => advisor.getDecision(id),
+    due: () => advisor.dueDecisions(),
+    ask: (_, input) => advisor.ask(input),
+    regenerate: (_, id) => advisor.regenerate(id),
+    weights: (_, id, weights) => advisor.setWeights(id, weights),
+    decide: (_, input) => advisor.decide(input),
+    review: (_, input) => advisor.reviewDecision(input),
+    status: (_, id, status) => advisor.setStatus(id, status),
+    remove: (_, id) => advisor.removeDecision(id)
   },
   discover: {
     feeds: () => discoverFeeds.listFeeds(), feedSave: (_, input) => discoverFeeds.saveFeed(input), feedRemove: (_, id) => discoverFeeds.removeFeed(id), feedRefresh: (_, id) => discoverFeeds.refreshFeed(id),

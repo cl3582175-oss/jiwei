@@ -391,6 +391,34 @@ export const goals = sqliteTable('goals', {
   ...syncCols
 })
 
+/** 参谋与决策日志（v0.9）：一个真实问题 → 决策备忘录 → 选定与预期 → 到期回看 */
+export const decisions = sqliteTable(
+  'decisions',
+  {
+    id: text('id').primaryKey(),
+    question: text('question').notNull(),
+    context: text('context').notNull().default(''),
+    status: text('status', { enum: ['draft', 'decided', 'reviewed', 'dropped'] })
+      .notNull()
+      .default('draft'),
+    /** 备忘录 JSON（DecisionMemo）；生成失败或尚未生成时为空 */
+    memo: text('memo'),
+    /** 用户调整过的准则权重 JSON（覆盖备忘录里的建议权重） */
+    weights: text('weights'),
+    choice: text('choice'),
+    expectation: text('expectation'),
+    reviewAt: integer('review_at'),
+    outcome: text('outcome'),
+    /** 回看时的预期准确度 1–5 */
+    accuracy: integer('accuracy'),
+    lesson: text('lesson'),
+    goalId: text('goal_id'),
+    model: text('model'),
+    ...syncCols
+  },
+  (t) => [index('decisions_review_idx').on(t.status, t.reviewAt)]
+)
+
 /** 复盘会话；复盘正文是一篇 kind = review 的笔记 */
 export const reviews = sqliteTable(
   'reviews',

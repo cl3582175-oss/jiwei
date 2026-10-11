@@ -3,18 +3,19 @@ import { canonicalUrl } from '@shared/browserUrl'
 import type { NoteSort, WorkspaceContext } from '@shared/types'
 import { toast } from 'sonner'
 
-export type View = 'today' | 'recording' | 'inbox' | 'notes' | 'library' | 'chat' | 'review' | 'calendar' | 'goals' | 'reflect' | 'graph' | 'feynman' | 'trash' | 'usage'
+export type View = 'today' | 'recording' | 'inbox' | 'notes' | 'library' | 'chat' | 'review' | 'calendar' | 'goals' | 'reflect' | 'graph' | 'feynman' | 'trash' | 'usage' | 'advisor' | 'works'
 
 /**
- * 导航五组（v0.6.7，设计见 docs/design/v0.7-platform-and-loop.md §2.1）：今日 · 收集 · 学习 · 计划（创作在 v0.9 加入）。
+ * 导航五组（v0.6.7，设计见 docs/design/v0.7-platform-and-loop.md §2.1）：今日 · 收集 · 学习 · 创作（v0.9）· 计划。
  * 积微助手（'chat'）不属于任何一组，常驻导航顶部。
  */
-export type NavGroup = 'today' | 'collect' | 'learn' | 'plan'
-export type NavItem = 'today' | 'inbox' | 'library' | 'browser' | 'recording' | 'notes' | 'review' | 'feynman' | 'graph' | 'calendar' | 'goals' | 'reflect'
+export type NavGroup = 'today' | 'collect' | 'learn' | 'create' | 'plan'
+export type NavItem = 'today' | 'inbox' | 'library' | 'browser' | 'recording' | 'notes' | 'review' | 'feynman' | 'graph' | 'calendar' | 'goals' | 'reflect' | 'advisor'
 export const NAV_GROUPS: Record<NavGroup, NavItem[]> = {
   today: ['today'],
   collect: ['inbox', 'library', 'browser', 'recording'],
   learn: ['notes', 'review', 'feynman', 'graph'],
+  create: ['advisor'],
   plan: ['calendar', 'goals', 'reflect']
 }
 /** 当前所在的导航条目（浏览器显示在笔记工作区左栏，算作“收集 · 浏览器”） */
@@ -52,6 +53,8 @@ const emptyContext: WorkspaceContext = {
 interface AppState extends Location {
   taskFocusId: string | null
   goalId: string | null
+  /** 参谋页当前打开的决策（v0.9） */
+  decisionId: string | null
   scheduleGoal: boolean
   openGoal: (id: string, schedule?: boolean) => void
   /** 导航到新位置（记入历史） */
@@ -164,6 +167,7 @@ export const useApp = create<AppState>((set, get) => {
     taskFocusId: null,
     goalId: null,
     scheduleGoal: false,
+    decisionId: null,
     openGoal: (id, schedule = false) => { get().goNav('goals'); set({ goalId: id, scheduleGoal: schedule }) },
     noteId: null,
     sourceId: null,

@@ -1,4 +1,5 @@
 import { discoverZh } from '../features/discover/messages'
+import { advisorZh } from '../features/advisor/messages'
 import { tasksZh } from '../features/tasks/messages'
 import { mailZh } from '../features/tasks/mailMessages'
 import { planZh } from '../features/plan/messages'
@@ -11,6 +12,7 @@ import { readingZh } from '../features/reading/messages'
 
 const zhCN = {
   discover: discoverZh,
+  advisor: advisorZh,
   tasks: tasksZh,
   mail: mailZh,
   plan: planZh,
@@ -409,7 +411,9 @@ const zhCN = {
     assistantPanel: '侧栏',
     feynman: '费曼练习',
     goals: '方向',
-    groups: { collect: '收集', learn: '学习', plan: '计划' },
+    groups: { collect: '收集', learn: '学习', create: '创作', plan: '计划' },
+    advisor: '参谋',
+    works: '作品',
     browser: '浏览',
     chat: '积微助手',
     collapseSidebar: '收起列表',

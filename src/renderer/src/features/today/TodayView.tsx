@@ -1,3 +1,4 @@
+import { DueDecisions } from '@/features/advisor/AdvisorView'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -562,6 +563,8 @@ export function TodayView() {
             </ul>
           </section>
         )}
+        {/* 到期待回看的决策（v0.9 参谋） */}
+        <DueDecisions />
         {/* 新用户引导：已有今日日程或任务结果（如刚排完计划、还没写笔记）时仍显示正常布局 */}
         {s?.fresh && !s.schedule.length && !s.taskResults.length ? (
           <div className="mt-8">

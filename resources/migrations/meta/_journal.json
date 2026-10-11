@@ -190,6 +190,13 @@
       "when": 1791710248037,
       "tag": "0026_discover",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "6",
+      "when": 1791740992114,
+      "tag": "0027_decisions",
+      "breakpoints": true
     }
   ]
 }

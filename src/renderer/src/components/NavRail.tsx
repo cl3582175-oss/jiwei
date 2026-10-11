@@ -20,6 +20,8 @@ import {
   FolderInput,
   BookOpen,
   CalendarRange,
+  Feather,
+  Scale,
   CalendarDays,
   Target,
   GraduationCap
@@ -207,12 +209,14 @@ export function NavRail() {
     graph: { label: `${t('nav.graph')}  ${modKey}6`, icon: <Network /> },
     calendar: { label: t('plan.calendar'), icon: <CalendarDays /> },
     goals: { label: t('nav.goals'), icon: <Target /> },
-    reflect: { label: `${t('nav.reflect')}  ${modKey}5`, icon: <Sprout /> }
+    reflect: { label: `${t('nav.reflect')}  ${modKey}5`, icon: <Sprout /> },
+    advisor: { label: t('nav.advisor'), icon: <Scale /> }
   }
   const groups: Record<NavGroup, { label: string; icon: ReactNode }> = {
     today: { label: `${t('nav.today')}  ${modKey}9`, icon: <Sun /> },
     collect: { label: t('nav.groups.collect'), icon: <FolderInput /> },
     learn: { label: t('nav.groups.learn'), icon: <BookOpen /> },
+    create: { label: t('nav.groups.create'), icon: <Feather /> },
     plan: { label: t('nav.groups.plan'), icon: <CalendarRange /> }
   }
   // 半环：悬停片刻展开，移开片刻收起
