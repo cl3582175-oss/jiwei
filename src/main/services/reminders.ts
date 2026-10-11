@@ -3,6 +3,7 @@ import { checkIcs } from './plan/ics'
 import { checkPlan } from './plan/schedule'
 import { checkTasks } from './tasks/scheduler'
 import { checkDiscover } from './discover/daily'
+import { checkPodcast } from './discover/podcast'
 import { checkInboxSchedule } from './inbox'
 import { Notification } from 'electron'
 import log from 'electron-log/main'
@@ -39,6 +40,7 @@ export function checkReminders(now = new Date()): void {
   checkIcs(now.getTime())
   checkInboxSchedule(now)
   checkDiscover(now.getTime())
+  checkPodcast(now.getTime())
   const s = getSettings()
   const r = s.reflection
   const [h, m] = r.time.split(':').map(Number)

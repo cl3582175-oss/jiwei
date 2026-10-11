@@ -117,3 +117,9 @@ export interface PodcastScript {
   paragraphs: string[]
   createdAt: number
 }
+export interface PodcastState {
+  date: string
+  status: 'idle' | 'queued' | 'running' | 'ok' | 'stale' | 'budget' | 'error' | 'canceled'
+  script: PodcastScript | null
+  message: string | null
+}

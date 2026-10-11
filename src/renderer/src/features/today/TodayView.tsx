@@ -31,6 +31,7 @@ import { Button } from '@/components/ui/button'
 import { Tip } from '@/components/ui/primitives'
 import type { Tint } from '@/lib/tint'
 import { useProvidePageContext } from '../assist/pageContext'
+import { PodcastBar } from '../discover/PodcastPlayer'
 
 // 「今日」（v0.6.7，默认首页）：回答“今天该做什么”。每张卡片都能直接处理，不放只供观看的数字。
 // 设计见 docs/design/v0.7-platform-and-loop.md §2.2。
@@ -525,6 +526,7 @@ export function TodayView() {
           <BudgetBanner />
           <AskBox reply={reply} clearReply={() => setReply(null)} />
           <Briefing onReply={setReply} />
+          <PodcastBar />
         </div>
 
         {!!s?.taskResults.length && <section className="mt-8 space-y-2" data-testid="today-task-results"><h2 className="text-sm font-semibold text-fg">{t('tasks.output.briefing')}</h2>{s.taskResults.map((r)=><button key={r.id} className="paper block w-full rounded-xl p-4 text-left" onClick={()=>{useApp.setState({taskFocusId:r.taskId});useApp.getState().openSettings('tasks')}}><p className="text-sm text-fg">{r.name}</p><p className="mt-1 text-xs text-muted">{r.summary}</p></button>)}</section>}

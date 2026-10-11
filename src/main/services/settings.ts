@@ -13,7 +13,7 @@ function defaults(): Settings {
   const language: Settings['language'] =
     (process.env.JIWEI_LANG as Settings['language']) || (app.getLocale().toLowerCase().startsWith('zh') ? 'zh-CN' : 'en')
   return {
-    discover: { dailyLimit: 5, dailyBudget: fromUsd(0.5 / (rateOf('CNY') ?? 7), defaultMoney(language).currency), budgetCurrency: defaultMoney(language).currency, useSearch: true },
+    discover: { dailyLimit: 5, dailyBudget: fromUsd(0.5 / (rateOf('CNY') ?? 7), defaultMoney(language).currency), budgetCurrency: defaultMoney(language).currency, useSearch: true, podcast: false },
     tasks: { paused: false, launchAtLogin: false, keepRunning: false },
     plan: { autoComplete: true },
     language,

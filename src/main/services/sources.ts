@@ -304,6 +304,7 @@ export function revealSource(id: string): void {
 
 export function trashSource(id: string): void {
   getDb().update(sources).set({ deletedAt: Date.now(), updatedAt: Date.now(), updatedBy: deviceId() }).where(eq(sources.id, id)).run()
+  emit('sources:changed', { id })
 }
 
 /** 永久删除：移除记录；素材文件仅在无其他引用时删除 */

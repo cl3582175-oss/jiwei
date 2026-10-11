@@ -3,7 +3,7 @@ import { CaptureActionSchema } from './capture'
 import { TaskSave, type AiTask, type TaskRun, type TaskToolInfo, type TaskInput } from './tasks'
 import type { TaskRecipe } from './taskRecipes'
 import { MailSave, type MailAccount } from './mail'
-import { FeedSave, DiscoverAct, SearchSave, SearchProvider, type Feed, type FeedItem, type DiscoveryStatus, type LearningPath, type SearchConnection } from './discover'
+import { FeedSave, DiscoverAct, SearchSave, SearchProvider, type Feed, type FeedItem, type DiscoveryStatus, type LearningPath, type SearchConnection, type PodcastState } from './discover'
 import type { CaptureState, PhoneStatus } from './capture'
 import type { InboxItem } from './inbox'
 import {
@@ -666,7 +666,9 @@ export const capabilities = {
     searchTest: cap<{ ok: boolean; message: string }>()({ description: '测试所选搜索服务，错误不包含凭证', params: [['service', SearchProvider]] }),
     path: cap<LearningPath>()({ description: '结合知识库与搜索生成学习路径提案，正文待用户接受', params: [['goalId', z.string().min(1)]] }),
     pathPhases: cap<SchedulePreview>()({ description: '把主进程持有的学习路径转为仅追加阶段的排期预览', params: [id()] }),
-    remedy: cap<string[]>()({ description: '为允许 AI 的错题找讲解与练习，写入不占每日名额的精选', params: [['mistakeId', z.string().min(1)]] })
+    remedy: cap<string[]>()({ description: '为允许 AI 的错题找讲解与练习，写入不占每日名额的精选', params: [['mistakeId', z.string().min(1)]] }),
+    podcast: cap<PodcastState>()({ description: '读取当日学习播客讲稿与状态，素材隐私变化时旧稿失效', params: none }),
+    podcastGenerate: cap<string>()({ description: '排队生成或覆盖当日播客讲稿，遵守发现预算与隐私，仅朗读问题不含答案', params: none })
   },
   mail: {
     accounts: cap<MailAccount[]>()({ description: '列出邮箱账号与凭证已设置状态，不返回凭证明文', params: none }),

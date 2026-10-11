@@ -167,6 +167,11 @@ export function DiscoverSettings() {
         />
         {t('discover.useSearch')}
       </label>
+      <label className="mt-5 flex items-center gap-2 text-sm">
+        <Switch aria-label={t('discover.podcast')} checked={config.podcast} onCheckedChange={(podcast) => update.mutate({ discover: { ...config, podcast } })} />
+        {t('discover.podcast')}
+      </label>
+      <p className="mt-2 text-xs leading-relaxed text-muted">{t('discover.podcastHint')}</p>
     </section>
   )
 }

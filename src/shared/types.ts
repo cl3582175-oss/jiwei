@@ -211,7 +211,7 @@ export type Palette = 'qinglu' | 'celadon' | 'dunhuang'
 export type SidebarPage = 'notes' | 'library' | 'chat'
 
 export interface Settings {
-  discover: { dailyLimit: number; dailyBudget: number; budgetCurrency: string; useSearch: boolean }
+  discover: { dailyLimit: number; dailyBudget: number; budgetCurrency: string; useSearch: boolean; podcast: boolean }
   tasks: { paused: boolean; launchAtLogin: boolean; keepRunning: boolean }
   plan: { autoComplete: boolean }
   recordingScene?: 'meeting' | 'lecture' | 'thought'

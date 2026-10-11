@@ -1,5 +1,6 @@
 import { and, asc, desc, eq, inArray, isNull, like, or, type SQL } from 'drizzle-orm'
 import { getDb, getSqlite } from '../db'
+import { emit } from '../events'
 import { notes, taggings } from '../db/schema'
 import { newId } from '../lib/ids'
 import { deviceId } from './device'
@@ -151,11 +152,14 @@ export function updateNote(id: string, patch: NoteMetaUpdate): NoteSummary {
   if (patch.title !== undefined) set.editedAt = now
   db.update(notes).set(set).where(eq(notes.id, id)).run()
   if (patch.reviewExcluded !== undefined) syncCards(id)
+  // 主进程元数据变化也影响其他页面的隐私素材和缓存，不能只靠当前编辑器刷新。
+  emit('notes:changed', { ids: [id] })
   return getNote(id)!
 }
 
 export function trashNote(id: string): void {
   getDb().update(notes).set({ deletedAt: Date.now(), updatedAt: Date.now(), updatedBy: deviceId() }).where(eq(notes.id, id)).run()
+  emit('notes:changed', { ids: [id] })
 }
 
 export function deleteNoteRow(id: string): void {

@@ -32,6 +32,7 @@
     "src/renderer/src/features/today/messages.ts",
     "src/renderer/src/features/plan/messages.ts",
     "src/renderer/src/features/tasks/messages.ts",
+    "src/renderer/src/features/discover/messages.ts",
     "src/renderer/src/features/tasks/mailMessages.ts",
     "src/renderer/src/features/agent/messages.ts"
   ]
