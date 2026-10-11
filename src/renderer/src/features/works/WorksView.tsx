@@ -824,6 +824,7 @@ function DraftStep({ w, next }: { w: Work; next: () => void }) {
           <Sparkles />
           {t(`works.draftAll.${w.mode}`)}
         </Button>
+        <span className="text-2xs text-subtle">{t('works.citeHint')}</span>
         <span className="ml-auto text-2xs text-subtle tabular-nums">{t('works.words', { count: words })}</span>
       </div>
       {busy === 'draft' && <Busy text={t('works.drafting')} />}

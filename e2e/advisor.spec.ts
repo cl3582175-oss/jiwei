@@ -39,7 +39,7 @@ const memo = (sources: string[]) => ({
   secondOrder: ['实习经历会影响研究生面试的话题'],
   counter: '备考是一次性的窗口，实习以后还有机会。',
   risks: [{ risk: '两头都做不好', mitigation: '和实习单位约定每周最多三天' }],
-  recommendation: { option: 'O1', why: '长期收益更高，时间压力可以通过约定工作日来缓解' },
+  recommendation: { option: 'O1', why: `长期收益更高（${sources[0] ?? 'S1'}），时间压力可以通过约定工作日来缓解` },
   confidence: 3,
   unknowns: ['实习单位是否允许弹性工作']
 })
@@ -148,6 +148,9 @@ test('提问生成备忘录：依据来自知识库且不含不给 AI 的内容�
   await expect(page.getByTestId('decision-evidence').locator('li')).toHaveCount(1)
   await expect(page.getByTestId('decision-evidence')).toContainText('实习经验')
   await expect(memoView).toContainText('参谋建议')
+  // 正文里的“（S1）”渲染成可点的出处标签，不直接露出内部编号
+  await expect(memoView.locator('[data-option="O1"]')).not.toContainText('S1')
+  await expect(memoView.locator('[data-option="O1"]').getByRole('button', { name: '1' })).toHaveAttribute('title', '实习经验')
   await expect(memoView).toContainText('事前验尸')
   // 加权得分：O1 = (5/5*5 + 2/5*3)/8 = 77，O2 = (3/5*5 + 5/5*3)/8 = 75
   const totals = () => memoView.locator('[data-option]').evaluateAll((els) => els.map((e) => e.querySelector('.font-serif')?.textContent))

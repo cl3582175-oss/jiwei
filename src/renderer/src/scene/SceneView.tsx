@@ -337,7 +337,11 @@ function Mermaid({ code, onReady }: { code: string; onReady: () => void }) {
           }
         })
         const out = await mermaid.render(`scene-mermaid-${++mermaidSeq}`, code)
-        if (alive) setSvg(out.svg)
+        // Mermaid 自带 max-width（原始尺寸），视频里要按比例撑满内容区
+        const fit = out.svg
+          .replace(/style="max-width:[^"]*"/, 'style="width:100%;height:100%"')
+          .replace('<svg ', '<svg preserveAspectRatio="xMidYMid meet" ')
+        if (alive) setSvg(fit)
       } catch {
         if (alive) setSvg('')
       }

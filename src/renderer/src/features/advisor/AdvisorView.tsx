@@ -38,6 +38,8 @@ import { PlanDialog, Segmented, field } from '@/features/plan/ui'
 // 参谋与决策日志（v0.9）：提问 → 备忘录（选项、决策矩阵、依据、假设、事前验尸、反方意见）→ 记录决定与预期 → 到期回看。
 
 const DAY = 86400000
+/** 悬停提示是纯文本，去掉引用编号 */
+const plain = (s: string): string => s.replace(/\s*[（(]\s*S\d{1,2}(?:\s*[、,，]\s*S\d{1,2})*\s*[）)]/g, '')
 const errText = (e: unknown): string =>
   String(e instanceof Error ? e.message : e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
 
@@ -435,12 +437,12 @@ function Block({
   )
 }
 
-const Bullets = ({ items }: { items: string[] }) => (
+const Bullets = ({ items, cite }: { items: string[]; cite: (text: string) => ReactNode }) => (
   <ul className="space-y-1.5 text-sm leading-relaxed text-fg">
     {items.map((x, i) => (
       <li key={i} className="flex gap-2">
         <span className="mt-2 size-1 shrink-0 rounded-full bg-subtle" />
-        <span className="min-w-0">{x}</span>
+        <span className="min-w-0">{cite(x)}</span>
       </li>
     ))}
   </ul>
@@ -467,6 +469,32 @@ function Memo({ d, memo }: { d: Decision; memo: DecisionMemo }) {
     if (!s || s.available === false) return
     if (s.parentType === 'note') useApp.getState().openNote(s.parentId)
     else useApp.getState().openSource(s.parentId)
+  }
+  // 正文里的“（S1、S3）”渲染成可点的出处标签，不把内部编号直接给用户看
+  const cite = (text: string): ReactNode => {
+    const parts = text.split(/\s*[（(]\s*(S\d{1,2}(?:\s*[、,，]\s*S\d{1,2})*)\s*[）)]/g)
+    return parts.map((part, i) =>
+      i % 2 === 0 ? (
+        part
+      ) : (
+        <span key={i} className="mx-0.5 inline-flex gap-0.5 align-super">
+          {part.split(/\s*[、,，]\s*/).map((sid) => {
+            const src = sourceOf(sid)
+            const n = memo.sources.findIndex((x) => x.id === sid) + 1
+            return src ? (
+              <button
+                key={sid}
+                className="rounded bg-accent-soft px-1 text-[10px] leading-4 text-accent hover:bg-accent-soft/70"
+                title={src.title}
+                onClick={() => open(sid)}
+              >
+                {n}
+              </button>
+            ) : null
+          })}
+        </span>
+      )
+    )
   }
   return (
     <div className="space-y-6" data-testid="decision-memo">
@@ -504,7 +532,7 @@ function Memo({ d, memo }: { d: Decision; memo: DecisionMemo }) {
                   <p className="mt-3 flex gap-1.5 border-t border-accent/20 pt-3 text-xs leading-relaxed text-fg">
                     <Sparkles className="mt-0.5 size-3.5 shrink-0 text-accent" />
                     <span>
-                      <span className="font-medium text-accent">{t('advisor.recommended')}</span>：{memo.recommendation.why}
+                      <span className="font-medium text-accent">{t('advisor.recommended')}</span>：{cite(memo.recommendation.why)}
                       <span className="ml-1 text-subtle">· {t('advisor.confidence', { n: memo.confidence })}</span>
                     </span>
                   </p>
@@ -545,7 +573,7 @@ function Memo({ d, memo }: { d: Decision; memo: DecisionMemo }) {
             <tbody>
               {memo.criteria.map((c) => (
                 <tr key={c.name} className="border-b border-border/50">
-                  <td className="px-5 py-2.5 text-fg" title={c.why}>
+                  <td className="px-5 py-2.5 text-fg" title={plain(c.why)}>
                     {c.name}
                   </td>
                   <td className="px-2 py-2">
@@ -560,7 +588,7 @@ function Memo({ d, memo }: { d: Decision; memo: DecisionMemo }) {
                   {memo.options.map((o) => {
                     const s = memo.scores.find((x) => x.option === o.id && x.criterion === c.name)
                     return (
-                      <td key={o.id} className="px-2 py-2 text-center" title={s?.why}>
+                      <td key={o.id} className="px-2 py-2 text-center" title={plain(s?.why ?? '')}>
                         <ScoreDots n={s?.score ?? 0} />
                       </td>
                     )
@@ -611,7 +639,7 @@ function Memo({ d, memo }: { d: Decision; memo: DecisionMemo }) {
                     <FileText className="size-3 shrink-0" />
                     <span className="truncate">{s?.title ?? e.source}</span>
                   </button>
-                  <span className="min-w-0 text-fg">{e.claim}</span>
+                  <span className="min-w-0 text-fg">{cite(e.claim)}</span>
                 </li>
               )
             })}
@@ -624,17 +652,17 @@ function Memo({ d, memo }: { d: Decision; memo: DecisionMemo }) {
       <div className="grid gap-4 md:grid-cols-2">
         {memo.assumptions.length > 0 && (
           <Block icon={<Lightbulb />} title={t('advisor.assumptions')}>
-            <Bullets items={memo.assumptions} />
+            <Bullets items={memo.assumptions} cite={cite} />
           </Block>
         )}
         {memo.premortem.length > 0 && (
           <Block icon={<Skull />} title={t('advisor.premortem')} hint={t('advisor.premortemHint')}>
-            <Bullets items={memo.premortem} />
+            <Bullets items={memo.premortem} cite={cite} />
           </Block>
         )}
         {memo.secondOrder.length > 0 && (
           <Block icon={<Waypoints />} title={t('advisor.secondOrder')}>
-            <Bullets items={memo.secondOrder} />
+            <Bullets items={memo.secondOrder} cite={cite} />
           </Block>
         )}
         {memo.risks.length > 0 && (
@@ -642,8 +670,8 @@ function Memo({ d, memo }: { d: Decision; memo: DecisionMemo }) {
             <ul className="space-y-2 text-sm leading-relaxed">
               {memo.risks.map((r, i) => (
                 <li key={i}>
-                  <p className="text-fg">{r.risk}</p>
-                  {r.mitigation && <p className="mt-0.5 text-xs text-muted">↳ {r.mitigation}</p>}
+                  <p className="text-fg">{cite(r.risk)}</p>
+                  {r.mitigation && <p className="mt-0.5 text-xs text-muted">↳ {cite(r.mitigation)}</p>}
                 </li>
               ))}
             </ul>
@@ -652,12 +680,12 @@ function Memo({ d, memo }: { d: Decision; memo: DecisionMemo }) {
       </div>
       {memo.counter && (
         <Block icon={<Swords />} title={t('advisor.counter')} tone="warn">
-          <p className="text-sm leading-relaxed text-fg">{memo.counter}</p>
+          <p className="text-sm leading-relaxed text-fg">{cite(memo.counter)}</p>
         </Block>
       )}
       {memo.unknowns.length > 0 && (
         <Block icon={<HelpCircle />} title={t('advisor.unknowns')}>
-          <Bullets items={memo.unknowns} />
+          <Bullets items={memo.unknowns} cite={cite} />
         </Block>
       )}
     </div>

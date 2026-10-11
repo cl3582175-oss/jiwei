@@ -42,6 +42,7 @@ import { audit } from '../agent/audit'
 import { asExternalData } from '../agent/wrap'
 import { createNote } from '../notes'
 import { createProposal } from '../proposals'
+import { noRefs, stripLeadingTitle } from '../../lib/works'
 
 // 创作工坊（v0.9）：作品的增删改、素材收集、AI 各步骤与回流。
 // 素材只来自允许给 AI 的笔记与资料；模型只能引用素材编号 M1…，编造的编号在保存前丢弃。
@@ -376,8 +377,8 @@ export async function generateOutline(id: string): Promise<Work> {
     )
     const parts: ArticlePart[] = out.sections.map((s) => ({
       id: newId(),
-      title: s.title,
-      points: s.points,
+      title: noRefs(s.title),
+      points: s.points.map(noRefs),
       sources: keepRefs(s.sources, known),
       body: ''
     }))
@@ -393,9 +394,9 @@ export async function generateOutline(id: string): Promise<Work> {
   )
   const parts: SlidePart[] = out.slides.map((s) => ({
     id: newId(),
-    title: s.title,
-    bullets: s.bullets,
-    notes: s.notes,
+    title: noRefs(s.title),
+    bullets: s.bullets.map(noRefs),
+    notes: noRefs(s.notes),
     sources: keepRefs(s.sources, known)
   }))
   return patch(id, { content: JSON.stringify({ kind: 'slides', parts } satisfies WorkParts), stage: 'outline' })
@@ -440,7 +441,11 @@ export async function draftWork(id: string, partId?: string): Promise<Work> {
           3000
         )
         // 编造的引用编号同时从正文里去掉，不只是从素材列表里去掉
-        const body = out.body.replace(/\s*\[(M\d{1,2})\]/g, (m, r: string) => (known.has(r) ? m : '')).trim()
+        // 编造的引用编号从正文里也去掉；模型有时会重复写一遍本节标题，同样去掉
+        const body = stripLeadingTitle(
+          out.body.replace(/\s*\[(M\d{1,2})\]/g, (m, r: string) => (known.has(r) ? m : '')),
+          p.title
+        )
         parts[idx] = { ...p, body, sources: keepRefs([...p.sources, ...[...body.matchAll(/\[(M\d{1,2})\]/g)].map((m) => m[1])], known) }
       }
       // 每节写完就保存，长文中途失败不丢已写的部分
@@ -460,7 +465,15 @@ export async function draftWork(id: string, partId?: string): Promise<Work> {
   )
   const parts: SlidePart[] = w.content.parts.map((p, i) => {
     const d = out.slides[i]
-    return d ? { ...p, title: d.title, bullets: d.bullets, notes: d.notes, sources: keepRefs([...p.sources, ...d.sources], known) } : p
+    return d
+      ? {
+          ...p,
+          title: noRefs(d.title),
+          bullets: d.bullets.map(noRefs),
+          notes: noRefs(d.notes),
+          sources: keepRefs([...p.sources, ...d.sources], known)
+        }
+      : p
   })
   return patch(id, { content: JSON.stringify({ kind: 'slides', parts } satisfies WorkParts), stage: 'draft' })
 }

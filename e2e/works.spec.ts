@@ -88,6 +88,13 @@ function reply(system: string, prompt: string): unknown {
           sources: []
         },
         {
+          template: 'diagram',
+          title: '复习的循环',
+          code: 'flowchart LR\n  A[学习] --> B[提取]\n  B --> C[间隔]\n  C --> B',
+          narration: '先学，再提取，隔一段时间再提取。',
+          sources: []
+        },
+        {
           template: 'summary',
           title: '记住三点',
           items: ['先测再看', '间隔逐渐拉长'],
@@ -309,7 +316,7 @@ test('讲解视频：分镜（去掉非法场景）→ 预览 → 渲染 MP4（�
   await page.getByRole('button', { name: '下一步' }).click()
   await page.getByRole('button', { name: '生成分镜' }).click()
   const board = page.getByTestId('storyboard')
-  await expect(board.locator(':scope > li')).toHaveCount(6)
+  await expect(board.locator(':scope > li')).toHaveCount(7)
   await expect(board).not.toContainText('坏的函数图')
   await expect(board.locator('.katex').first()).toBeVisible()
   if (shots) await page.screenshot({ path: join(shots, '308-storyboard.png') })
@@ -342,7 +349,7 @@ test('讲解视频：分镜（去掉非法场景）→ 预览 → 渲染 MP4（�
   expect(srt).toContain('00:00:00,350 -->')
   expect(srt).toContain('艾宾浩斯发现')
   const story = JSON.parse(readFileSync(join(exportDir, '间隔重复一分钟-分镜.json'), 'utf8')) as { scenes: { duration: number }[] }
-  expect(story.scenes).toHaveLength(6)
+  expect(story.scenes).toHaveLength(7)
   const total = story.scenes.reduce((n, s) => n + s.duration, 0)
   // 用应用下载的 ffmpeg 检查流与时长（本机有时）
   const ff = join(process.env.HOME ?? '', 'Library/Application Support/jiwei-models/ffmpeg/ffmpeg')
