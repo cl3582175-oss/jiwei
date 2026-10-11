@@ -224,7 +224,14 @@ async function doDaily(
         scored = await discoveryModel(
           'discover.score',
           Scores,
-          'Score each candidate with relevance, novelty, credibility and depth (0–5), estimated minutes, diverse (opposing view or cross-domain), news, goalIds and related references from the supplied context. reason MUST explicitly mention a supplied direction title, weak note or gap name. Explain one concrete gap. Never recommend topics matching recent dismiss feedback. Return only supplied candidate IDs.',
+          [
+            'Score each candidate for this learner: relevance, novelty, credibility and depth (0–5), estimated reading minutes, diverse (a genuinely useful opposing view or cross-domain angle), news, goalIds and related references from the supplied context.',
+            'relevance: 4–5 only when the candidate directly helps a supplied direction, weak note or gap; 0–1 when there is no real connection. Do not stretch weak links — it is fine for most candidates to score low.',
+            'reason: ONE sentence written to the learner (Chinese ≤ 50 characters, English ≤ 30 words) saying how it connects to a named direction / note / weak point and what they will gain. Mention the direction or note by its title.',
+            'Never mention data fields or system state in reason or gap (no "phases", "weakNotes", "gaps", "concepts", "empty", "no records", IDs). Never describe the candidate as unrelated inside reason — give it a low relevance instead.',
+            'gap: one short phrase naming the concrete gap it fills, or an empty string if none.',
+            'Never recommend topics matching recent dismiss feedback. Return only supplied candidate IDs.'
+          ].join(' '),
           {
             context: context.facts,
             candidates: batch.map(({ id, title, summary, url, feedId }) => ({
@@ -249,7 +256,12 @@ async function doDaily(
           privacySignature: privacyFingerprint(),
           related: allowedRelated(score.related),
           goalIds: score.goalIds.filter((id) => context.facts.directions.some((g) => g.id === id)),
-          relevance: anchors.some((a) => score.reason.toLocaleLowerCase().includes(a.toLocaleLowerCase())) ? score.relevance : 0
+          relevance:
+            anchors.some((a) => score.reason.toLocaleLowerCase().includes(a.toLocaleLowerCase())) && !leaksInternals(`${score.reason} ${score.gap}`)
+              ? score.relevance
+              : 0,
+          reason: score.reason.trim().slice(0, 160),
+          gap: leaksInternals(score.gap) ? '' : score.gap.trim().slice(0, 80)
         }
         db.update(feedItems)
           .set({
@@ -309,9 +321,19 @@ async function doDaily(
         inboxIds.push(publishPick(i.id, i.score))
     }
   }
-  status({ status: resultStatus, picked: inboxIds.length, message })
+  const considered = db
+    .select()
+    .from(feedItems)
+    .where(and(isNull(feedItems.deletedAt), eq(feedItems.status, 'scored')))
+    .all().length
+  status({ status: resultStatus, picked: inboxIds.length, considered: considered + inboxIds.length, message })
   return { picked: inboxIds.length, inboxIds, status: resultStatus }
 }
+/** 推荐理由里出现了数据字段或系统状态的描述（模型没有按要求写给用户看）：这类条目不推 */
+export function leaksInternals(text: string): boolean {
+  return /\b(phases?|weakNotes?|gaps?|concepts?|goalIds?|related|candidate)\b|为空|无交集|无关|没有可用的|无法判断|无法定位/i.test(text)
+}
+
 export function runNow(): string {
   const id = enqueue('discover.daily', {}, { dedupeKey: 'discover.daily' })
   runJobNow(id)

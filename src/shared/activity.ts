@@ -42,7 +42,7 @@ export interface TodaySummary {
   inbox: { pending: number }
   proposals: { pending: number; notes: { noteId: string; title: string; count: number }[] }
   actions: { id: string; title: string; dueAt: number | null; overdue: boolean }[]
-  goals: { id: string; title: string; mastered: number; cards: number; daysLeft: number | null; openActions: number }[]
+  goals: { id: string; title: string; color?: string | null; mastered: number; cards: number; daysLeft: number | null; openActions: number }[]
   reflection: { dailyEnabled: boolean; dailyDone: boolean; time: string; weeklyDue: boolean }
   inboxTriageTime: string | null
   recentNotes: { id: string; title: string; editedAt: number }[]

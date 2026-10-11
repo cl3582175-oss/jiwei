@@ -505,6 +505,12 @@
     scale: 0.97;
   }
 }
+@keyframes drawer-in {
+  from {
+    opacity: 0;
+    translate: 24px 0;
+  }
+}
 @keyframes rise-in {
   from {
     opacity: 0;

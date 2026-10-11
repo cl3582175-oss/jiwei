@@ -40,6 +40,8 @@ export async function structured<T>(opts: {
   guard?: () => void
   /** 记账用途（v0.7）；不填时沿用外层（后台任务按任务类型） */
   purpose?: string
+  /** 输出上限；长结构（如几十个排期时段）需要调高，否则 JSON 会被截断 */
+  maxOutputTokens?: number
 }): Promise<T> {
   return opts.purpose ? withPurpose(opts.purpose, () => run(opts)) : run(opts)
 }
@@ -62,8 +64,9 @@ async function run<T>(opts: Parameters<typeof structured<T>>[0]): Promise<T> {
   const base = {
     model: built.model,
     providerOptions: built.providerOptions as never,
-    maxOutputTokens: opts.effort && opts.effort !== 'off' ? (built.maxOutputTokens ?? 32768) : 4096,
-    abortSignal: opts.signal ?? AbortSignal.timeout(90_000)
+    maxOutputTokens: opts.effort && opts.effort !== 'off' ? (built.maxOutputTokens ?? 32768) : (opts.maxOutputTokens ?? 4096),
+    // 长输出给足时间（约 40 token/s）
+    abortSignal: opts.signal ?? AbortSignal.timeout((opts.maxOutputTokens ?? 0) > 4096 ? 240_000 : 90_000)
   }
   try {
     opts.guard?.()

@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { MAIL_PRESETS, type MailAccount, type MailInput } from '@shared/mail'
 import { api } from '@/lib/utils'
+import { Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { confirm } from '@/components/ui/confirm'
@@ -57,6 +58,7 @@ export function MailSettings() {
         </div>
         <Button
           size="sm"
+          variant="outline"
           disabled={busy}
           onClick={() =>
             setEditing({
@@ -71,6 +73,7 @@ export function MailSettings() {
             })
           }
         >
+          <Plus />
           {t('mail.add')}
         </Button>
       </div>

@@ -1,0 +1,9 @@
+lexicon.txt.gz — 中文发音词典（汉字 → 拼音音素），取自 sherpa-onnx 的
+sherpa-onnx-zipvoice-distill-int8-zh-en-emilia 模型包（k2-fsa，Apache License 2.0）。
+https://github.com/k2-fsa/sherpa-onnx
+
+积微在用户选择「本机 AI 语音」后才下载以下文件（不随应用分发）：
+- ZipVoice distill int8 模型（k2-fsa/ZipVoice，Apache License 2.0）
+- vocos_24khz 声码器（k2-fsa/sherpa-onnx 发布，MIT License）
+- espeak-ng 发音数据的英文子集（GPL-3.0，经 sherpa-onnx 分发）
+- 参考录音：AISHELL-3 中 4 段语音（北京希尔贝壳科技有限公司，Apache License 2.0）

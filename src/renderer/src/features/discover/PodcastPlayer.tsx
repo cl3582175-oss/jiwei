@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { Headphones, Pause, Play, SkipBack, SkipForward } from 'lucide-react'
+import { Headphones, Loader2, Pause, Play, SkipBack, SkipForward, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '@/lib/utils'
 import { useSettings } from '@/lib/queries'
 import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 
 export function PodcastBar() {
   const { data: settings } = useSettings()
@@ -29,9 +30,13 @@ function PodcastPlayer() {
     [mode, setMode] = useState<'idle' | 'playing' | 'paused'>('idle'),
     [showScript, setShowScript] = useState(false)
   const token = useRef(0),
-    current = useRef<SpeechSynthesisUtterance | null>(null)
+    current = useRef<SpeechSynthesisUtterance | null>(null),
+    player = useRef<HTMLAudioElement | null>(null),
+    [segment, setSegment] = useState(0)
   const script = data?.script,
-    pending = data?.status === 'queued' || data?.status === 'running'
+    pending = data?.status === 'queued' || data?.status === 'running',
+    audio = script?.audio?.length ? script.audio : null,
+    canPlay = !!audio || supported
   useEffect(() => {
     const events = [
       'discover:changed',
@@ -58,17 +63,40 @@ function PodcastPlayer() {
       current.current = null
       if (supported) speechSynthesis.cancel()
     }
+    const el = player.current
     reset()
     setIndex(0)
+    setSegment(0)
     setMode('idle')
-    return reset
-  }, [script?.createdAt, supported])
+    return () => {
+      reset()
+      el?.pause()
+    }
+  }, [script?.createdAt, audio?.length, supported])
 
   const cancel = (): void => {
     token.current++
     current.current = null
     if (supported) speechSynthesis.cancel()
+    player.current?.pause()
   }
+  /** AI 语音：按片段顺序播放；片段属于哪一段由 p 指明 */
+  const play = (at: number, nextRate = rate): void => {
+    const el = player.current
+    if (!audio?.[at] || !el) return
+    token.current++
+    if (supported) speechSynthesis.cancel()
+    el.src = audio[at].url
+    el.playbackRate = nextRate
+    setSegment(at)
+    setIndex(audio[at].p)
+    setMode('playing')
+    el.play().catch(() => {
+      setMode('idle')
+      toast.error(t('discover.podcastSpeechError'))
+    })
+  }
+  const firstOf = (p: number): number => Math.max(0, audio?.findIndex((x) => x.p === p) ?? 0)
   const speak = (at: number, nextRate = rate, nextVoice = voiceId): void => {
     if (!supported || !script?.paragraphs[at]) return
     cancel()
@@ -97,6 +125,15 @@ function PodcastPlayer() {
     speechSynthesis.speak(utterance)
   }
   const seek = (at: number): void => {
+    if (audio) {
+      const wasPlaying = mode === 'playing'
+      cancel()
+      setIndex(at)
+      setSegment(firstOf(at))
+      if (wasPlaying) play(firstOf(at))
+      else setMode('idle')
+      return
+    }
     cancel()
     setIndex(at)
     if (mode === 'playing') speak(at)
@@ -104,9 +141,38 @@ function PodcastPlayer() {
   const configure = (nextRate: number, nextVoice: string): void => {
     setRate(nextRate)
     setVoiceId(nextVoice)
+    if (audio) {
+      if (player.current) player.current.playbackRate = nextRate
+      return
+    }
     if (mode === 'playing') speak(index, nextRate, nextVoice)
     else cancel()
   }
+  const toggle = (): void => {
+    if (audio) {
+      const el = player.current
+      if (mode === 'playing') {
+        el?.pause()
+        setMode('paused')
+      } else if (mode === 'paused' && el?.src) {
+        void el.play()
+        setMode('playing')
+      } else play(segment)
+      return
+    }
+    if (mode === 'playing') {
+      speechSynthesis.pause()
+      setMode('paused')
+    } else if (mode === 'paused' && current.current) {
+      speechSynthesis.resume()
+      setMode('playing')
+    } else speak(index)
+  }
+  const speaker = (p: number): string | null => {
+    const who = script?.speakers?.[p]
+    return who ? t(who === 'A' ? 'discover.speakerA' : 'discover.speakerB') : null
+  }
+  const synthesizing = data?.status === 'running' && !!script
   const generate = async (): Promise<void> => {
     try {
       await api.discover.podcastGenerate()
@@ -123,44 +189,48 @@ function PodcastPlayer() {
           {t(script ? 'discover.podcastRegenerate' : 'discover.podcastGenerate')}
         </Button>
       </div>
-      <p className="mt-2 text-xs leading-relaxed text-muted">{t('discover.podcastHint')}</p>
+      <p className="mt-2 text-xs leading-relaxed text-muted">{t('discover.podcastPlayerHint')}</p>
       {pending && (
-        <p role="status" className="mt-3 text-sm text-accent">
-          {t(data?.status === 'queued' ? 'discover.podcastQueued' : 'discover.podcastGenerating')}
+        <p role="status" className="mt-3 flex items-center gap-1.5 text-sm text-accent">
+          <Loader2 className="size-3.5 animate-spin" />
+          {t(
+            data?.status === 'queued'
+              ? 'discover.podcastQueued'
+              : synthesizing
+                ? 'discover.podcastSynthesizing'
+                : 'discover.podcastGenerating'
+          )}
         </p>
       )}
-      {data?.message && (
+      {data?.message && !pending && (
         <p role="status" className="mt-3 text-sm text-warning">
           {data.message}
         </p>
       )}
       {!script && !pending && !data?.message && <p className="mt-3 text-sm text-muted">{t('discover.podcastEmpty')}</p>}
-      {!supported && <p className="mt-3 text-sm text-warning">{t('discover.podcastUnsupported')}</p>}
+      {!canPlay && <p className="mt-3 text-sm text-warning">{t('discover.podcastUnsupported')}</p>}
       {script && (
         <>
+          <audio
+            ref={player}
+            preload="auto"
+            data-testid="podcast-audio"
+            onEnded={() => {
+              if (audio && segment + 1 < audio.length) play(segment + 1)
+              else setMode('idle')
+            }}
+          />
           <div className="mt-4 flex flex-wrap items-center gap-2">
             <Button
               size="icon-sm"
               variant="ghost"
               aria-label={t('discover.podcastPrevious')}
-              disabled={!supported || index === 0}
+              disabled={!canPlay || index === 0}
               onClick={() => seek(index - 1)}
             >
               <SkipBack />
             </Button>
-            <Button
-              size="sm"
-              disabled={!supported}
-              onClick={() => {
-                if (mode === 'playing') {
-                  speechSynthesis.pause()
-                  setMode('paused')
-                } else if (mode === 'paused' && current.current) {
-                  speechSynthesis.resume()
-                  setMode('playing')
-                } else speak(index)
-              }}
-            >
+            <Button size="sm" disabled={!canPlay} onClick={toggle}>
               {mode === 'playing' ? <Pause /> : <Play />}
               {t(mode === 'playing' ? 'discover.podcastPause' : mode === 'paused' ? 'discover.podcastResume' : 'discover.podcastPlay')}
             </Button>
@@ -168,7 +238,7 @@ function PodcastPlayer() {
               size="icon-sm"
               variant="ghost"
               aria-label={t('discover.podcastNext')}
-              disabled={!supported || index >= script.paragraphs.length - 1}
+              disabled={!canPlay || index >= script.paragraphs.length - 1}
               onClick={() => seek(index + 1)}
             >
               <SkipForward />
@@ -191,33 +261,62 @@ function PodcastPlayer() {
                 ))}
               </select>
             </label>
-            <label className="flex min-w-0 items-center gap-2 text-xs text-muted">
-              {t('discover.podcastVoice')}
-              <select
-                aria-label={t('discover.podcastVoice')}
-                className="max-w-52 min-w-0 rounded-lg border border-border bg-surface px-2 py-1 text-fg"
-                value={voiceId}
-                onChange={(e) => configure(rate, e.target.value)}
+            {audio ? (
+              <span
+                className="flex min-w-0 items-center gap-1 rounded-full bg-accent-soft px-2.5 py-1 text-2xs text-accent"
+                data-testid="podcast-ai-voice"
               >
-                <option value="">{t('discover.podcastVoiceDefault')}</option>
-                {voices.map((v) => (
-                  <option key={v.voiceURI} value={v.voiceURI}>
-                    {v.name} · {v.lang}
-                  </option>
-                ))}
-              </select>
-            </label>
+                <Sparkles className="size-3 shrink-0" />
+                <span className="truncate">{t('discover.podcastAiVoice', { label: script.voiceLabel ?? '' })}</span>
+              </span>
+            ) : (
+              <label className="flex min-w-0 items-center gap-2 text-xs text-muted">
+                {t('discover.podcastVoice')}
+                <select
+                  aria-label={t('discover.podcastVoice')}
+                  className="max-w-52 min-w-0 rounded-lg border border-border bg-surface px-2 py-1 text-fg"
+                  value={voiceId}
+                  onChange={(e) => configure(rate, e.target.value)}
+                >
+                  <option value="">{t('discover.podcastVoiceDefault')}</option>
+                  {voices.map((v) => (
+                    <option key={v.voiceURI} value={v.voiceURI}>
+                      {v.name} · {v.lang}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
           </div>
-          <p data-testid="podcast-paragraph" className="mt-4 max-h-40 overflow-y-auto break-words text-sm leading-relaxed text-fg">
-            {script.paragraphs[index]}
-          </p>
+          <div className="mt-3 h-1 overflow-hidden rounded-full bg-sunken" aria-hidden>
+            <div
+              className="h-full rounded-full bg-accent transition-[width] duration-500 ease-out"
+              style={{ width: `${((index + (mode === 'idle' && index === 0 ? 0 : 1)) / script.paragraphs.length) * 100}%` }}
+            />
+          </div>
+          {!showScript && (
+            <p data-testid="podcast-paragraph" className="mt-4 max-h-40 overflow-y-auto break-words text-sm leading-relaxed text-fg">
+              {speaker(index) && <span className="mr-2 text-xs font-medium text-accent">{speaker(index)}</span>}
+              {script.paragraphs[index]}
+            </p>
+          )}
           <Button className="mt-2" size="sm" variant="ghost" onClick={() => setShowScript(!showScript)}>
             {t(showScript ? 'discover.podcastHide' : 'discover.podcastText')}
           </Button>
           {showScript && (
             <div data-testid="podcast-script" className="mt-3 max-h-80 space-y-3 overflow-y-auto break-words text-sm leading-relaxed">
               {script.paragraphs.map((text, i) => (
-                <p key={i}>{text}</p>
+                <p
+                  key={i}
+                  onClick={() => seek(i)}
+                  className={cn(
+                    'cursor-pointer rounded-md px-2 py-1 transition-colors hover:bg-surface-hover',
+                    i === index && 'bg-accent-soft/60'
+                  )}
+                >
+                  {speaker(i) && <span className="mr-2 text-xs font-medium text-accent">{speaker(i)}</span>}
+                  {text}
+                </p>
               ))}
             </div>
           )}

@@ -443,6 +443,7 @@ const en: Messages = {
     search: 'Search'
   },
   common: {
+    edit: 'Edit',
     close: 'Close',
     cancel: 'Cancel',
     confirm: 'Confirm',
@@ -1062,6 +1063,7 @@ const en: Messages = {
     restored: 'Restored'
   },
   settings: {
+    browserTab: 'Browser',
     lenses: 'Lenses',
     title: 'Settings',
     general: 'General',

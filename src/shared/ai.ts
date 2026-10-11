@@ -240,11 +240,15 @@ export const MODEL_PRICES: Record<string, ModelPrice> = {
   'qwen-plus': cny(0.8, 0.16, 2),
   'qwen-flash': cny(0.15, 0.03, 1.5),
   'glm-5.3': cny(8, 2, 28),
-  'glm-5.3-flash': cny(0.8, 0.23, 2.8)
+  'glm-5.3-flash': cny(0.8, 0.23, 2.8),
+  // 语音合成：按“字符数”计（记账时 inputTokens 填计费字符数）。通义官网 ¥0.8 / 万字符；
+  // OpenAI gpt-4o-mini-tts 按分钟计费（约 $0.015 / 分钟），按中文约 250 字 / 分钟折算为参考价
+  'qwen3-tts-flash': cny(80, undefined, 0),
+  'gpt-4o-mini-tts': usd(30, undefined, 0)
 }
 
 /** 二手资料的参考价（界面上提示“请核对”） */
-const REFERENCE_PRICES = new Set(['glm-5.3', 'glm-5.3-flash', 'qwen3.8-max', 'qwen3.7-plus'])
+const REFERENCE_PRICES = new Set(['glm-5.3', 'glm-5.3-flash', 'qwen3.8-max', 'qwen3.7-plus', 'gpt-4o-mini-tts'])
 
 /** 带日期后缀的模型名（gpt-5.4-2026-03-05、claude-sonnet-4-5-20250929）按基础名查价 */
 function presetKey(model: string): string | null {

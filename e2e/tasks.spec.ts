@@ -206,7 +206,7 @@ test('P4 一句话解析表单预览不落库，可编辑后保存', async () =>
   await page.keyboard.press('ControlOrMeta+,')
   await page.getByRole('button', { name: 'AI 任务', exact: true }).click()
   await page.getByLabel('用一句话描述你想让积微定期做的事').fill('每天早上八点把今日要点放入收件箱')
-  await page.getByRole('button', { name: '解析为表单' }).click()
+  await page.getByRole('button', { name: '生成任务' }).click()
   await expect(page.getByLabel('任务名称')).toHaveValue('受控早报')
   expect(await page.evaluate(() => window.jiwei.tasks.list())).toHaveLength(0)
   await page.getByLabel('任务名称').fill('编辑后的早报')

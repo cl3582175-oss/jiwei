@@ -4,6 +4,7 @@ import { segmentText, type TextSegment } from '../main/lib/segment'
 import { parseDocx, parseEpub, parseHtml, parsePdf, renderPdfPage } from './parsers'
 import { transcribe } from './transcribe'
 import { extractVoiceprints, type VoiceprintInput } from './voiceprint'
+import { synthesizeLocal, type SpeechInput } from './speech'
 
 // 后台工作进程（Electron utilityProcess）：执行 CPU / IO 密集任务，不阻塞主进程与界面。
 // 协议：{ id, task, payload } 启动，{ cancel: id } 取消单项；只在任务实际退出后回复终态。
@@ -16,6 +17,8 @@ const tasks: Record<string, Task> = {
     return expandICS(body, range)
   },
   voiceprint: (payload, progress, signal) => extractVoiceprints(payload as VoiceprintInput, progress, signal),
+  /** 本机语音合成（每日播客） */
+  speech: (payload, progress, signal) => synthesizeLocal(payload as SpeechInput, progress, signal),
   /** 读取文本类文件并分段 */
   async segmentTextFile(payload) {
     const { path, ext } = payload as { path: string; ext: string }

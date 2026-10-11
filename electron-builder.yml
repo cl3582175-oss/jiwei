@@ -31,6 +31,8 @@ extraResources:
     to: profile-migrations
   - from: resources/wordfreq
     to: wordfreq
+  - from: resources/zipvoice
+    to: zipvoice
 protocols:
   - name: Jiwei
     schemes: [jiwei]

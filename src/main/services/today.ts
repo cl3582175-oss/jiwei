@@ -80,7 +80,7 @@ export function todaySummary(): TodaySummary {
     .slice(0, 6)
     .map((g) => {
       const p = goalProgress(g.id)
-      return { id: g.id, title: g.title, mastered: p.mastered, cards: p.cards, daysLeft: p.daysLeft, openActions: p.openActions }
+      return { id: g.id, title: g.title, color: g.color ?? null, mastered: p.mastered, cards: p.cards, daysLeft: p.daysLeft, openActions: p.openActions }
     })
   const overview = reflectionOverview()
   const weekday = new Date().getDay()

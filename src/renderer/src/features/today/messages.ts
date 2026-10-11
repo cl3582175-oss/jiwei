@@ -58,7 +58,7 @@ export const todayZh = {
     browserHint: '边读网页边记笔记'
   },
   pageTitle: '今日',
-  goalsManage: '管理目标',
+  goalsManage: '管理方向',
   activity: {
     title: '学习活动记录',
     desc: '记录你在积微里有效学习的时长（阅读、听课、写作、复习、录音……），只统计窗口在前台且正在操作或播放的时间，用于「今日」和学习热力图。只存在本知识库，不发给 AI。',
@@ -129,7 +129,7 @@ export const todayEn: typeof todayZh = {
     browserHint: 'Take notes while you read the web'
   },
   pageTitle: 'Today',
-  goalsManage: 'Manage goals',
+  goalsManage: 'Manage directions',
   activity: {
     title: 'Study activity',
     desc: 'Records the time you actively study in Jiwei (reading, listening, writing, review, recording…), counting only time when the window is in front and you are interacting or playing media. Used by Today and the heatmap. Stays in this vault and is never sent to AI.',

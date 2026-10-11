@@ -108,7 +108,7 @@ function RailButton({
           </span>
         )}
         {sub && (
-          <span className="absolute -right-1 -bottom-1 grid size-[18px] place-items-center rounded-full border border-accent/40 bg-surface text-accent shadow-card [&_svg]:size-[11px]" data-testid="nav-sub">
+          <span className="absolute -bottom-1 -left-1 grid size-[18px] place-items-center rounded-full border border-accent/40 bg-surface text-accent shadow-card [&_svg]:size-[11px]" data-testid="nav-sub">
             {sub}
           </span>
         )}

@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Dialog as D } from 'radix-ui'
 import { toast } from 'sonner'
-import { ChevronLeft, Flag, Pencil, Plus, Target, Trash2, Trophy } from 'lucide-react'
+import { CalendarRange, ChevronLeft, Flag, Pencil, Plus, Route, Target, Trash2, Trophy } from 'lucide-react'
 import type { Goal } from '@shared/types'
 import { api, cn, formatDate, toDateInput } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -14,7 +14,9 @@ import { useCategories } from '@/lib/queries'
 import { MasteryPanel } from './MasteryView'
 import { ActionRow } from '../reflect/ReflectHome'
 import { errText } from '../chat/useChat'
-import { TINTS } from '@/lib/tint'
+import { TINTS, tintFor } from '@/lib/tint'
+import { TintPicker, WeekdayHours, splitWeekly } from '../plan/ui'
+import { Tip } from '@/components/ui/primitives'
 import { Timeline } from '../plan/Timeline'
 import { ScheduleDialog } from '../plan/ScheduleDialog'
 import { useApp } from '@/store/app'
@@ -91,11 +93,27 @@ function GoalDialog({ goal, onClose }: { goal: Goal | null; onClose: () => void 
             <div className="grid grid-cols-2 gap-3">
               <label className="text-xs text-muted">{t('plan.directionType')}<select aria-label={t('plan.directionType')} className={field} value={kind} onChange={(e) => setKind(e.target.value as Goal['kind'])}>{(['exam', 'skill', 'project', 'interest'] as const).map((k) => <option key={k} value={k}>{t(`plan.directionKinds.${k}`)}</option>)}</select></label>
               <label className="text-xs text-muted">{t('plan.startDate')}<input className={field} type="date" value={start} onChange={(e) => setStart(e.target.value)} /></label>
-              <label className="text-xs text-muted">{t('plan.weeklyMinutes')}<input aria-label={t('plan.weeklyMinutes')} className={field} type="number" min="0" max="10080" value={weekly} onChange={(e) => setWeekly(Number(e.target.value))} /></label>
-              <label className="text-xs text-muted">{t('plan.color')}<select className={field} value={color} onChange={(e) => setColor(e.target.value)}>{TINTS.map((c) => <option key={c} value={c}>{t(`tints.${c}`, { defaultValue: c })}</option>)}</select></label>
+              <label className="text-xs text-muted">
+                {t('plan.weeklyHours')}
+                <input
+                  aria-label={t('plan.weeklyHours')}
+                  className={field}
+                  inputMode="decimal"
+                  disabled={daily !== null}
+                  value={Math.round(((daily ? daily.reduce((a, b) => a + b, 0) : weekly) / 60) * 2) / 2}
+                  onChange={(e) => setWeekly(Math.round(Number(e.target.value.replace(/[^\d.]/g, '') || 0) * 60))}
+                />
+              </label>
+              <div className="text-xs text-muted">
+                {t('plan.color')}
+                <TintPicker value={color} onChange={setColor} label={t('plan.color')} />
+              </div>
             </div>
-            <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={daily !== null} onChange={(e) => setDaily(e.target.checked ? Array.from({ length: 7 }, (_, i) => Math.floor(weekly / 7) + (i < weekly % 7 ? 1 : 0)) : null)} />{t('plan.weekdays')}</label>
-            {daily && <div className="grid grid-cols-4 gap-2">{[1, 2, 3, 4, 5, 6, 0].map((d) => <label key={d} className="text-xs text-muted">{t(`plan.days.${d}`)}<input className={field} type="number" min="0" max="1440" value={daily[d]} onChange={(e) => setDaily(daily.map((v, i) => i === d ? Number(e.target.value) : v))} /></label>)}</div>}
+            <label className="flex w-fit items-center gap-2 text-xs text-fg">
+              <input type="checkbox" className="accent-[var(--accent)]" checked={daily !== null} onChange={(e) => setDaily(e.target.checked ? splitWeekly(weekly) : null)} />
+              {t('plan.weekdays')}
+            </label>
+            {daily && <WeekdayHours value={daily} onChange={setDaily} label={t('plan.weekdays')} />}
             <p className="text-2xs leading-relaxed text-subtle">{t('goals.linkHint')}</p>
           </div>
           <div className="mt-6 flex justify-end gap-2">
@@ -112,27 +130,32 @@ function GoalDialog({ goal, onClose }: { goal: Goal | null; onClose: () => void 
   )
 }
 
-function Bar({ value }: { value: number }) {
-  return (
-    <div className="h-1.5 overflow-hidden rounded-full bg-sunken">
-      <div className="h-full rounded-full bg-accent transition-[width]" style={{ width: `${Math.round(value * 100)}%` }} />
-    </div>
-  )
-}
 
 function GoalCard({ goal, onOpen }: { goal: Goal; onOpen: () => void }) {
   const { t, i18n } = useTranslation()
   const { data: p } = useQuery({ queryKey: ['goals', goal.id, 'progress'], queryFn: () => api.goals.progress(goal.id) })
   return (
-    <button onClick={onOpen} className="paper rounded-2xl px-5 py-4 text-left shadow-[var(--shadow-1)] transition-shadow hover:shadow-[var(--shadow-2)]" data-goal={goal.title}>
+    <button
+      onClick={onOpen}
+      data-tint={tintFor(goal.id, goal.color)}
+      className="paper relative overflow-hidden rounded-2xl px-5 py-4 text-left shadow-[var(--shadow-1)] transition-[box-shadow,transform] duration-200 hover:-translate-y-0.5 hover:shadow-[var(--shadow-2)]"
+      data-goal={goal.title}
+    >
+      <span className="absolute inset-y-0 left-0 w-1 bg-[var(--tint-ink)]/70" />
       <div className="flex items-center gap-2">
-        {goal.status === 'achieved' ? <Trophy className="size-4 text-[#c8963e]" /> : <Target className="size-4 text-accent" />}
+        {goal.status === 'achieved' ? (
+          <Trophy className="size-4 text-[#c8963e]" />
+        ) : (
+          <span className="grid size-6 place-items-center rounded-full bg-[var(--tint)] text-[var(--tint-ink)]">
+            <Target className="size-3.5" />
+          </span>
+        )}
         <span className="min-w-0 flex-1 truncate text-sm font-medium text-fg">{goal.title}</span>
         {goal.status !== 'active' && <span className="rounded-full bg-sunken px-2 py-0.5 text-2xs text-muted">{t(`goals.status.${goal.status}`)}</span>}
       </div>
       {p && (
         <>
-          <p className="mt-2 text-2xs text-muted">{t(`plan.directionKinds.${goal.kind}`)} · {t('plan.invested', { actual: p.minutesThisWeek, planned: p.plannedMinutesThisWeek })}</p>
+          <p className="mt-2 text-2xs text-muted">{t(`plan.directionKinds.${goal.kind}`)} · {t('plan.invested', { actual: toHours(p.minutesThisWeek), planned: toHours(p.plannedMinutesThisWeek) })}</p>
           <div className="mt-3 flex items-baseline justify-between text-2xs text-muted">
             <span>{t('goals.mastered', { pct: Math.round(p.mastered * 100) })}</span>
             <span>
@@ -145,8 +168,8 @@ function GoalCard({ goal, onOpen }: { goal: Goal; onOpen: () => void }) {
                   : ''}
             </span>
           </div>
-          <div className="mt-1.5">
-            <Bar value={p.mastered} />
+          <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-sunken">
+            <div className="h-full rounded-full bg-[var(--tint-ink)]/70 transition-[width]" style={{ width: `${Math.round(p.mastered * 100)}%` }} />
           </div>
           <p className="mt-2 text-2xs text-subtle">
             {t('goals.summary', { notes: p.notes, cards: p.cards, reviews: p.reviews7d })}
@@ -189,22 +212,42 @@ function GoalDetail({ goal, onBack }: { goal: Goal; onBack: () => void }) {
         <ChevronLeft className="size-3.5" />
         {t('goals.all')}
       </button>
-      <div className="mt-3 flex items-start gap-3">
+      <div className="mt-3 flex items-start gap-3" data-tint={tintFor(goal.id, goal.color)}>
         <div className="min-w-0 flex-1">
-          <h2 className="font-serif text-xl font-semibold text-fg">{goal.title}</h2>
+          <h2 className="flex items-center gap-2 font-serif text-xl font-semibold text-fg">
+            <span className="size-2.5 shrink-0 rounded-full bg-[var(--tint-ink)]" />
+            {goal.title}
+          </h2>
           {goal.description && <p className="mt-1.5 text-sm leading-relaxed text-muted">{goal.description}</p>}
-          {goal.targetAt && (
-            <p className="mt-1 text-xs text-subtle">
-              {t('goals.target')}：{formatDate(goal.targetAt, i18n.language)}
-            </p>
-          )}
+          <p className="mt-1 text-xs text-subtle">
+            {[
+              t(`plan.directionKinds.${goal.kind}`),
+              goal.targetAt ? `${t('goals.target')} ${formatDate(goal.targetAt, i18n.language)}` : null,
+              p ? t('plan.invested', { actual: toHours(p.minutesThisWeek), planned: toHours(p.plannedMinutesThisWeek) }) : null
+            ]
+              .filter(Boolean)
+              .join(' · ')}
+          </p>
         </div>
-        <div className="flex shrink-0 gap-1">
+        <div className="flex shrink-0 items-center gap-1">
+          {goal.status === 'active' && (
+            <>
+              <Button size="sm" variant="ghost" onClick={() => setPathing(true)}>
+                <Route />
+                {t('discover.path')}
+              </Button>
+              <Button size="sm" variant="primary" onClick={() => setScheduling(true)}>
+                <CalendarRange />
+                {t('plan.generatePlan')}
+              </Button>
+            </>
+          )}
           {goal.status === 'active' ? (
-            <Button size="sm" variant="outline" onClick={() => setStatus('achieved')}>
-              <Trophy />
-              {t('goals.achieve')}
-            </Button>
+            <Tip label={t('goals.achieve')}>
+              <Button size="icon-sm" variant="ghost" aria-label={t('goals.achieve')} onClick={() => setStatus('achieved')}>
+                <Trophy />
+              </Button>
+            </Tip>
           ) : (
             <Button size="sm" variant="outline" onClick={() => setStatus('active')}>
               <Flag />
@@ -235,9 +278,7 @@ function GoalDetail({ goal, onBack }: { goal: Goal; onBack: () => void }) {
         </div>
       )}
       <Timeline goal={goal} />
-      {goal.status === 'active' && <Button className="mt-4 mr-2" variant="outline" onClick={() => setPathing(true)}>{t('discover.path')}</Button>}
       {pathing && <PathDialog goal={goal} close={() => setPathing(false)} />}
-      {goal.status === 'active' && <Button variant="primary" className="mt-4" onClick={() => setScheduling(true)}>{t('plan.generatePlan')}</Button>}
       {scheduling && <ScheduleDialog goal={goal} onClose={() => { setScheduling(false); useApp.setState({ scheduleGoal: false }) }} />}
       <section className="mt-6">
         <div className="flex items-center justify-between">
@@ -265,6 +306,9 @@ function GoalDetail({ goal, onBack }: { goal: Goal; onBack: () => void }) {
     </div>
   )
 }
+
+/** 分钟 → 小时（保留到 0.5） */
+const toHours = (m: number): number => Math.round((m / 60) * 2) / 2
 
 export function GoalsPanel() {
   const { t } = useTranslation()

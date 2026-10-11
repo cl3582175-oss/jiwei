@@ -57,7 +57,7 @@ test('P1 方向表单、日历导航、每周投入持久化', async () => {
   const dialog = page.getByRole('dialog')
   await dialog.getByRole('textbox', { name: '方向名称' }).fill('学习概率统计')
   await dialog.getByLabel('方向类型').selectOption('exam')
-  await dialog.getByLabel('每周可投入（分钟）').fill('180')
+  await dialog.getByLabel('每周可投入（小时）').fill('3')
   await dialog.getByRole('button', { name: '保存', exact: true }).click()
   await expect(page.getByTestId('goals-view')).toContainText('考试')
   const goals = await page.evaluate(() => window.jiwei.goals.list())

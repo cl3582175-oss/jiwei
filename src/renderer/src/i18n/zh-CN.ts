@@ -430,6 +430,7 @@ const zhCN = {
     search: '搜索'
   },
   common: {
+    edit: '编辑',
     close: '关闭',
     cancel: '取消',
     confirm: '确认',
@@ -1026,6 +1027,7 @@ const zhCN = {
   },
   settings: {
     lenses: '视角',
+    browserTab: '浏览器',
     title: '设置',
     general: '通用',
     ai: 'AI 模型',

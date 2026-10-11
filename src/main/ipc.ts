@@ -13,6 +13,8 @@ import * as discoverItems from './services/discover/items'
 import * as discoverDaily from './services/discover/daily'
 import * as discoverPath from './services/discover/path'
 import * as discoverPodcast from './services/discover/podcast'
+import * as discoverTts from './services/discover/tts'
+import * as localSpeech from './services/discover/localSpeech'
 import { MAIL_PRESETS } from '@shared/mail'
 import * as browserCapture from './services/browser/capture'
 import * as mistakes from './services/mistakes'
@@ -439,7 +441,13 @@ const handlers: Handlers = {
     items: (_, all) => discoverItems.items(all), act: (_, input) => discoverItems.act(input), runNow: () => discoverDaily.runNow(), status: () => discoverDaily.dailyStatus(),
     searchProviders: () => discoverSearch.searchProviders(), searchSave: (_, input) => discoverSearch.searchSave(input), searchTest: (_, service) => discoverSearch.searchTest(service),
     path: (_, goalId) => discoverPath.path(goalId), pathPhases: (_, id) => discoverPath.pathPhases(id), remedy: (_, id) => discoverPath.remedy(id),
-    podcast: () => discoverPodcast.podcast(), podcastGenerate: () => discoverPodcast.generatePodcast()
+    podcast: () => discoverPodcast.podcast(), podcastGenerate: () => discoverPodcast.generatePodcast(),
+    ttsProviders: () => discoverTts.ttsProviders(),
+    speechStatus: () => localSpeech.localSpeechStatus(),
+    speechInstall: () => localSpeech.installLocalSpeech(),
+    speechCancel: () => localSpeech.cancelLocalSpeech(),
+    speechRemove: () => localSpeech.removeLocalSpeech(),
+    voicePreview: (_, engine, voice, providerId) => discoverPodcast.previewVoice(engine, voice, providerId)
   },
   mail: {
     help: async (_, preset) => { await shell.openExternal(MAIL_PRESETS[preset].help) },

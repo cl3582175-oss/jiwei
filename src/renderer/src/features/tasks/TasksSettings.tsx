@@ -4,7 +4,10 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import type { AiTask, TaskInput, TaskOutputs, Trigger } from '@shared/tasks'
 import type { z } from 'zod'
-import { api } from '@/lib/utils'
+import { History, Loader2, Pencil, Play, Plus, Sparkles, Trash2 } from 'lucide-react'
+import { api, cn } from '@/lib/utils'
+import { Switch } from '@/components/ui/switch'
+import { Tip } from '@/components/ui/primitives'
 import { useSettings } from '@/lib/queries'
 import { useMoney } from '@/lib/money'
 import { useApp } from '@/store/app'
@@ -444,115 +447,161 @@ export function TasksSettings() {
       />
     )
   return (
-    <div className="space-y-5 py-3" data-testid="tasks-settings">
+    <div className="space-y-6 py-3" data-testid="tasks-settings">
       <p className="text-xs leading-relaxed text-muted">{t('tasks.intro')}</p>
-      <p className="text-xs text-muted">{t('tasks.unknownCost')}</p>
-      <label className="flex items-center gap-2 text-xs text-fg">
-        <input
-          type="checkbox"
-          checked={settings?.tasks.paused ?? false}
-          onChange={(e) => void api.tasks.pauseAll(e.target.checked).then(() => qc.invalidateQueries({ queryKey: ['settings'] }))}
-        />
-        {t('tasks.pauseAll')}
-      </label>
-      <div className="flex gap-2">
-        <input
-          className={field}
-          aria-label={t('tasks.describe')}
-          placeholder={t('tasks.describe')}
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.nativeEvent.isComposing) void parse()
-          }}
-        />
-        <Button disabled={parsing || !description.trim()} onClick={() => void parse()}>
-          {t('tasks.parse')}
-        </Button>
-      </div>
-      <div className="flex flex-wrap gap-2">
-        <Button size="sm" variant="primary" onClick={() => setEditing({ ...initial })}>
-          {t('tasks.new')}
-        </Button>
-        {recipes.map((r) => (
-          <Button key={r.id} size="sm" onClick={() => setEditing({ ...r.task })}>
-            {i18n.language.startsWith('zh') ? r.name.zh : r.name.en}
+      {/* 一句话创建 */}
+      <div className="rounded-2xl border border-border bg-surface p-1.5 shadow-[var(--shadow-1)] focus-within:border-accent/60">
+        <div className="flex items-center gap-2">
+          <Sparkles className="ml-2 size-4 shrink-0 text-accent" />
+          <input
+            className="h-9 min-w-0 flex-1 bg-transparent text-sm text-fg outline-none placeholder:text-subtle"
+            aria-label={t('tasks.describe')}
+            placeholder={t('tasks.describePh')}
+            value={description}
+            disabled={parsing}
+            onChange={(e) => setDescription(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.nativeEvent.isComposing) void parse()
+            }}
+          />
+          <Button size="sm" variant="primary" disabled={parsing || !description.trim()} onClick={() => void parse()}>
+            {parsing && <Loader2 className="animate-spin" />}
+            {parsing ? t('tasks.parsing') : t('tasks.parse')}
           </Button>
-        ))}
+        </div>
       </div>
-      {list.length === 0 && <p className="text-xs text-muted">{t('tasks.empty')}</p>}
-      {list.map((task) => (
-        <article key={task.id} className="rounded-xl border border-border p-3" data-task-id={task.id}>
-          <button className="text-left text-sm font-medium text-fg" onClick={() => setSelected(selected === task.id ? null : task.id)}>
-            {task.name}
-          </button>
-          <p className="mt-1 text-xs text-muted">
-            {triggerLabel(task.trigger, t)} · {t('tasks.next')}:{' '}
-            {task.nextRunAt ? new Date(task.nextRunAt).toLocaleString(i18n.language) : '—'}
-          </p>
-          <p className="mt-1 text-xs text-muted">
-            {t('tasks.month')}: {money.format(task.monthCost)} ·{' '}
-            {task.lastResult ? t(`tasks.status.${task.lastResult.status}`) : t('tasks.noRuns')}
-          </p>
-          {task.lastResult?.summary && <p className="mt-2 text-xs break-words text-fg">{task.lastResult.summary}</p>}
-          <div className="mt-3 flex flex-wrap gap-2">
-            <Button
-              size="sm"
-              disabled={!task.enabled || settings?.tasks.paused || task.lastResult?.status === 'running'}
-              onClick={() =>
-                void api.tasks
-                  .run(task.id)
-                  .then(() => setSelected(task.id))
-                  .catch((e) => toast.error(String(e)))
-              }
+      <div>
+        <p className="mb-2 text-xs text-muted">{t('tasks.fromRecipe')}</p>
+        <div className="flex flex-wrap gap-1.5">
+          {recipes.map((r) => (
+            <button
+              key={r.id}
+              onClick={() => setEditing({ ...r.task })}
+              className="rounded-full border border-border bg-surface px-3 py-1 text-xs text-fg transition-colors hover:border-accent/50 hover:bg-accent-soft/40"
             >
-              {t('tasks.run')}
-            </Button>
-            <Button size="sm" onClick={() => void toggle(task)}>
-              {t(task.enabled ? 'tasks.pause' : 'tasks.resume')}
-            </Button>
-            <Button size="sm" onClick={() => setEditing(task)}>
-              {t('tasks.edit')}
-            </Button>
-            <Button size="sm" variant="ghost" onClick={() => void remove(task)}>
-              {t('common.delete')}
-            </Button>
-            <Button size="sm" variant="ghost" onClick={() => setSelected(task.id)}>
-              {t('tasks.records')}
-            </Button>
-          </div>
-          {selected === task.id && (
-            <ol className="mt-4 space-y-3" data-testid="task-runs">
-              {runs.length === 0 && <li className="text-xs text-muted">{t('tasks.noRuns')}</li>}
-              {runs.map((r) => (
-                <li key={r.id} className="border-t border-border pt-3 text-xs text-fg">
-                  <p>
-                    {new Date(r.startedAt).toLocaleString(i18n.language)} · {r.delayed && `${t('tasks.delayed')} · `}
-                    {t(`tasks.status.${r.status}`)} · {money.format(r.cost)}
-                  </p>
-                  <p className="mt-1 break-words">{r.summary}</p>
-                  {r.error && <p className="mt-1 text-danger">{r.error}</p>}
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {r.resultRefs.map((ref, i) => (
-                      <button
-                        key={i}
-                        className="text-accent hover:underline"
-                        onClick={() => {
-                          useApp.getState().setSettingsOpen(false)
-                          if (ref.type === 'proposal' || ref.type === 'note') useApp.getState().openNote(ref.noteId ?? ref.id)
-                          else useApp.getState().goNav(ref.type === 'inbox' ? 'inbox' : 'today')
-                        }}
-                      >
-                        {t(`tasks.output.${ref.type === 'proposal' ? 'note' : ref.type === 'action' ? 'actions' : ref.type}`)}
-                      </button>
-                    ))}
+              {i18n.language.startsWith('zh') ? r.name.zh : r.name.en}
+            </button>
+          ))}
+          <button
+            onClick={() => setEditing({ ...initial })}
+            className="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs text-muted hover:bg-surface-hover hover:text-fg"
+          >
+            <Plus className="size-3.5" />
+            {t('tasks.new')}
+          </button>
+        </div>
+      </div>
+      <section>
+        <div className="mb-2 flex items-center gap-3">
+          <h3 className="mr-auto text-sm font-medium text-fg">{t('tasks.mine')}</h3>
+          <label className="flex items-center gap-2 text-xs text-muted">
+            {t('tasks.pauseAll')}
+            <Switch
+              checked={settings?.tasks.paused ?? false}
+              aria-label={t('tasks.pauseAll')}
+              onCheckedChange={(v) => void api.tasks.pauseAll(v).then(() => qc.invalidateQueries({ queryKey: ['settings'] }))}
+            />
+          </label>
+        </div>
+        {list.length === 0 && (
+          <p className="rounded-xl border border-dashed border-border px-4 py-8 text-center text-xs leading-relaxed text-muted">{t('tasks.empty')}</p>
+        )}
+        <div className="space-y-2">
+          {list.map((task) => {
+            const status = task.lastResult?.status
+            return (
+              <article key={task.id} className={cn('rounded-xl border border-border/80 bg-surface px-4 py-3', !task.enabled && 'opacity-70')} data-task-id={task.id}>
+                <div className="flex items-start gap-3">
+                  <span
+                    className={cn(
+                      'mt-1.5 size-2 shrink-0 rounded-full',
+                      !task.enabled ? 'bg-subtle' : status === 'error' || status === 'budget' ? 'bg-danger' : status === 'running' ? 'animate-pulse bg-accent' : 'bg-accent'
+                    )}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <button className="block max-w-full truncate text-left text-sm font-medium text-fg hover:text-accent" onClick={() => setSelected(selected === task.id ? null : task.id)}>
+                      {task.name}
+                    </button>
+                    <p className="mt-0.5 text-xs text-muted">
+                      {triggerLabel(task.trigger, t)}
+                      {task.enabled && task.nextRunAt ? ` · ${t('tasks.next')} ${new Date(task.nextRunAt).toLocaleString(i18n.language, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}` : ''}
+                      {` · ${t('tasks.month')} ${money.format(task.monthCost)}`}
+                    </p>
+                    {task.lastResult?.summary && (
+                      <p className="mt-1.5 line-clamp-2 text-xs leading-relaxed break-words text-fg/85">
+                        <span className="text-subtle">{t(`tasks.status.${task.lastResult.status}`)} · </span>
+                        {task.lastResult.summary}
+                      </p>
+                    )}
                   </div>
-                </li>
-              ))}
-            </ol>
-          )}
-        </article>
-      ))}
+                  <Switch checked={task.enabled} aria-label={task.name} onCheckedChange={() => void toggle(task)} />
+                </div>
+                <div className="mt-2 flex flex-wrap items-center gap-1 pl-5">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={!task.enabled || settings?.tasks.paused || status === 'running'}
+                    onClick={() =>
+                      void api.tasks
+                        .run(task.id)
+                        .then(() => setSelected(task.id))
+                        .catch((e) => toast.error(String(e)))
+                    }
+                  >
+                    <Play />
+                    {t('tasks.run')}
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => setEditing(task)}>
+                    <Pencil />
+                    {t('tasks.edit')}
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => setSelected(selected === task.id ? null : task.id)}>
+                    <History />
+                    {t('tasks.records')}
+                  </Button>
+                  <Tip label={t('common.delete')}>
+                    <Button size="icon-sm" variant="ghost" className="ml-auto" aria-label={t('common.delete')} onClick={() => void remove(task)}>
+                      <Trash2 />
+                    </Button>
+                  </Tip>
+                </div>
+                {selected === task.id && (
+                  <ol className="mt-3 space-y-2.5 border-t border-border/70 pt-3" data-testid="task-runs">
+                    {runs.length === 0 && <li className="text-xs text-muted">{t('tasks.noRuns')}</li>}
+                    {runs.map((r) => (
+                      <li key={r.id} className="text-xs text-fg">
+                        <p className="text-muted tabular-nums">
+                          {new Date(r.startedAt).toLocaleString(i18n.language)} · {r.delayed && `${t('tasks.delayed')} · `}
+                          {t(`tasks.status.${r.status}`)} · {money.format(r.cost)}
+                        </p>
+                        {r.summary && <p className="mt-1 leading-relaxed break-words">{r.summary}</p>}
+                        {r.error && <p className="mt-1 text-danger">{r.error}</p>}
+                        {r.resultRefs.length > 0 && (
+                          <div className="mt-1.5 flex flex-wrap gap-2">
+                            {r.resultRefs.map((ref, i) => (
+                              <button
+                                key={i}
+                                className="text-accent hover:underline"
+                                onClick={() => {
+                                  useApp.getState().setSettingsOpen(false)
+                                  if (ref.type === 'proposal' || ref.type === 'note') useApp.getState().openNote(ref.noteId ?? ref.id)
+                                  else useApp.getState().goNav(ref.type === 'inbox' ? 'inbox' : 'today')
+                                }}
+                              >
+                                {t(`tasks.output.${ref.type === 'proposal' ? 'note' : ref.type === 'action' ? 'actions' : ref.type}`)}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </li>
+                    ))}
+                  </ol>
+                )}
+              </article>
+            )
+          })}
+        </div>
+      </section>
     </div>
   )
 }

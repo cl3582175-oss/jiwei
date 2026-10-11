@@ -1,4 +1,4 @@
-import { net } from 'electron'
+import { net, session } from 'electron'
 import { createHash } from 'crypto'
 import { createReadStream, createWriteStream } from 'fs'
 import { mkdir, rename, rm, stat } from 'fs/promises'
@@ -19,6 +19,8 @@ export interface DownloadSpec {
   sha256: string
   urls: string[]
   dest: string
+  /** 分段并行下载的连接数（单连接很慢的源，如国内访问 GitHub Releases）；服务器须支持 Range */
+  parallel?: number
 }
 
 export interface DownloadProgress {
@@ -89,6 +91,76 @@ export async function probeMirrors(urls: string[]): Promise<{ url: string; speed
 
 class SlowMirror extends Error {}
 
+/** 分段并行下载：每段写入 part.<段数>-<i> 并可续传，全部完成后按顺序拼接为 part 文件 */
+async function fetchParallel(
+  url: string,
+  part: string,
+  spec: DownloadSpec,
+  n: number,
+  signal: AbortSignal,
+  onProgress: (p: DownloadProgress) => void
+): Promise<void> {
+  // 先解析一次跳转（GitHub Releases → 对象存储的签名地址），各段直接连最终地址，省去每段的跳转往返
+  try {
+    const head = await net.fetch(url, { method: 'HEAD', redirect: 'manual', signal })
+    const location = head.headers.get('location')
+    if (head.status >= 300 && head.status < 400 && location) url = new URL(location, url).toString()
+  } catch {
+    /* 解析失败就直接用原地址 */
+  }
+  const seg = Math.ceil(spec.size / n),
+    received = new Array<number>(n).fill(0),
+    started = Date.now()
+  const report = (): void => {
+    const sum = received.reduce((a, b) => a + b, 0)
+    onProgress({ received: sum, total: spec.size, speed: sum / Math.max(0.2, (Date.now() - started) / 1000), mirror: host(url) })
+  }
+  await Promise.all(
+    Array.from({ length: n }, async (_, i) => {
+      const start = i * seg,
+        end = Math.min(spec.size, start + seg) - 1,
+        file = `${part}.${n}-${i}`
+      for (let attempt = 0; ; attempt++) {
+        signal.throwIfAborted()
+        const have = (await exists(file)) ?? 0
+        received[i] = have
+        if (have >= end - start + 1) return
+        try {
+          // 每段用独立的内存会话：HTTP/2 会把同一会话的请求复用到一条连接上，分段就失去意义
+          const res = await session
+            .fromPartition(`jiwei-download-${i}`)
+            .fetch(url, { headers: { Range: `bytes=${start + have}-${end}` }, signal })
+          if (res.status !== 206 || !res.body) throw new Error(`HTTP ${res.status}`)
+          const out = createWriteStream(file, { flags: 'a' }),
+            reader = res.body.getReader()
+          try {
+            for (;;) {
+              const { done, value } = await reader.read()
+              if (done) break
+              if (!out.write(value)) await new Promise<void>((r) => out.once('drain', () => r()))
+              received[i] += value.byteLength
+              report()
+            }
+          } finally {
+            await new Promise<void>((r) => out.end(() => r()))
+          }
+        } catch (e) {
+          if (signal.aborted || attempt >= 5) throw e
+          await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)))
+        }
+      }
+    })
+  )
+  const out = createWriteStream(part, { flags: 'w' })
+  try {
+    for (let i = 0; i < n; i++)
+      for await (const chunk of createReadStream(`${part}.${n}-${i}`)) if (!out.write(chunk)) await new Promise<void>((r) => out.once('drain', () => r()))
+  } finally {
+    await new Promise<void>((r) => out.end(() => r()))
+  }
+  for (let i = 0; i < n; i++) await rm(`${part}.${n}-${i}`, { force: true })
+}
+
 /** 从一个镜像下载（续传到 part 文件）；持续低速时抛出 SlowMirror */
 async function fetchInto(
   url: string,
@@ -146,9 +218,10 @@ export async function download(
   if ((await exists(spec.dest)) === spec.size && (await sha256File(spec.dest)) === spec.sha256) return
   await mkdir(dirname(spec.dest), { recursive: true })
   const part = `${spec.dest}.part`
-  const ranked = await probeMirrors(spec.urls)
+  let ranked = await probeMirrors(spec.urls)
   log.info('[download]', spec.name, 'mirrors', ranked.map((r) => `${host(r.url)} ${(r.speed / 1024).toFixed(0)}KB/s`).join(', '))
-  if (ranked.length === 0) throw new Error(`所有下载源都无法连接（${spec.urls.map(host).join('、')}）`)
+  // 测速超时不等于不可用（国内访问 GitHub 常常很慢）：都没测出来时按原顺序直接尝试，不做低速切换
+  if (ranked.length === 0) ranked = spec.urls.map((url) => ({ url, speed: 0 }))
   const slowBelow = Math.min(MIN_SPEED, ranked[0].speed * 0.3)
 
   const errors: string[] = []
@@ -157,7 +230,9 @@ export async function download(
   for (const { url } of queue) {
     if (signal.aborted) throw new Error('已取消')
     try {
-      await fetchInto(url, part, spec, slowBelow, signal, onProgress)
+      if (spec.parallel && spec.parallel > 1 && spec.size > 8 * 1024 * 1024)
+        await fetchParallel(url, part, spec, spec.parallel, signal, onProgress)
+      else await fetchInto(url, part, spec, slowBelow, signal, onProgress)
       if ((await exists(part)) !== spec.size) throw new Error('文件大小不符')
       if ((await sha256File(part)) !== spec.sha256) {
         await rm(part, { force: true })

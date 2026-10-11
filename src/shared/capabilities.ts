@@ -3,7 +3,7 @@ import { CaptureActionSchema } from './capture'
 import { TaskSave, type AiTask, type TaskRun, type TaskToolInfo, type TaskInput } from './tasks'
 import type { TaskRecipe } from './taskRecipes'
 import { MailSave, type MailAccount } from './mail'
-import { FeedSave, DiscoverAct, SearchSave, SearchProvider, type Feed, type FeedItem, type DiscoveryStatus, type LearningPath, type SearchConnection, type PodcastState } from './discover'
+import { FeedSave, DiscoverAct, SearchSave, SearchProvider, type Feed, type FeedItem, type DiscoveryStatus, type LearningPath, type SearchConnection, type PodcastState, type TtsProvider, type LocalSpeechStatus } from './discover'
 import type { CaptureState, PhoneStatus } from './capture'
 import type { InboxItem } from './inbox'
 import {
@@ -668,7 +668,20 @@ export const capabilities = {
     pathPhases: cap<SchedulePreview>()({ description: '把主进程持有的学习路径转为仅追加阶段的排期预览', params: [id()] }),
     remedy: cap<string[]>()({ description: '为允许 AI 的错题找讲解与练习，写入不占每日名额的精选', params: [['mistakeId', z.string().min(1)]] }),
     podcast: cap<PodcastState>()({ description: '读取当日学习播客讲稿与状态，素材隐私变化时旧稿失效', params: none }),
-    podcastGenerate: cap<string>()({ description: '排队生成或覆盖当日播客讲稿，遵守发现预算与隐私，仅朗读问题不含答案', params: none })
+    podcastGenerate: cap<string>()({ description: '排队生成或覆盖当日播客讲稿，遵守发现预算与隐私，仅朗读问题不含答案', params: none }),
+    ttsProviders: cap<TtsProvider[]>()({ description: '可用于播客 AI 语音合成的服务商（已配置 Key 的通义、OpenAI）', params: none }),
+    speechStatus: cap<LocalSpeechStatus>()({ description: '本机语音模型（ZipVoice）的下载状态与占用空间', params: none }),
+    speechInstall: cap<void>()({ description: '下载本机语音模型（约 190 MB）', params: none }),
+    speechCancel: cap<void>()({ description: '取消下载本机语音模型', params: none }),
+    speechRemove: cap<void>()({ description: '删除本机语音模型，释放磁盘', params: none }),
+    voicePreview: cap<string>()({
+      description: '试听播客声音：合成一句示例并返回音频地址（云端按字数计费）',
+      params: [
+        ['engine', z.enum(['local', 'ai'])],
+        ['voice', z.string().max(40)],
+        ['providerId', z.string().max(64).nullable()]
+      ]
+    })
   },
   mail: {
     accounts: cap<MailAccount[]>()({ description: '列出邮箱账号与凭证已设置状态，不返回凭证明文', params: none }),

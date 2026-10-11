@@ -211,7 +211,7 @@ export type Palette = 'qinglu' | 'celadon' | 'dunhuang'
 export type SidebarPage = 'notes' | 'library' | 'chat'
 
 export interface Settings {
-  discover: { dailyLimit: number; dailyBudget: number; budgetCurrency: string; useSearch: boolean; podcast: boolean }
+  discover: { dailyLimit: number; dailyBudget: number; budgetCurrency: string; useSearch: boolean; podcast: boolean; podcastVoice: import('./discover').PodcastVoice }
   tasks: { paused: boolean; launchAtLogin: boolean; keepRunning: boolean }
   plan: { autoComplete: boolean }
   recordingScene?: 'meeting' | 'lecture' | 'thought'
@@ -1090,6 +1090,8 @@ export interface JiweiEvents {
   'embedding:status': EmbeddingStatus
   /** 语音转写引擎状态 */
   'asr:status': AsrStatus
+  /** 本机语音合成模型的下载状态 */
+  'speech:status': import('./discover').LocalSpeechStatus
   'moss:status': import('./moss').MossStatus
   /** 记忆变化；added 为 AI 新记住的内容（界面提示，可撤销 / 确认） */
   'memory:changed': { added?: Memory; learned?: Memory[] }

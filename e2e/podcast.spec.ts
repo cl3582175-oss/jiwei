@@ -243,7 +243,7 @@ test('P7 播放、暂停、继续、上下段、语速和英文语音；切换�
   await expect(player.getByTestId('podcast-paragraph')).toContainText('讲稿5')
   await player.getByRole('button', { name: '上一段', exact: true }).click()
   await player.getByLabel('语速').selectOption('1.5')
-  await player.getByLabel('系统语音').selectOption('en')
+  await player.getByLabel('系统音色').selectOption('en')
   const events = await page.evaluate(
     () => (window as unknown as { __speech: { events: { type: string; rate?: number; lang?: string }[] } }).__speech.events
   )

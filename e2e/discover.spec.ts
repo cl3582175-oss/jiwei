@@ -359,8 +359,8 @@ test('P6 读/网页与 arXiv 保存/稍后返回/不感兴趣持久化', async (
   await expect.poll(async () => (await page.evaluate((id) => window.jiwei.sources.indexStatus(id), savedPdf.id)).segments, { timeout: 20000 }).toBeGreaterThan(0)
   await page.getByTestId(`pick-${later.id}`).getByRole('button', { name: '稍后', exact: true }).click()
   await expect(page.getByTestId(`pick-${later.id}`)).toHaveCount(0)
-  await page.getByTestId(`pick-${dismiss.id}`).getByLabel('原因（可选）').selectOption('shallow')
   await page.getByTestId(`pick-${dismiss.id}`).getByRole('button', { name: '不感兴趣', exact: true }).click()
+  await page.getByRole('menuitem', { name: '太浅' }).click()
   await expect(page.getByTestId(`pick-${dismiss.id}`)).toHaveCount(0)
   expect((await dbRead('SELECT action FROM discover_feedback')).map((r: { action: string }) => r.action)).toEqual([
     'read',

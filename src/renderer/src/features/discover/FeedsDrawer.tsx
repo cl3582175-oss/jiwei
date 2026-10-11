@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import type { FeedInput, Feed } from '@shared/discover'
 import { api } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { Pencil, RefreshCw, Trash2, X } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
 import { confirm } from '@/components/ui/confirm'
 import { useDiscoverEvents } from './queries'
@@ -41,15 +42,15 @@ export function FeedsDrawer({ close }: { close: () => void }) {
   return (
     <D.Root open onOpenChange={(v) => !v && close()}>
       <D.Portal>
-        <D.Overlay className="fixed inset-0 z-40 bg-black/25" />
+        <D.Overlay className="fixed inset-0 z-40 bg-black/25 backdrop-blur-[2px] data-[state=open]:animate-[fade-in_140ms_ease-out]" />
         <D.Content
-          className="fixed inset-y-0 right-0 z-50 w-[min(95vw,580px)] overflow-y-auto border-l border-border bg-surface p-6 shadow-float"
+          className="fixed inset-y-2 right-2 z-50 w-[min(95vw,520px)] overflow-y-auto rounded-2xl border border-border bg-surface p-6 shadow-float data-[state=open]:animate-[drawer-in_200ms_cubic-bezier(0.2,0.9,0.3,1)]"
           data-testid="feeds-drawer"
         >
           <div className="flex items-center justify-between gap-3">
-            <D.Title className="font-serif text-lg">{t('discover.feeds')}</D.Title>
-            <Button variant="ghost" onClick={close}>
-              {t('discover.close')}
+            <D.Title className="font-serif text-lg font-semibold">{t('discover.feeds')}</D.Title>
+            <Button variant="ghost" size="icon-sm" aria-label={t('discover.close')} onClick={close}>
+              <X />
             </Button>
           </div>
           <D.Description className="mt-2 text-xs text-muted">{t('discover.feedHint')}</D.Description>
@@ -110,19 +111,59 @@ export function FeedsDrawer({ close }: { close: () => void }) {
               {t(draft.id ? 'common.save' : 'discover.feedAdd')}
             </Button>
           </div>
-          <div className="mt-4 space-y-3">
+          <div className="mt-4 space-y-2">
             {feeds.map((f) => (
-              <article key={f.id} className="min-w-0 rounded-xl border border-border p-4" data-testid={`feed-${f.id}`}>
-                <div className="flex items-start gap-3">
+              <article
+                key={f.id}
+                className="group min-w-0 rounded-xl border border-border px-4 py-3 transition-colors hover:bg-surface-hover/40"
+                data-testid={`feed-${f.id}`}
+              >
+                <div className="flex items-center gap-3">
                   <div className="min-w-0 flex-1">
-                    <h3 className="break-words text-sm font-medium">{f.title}</h3>
-                    <p className="mt-1 break-all text-xs text-subtle">{f.url}</p>
-                    <p className="mt-1 text-xs text-muted">
-                      {f.lastFetchedAt
-                        ? t('discover.fetched', { time: new Date(f.lastFetchedAt).toLocaleString(i18n.language) })
-                        : t('discover.never')}
+                    <h3 className="truncate text-sm font-medium" title={f.title}>
+                      {f.title}
+                    </h3>
+                    <p className="mt-0.5 truncate text-2xs text-subtle" title={f.url}>
+                      {f.url}
                     </p>
-                    {f.error && <p className="mt-1 text-xs text-danger">{f.error}</p>}
+                    <p className={f.error ? 'mt-0.5 text-2xs text-danger' : 'mt-0.5 text-2xs text-muted'}>
+                      {f.error
+                        ? f.error
+                        : f.lastFetchedAt
+                          ? t('discover.fetched', { time: new Date(f.lastFetchedAt).toLocaleString(i18n.language) })
+                          : t('discover.never')}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center">
+                    <Button
+                      size="icon-sm"
+                      variant="ghost"
+                      aria-label={t('discover.refresh')}
+                      title={t('discover.refresh')}
+                      disabled={busy || !f.enabled}
+                      onClick={() => void run(() => api.discover.feedRefresh(f.id))}
+                    >
+                      <RefreshCw />
+                    </Button>
+                    <Button
+                      size="icon-sm"
+                      variant="ghost"
+                      aria-label={t('common.edit')}
+                      title={t('common.edit')}
+                      onClick={() => setDraft(f)}
+                    >
+                      <Pencil />
+                    </Button>
+                    <Button
+                      size="icon-sm"
+                      variant="ghost"
+                      aria-label={t('common.delete')}
+                      title={t('common.delete')}
+                      disabled={busy}
+                      onClick={() => remove(f)}
+                    >
+                      <Trash2 />
+                    </Button>
                   </div>
                   <Switch
                     aria-label={`${t('discover.enabled')} ${f.title}`}
@@ -130,17 +171,6 @@ export function FeedsDrawer({ close }: { close: () => void }) {
                     disabled={busy}
                     onCheckedChange={(enabled) => void run(() => api.discover.feedSave({ ...f, enabled }))}
                   />
-                </div>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <Button size="sm" disabled={busy || !f.enabled} onClick={() => void run(() => api.discover.feedRefresh(f.id))}>
-                    {t('discover.refresh')}
-                  </Button>
-                  <Button size="sm" variant="ghost" onClick={() => setDraft(f)}>
-                    {t('common.edit')}
-                  </Button>
-                  <Button size="sm" variant="ghost" disabled={busy} onClick={() => remove(f)}>
-                    {t('common.delete')}
-                  </Button>
                 </div>
               </article>
             ))}

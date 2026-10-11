@@ -1,10 +1,13 @@
-import { useRef, useState, type ReactNode, type PointerEvent } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type PointerEvent } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import type { Goal } from '@shared/types'
 import { addDays, dayStart, localDay, type GoalMilestone, type GoalPhase } from '@shared/plan'
-import { api } from '@/lib/utils'
+import { Check, Diamond, Plus, Trash2 } from 'lucide-react'
+import { api, cn } from '@/lib/utils'
+import { tintFor } from '@/lib/tint'
+import { Tip } from '@/components/ui/primitives'
 import { useApp } from '@/store/app'
 import { Button } from '@/components/ui/button'
 import { errText } from '../chat/useChat'
@@ -12,7 +15,9 @@ import { PlanDialog, field } from './ui'
 import { NotePicker } from '../notes/NotePicker'
 import { SourcePicker } from '../workspace/SourcePicker'
 
-const DAY_WIDTH = 18
+// 每天的宽度随容器变化（范围短时铺满），拖动换算用当前值
+const MIN_DAY = 14
+let dayWidth = 18
 function Draggable({
   children,
   onShift,
@@ -31,7 +36,7 @@ function Draggable({
     const d = pointer.current
     pointer.current = null
     if (!d) return
-    const delta = Math.round((e.clientX - d.x) / DAY_WIDTH)
+    const delta = Math.round((e.clientX - d.x) / dayWidth)
     if (delta) onShift(delta, d.edge)
     else onOpen()
   }
@@ -39,7 +44,12 @@ function Draggable({
     <button
       data-testid={phase ? 'timeline-phase' : 'timeline-milestone'}
       style={style}
-      className="absolute h-7 touch-none cursor-grab rounded border border-accent/30 bg-accent-soft px-2 text-left text-xs text-fg"
+      className={cn(
+        'absolute h-7 touch-none cursor-grab text-left text-xs text-[var(--tint-ink)] active:cursor-grabbing',
+        phase
+          ? 'overflow-clip rounded-md border-l-[3px] border-[var(--tint-ink)] bg-[var(--tint)] px-2 shadow-[0_1px_0_rgb(0_0_0/0.04)] transition-shadow hover:shadow-[var(--shadow-2)]'
+          : 'flex items-center rounded-md px-1 hover:bg-[var(--tint)]'
+      )}
       onPointerDown={(e) => {
         if (e.button !== 0) return
         pointer.current = { x: e.clientX, edge: (e.target as HTMLElement).dataset.edge }
@@ -92,10 +102,36 @@ function PhaseDialog({ goal, phase, position, onClose }: { goal: Goal; phase?: G
     }
   }
   return (
-    <PlanDialog title={phase ? phase.title : t('plan.newPhase')} onClose={onClose}>
+    <PlanDialog
+      title={phase ? phase.title : t('plan.newPhase')}
+      onClose={onClose}
+      footer={
+        <>
+          {phase && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-danger hover:bg-danger-soft hover:text-danger"
+              onClick={() =>
+                void api.plan
+                  .phaseRemove(phase.id)
+                  .then(onClose)
+                  .catch((e) => toast.error(errText(e)))
+              }
+            >
+              <Trash2 />
+              {t('common.delete')}
+            </Button>
+          )}
+          <Button className="ml-auto" size="sm" disabled={!title.trim() || end <= start} variant="primary" onClick={() => void save()}>
+            {t('common.save')}
+          </Button>
+        </>
+      }
+    >
       <label className="block text-xs text-muted">
         {t('plan.phaseTitle')}
-        <input className={field} autoFocus value={title} onChange={(e) => setTitle(e.target.value)} />
+        <input className={field} autoFocus aria-label={t('plan.phaseTitle')} value={title} onChange={(e) => setTitle(e.target.value)} />
       </label>
       <div className="grid grid-cols-2 gap-3">
         <label className="text-xs text-muted">
@@ -117,8 +153,41 @@ function PhaseDialog({ goal, phase, position, onClose }: { goal: Goal; phase?: G
           ))}
         </select>
       </label>
-      <div className="flex gap-2"><Button onClick={() => setNotePicker(true)}>{t('plan.linkNotes')}</Button><Button onClick={() => setSourcePicker(true)}>{t('plan.linkSources')}</Button></div>
-      <div className="flex flex-wrap gap-2">{noteIds.map((id) => <span key={id} className="inline-flex items-center rounded bg-sunken"><Button size="sm" onClick={() => useApp.getState().openNote(id)}>{notes.find((n) => n.id === id)?.title || t('common.untitled')}</Button><Button size="icon-sm" aria-label={t('plan.unlink')} onClick={() => setNoteIds(noteIds.filter((n) => n !== id))}>×</Button></span>)}{sourceIds.map((id) => <span key={id} className="inline-flex items-center rounded bg-sunken"><Button size="sm" onClick={() => useApp.getState().openSource(id)}>{sources.find((n) => n.id === id)?.title || t('common.untitled')}</Button><Button size="icon-sm" aria-label={t('plan.unlink')} onClick={() => setSourceIds(sourceIds.filter((n) => n !== id))}>×</Button></span>)}</div>
+      <div>
+        <div className="flex items-center gap-1">
+          <span className="mr-auto text-xs text-muted">{t('plan.materials')}</span>
+          <Button size="sm" variant="ghost" onClick={() => setNotePicker(true)}>
+            <Plus />
+            {t('plan.linkNotes')}
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setSourcePicker(true)}>
+            <Plus />
+            {t('plan.linkSources')}
+          </Button>
+        </div>
+        <div className="mt-1.5 flex flex-wrap gap-1.5">
+          {[
+            ...noteIds.map((id) => ({ id, kind: 'note' as const, title: notes.find((n) => n.id === id)?.title })),
+            ...sourceIds.map((id) => ({ id, kind: 'source' as const, title: sources.find((n) => n.id === id)?.title }))
+          ].map((it) => (
+            <span key={it.id} className="inline-flex max-w-full items-center rounded-full bg-sunken pr-1 pl-2.5 text-xs text-fg">
+              <button
+                className="truncate py-1 hover:text-accent"
+                onClick={() => (it.kind === 'note' ? useApp.getState().openNote(it.id) : useApp.getState().openSource(it.id))}
+              >
+                {it.title || t('common.untitled')}
+              </button>
+              <button
+                aria-label={t('plan.unlink')}
+                className="ml-1 grid size-5 place-items-center rounded-full text-subtle hover:bg-surface-hover hover:text-fg"
+                onClick={() => (it.kind === 'note' ? setNoteIds(noteIds.filter((n) => n !== it.id)) : setSourceIds(sourceIds.filter((n) => n !== it.id)))}
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+      </div>
       <NotePicker open={notePicker} onOpenChange={setNotePicker} title={t('plan.linkNotes')} onPick={(id) => setNoteIds([...new Set([...noteIds, id])])} />
       <SourcePicker open={sourcePicker} onOpenChange={setSourcePicker} onPick={(id) => setSourceIds([...new Set([...sourceIds, id])])} />
       {!!mistakes.filter((m) => m.noteId && noteIds.includes(m.noteId)).length && (
@@ -142,26 +211,6 @@ function PhaseDialog({ goal, phase, position, onClose }: { goal: Goal; phase?: G
               {a.title}
             </label>
           ))}
-      <div className="flex gap-2">
-        <Button disabled={!title.trim() || end <= start} variant="primary" onClick={() => void save()}>
-          {t('common.save')}
-        </Button>
-        {phase && (
-          <Button
-            onClick={() =>
-              void api.plan
-                .phaseRemove(phase.id)
-                .then(onClose)
-                .catch((e) => toast.error(errText(e)))
-            }
-          >
-            {t('common.delete')}
-          </Button>
-        )}
-        <Button variant="ghost" onClick={onClose}>
-          {t('common.close')}
-        </Button>
-      </div>
     </PlanDialog>
   )
 }
@@ -188,13 +237,43 @@ function MilestoneDialog({ goal, milestone, onClose }: { goal: Goal; milestone?:
     }
   }
   return (
-    <PlanDialog title={milestone ? milestone.title : t('plan.newMilestone')} onClose={onClose}>
+    <PlanDialog
+      title={milestone ? milestone.title : t('plan.newMilestone')}
+      size="sm"
+      onClose={onClose}
+      footer={
+        <>
+          {milestone && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-danger hover:bg-danger-soft hover:text-danger"
+              onClick={() => void api.plan.milestoneRemove(milestone.id).then(onClose)}
+            >
+              <Trash2 />
+              {t('common.delete')}
+            </Button>
+          )}
+          <div className="ml-auto flex gap-2">
+            {milestone && !milestone.doneAt && (
+              <Button size="sm" variant="outline" onClick={() => void save(true)}>
+                <Check />
+                {t('plan.done')}
+              </Button>
+            )}
+            <Button size="sm" variant="primary" disabled={!title.trim()} onClick={() => void save()}>
+              {t('common.save')}
+            </Button>
+          </div>
+        </>
+      }
+    >
       <label className="block text-xs text-muted">
         {t('plan.milestoneTitle')}
-        <input className={field} autoFocus value={title} onChange={(e) => setTitle(e.target.value)} />
+        <input className={field} autoFocus aria-label={t('plan.milestoneTitle')} value={title} onChange={(e) => setTitle(e.target.value)} />
       </label>
       <label className="block text-xs text-muted">
-        {t('plan.startDate')}
+        {t('plan.milestoneDate')}
         <input type="date" className={field} value={at} onChange={(e) => setAt(e.target.value)} />
       </label>
       <label className="block text-xs text-muted">
@@ -208,76 +287,90 @@ function MilestoneDialog({ goal, milestone, onClose }: { goal: Goal; milestone?:
           ))}
         </select>
       </label>
-      <div className="flex gap-2">
-        <Button variant="primary" disabled={!title.trim()} onClick={() => void save()}>
-          {t('common.save')}
-        </Button>
-        {milestone && (
-          <>
-            <Button onClick={() => void save(true)}>{t('plan.done')}</Button>
-            <Button onClick={() => void api.plan.milestoneRemove(milestone.id).then(onClose)}>{t('common.delete')}</Button>
-          </>
-        )}
-        <Button variant="ghost" onClick={onClose}>
-          {t('common.close')}
-        </Button>
-      </div>
     </PlanDialog>
   )
 }
 
 export function Timeline({ goal }: { goal: Goal }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const { data: phases = [] } = useQuery({ queryKey: ['plan', 'phases', goal.id], queryFn: () => api.plan.phases(goal.id) })
   const { data: milestones = [] } = useQuery({ queryKey: ['plan', 'milestones', goal.id], queryFn: () => api.plan.milestones(goal.id) })
   const { data: actions = [] } = useQuery({ queryKey: ['actions', 'goal', goal.id], queryFn: () => api.actions.list() })
   const [phase, setPhase] = useState<GoalPhase | 'new' | null>(null),
     [milestone, setMilestone] = useState<GoalMilestone | 'new' | null>(null)
-  const start = dayStart(goal.startAt ?? addDays(dayStart(), -7)),
-    end = Math.max(start + 86400000, goal.targetAt ?? addDays(dayStart(), 60))
-  const days = Math.ceil((end - start) / 86400000),
-    width = Math.max(800, days * DAY_WIDTH),
-    x = (at: number): number => Math.max(0, Math.min(width, ((dayStart(at) - start) / 86400000) * DAY_WIDTH))
+  const box = useRef<HTMLDivElement>(null)
+  const [boxWidth, setBoxWidth] = useState(800)
+  useLayoutEffect(() => {
+    const el = box.current
+    if (!el) return
+    const ro = new ResizeObserver(() => setBoxWidth(el.clientWidth))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+  const start = dayStart(Math.min(goal.startAt ?? addDays(dayStart(), -7), ...phases.map((p) => p.startAt), addDays(dayStart(), -7)))
+  const end = Math.max(start + 86400000, goal.targetAt ?? addDays(dayStart(), 60), ...phases.map((p) => p.endAt), ...milestones.map((m) => m.at)) + 3 * 86400000
+  const days = Math.ceil((end - start) / 86400000)
+  // 范围短时铺满容器；长时每天至少 14px，可以横向滚动
+  dayWidth = Math.max(MIN_DAY, boxWidth / days)
+  const width = Math.max(boxWidth, days * dayWidth),
+    x = (at: number): number => Math.max(0, Math.min(width, ((dayStart(at) - start) / 86400000) * dayWidth))
+  // 打开时把今天放在左侧四分之一处
+  useEffect(() => {
+    const el = box.current
+    if (el) el.scrollLeft = Math.max(0, x(Date.now()) - el.clientWidth / 4)
+  }, [start, boxWidth]) // eslint-disable-line react-hooks/exhaustive-deps
   const failure = (e: unknown): void => {
     toast.error(errText(e))
   }
+  const tint = tintFor(goal.id, goal.color)
+  const ROW = 40
+  const top = 34
+  const height = top + Math.max(1, phases.length) * ROW + (milestones.length ? 44 : 8) + 8
+  const label = (at: number): string => new Date(at).toLocaleDateString(i18n.language, { month: 'numeric', day: 'numeric' })
+  const weeks = Math.ceil(days / 7)
   return (
-    <section className="mt-6 min-w-0" data-testid="timeline">
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <h3 className="mr-auto text-sm font-semibold text-fg">{t('plan.timeline')}</h3>
-        <Button size="sm" onClick={() => setPhase('new')}>
+    <section className="mt-6 min-w-0" data-testid="timeline" data-tint={tint}>
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <h3 className="mr-auto text-sm font-medium text-fg">{t('plan.timeline')}</h3>
+        <Button size="sm" variant="ghost" onClick={() => setPhase('new')}>
+          <Plus />
           {t('plan.newPhase')}
         </Button>
-        <Button size="sm" onClick={() => setMilestone('new')}>
+        <Button size="sm" variant="ghost" onClick={() => setMilestone('new')}>
+          <Diamond />
           {t('plan.newMilestone')}
         </Button>
       </div>
-      <div className="w-full overflow-x-auto rounded-xl border border-border">
-        <div className="relative" style={{ width, minHeight: 100 + phases.length * 58 + milestones.length * 32 }}>
-          <div className="relative h-8 border-b border-border">
-            {Array.from({ length: Math.ceil(days / 7) }, (_, i) => (
-              <span key={i} className="absolute border-l border-border pl-1 text-[10px] text-subtle" style={{ left: i * 7 * DAY_WIDTH }}>
-                {localDay(addDays(start, i * 7)).slice(5)}
-              </span>
-            ))}
+      <div ref={box} className="paper w-full overflow-x-auto rounded-2xl shadow-[var(--shadow-1)]">
+        <div className="relative" style={{ width, height }}>
+          {/* 周刻度 */}
+          {Array.from({ length: weeks }, (_, i) => (
+            <div key={i} className="absolute inset-y-0 border-l border-border/40" style={{ left: i * 7 * dayWidth }}>
+              <span className="absolute top-2 left-1.5 text-[10px] whitespace-nowrap text-subtle tabular-nums">{label(addDays(start, i * 7))}</span>
+            </div>
+          ))}
+          <div className="absolute inset-x-0 border-b border-border/60" style={{ top: 26 }} />
+          {/* 今天、截止 */}
+          <div className="pointer-events-none absolute inset-y-0 z-20" style={{ left: x(Date.now()) }}>
+            <div className="h-full border-l border-accent" />
+            <span className="absolute top-1 -translate-x-1/2 rounded-full bg-accent px-1.5 text-[10px] leading-4 whitespace-nowrap text-accent-fg">{t('plan.today')}</span>
           </div>
-          <div
-            className="pointer-events-none absolute inset-y-0 z-10 border-l border-accent/60"
-            style={{ left: x(Date.now()) }}
-            title={t('plan.today')}
-          />
           {goal.targetAt && (
-            <div
-              className="pointer-events-none absolute inset-y-0 border-l border-danger/50"
-              style={{ left: x(goal.targetAt) }}
-              title={t('goals.target')}
-            />
+            <div className="pointer-events-none absolute inset-y-0 z-20" style={{ left: x(goal.targetAt) }}>
+              <div className="h-full border-l border-dashed border-danger/70" />
+              <span className="absolute top-1 -translate-x-1/2 rounded-full bg-danger-soft px-1.5 text-[10px] leading-4 whitespace-nowrap text-danger">{t('plan.deadline')}</span>
+            </div>
+          )}
+          {phases.length === 0 && (
+            <p className="absolute inset-x-0 text-center text-xs text-subtle" style={{ top: top + 10 }}>
+              {t('plan.timelineEmpty')}
+            </p>
           )}
           {phases.map((p, i) => (
-            <div key={p.id} className="absolute inset-x-0 h-14" style={{ top: 40 + i * 58 }}>
+            <div key={p.id} className="absolute inset-x-0" style={{ top: top + i * ROW, height: ROW }}>
               <Draggable
                 phase
-                style={{ left: x(p.startAt), width: Math.max(60, x(p.endAt) - x(p.startAt)) }}
+                style={{ left: x(p.startAt), width: Math.max(56, x(p.endAt) - x(p.startAt)), top: 6 }}
                 onOpen={() => setPhase(p)}
                 onShift={(delta, edge) => {
                   const startAt = edge === 'end' ? p.startAt : addDays(p.startAt, delta),
@@ -285,34 +378,38 @@ export function Timeline({ goal }: { goal: Goal }) {
                   if (endAt > startAt) void api.plan.phaseSave({ ...p, startAt, endAt }).catch(failure)
                 }}
               >
-                <span className="pointer-events-none block truncate">
-                  {p.title} · {Math.round(p.progress * 100)}%
+                <span className="pointer-events-none absolute inset-y-0 left-0 rounded-l-md bg-[var(--tint-ink)]/15" style={{ width: `${p.progress * 100}%` }} />
+                {/* 阶段起点滚出视野时，名称吸附在可见区域左侧 */}
+                <span className="pointer-events-none sticky left-2 flex w-fit max-w-full items-center gap-1.5 truncate">
+                  {p.status === 'done' && <Check className="size-3 shrink-0" />}
+                  <span className="truncate">{p.title}</span>
+                  <span className="shrink-0 opacity-60 tabular-nums">{Math.round(p.progress * 100)}%</span>
                 </span>
-                <span className="pointer-events-none absolute bottom-0 left-0 h-1 bg-accent/40" style={{ width: `${p.progress * 100}%` }} />
               </Draggable>
               {actions
                 .filter((a) => a.phaseId === p.id && a.dueAt && a.status !== 'dropped')
                 .map((a) => (
-                  <button
-                    key={a.id}
-                    title={a.title}
-                    className="absolute top-9 size-2 rounded-full bg-accent"
-                    style={{ left: x(a.dueAt!) }}
-                    onClick={() => useApp.getState().setView('reflect')}
-                  />
+                  <Tip key={a.id} label={a.title}>
+                    <button
+                      aria-label={a.title}
+                      className={cn('absolute size-2 -translate-x-1/2 rounded-full ring-2 ring-surface', a.status === 'done' ? 'bg-subtle' : 'bg-[var(--tint-ink)]')}
+                      style={{ left: x(a.dueAt!), top: ROW - 6 }}
+                      onClick={() => useApp.getState().setView('reflect')}
+                    />
+                  </Tip>
                 ))}
             </div>
           ))}
-          {milestones.map((m, i) => (
+          {milestones.map((m) => (
             <Draggable
               key={m.id}
-              style={{ top: 48 + phases.length * 58 + i * 32, left: x(m.at), maxWidth: 250 }}
+              style={{ top: top + Math.max(1, phases.length) * ROW + 8, left: x(m.at) - 8 }}
               onOpen={() => setMilestone(m)}
               onShift={(delta) => void api.plan.milestoneSave({ ...m, at: addDays(m.at, delta) }).catch(failure)}
             >
-              <span className="pointer-events-none">
-                ◇ {m.title}
-                {m.doneAt ? ' ✓' : ''}
+              <span className="pointer-events-none flex items-center gap-1.5 whitespace-nowrap">
+                <Diamond className={cn('size-3.5 shrink-0', m.doneAt ? 'fill-[var(--tint-ink)]' : 'fill-surface')} />
+                <span className={cn(m.doneAt && 'line-through opacity-60')}>{m.title}</span>
               </span>
             </Draggable>
           ))}

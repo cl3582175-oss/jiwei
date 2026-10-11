@@ -14,7 +14,8 @@ export function choosePicks<T extends { id: string; url: string; score: Discover
     .filter(
       (i) =>
         !delivered.some((p) => p.id === i.id) &&
-        i.score.relevance >= 2 &&
+        // 宁缺毋滥（v0.8 审查）：普通条目要求相关性 ≥ 3；“反方 / 跨领域”条目放宽到 2
+        i.score.relevance >= (i.score.diverse ? 2 : 3) &&
         !(i.score.news && i.score.goalIds.some((id) => exams.has(id)))
     )
     .sort(

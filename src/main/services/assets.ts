@@ -10,7 +10,7 @@ import { recordingPlainSize, recordingStream, recordingKey } from './recordingFi
 import { pathToFileURL } from 'url'
 import { eq, inArray, notInArray } from 'drizzle-orm'
 import log from 'electron-log/main'
-import { assetsDir, getDb } from '../db'
+import { assetsDir, dataDir, getDb } from '../db'
 import { assets, noteAssets, sources, sourceSegments, inboxItems, mistakes } from '../db/schema'
 import type { AssetRef } from '@shared/types'
 
@@ -65,6 +65,9 @@ const safeExt = (name: string): string =>
 export function assetPath(id: string, ext: string): string {
   return join(assetsDir(), id.slice(0, 2), id.slice(2, 4), `${id}.${ext}`)
 }
+
+/** 每日播客 AI 语音目录：<数据目录>/podcast/<日期>/；只保留当天 */
+export const podcastDir = (date?: string): string => (date ? join(dataDir(), 'podcast', date) : join(dataDir(), 'podcast'))
 
 export const assetUrl = (id: string, ext: string): string => `jiwei://asset/${id}.${ext}`
 
@@ -218,6 +221,17 @@ export function registerProtocol(): void {
       const stream = file.endsWith('.enc') ? Readable.from(await recordingStream(file, start, end)) : createReadStream(file, { start, end })
       const body = Readable.toWeb(stream) as ReadableStream<Uint8Array>
       return new Response(body, { status: range ? 206 : 200, headers })
+    }
+    if (url.hostname === 'podcast') {
+      // jiwei://podcast/<日期>/<序号>.<wav|mp3>：每日播客的 AI 语音
+      const m = /^\/(\d{4}-\d{2}-\d{2}|preview)\/([0-9a-z]{3,12})\.(wav|mp3)$/.exec(url.pathname)
+      if (!m) return new Response('Bad request', { status: 400 })
+      const res = await net.fetch(pathToFileURL(join(podcastDir(m[1]), `${m[2]}.${m[3]}`)).toString(), { headers: req.headers })
+      const headers = new Headers(res.headers)
+      headers.set('Content-Type', MIME[m[3]])
+      headers.set('Cache-Control', 'no-store')
+      headers.set('Access-Control-Allow-Origin', '*')
+      return new Response(res.body, { status: res.status, headers })
     }
     if (url.hostname !== 'asset') return new Response('Not found', { status: 404 })
     const m = /^\/([0-9a-f]{64})\.([a-z0-9]{1,10})$/.exec(url.pathname)

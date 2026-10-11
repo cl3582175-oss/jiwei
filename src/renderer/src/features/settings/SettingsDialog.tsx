@@ -30,7 +30,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Input, Tip } from '@/components/ui/primitives'
 import { prompt } from '@/components/ui/confirm'
-import { Cable, Gauge, Library, Plus, Sparkles } from 'lucide-react'
+import { Bot, Cable, Compass, Gauge, Glasses, Library, Plus, Sparkles } from 'lucide-react'
 import { UsageSettings } from '@/features/agent/UsageSettings'
 import { ConnectionsSettings } from '@/features/agent/ConnectionsSettings'
 import { AiSettingsTab } from '../ai/AiSettings'
@@ -277,12 +277,12 @@ export function SettingsDialog() {
     { id: 'learning', icon: <Layers /> },
     { id: 'ai', icon: <Sparkles /> },
     { id: 'skills', icon: <Wand2 /> },
-    { id: 'lenses', icon: <Layers /> },
+    { id: 'lenses', icon: <Glasses /> },
     { id: 'appearance', icon: <Palette /> },
     { id: 'usage', icon: <Gauge /> },
     { id: 'connections', icon: <Cable /> },
-    { id: 'tasks', icon: <Sparkles /> },
-    { id: 'discover', icon: <Sparkles /> },
+    { id: 'tasks', icon: <Bot /> },
+    { id: 'discover', icon: <Compass /> },
     { id: 'data', icon: <Database /> },
     { id: 'browser', icon: <Monitor /> },
     { id: 'about', icon: <Info /> }
@@ -308,7 +308,7 @@ export function SettingsDialog() {
               >
                 {it.icon}
                 {it.id === 'discover' ? t('discover.title') : it.id === 'tasks' ? t('tasks.title') : it.id === 'browser'
-                  ? '浏览器'
+                  ? t('settings.browserTab')
                   : it.id === 'usage' || it.id === 'connections'
                     ? t(`agent.tabs.${it.id}`)
                     : t(`settings.${it.id}`)}

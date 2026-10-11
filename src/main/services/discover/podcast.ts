@@ -5,15 +5,21 @@ import { addDays, dayStart, localDay } from '@shared/plan'
 import { nextOffPeak } from '@shared/inbox'
 import { getDb } from '../../db'
 import { blocks, cards, feedItems, mistakes, notes, sources } from '../../db/schema'
-import { podcastMaterial, podcastPrompt, podcastSchema } from '../../lib/podcast'
+import { mkdir, readdir, rm, writeFile } from 'node:fs/promises'
+import { basename, join } from 'node:path'
+import { LOCAL_VOICES, TTS_VOICES } from '@shared/discover'
+import { podcastDialogueSchema, podcastMaterial, podcastPrompt, podcastSchema, speechChunks } from '../../lib/podcast'
+import { podcastDir } from '../assets'
 import { tr } from '../../lib/messages'
 import { getSettings } from '../settings'
 import { getMeta, setMeta } from '../memory'
 import { withRun } from '../agent/context'
-import { isBudgetError, perRunLimit } from '../agent/usage'
+import { isBudgetError, perRunLimit, recordUsage } from '../agent/usage'
+import { synthesize, ttsChars, ttsProviders } from './tts'
+import { localSpeechJob, localSpeechReady } from './localSpeech'
 import { audit } from '../agent/audit'
 import { requireMistakeCloud } from '../mistakesPrivacy'
-import { enqueue, registerJobKind, runJobNow } from '../jobs'
+import { enqueue, registerJobKind, runInWorker, runJobNow } from '../jobs'
 import { allowedCandidate, allowedRelated } from './context'
 import { knowledgeTarget, scoreAllowed } from './items'
 import { checkDiscoveryBudget, dailyStatus, discoveryModel } from './daily'
@@ -50,7 +56,10 @@ function material(now = Date.now()) {
     .map((p) => {
       const refs = JSON.parse(p.related) as { type: 'note' | 'source'; id: string }[]
       let allowed =
-        !!p.score && scoreAllowed(JSON.parse(p.score)) && allowedRelated(refs).length === refs.length && !privateTitles.some((title) => `${p.title}\n${p.reason ?? ''}`.includes(title))
+        !!p.score &&
+        scoreAllowed(JSON.parse(p.score)) &&
+        allowedRelated(refs).length === refs.length &&
+        !privateTitles.some((title) => `${p.title}\n${p.reason ?? ''}`.includes(title))
       try {
         allowed &&= !!knowledgeTarget(p.url) || allowedCandidate(p.url)
       } catch {
@@ -120,6 +129,109 @@ function material(now = Date.now()) {
   }
 }
 
+type CloudVoice = {
+  kind: 'cloud'
+  providerId: string
+  engine: 'qwen' | 'openai'
+  name: string
+  voiceA: string
+  voiceB: string
+  style: 'solo' | 'dialogue'
+}
+type LocalVoice = { kind: 'local'; voiceA: string; voiceB: string; style: 'solo' | 'dialogue' }
+type Voice = CloudVoice | LocalVoice
+
+const pickPair = (ids: string[], a: string | null, b: string | null): [string, string] => {
+  const voiceA = a && ids.includes(a) ? a : ids[0]
+  return [voiceA, b && ids.includes(b) && b !== voiceA ? b : (ids.find((x) => x !== voiceA) ?? voiceA)]
+}
+
+/** 当前设置下用哪种 AI 语音；系统语音、服务商或本机模型不可用时返回 null（用系统语音） */
+function resolveVoice(): Voice | null {
+  const v = getSettings().discover.podcastVoice
+  if (v?.engine === 'local') {
+    if (!localSpeechReady()) return null
+    const [voiceA, voiceB] = pickPair(
+      LOCAL_VOICES.map((x) => x.id),
+      v.voiceA,
+      v.voiceB
+    )
+    return { kind: 'local', voiceA, voiceB, style: v.style }
+  }
+  if (v?.engine !== 'ai') return null
+  const p = ttsProviders().find((x) => x.providerId === v.providerId) ?? ttsProviders()[0]
+  if (!p) return null
+  const [voiceA, voiceB] = pickPair(
+    TTS_VOICES[p.engine].map((x) => x.id),
+    v.voiceA,
+    v.voiceB
+  )
+  return { kind: 'cloud', providerId: p.providerId, engine: p.engine, name: p.name, voiceA, voiceB, style: v.style }
+}
+function voiceLabel(voice: Voice, dialogue: boolean): string {
+  const zh = getSettings().language.startsWith('zh')
+  const list = voice.kind === 'local' ? LOCAL_VOICES : TTS_VOICES[voice.engine]
+  const name = (id: string): string => {
+    const v = list.find((x) => x.id === id)
+    return v ? (zh ? v.zh : v.en).replace(/[（(].*$/, '') : id
+  }
+  const who = `${name(voice.voiceA)}${dialogue ? ` / ${name(voice.voiceB)}` : ''}`
+  return voice.kind === 'local' ? `${tr('本机', 'On-device')} · ${who}` : `${voice.name} · ${who}`
+}
+
+/** 逐句合成并写入当天目录；云端每句之前检查预算与取消，本机按段交给后台工作进程 */
+async function synthesizeScript(
+  script: PodcastScript,
+  voice: Voice,
+  guard: () => void,
+  worker: <T>(task: string, payload: unknown) => Promise<T>,
+  signal?: AbortSignal
+): Promise<{ p: number; url: string }[]> {
+  const language = getSettings().language,
+    dir = podcastDir(script.date)
+  await rm(podcastDir(), { recursive: true, force: true })
+  await mkdir(dir, { recursive: true })
+  const out: { p: number; url: string }[] = []
+  let n = 0
+  const nextFile = (ext: string): string => `${String(n++).padStart(3, '0')}.${ext}`
+  for (const [p, text] of script.paragraphs.entries()) {
+    const id = script.speakers?.[p] === 'B' ? voice.voiceB : voice.voiceA
+    if (voice.kind === 'local') {
+      guard()
+      const items = speechChunks(text, 200).map((chunk) => ({ text: chunk, out: join(dir, nextFile('wav')) }))
+      await worker('speech', localSpeechJob(id, items))
+      for (const item of items) out.push({ p, url: `jiwei://podcast/${script.date}/${basename(item.out)}` })
+      continue
+    }
+    for (const chunk of speechChunks(text, voice.engine === 'qwen' ? 280 : 1500)) {
+      guard()
+      const started = Date.now()
+      const audio = await synthesize(voice.providerId, id, chunk, language, signal)
+      recordUsage(
+        voice.providerId,
+        audio.model,
+        { inputTokens: ttsChars(chunk), outputTokens: 0, reasoningTokens: 0, cachedInputTokens: 0 },
+        undefined,
+        Date.now() - started
+      )
+      const file = nextFile(audio.ext)
+      await writeFile(join(dir, file), audio.data)
+      out.push({ p, url: `jiwei://podcast/${script.date}/${file}` })
+    }
+  }
+  return out
+}
+
+/** 删除过期日期的音频（启动时调用） */
+async function pruneAudio(): Promise<void> {
+  const today = localDay(Date.now())
+  try {
+    for (const d of await readdir(podcastDir())) if (d !== today) await rm(podcastDir(d), { recursive: true, force: true })
+  } catch {
+    /* 目录不存在 */
+  }
+}
+
 export function podcast(): PodcastState {
   const row = stored()
   if (!getSettings().discover.podcast) return { date: row.date, status: 'idle', message: null, script: null }
@@ -128,7 +240,10 @@ export function podcast(): PodcastState {
       date: row.date,
       status: row.status === 'ok' ? 'stale' : row.status,
       script: null,
-      message: row.status === 'ok' ? tr('素材或隐私设置已变化，请重新生成讲稿', 'Materials or privacy settings changed; regenerate the script') : row.message
+      message:
+        row.status === 'ok'
+          ? tr('素材或隐私设置已变化，请重新生成讲稿', 'Materials or privacy settings changed; regenerate the script')
+          : row.message
     }
   return { date: row.date, status: row.status, message: row.message, script: row.script }
 }
@@ -156,8 +271,9 @@ export function registerPodcastJob(): void {
       status: 'error',
       message: tr('上次讲稿生成被中断，可重新生成', 'The previous script generation was interrupted; regenerate it')
     })
+  void pruneAudio()
   registerJobKind('discover.podcast', {
-    title: () => tr('每日学习播客讲稿', 'Daily learning podcast script'),
+    title: () => tr('每日学习播客', 'Daily learning podcast'),
     offPeak: true,
     maxAttempts: 1,
     retryOnRestart: false,
@@ -172,10 +288,29 @@ export function registerPodcastJob(): void {
         if (material().signature !== input.signature) throw new Error('Podcast materials changed')
       }
       update({ status: 'running', message: null })
+      const voice = resolveVoice(),
+        dialogue = voice?.style === 'dialogue'
       try {
-        const script = await withRun({ purpose: 'discover.podcast', caller: 'job', perRun: perRunLimit() }, async () => {
+        const script: PodcastScript = await withRun({ purpose: 'discover.podcast', caller: 'job', perRun: perRunLimit() }, async () => {
           guard()
           if (!input.facts.picks.length && !input.facts.questions.length && !input.facts.reminder) throw new Error('No podcast materials')
+          if (dialogue) {
+            const draft = await discoveryModel(
+              'discover.podcast',
+              podcastDialogueSchema(language),
+              podcastPrompt(language, 'dialogue'),
+              input.facts,
+              guard,
+              ctx.signal
+            )
+            guard()
+            return {
+              date,
+              paragraphs: draft.turns.map((x) => x.text),
+              speakers: draft.turns.map((x) => x.speaker),
+              createdAt: Date.now()
+            } satisfies PodcastScript
+          }
           const draft = await discoveryModel(
             'discover.podcast',
             podcastSchema(language),
@@ -187,7 +322,38 @@ export function registerPodcastJob(): void {
           guard()
           return { date, paragraphs: draft.paragraphs, createdAt: Date.now() } satisfies PodcastScript
         })
-        update({ status: 'ok', script, signature: input.signature, message: null })
+        let message: string | null =
+          !voice && getSettings().discover.podcastVoice?.engine === 'local'
+            ? tr('本机语音模型还没有下载，这期先用系统语音', 'The local voice model is not downloaded; using the system voice for now')
+            : null
+        if (voice) {
+          // 讲稿先落盘，合成期间也能用系统语音听
+          update({
+            status: 'running',
+            script,
+            signature: input.signature,
+            message: tr('讲稿已写好，正在合成语音…', 'Script ready; synthesizing speech…')
+          })
+          try {
+            script.audio = await withRun({ purpose: 'discover.podcast', caller: 'job', perRun: perRunLimit() }, () =>
+              synthesizeScript(script, voice, guard, (task, payload) => ctx.worker(task, payload, ctx.signal), ctx.signal)
+            )
+            script.voiceLabel = voiceLabel(voice, dialogue)
+          } catch (e) {
+            if (ctx.signal?.aborted || ctx.isCanceled()) throw e
+            script.audio = null
+            message = isBudgetError(e)
+              ? tr(
+                  '今日发现费用已达上限，语音未合成，可用系统语音收听',
+                  'Discovery budget reached; speech not synthesized, system voice is available'
+                )
+              : tr(
+                  `AI 语音合成失败，已改用系统语音：${e instanceof Error ? e.message.slice(0, 120) : ''}`,
+                  `AI speech failed; using the system voice: ${e instanceof Error ? e.message.slice(0, 120) : ''}`
+                )
+          }
+        }
+        update({ status: 'ok', script, signature: input.signature, message })
         audit({ caller: 'job', tool: 'discover.podcast', level: 'write', status: 'ok', summary: 'Daily learning script saved' })
       } catch (e) {
         const status = isBudgetError(e)
@@ -210,4 +376,37 @@ export function registerPodcastJob(): void {
     },
     onCancel: () => update({ status: 'canceled', message: tr('讲稿生成已取消', 'Script generation canceled') })
   })
+}
+
+/** 试听一个声音：合成一句示例，返回 jiwei://podcast/preview/… 地址。本机免费；云端按字数计费（约 ¥0.005） */
+export async function previewVoice(engine: 'local' | 'ai', voice: string, providerId: string | null): Promise<string> {
+  const zh = getSettings().language.startsWith('zh')
+  const text = zh
+    ? '早上好，欢迎收听今天的学习播客。先别急着翻答案，想一想：这个问题你还记得吗？'
+    : "Good morning, and welcome to today's learning podcast. Before checking the answer, take a moment: do you still remember this one?"
+  const dir = podcastDir('preview')
+  await mkdir(dir, { recursive: true })
+  const stamp = Date.now().toString(36)
+  if (engine === 'local') {
+    const out = join(dir, `${stamp}.wav`)
+    await runInWorker('speech', localSpeechJob(voice, [{ text, out }]))
+    return `jiwei://podcast/preview/${stamp}.wav`
+  }
+  const provider = ttsProviders().find((p) => p.providerId === providerId) ?? ttsProviders()[0]
+  if (!provider) throw new Error(tr('还没有可用的语音服务商', 'No speech provider is available'))
+  checkDiscoveryBudget()
+  const audio = await withRun({ purpose: 'discover.podcast', caller: 'app', perRun: perRunLimit() }, async () => {
+    const started = Date.now()
+    const a = await synthesize(provider.providerId, voice, text, getSettings().language)
+    recordUsage(
+      provider.providerId,
+      a.model,
+      { inputTokens: ttsChars(text), outputTokens: 0, reasoningTokens: 0, cachedInputTokens: 0 },
+      undefined,
+      Date.now() - started
+    )
+    return a
+  })
+  await writeFile(join(dir, `${stamp}.${audio.ext}`), audio.data)
+  return `jiwei://podcast/preview/${stamp}.${audio.ext}`
 }
