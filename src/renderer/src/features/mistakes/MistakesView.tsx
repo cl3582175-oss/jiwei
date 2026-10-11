@@ -135,6 +135,7 @@ function Detail({ m, job, changed, back }: { m: Mistake; job?: Job; changed: () 
       <div className="ml-auto flex items-center gap-1.5">
         {!editing && <>
           <Button size="sm" variant="primary" disabled={!m.landed || processing || busy} title={!m.landed ? t('mistakes.landFirst') : undefined} onClick={practise}><Dumbbell />{t('mistakes.practice')}</Button>
+          <Button size="sm" variant="outline" disabled={busy || processing} onClick={() => void run(async () => { const ids = await api.discover.remedy(m.id); toast.success(t('discover.remedyDone', { count: ids.length })) })}>{t('discover.remedyAction')}</Button>
           <Button size="sm" variant="outline" disabled={busy || processing} onClick={() => setEditing(true)}><Pencil />{t('mistakes.edit')}</Button>
           <Menu><MenuTrigger asChild><Button size="sm" variant="ghost" aria-label={t('mistakes.more')}><MoreHorizontal /></Button></MenuTrigger><MenuContent align="end">
             {m.noteId && <MenuItem onSelect={() => useApp.getState().openNote(m.noteId)}><NotebookText />{t('mistakes.openNote')}</MenuItem>}

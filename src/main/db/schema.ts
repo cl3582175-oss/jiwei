@@ -773,7 +773,7 @@ export const inboxItems = sqliteTable(
   'inbox_items',
   {
     id: text('id').primaryKey(),
-    kind: text('kind', { enum: ['text', 'screenshot', 'photo', 'file', 'clip', 'task'] }).notNull(),
+    kind: text('kind', { enum: ['text', 'screenshot', 'photo', 'file', 'clip', 'task', 'pick'] }).notNull(),
     text: text('text').notNull().default(''),
     assetId: text('asset_id'),
     recognized: text('recognized').notNull().default(''),
@@ -1052,3 +1052,27 @@ export const mailSeen = sqliteTable(
   },
   (t) => [primaryKey({ columns: [t.accountId, t.mailbox] })],
 )
+
+export const feeds = sqliteTable('feeds', {
+  id: text('id').primaryKey(), kind: text('kind').notNull(), url: text('url').notNull(), title: text('title').notNull(),
+  enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true), goalId: text('goal_id'),
+  lastFetchedAt: integer('last_fetched_at'), etag: text('etag'), lastModified: text('last_modified'), error: text('error'),
+  contentHash: text('content_hash'), ...syncCols
+})
+export const feedItems = sqliteTable('feed_items', {
+  id: text('id').primaryKey(), feedId: text('feed_id'), url: text('url').notNull(), title: text('title').notNull(),
+  summary: text('summary').notNull().default(''), author: text('author'), publishedAt: integer('published_at'),
+  fetchedAt: integer('fetched_at').notNull(), origin: text('origin', { enum: ['feed', 'search'] }).notNull(),
+  status: text('status', { enum: ['new', 'scored', 'picked', 'dismissed', 'saved', 'later'] }).notNull().default('new'),
+  score: text('score'), reason: text('reason'), related: text('related').notNull().default('[]'), gap: text('gap'),
+  minutes: integer('minutes'), pickedAt: integer('picked_at'), laterAt: integer('later_at'),
+  audioUrl: text('audio_url'), pdfUrl: text('pdf_url'), inboxId: text('inbox_id'), remedyId: text('remedy_id'), ...syncCols
+}, (t) => [uniqueIndex('feed_items_url_idx').on(t.url), index('feed_items_status_idx').on(t.status)])
+export const discoverFeedback = sqliteTable('discover_feedback', {
+  id: text('id').primaryKey(), itemId: text('item_id').notNull(), action: text('action').notNull(),
+  at: integer('at').notNull(), topic: text('topic').notNull(), reason: text('reason')
+})
+export const searchConnections = sqliteTable('search_connections', {
+  service: text('service').primaryKey(), keyEnc: blob('key_enc', { mode: 'buffer' }),
+  enabled: integer('enabled', { mode: 'boolean' }).notNull().default(false), updatedAt: integer('updated_at').notNull()
+})

@@ -124,6 +124,7 @@ export const spendZh = {
     purposeOther: '其他'
   },
   subPurposes: {
+    discover_queries: '发现查询', discover_score: '精选打分', discover_path: '学习路径', discover_remedy: '错题补救', discover_podcast: '学习播客', discover_daily: '每日精选',
     plan_schedule: 'AI 排期',
     task: 'AI 任务',
     task_parse: '解析 AI 任务',
@@ -271,6 +272,7 @@ export const spendEn: typeof spendZh = {
     purposeOther: 'Other'
   },
   subPurposes: {
+    discover_queries: 'Discovery queries', discover_score: 'Pick scoring', discover_path: 'Learning path', discover_remedy: 'Mistake remedy', discover_podcast: 'Learning podcast', discover_daily: 'Daily picks',
     plan_schedule: 'AI scheduling',
     task: 'AI task',
     task_parse: 'AI task parsing',

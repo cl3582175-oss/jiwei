@@ -1,0 +1,2 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/"><channel><title>学习订阅</title><item><title>练习 &amp; 推理</title><link>https://example.org/lesson#intro</link><description><![CDATA[<p>解释条件</p>]]></description><dc:creator>作者</dc:creator><pubDate>Fri, 09 Oct 2026 08:00:00 GMT</pubDate><enclosure url="https://example.org/audio.mp3" type="audio/mpeg" length="123"/></item></channel></rss>

@@ -158,6 +158,7 @@ export function accept(id: string, manual?: z.infer<typeof import('@shared/inbox
 async function acceptOne(id: string, manual?: z.infer<typeof import('@shared/inbox').InboxAcceptSchema>): Promise<InboxItem> {
   const item = get(id)
   if (!item || item.deletedAt) throw new Error(captureText('itemMissing'))
+  if (item.kind === 'pick') throw new Error('Use discovery actions for picks')
   if (item.status === 'filed' || item.filedTo?.proposalId) return item
   const s: InboxSuggestion | null = item.filedTo?.sourceIds
     ? { type: 'other', action: 'save_source', reason: '' }
@@ -289,7 +290,7 @@ export function complete(proposalId: string, update: Uint8Array): InboxItem[] {
 
 export function estimate(): number | null {
   const { providerId, model } = getSettings().ai.chat
-  const count = list().filter((i) => i.status === 'new' && !i.filedTo).length
+  const count = list().filter((i) => i.kind !== 'pick' && i.status === 'new' && !i.filedTo).length
   return model
     ? costOf(providerId, model, { inputTokens: count * 5000, outputTokens: count * 1000, reasoningTokens: 0, cachedInputTokens: 0 }).cost
     : null
@@ -315,7 +316,7 @@ async function runTriage(ids: string[] | undefined, canceled: () => boolean, fol
   }
   const chat = getSettings().ai.chat
   if (!chat.providerId || !chat.model) throw new Error(captureText('configureModel'))
-  const all = list().filter((i) => i.status === 'new' && !i.filedTo && (!ids || ids.includes(i.id)) && allowed(i))
+  const all = list().filter((i) => i.kind !== 'pick' && i.status === 'new' && !i.filedTo && (!ids || ids.includes(i.id)) && allowed(i))
   // 手动整理时，仍在识别的条目不跳过不管：识别完成后自动补做整理，避免“点了整理却没反应”。
   if (followUp) for (const i of all) if (i.recognitionStatus === 'pending') afterRecognition.add(i.id)
   const items = all.filter((i) => i.recognitionStatus !== 'pending')
@@ -422,7 +423,7 @@ async function runTriage(ids: string[] | undefined, canceled: () => boolean, fol
 export function checkInboxSchedule(now = new Date()): void {
   const s = getSettings(),
     day = scheduleDay(now, s.capture.time, getMeta('inboxScheduledDay'))
-  if (!s.capture.daily || !day || !s.ai.chat.providerId || !s.ai.chat.model || !list().some((i) => i.status === 'new' && !i.filedTo)) return
+  if (!s.capture.daily || !day || !s.ai.chat.providerId || !s.ai.chat.model || !list().some((i) => i.kind !== 'pick' && i.status === 'new' && !i.filedTo)) return
   const runAfter = s.capture.offPeak && hasOffPeak(s.ai.chat.providerId, s.ai.chat.model) ? nextOffPeak(now.getTime()) : now.getTime()
   getDb().transaction(() => {
     enqueue('inbox.triage', {}, { dedupeKey: 'inbox.daily', runAfter })

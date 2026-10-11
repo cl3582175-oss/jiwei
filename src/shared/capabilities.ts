@@ -3,6 +3,7 @@ import { CaptureActionSchema } from './capture'
 import { TaskSave, type AiTask, type TaskRun, type TaskToolInfo, type TaskInput } from './tasks'
 import type { TaskRecipe } from './taskRecipes'
 import { MailSave, type MailAccount } from './mail'
+import { FeedSave, DiscoverAct, SearchSave, SearchProvider, type Feed, type FeedItem, type DiscoveryStatus, type LearningPath, type SearchConnection } from './discover'
 import type { CaptureState, PhoneStatus } from './capture'
 import type { InboxItem } from './inbox'
 import {
@@ -650,6 +651,22 @@ export const capabilities = {
     }),
     harvest: cap<ReflectionHarvest>()({ description: 'AI 从复盘中提炼洞见、修正与行动项（供确认）', params: [id()] }),
     commit: cap<Reflection>()({ description: '保存确认的洞见、修正与行动项，复盘完成', params: [id(), ['input', S.HarvestCommitSchema]] })
+  },
+  discover: {
+    feeds: cap<Feed[]>()({ description: '订阅源及最近抓取状态', params: none }),
+    feedSave: cap<Feed>()({ description: '保存订阅源，启用后立即抓取', params: [['input', FeedSave]] }),
+    feedRemove: cap<void>()({ description: '移除订阅源，保留已保存内容', params: [id()] }),
+    feedRefresh: cap<void>()({ description: '刷新一个启用的订阅源', params: [id()] }),
+    items: cap<FeedItem[]>()({ description: '精选条目；可选读取全部状态用于管理', params: [['all', z.boolean().optional()]] }),
+    act: cap<{ url: string; sourceId?: string; target?: { type: 'note' | 'source'; id: string } }>()({ description: '记录读、存、稍后或不感兴趣；存为资料走真实抓取与分段', params: [['input', DiscoverAct]] }),
+    runNow: cap<string>()({ description: '排队运行每日精选，遵守每日名额和费用上限', params: none }),
+    status: cap<DiscoveryStatus>()({ description: '当日精选运行状态、费用与去重可用性', params: none }),
+    searchProviders: cap<SearchConnection[]>()({ description: '搜索连接状态，只返回凭证是否设置', params: none }),
+    searchSave: cap<void>()({ description: '用系统加密保存搜索 Key，启用一个服务', params: [['input', SearchSave]] }),
+    searchTest: cap<{ ok: boolean; message: string }>()({ description: '测试所选搜索服务，错误不包含凭证', params: [['service', SearchProvider]] }),
+    path: cap<LearningPath>()({ description: '结合知识库与搜索生成学习路径提案，正文待用户接受', params: [['goalId', z.string().min(1)]] }),
+    pathPhases: cap<SchedulePreview>()({ description: '把主进程持有的学习路径转为仅追加阶段的排期预览', params: [id()] }),
+    remedy: cap<string[]>()({ description: '为允许 AI 的错题找讲解与练习，写入不占每日名额的精选', params: [['mistakeId', z.string().min(1)]] })
   },
   mail: {
     accounts: cap<MailAccount[]>()({ description: '列出邮箱账号与凭证已设置状态，不返回凭证明文', params: none }),

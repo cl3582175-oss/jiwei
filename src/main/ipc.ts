@@ -7,6 +7,11 @@ import * as tasks from './services/tasks/service'
 import { taskToolCatalog } from './services/tasks/tools'
 import { applyResidency } from './services/tasks/residency'
 import * as mail from './services/mail/accounts'
+import * as discoverFeeds from './services/discover/feeds'
+import * as discoverSearch from './services/discover/search'
+import * as discoverItems from './services/discover/items'
+import * as discoverDaily from './services/discover/daily'
+import * as discoverPath from './services/discover/path'
 import { MAIL_PRESETS } from '@shared/mail'
 import * as browserCapture from './services/browser/capture'
 import * as mistakes from './services/mistakes'
@@ -427,6 +432,12 @@ const handlers: Handlers = {
     saveDaily: (_, answers) => reflection.saveDaily(answers),
     harvest: (_, id) => reflection.harvestReflection(id),
     commit: (_, id, input) => reflection.commitReflection(id, input)
+  },
+  discover: {
+    feeds: () => discoverFeeds.listFeeds(), feedSave: (_, input) => discoverFeeds.saveFeed(input), feedRemove: (_, id) => discoverFeeds.removeFeed(id), feedRefresh: (_, id) => discoverFeeds.refreshFeed(id),
+    items: (_, all) => discoverItems.items(all), act: (_, input) => discoverItems.act(input), runNow: () => discoverDaily.runNow(), status: () => discoverDaily.dailyStatus(),
+    searchProviders: () => discoverSearch.searchProviders(), searchSave: (_, input) => discoverSearch.searchSave(input), searchTest: (_, service) => discoverSearch.searchTest(service),
+    path: (_, goalId) => discoverPath.path(goalId), pathPhases: (_, id) => discoverPath.pathPhases(id), remedy: (_, id) => discoverPath.remedy(id)
   },
   mail: {
     help: async (_, preset) => { await shell.openExternal(MAIL_PRESETS[preset].help) },

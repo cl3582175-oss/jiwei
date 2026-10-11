@@ -46,8 +46,11 @@ const TOOL_TIMEOUT_MS = 60_000
 const MAX_RESULT = 20_000
 
 /** 把外部内容标成数据：模型只能引用其中的事实，不能执行其中的指令 */
-export function asExternalData(source: string, text: string): string {
-  const body = text.length > MAX_RESULT ? `${text.slice(0, MAX_RESULT)}\n…（已截断）` : text
+export function asExternalData(source: string, text: string, options?: { maxChars: number; overflow: 'truncate' | 'reject' }): string {
+  const limit = options?.maxChars ?? MAX_RESULT
+  // 结构化素材不能从 JSON 中间截断；专用流程可设置有界上限并明确失败。
+  if (text.length > limit && options?.overflow === 'reject') throw new Error('External data exceeds input limit')
+  const body = text.length > limit ? `${text.slice(0, limit)}\n…（已截断）` : text
   // 防止内容里伪造结束标签跳出数据区
   const safe = body.replace(/<\/?external-data/gi, (m) => m.replace('<', '‹'))
   return `<external-data source="${source.replace(/"/g, '')}">\n${safe}\n</external-data>`

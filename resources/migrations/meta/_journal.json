@@ -183,6 +183,13 @@
       "when": 1791708804903,
       "tag": "0025_mail",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "6",
+      "when": 1791710248037,
+      "tag": "0026_discover",
+      "breakpoints": true
     }
   ]
 }

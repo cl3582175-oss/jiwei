@@ -253,6 +253,19 @@ export function addUrl(url: string, title?: string, categoryId?: string | null):
   return getSource(id)!
 }
 
+/** 下载的二进制资料走与本地文件相同的资产去重、分段和索引路径。 */
+export async function importContent(name: string, mime: string, bytes: Uint8Array, init: { title: string; url?: string }): Promise<Source> {
+  const asset = await importBytes(name, mime, bytes), db = getDb()
+  const existing = db.select().from(sources).where(and(eq(sources.assetId, asset.id), isNull(sources.deletedAt))).get()
+  if (existing) return getSource(existing.id)!
+  const id = newId(), now = Date.now()
+  const ext = extname(name).slice(1).toLowerCase()
+  db.insert(sources).values({ id, title: init.title.slice(0, 500), url: init.url ?? null, kind: EXT_KIND[ext] ?? 'other', originalName: name, assetId: asset.id, accessedAt: now, createdAt: now, updatedAt: now, updatedBy: deviceId() }).run()
+  recordActivity('source_add')
+  if (canSegment(ext)) enqueueSegment(id)
+  return getSource(id)!
+}
+
 export function updateSource(id: string, patch: SourceUpdate): void {
   if (patch.aiExcluded !== undefined)
     getDb().update(recordings).set({ localOnly: patch.aiExcluded }).where(eq(recordings.sourceId, id)).run()

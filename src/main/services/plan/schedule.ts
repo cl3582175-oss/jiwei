@@ -8,6 +8,7 @@ import {
   localDay,
   type PlanLag,
   type ScheduleInput,
+  type ScheduleModel,
   type SchedulePreview
 } from '@shared/plan'
 import { getDb } from '../../db'
@@ -41,7 +42,7 @@ import { events, forecast } from './calendar'
 import { phases, milestones } from './phases'
 import { effectiveStudyMs, replaceableEvent, validateSchedule, type ScheduleConstraints } from './validate'
 
-const previews = new Map<string, { preview: SchedulePreview; signature: string }>()
+const previews = new Map<string, { preview: SchedulePreview; signature: string; additive?: boolean; resources?: { noteIds: string[]; sourceIds: string[] }[]; guard?: () => void }>()
 function collect(input: ScheduleInput, now: number) {
   const options = ScheduleOptions.parse(input),
     goal = listGoals().find((g) => g.id === options.goalId)
@@ -149,10 +150,21 @@ export async function schedulePreview(input: ScheduleInput): Promise<SchedulePre
 }
 
 /** 确认只传主进程持有的预览 ID；渲染进程不能借确认注入模型输出或越过时间约束。 */
+export function previewPathPhases(input: ScheduleInput, draft: ScheduleModel, resources: { noteIds: string[]; sourceIds: string[] }[], guard: () => void): SchedulePreview {
+  guard()
+  const now = Date.now(), context = collect(input, now), plan = validateSchedule({ ...draft, sessions: [], milestones: [] }, context.options, context.c, now)
+  if (plan.phases.length !== draft.phases.length) throw new Error('Not enough days for all path steps')
+  const preview: SchedulePreview = { ...plan, id: newId(), options: context.options, expiresAt: now + 30 * 60000, cost: 0, estimatedCost: 0 }
+  for (const [key, v] of previews) if (v.preview.expiresAt < now) previews.delete(key)
+  if (previews.size >= 20) previews.delete(previews.keys().next().value!)
+  previews.set(preview.id, { preview, signature: context.signature, additive: true, resources, guard })
+  return preview
+}
 export function scheduleApply(id: string): void {
   const entry = previews.get(id),
     now = Date.now()
   if (!entry || entry.preview.expiresAt < now) throw new Error('Preview expired; regenerate it')
+  entry.guard?.()
   const p = entry.preview,
     context = collect(p.options, now)
   if (context.signature !== entry.signature || p.sessions.some((s) => s.startAt <= now))
@@ -160,6 +172,7 @@ export function scheduleApply(id: string): void {
   const db = getDb(),
     sync = { updatedAt: now, updatedBy: deviceId() }
   db.transaction((tx) => {
+    if (!entry.additive) {
     const replace = tx
       .select()
       .from(planEvents)
@@ -225,11 +238,13 @@ export function scheduleApply(id: string): void {
           .set({ ...sync, deletedAt: now })
           .where(eq(goalMilestones.id, m.id))
           .run()
+    }
+    const positionStart = entry.additive ? Math.max(-1, ...phases(p.options.goalId).map((f) => f.position)) + 1 : 0
     const phaseIds = p.phases.map(() => newId())
     p.phases.forEach((phase, position) =>
       tx
         .insert(goalPhases)
-        .values({ ...phase, ...sync, createdAt: now, id: phaseIds[position], goalId: p.options.goalId, position, origin: 'ai' })
+        .values({ ...phase, ...sync, createdAt: now, id: phaseIds[position], goalId: p.options.goalId, position: positionStart + position, origin: 'ai', noteIds: JSON.stringify(entry.resources?.[position]?.noteIds ?? []), sourceIds: JSON.stringify(entry.resources?.[position]?.sourceIds ?? []) })
         .run()
     )
     for (const m of p.milestones)
@@ -259,7 +274,7 @@ export function scheduleApply(id: string): void {
           origin: 'ai'
         })
         .run()
-    tx.update(goals)
+    if (!entry.additive) tx.update(goals)
       .set({
         ...sync,
         startAt: p.options.startAt,

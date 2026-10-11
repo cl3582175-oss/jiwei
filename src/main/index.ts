@@ -46,6 +46,8 @@ import { startMemoryLearning, stopMemoryLearning } from './services/memoryLearn'
 import { syncAllCards } from './services/review'
 import { startReminders, stopReminders } from './services/reminders'
 import { registerTaskJob } from './services/tasks/runner'
+import { registerFeedJob } from './services/discover/feeds'
+import { registerDailyJob } from './services/discover/daily'
 import { recoverTaskRuns } from './services/tasks/service'
 import { startResidency, stopResidency, attachResidency, isResident } from './services/tasks/residency'
 import { importProvidersForTest } from './services/ai/providers'
@@ -178,6 +180,8 @@ app.whenReady().then(async () => {
   registerIpc()
   registerJobKinds()
   registerTaskJob()
+  registerFeedJob()
+  registerDailyJob()
   recoverTaskRuns()
   registerAsrJob()
   registerMossJob()

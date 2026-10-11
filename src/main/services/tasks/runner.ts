@@ -87,6 +87,21 @@ export async function runTask(
       error: string | null = null
     try {
       check()
+      if (task.recipe === 'daily-picks') {
+        // 此配方执行已校验的发现流程，不能让通用工具代理自由改写流程或名额。
+        const { runDaily, dailyRunning } = await import('../discover/daily')
+        if (dailyRunning()) {
+          status = 'skipped'
+          summary = zh ? '精选流程正在运行，本次已跳过。' : 'Discovery is already running; this run was skipped.'
+        } else {
+        const result = await runDaily(check, ctx.signal)
+        refs.push(...result.inboxIds.map((id) => ({ type: 'inbox' as const, id })))
+        if (result.status === 'error' || result.status === 'canceled') throw new Error('Discovery did not finish')
+        status = result.status === 'budget' ? 'budget' : 'ok'
+        summary = zh ? `每日精选生成 ${result.picked} 条${status === 'budget' ? '，达到发现费用上限后停止' : ''}。` : `Daily discovery selected ${result.picked} items${status === 'budget' ? '; discovery budget reached' : ''}.`
+        if (task.outputs.briefing) refs.push({ type: 'briefing', id })
+        }
+      } else {
       const chat = getSettings().ai.chat
       if (!chat.providerId || !chat.model) throw new Error('AI model missing')
       const model = quickModel(chat.providerId, chat.model),
@@ -231,6 +246,7 @@ export async function runTask(
         })
         refs.push({ type: 'proposal', id: p.id, noteId: p.noteId })
         audit({ caller, tool: 'task_output_note_proposal', level: 'write', status: 'ok', summary: 'Task result proposed to selected note' })
+      }
       }
     } catch (e) {
       status = isBudgetError(e)

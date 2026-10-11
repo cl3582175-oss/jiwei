@@ -1,3 +1,4 @@
+import { SearchSettings } from '../discover/DiscoverSettings'
 import { useEffect, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -687,6 +688,7 @@ export function ConnectionsSettings() {
       </section>
       <ServeSection />
       <MailSettings />
+      <SearchSettings />
     </div>
   )
 }

@@ -266,6 +266,7 @@ function TaskEditor({ input, onClose }: { input: TaskInput; onClose: () => void 
     setV({ ...v, outputs: { ...v.outputs, [key]: enabled ? true : undefined } })
   return (
     <div className="space-y-4 pt-3" data-testid="task-editor">
+      {v.recipe === 'daily-picks' && <p className="text-xs text-accent">{t('discover.recipeHint')}</p>}
       <p className="text-xs text-muted">{t('tasks.parsePreview')}</p>
       <label className="block text-xs text-muted">
         {t('tasks.name')}
@@ -282,7 +283,7 @@ function TaskEditor({ input, onClose }: { input: TaskInput; onClose: () => void 
         />
       </label>
       <TriggerEditor value={v.trigger} onChange={(trigger) => setV({ ...v, trigger })} />
-      <fieldset className="space-y-2">
+      {v.recipe !== 'daily-picks' && <fieldset className="space-y-2">
         <legend className="text-sm text-fg">{t('tasks.tools')}</legend>
         {(['knowledge', 'plan', 'mail', 'web', 'mcp'] as const).map((group) => (
           <div key={group}>
@@ -312,18 +313,18 @@ function TaskEditor({ input, onClose }: { input: TaskInput; onClose: () => void 
           </div>
         ))}
         <p className="text-2xs text-subtle">{t('tasks.toolHint')}</p>
-      </fieldset>
+      </fieldset>}
       <fieldset>
         <legend className="text-sm text-fg">{t('tasks.outputs')}</legend>
         <div className="mt-2 flex flex-wrap gap-3">
-          {(['inbox', 'briefing', 'notify', 'actions'] as const).map((key) => (
+          {(['inbox', 'briefing', 'notify', 'actions'] as const).filter((key) => v.recipe !== 'daily-picks' || key !== 'actions').map((key) => (
             <label key={key} className="flex gap-1 text-xs text-fg">
-              <input type="checkbox" checked={!!v.outputs[key]} onChange={(e) => output(key, e.target.checked)} />
+              <input type="checkbox" disabled={v.recipe === 'daily-picks' && key === 'inbox'} checked={!!v.outputs[key]} onChange={(e) => output(key, e.target.checked)} />
               {t(`tasks.output.${key}`)}
             </label>
           ))}
         </div>
-        <div className="mt-3 flex items-center gap-2">
+        {v.recipe !== 'daily-picks' && <div className="mt-3 flex items-center gap-2">
           <Button size="sm" onClick={() => setPicker(true)}>
             {t('tasks.note')}
           </Button>
@@ -335,7 +336,7 @@ function TaskEditor({ input, onClose }: { input: TaskInput; onClose: () => void 
               </Button>
             </>
           )}
-        </div>
+        </div>}
       </fieldset>
       <label className="block text-xs text-muted">
         {t('tasks.budget')} ({settings?.budget.currency ?? settings?.money.currency})

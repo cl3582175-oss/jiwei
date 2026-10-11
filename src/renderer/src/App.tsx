@@ -130,6 +130,15 @@ function useMainEvents(): void {
         for (const key of ['plan', 'today', 'today-briefing', 'goals', 'actions']) void qc.invalidateQueries({ queryKey: [key] })
       }),
       window.jiweiEvents.on('review:changed', () => void qc.invalidateQueries({ queryKey: ['plan', 'forecast'] })),
+      // 后台精选与错题补救可能在收件箱关闭时完成，也必须使缓存失效。
+      window.jiweiEvents.on('discover:changed', () => {
+        void qc.invalidateQueries({ queryKey: ['discover'] })
+        void qc.invalidateQueries({ queryKey: ['inbox'] })
+      }),
+      window.jiweiEvents.on('inbox:changed', () => {
+        void qc.invalidateQueries({ queryKey: ['inbox'] })
+        void qc.invalidateQueries({ queryKey: ['inboxEstimate'] })
+      }),
       window.jiweiEvents.on('lenses:changed', refresh),
       window.jiweiEvents.on('series:changed', refresh),
       window.jiweiEvents.on('recording:changed', refresh),

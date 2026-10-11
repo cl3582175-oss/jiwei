@@ -211,6 +211,7 @@ export type Palette = 'qinglu' | 'celadon' | 'dunhuang'
 export type SidebarPage = 'notes' | 'library' | 'chat'
 
 export interface Settings {
+  discover: { dailyLimit: number; dailyBudget: number; budgetCurrency: string; useSearch: boolean }
   tasks: { paused: boolean; launchAtLogin: boolean; keepRunning: boolean }
   plan: { autoComplete: boolean }
   recordingScene?: 'meeting' | 'lecture' | 'thought'
@@ -1034,6 +1035,7 @@ export interface SourceRecognition {
 /** 主进程 → 渲染进程的事件 */
 export interface JiweiEvents {
   'mail:changed': Record<string, never>
+  'discover:changed': Record<string, never>
   'lenses:changed': { sourceId: string }
   'series:changed': undefined
   'recording:changed': { id: string }

@@ -1,3 +1,4 @@
+import { DiscoverSettings } from '../discover/DiscoverSettings'
 import { TasksSettings } from '../tasks/TasksSettings'
 import { BackupSettings } from './BackupSettings'
 import { ActivitySettings } from '../today/ActivitySettings'
@@ -45,7 +46,7 @@ import { Switch } from '@/components/ui/switch'
 import { Logo } from '@/components/Logo'
 
 type Tab =
-  'tasks' | 'general' | 'me' | 'learning' | 'ai' | 'skills' | 'lenses' | 'appearance' | 'usage' | 'connections' | 'data' | 'browser' | 'about'
+  'discover' | 'tasks' | 'general' | 'me' | 'learning' | 'ai' | 'skills' | 'lenses' | 'appearance' | 'usage' | 'connections' | 'data' | 'browser' | 'about'
 
 const PALETTES: PaletteId[] = ['qinglu', 'celadon', 'dunhuang']
 
@@ -281,6 +282,7 @@ export function SettingsDialog() {
     { id: 'usage', icon: <Gauge /> },
     { id: 'connections', icon: <Cable /> },
     { id: 'tasks', icon: <Sparkles /> },
+    { id: 'discover', icon: <Sparkles /> },
     { id: 'data', icon: <Database /> },
     { id: 'browser', icon: <Monitor /> },
     { id: 'about', icon: <Info /> }
@@ -305,7 +307,7 @@ export function SettingsDialog() {
                 )}
               >
                 {it.icon}
-                {it.id === 'tasks' ? t('tasks.title') : it.id === 'browser'
+                {it.id === 'discover' ? t('discover.title') : it.id === 'tasks' ? t('tasks.title') : it.id === 'browser'
                   ? '浏览器'
                   : it.id === 'usage' || it.id === 'connections'
                     ? t(`agent.tabs.${it.id}`)
@@ -314,6 +316,7 @@ export function SettingsDialog() {
             ))}
           </nav>
           <div className="min-w-0 flex-1 overflow-y-auto px-8 py-4">
+            {tab === 'discover' && <DiscoverSettings />}
             {tab === 'tasks' && <TasksSettings />}
             {tab === 'browser' && <BrowserSafetySettings />}
             {tab === 'general' && <ProfileRow />}

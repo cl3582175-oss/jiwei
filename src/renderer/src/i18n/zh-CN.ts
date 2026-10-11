@@ -1,3 +1,4 @@
+import { discoverZh } from '../features/discover/messages'
 import { tasksZh } from '../features/tasks/messages'
 import { mailZh } from '../features/tasks/mailMessages'
 import { planZh } from '../features/plan/messages'
@@ -9,6 +10,7 @@ import { safetyZh } from '../features/settings/safetyMessages'
 import { readingZh } from '../features/reading/messages'
 
 const zhCN = {
+  discover: discoverZh,
   tasks: tasksZh,
   mail: mailZh,
   plan: planZh,
@@ -308,7 +310,7 @@ const zhCN = {
     offPeak: '排到 DeepSeek 夜间半价时段',
     recognizeJob: '识别收件箱图片',
     triageJob: '整理收件箱',
-    kind: { task: 'AI 任务', text: '文字', screenshot: '截图', photo: '照片', file: '文件', clip: '摘抄' },
+    kind: { pick: '精选', task: 'AI 任务', text: '文字', screenshot: '截图', photo: '照片', file: '文件', clip: '摘抄' },
     status: { new: '待整理', suggested: '已有建议', filed: '已归档', dismissed: '已忽略' },
     recognition: {
       pending: '正在识别',

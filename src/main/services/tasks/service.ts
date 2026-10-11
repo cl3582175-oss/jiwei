@@ -77,6 +77,8 @@ export async function saveTask(input: TaskInput): Promise<AiTask> {
   const v = TaskSave.parse(input),
     old = v.id ? getTask(v.id) : undefined
   if (v.id && !old) throw new Error('Task not found')
+  if (v.recipe === 'daily-picks' && (!v.outputs.inbox || v.outputs.noteId || v.outputs.actions || v.tools.length))
+    throw new Error(getSettings().language.startsWith('zh') ? '每日精选配方需要收件箱输出，工具与其他写入由固定发现流程管理' : 'Daily picks requires inbox output; its fixed discovery workflow manages tools and writes')
   const { taskToolCatalog } = await import('./tools')
   const catalog = await taskToolCatalog()
   if (v.tools.some((name) => !catalog.tools[name]))
@@ -169,7 +171,6 @@ export async function parseTask(description: string): Promise<TaskInput> {
 export function recipes() {
   const zh = getSettings().language.startsWith('zh')
   return taskRecipes
-    .filter((r) => r.requires !== 'discover')
     .map((r) => ({ ...r, task: { ...r.task, name: zh ? r.name.zh : r.name.en, instruction: zh ? r.task.instruction : r.instructionEn } }))
 }
 export function todayTaskResults(): TodayTaskResult[] {

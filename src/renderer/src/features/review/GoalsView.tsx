@@ -1,3 +1,4 @@
+import { PathDialog } from '../discover/PathDialog'
 import { useEffect, useState } from 'react'
 import { FloatingPanel } from '@/components/FloatingPanel'
 import { useTranslation } from 'react-i18next'
@@ -164,6 +165,7 @@ function GoalDetail({ goal, onBack }: { goal: Goal; onBack: () => void }) {
   const { data: acts = [] } = useQuery({ queryKey: ['actions', 'goal', goal.id], queryFn: () => api.actions.list() })
   const mine = acts.filter((a) => a.goalId === goal.id && a.status !== 'dropped')
   const [editing, setEditing] = useState(false)
+  const [pathing, setPathing] = useState(false)
   const [scheduling, setScheduling] = useState(useApp.getState().scheduleGoal)
   const refresh = (): void => {
     for (const k of ['goals', 'actions', 'reflection']) void qc.invalidateQueries({ queryKey: [k] })
@@ -233,6 +235,8 @@ function GoalDetail({ goal, onBack }: { goal: Goal; onBack: () => void }) {
         </div>
       )}
       <Timeline goal={goal} />
+      {goal.status === 'active' && <Button className="mt-4 mr-2" variant="outline" onClick={() => setPathing(true)}>{t('discover.path')}</Button>}
+      {pathing && <PathDialog goal={goal} close={() => setPathing(false)} />}
       {goal.status === 'active' && <Button variant="primary" className="mt-4" onClick={() => setScheduling(true)}>{t('plan.generatePlan')}</Button>}
       {scheduling && <ScheduleDialog goal={goal} onClose={() => { setScheduling(false); useApp.setState({ scheduleGoal: false }) }} />}
       <section className="mt-6">

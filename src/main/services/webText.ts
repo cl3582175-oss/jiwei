@@ -4,10 +4,11 @@ import { externalFetch, checkedWebUrl } from './externalFetch'
 import { getSettings } from './settings'
 import { isSensitiveUrl } from '../lib/browserPolicy'
 
-export async function fetchWebText(url: string, selector?: string): Promise<{ title: string; text: string; url: string }> {
+export async function fetchWebText(url: string, selector?: string, signal?: AbortSignal): Promise<{ title: string; text: string; url: string }> {
   const u = checkedWebUrl(url)
   if (isSensitiveUrl(u.href, getSettings().browser?.aiBlockedSites ?? [])) throw new Error('This site is excluded from AI')
   const r = await externalFetch(u.href, {
+    signal,
     validateUrl: (next) => {
       if (isSensitiveUrl(next, getSettings().browser?.aiBlockedSites ?? [])) throw new Error('This site is excluded from AI')
     }

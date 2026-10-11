@@ -1,3 +1,4 @@
+import { PicksView } from '../discover/PicksView'
 import { requestPhoneUpload } from '../capture/PhoneDialog'
 import { useMoney } from '@/lib/money'
 import { useEffect, useState } from 'react'
@@ -34,6 +35,8 @@ export function InboxView() {
   const [busy, setBusy] = useState(false),
     [pick, setPick] = useState<string | null>(null)
   const [showAll, setShowAll] = useState(false)
+  const [tab, setTab] = useState<'captures' | 'picks'>('captures')
+  const regular = items.filter((i) => i.kind !== 'pick')
   const qc = useQueryClient()
   const run = async (fn: () => Promise<unknown>): Promise<void> => {
     if (busy) return
@@ -67,8 +70,8 @@ export function InboxView() {
       }
     })
   }
-  const pending = items.filter((i) => i.status === 'new' || i.status === 'suggested').length
-  const visible = showAll ? items : items.filter((i) => i.status === 'new' || i.status === 'suggested')
+  const pending = regular.filter((i) => i.status === 'new' || i.status === 'suggested').length
+  const visible = showAll ? regular : regular.filter((i) => i.status === 'new' || i.status === 'suggested')
   return (
     <div className="flex h-full flex-col overflow-hidden" data-testid="inbox-view">
       <header className="drag flex shrink-0 flex-wrap items-end gap-x-4 gap-y-3 px-8 pb-5 pt-12">
@@ -82,6 +85,7 @@ export function InboxView() {
           </h1>
         </div>
         <div className="no-drag flex flex-wrap items-center gap-1.5">
+          {tab === 'captures' && <>
           <Button variant="ghost" onClick={requestPhoneUpload}>
             <Smartphone />
             {t('capture.phone')}
@@ -93,10 +97,10 @@ export function InboxView() {
           <span className="mx-1 h-5 w-px bg-border" aria-hidden />
           <Button
             variant="outline"
-            disabled={busy || !items.some((i) => i.status === 'suggested')}
+            disabled={busy || !regular.some((i) => i.status === 'suggested')}
             onClick={() =>
               void run(async () => {
-                for (const i of items) if (i.status === 'suggested') await accept(i.id)
+                for (const i of regular) if (i.status === 'suggested') await accept(i.id)
               })
             }
           >
@@ -118,9 +122,11 @@ export function InboxView() {
             <Sparkles />
             {t('inbox.triage')}
           </Button>
+          </>}
         </div>
       </header>
-      <div className="min-h-0 flex-1 overflow-y-auto px-8 pb-10">
+      <div role="tablist" aria-label={t('inbox.title')} className="mb-4 flex gap-2 border-b border-border px-8 pb-3">{(['captures', 'picks'] as const).map((key) => <button key={key} role="tab" aria-selected={tab === key} className={cn('rounded-lg px-3 py-1.5 text-sm', tab === key ? 'bg-accent-soft text-accent' : 'text-muted hover:bg-sunken')} onClick={() => setTab(key)}>{t(`discover.${key}`)}</button>)}</div>
+      {tab === 'picks' ? <PicksView inboxIds={new Set(items.filter((i) => i.kind === 'pick' && i.status === 'new').map((i) => i.id))} /> : <div className="min-h-0 flex-1 overflow-y-auto px-8 pb-10">
         <div className="mx-auto max-w-3xl">
           <div className="mb-3 flex items-center justify-end border-b border-border pb-3">
             <label className="flex cursor-pointer items-center gap-2 text-xs text-muted">
@@ -277,7 +283,7 @@ export function InboxView() {
             })}
           </div>
         </div>
-      </div>
+      </div>}
       <NotePicker
         open={!!pick}
         title={t('inbox.chooseNote')}

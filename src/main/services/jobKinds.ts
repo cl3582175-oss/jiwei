@@ -1,4 +1,4 @@
-import { net } from 'electron'
+import { externalFetch } from './externalFetch'
 import { registerIcsJobs } from './plan/ics'
 import { and, eq, isNull, sql } from 'drizzle-orm'
 import { getDb } from '../db'
@@ -105,11 +105,11 @@ export function registerJobKinds(): void {
     async run({ sourceId }, ctx) {
       const s = getDb().select().from(sources).where(eq(sources.id, sourceId)).get()
       if (!s?.url) return { skipped: 'no url' }
-      const res = await net.fetch(s.url, { headers: { 'User-Agent': 'Mozilla/5.0 (Jiwei)' }, signal: AbortSignal.timeout(30_000) })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const res = await externalFetch(s.url, { signal: ctx.signal, maxBytes: 8 * 1024 * 1024 })
+      if (res.status !== 200) throw new Error(`HTTP ${res.status}`)
       const type = res.headers.get('content-type') ?? ''
       if (!/html|text/.test(type)) throw new Error(`不支持的网页类型：${type}`)
-      const html = await res.text()
+      const html = res.text
       const ref = await importBytes('snapshot.html', 'text/html', new TextEncoder().encode(html))
       getDb().update(sources).set({ assetId: ref.id, updatedAt: Date.now(), updatedBy: deviceId() }).where(eq(sources.id, sourceId)).run()
       const parsed = await ctx.worker<{ title: string; segments: SegmentInput[] }>('parseHtml', { path: assetPath(ref.id, 'html') })
