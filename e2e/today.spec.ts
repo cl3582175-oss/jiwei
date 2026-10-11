@@ -97,7 +97,9 @@ test('导航分组：点组回到上次去过的页面，⌘9 回到今日', asy
   await navTo(page, /^资料库/)
   await expect(rail.getByRole('button', { name: /^资料库/ })).toHaveAttribute('aria-current', 'page')
   await navTo(page, /^学习目标/)
-  await expect(page.getByRole('tab', { name: '学习目标' })).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByTestId('goals-view')).toBeVisible()
+  // 学习目标只在「计划」里，复习页不再有这个标签
+  await expect(page.getByRole('tab', { name: '学习目标' })).toHaveCount(0)
   await expect(rail.getByRole('button', { name: /^学习目标/ })).toHaveAttribute('aria-current', 'page')
   await page.keyboard.press('ControlOrMeta+9')
 })

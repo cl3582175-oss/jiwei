@@ -77,7 +77,8 @@ test('mastery map: treemap, filters and list', async () => {
 })
 
 test('goals: create with a category, progress, actions, link another note', async () => {
-  await page.getByRole('tab', { name: '学习目标' }).click()
+  await navTo(page, /^学习目标/)
+  await expect(page.getByTestId('goals-view')).toBeVisible()
   await page.getByRole('button', { name: '新建目标' }).click()
   await page.getByRole('dialog').getByRole('textbox', { name: '目标', exact: true }).fill('三个月内能独立做 A/B 测试分析')
   await page.getByRole('dialog').getByRole('combobox', { name: '关联分类' }).selectOption({ label: '统计学' })

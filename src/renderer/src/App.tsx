@@ -18,6 +18,7 @@ import { LibraryView } from './features/library/LibraryView'
 import { TrashView } from './features/trash/TrashView'
 import { ChatView } from './features/chat/ChatView'
 import { ReviewView } from './features/review/ReviewView'
+import { GoalsPage } from './features/review/GoalsView'
 import { FeynmanView } from './features/feynman/FeynmanView'
 import { ReflectView } from './features/reflect/ReflectView'
 import { GraphView } from './features/graph/GraphView'
@@ -201,6 +202,7 @@ export function App() {
             {view === 'library' && <LibraryView />}
             {view === 'chat' && <ChatView />}
             {view === 'review' && <ReviewView />}
+            {view === 'goals' && <GoalsPage />}
             {view === 'feynman' && <FeynmanView />}
             {view === 'reflect' && <ReflectView />}
             {view === 'graph' && <GraphView />}

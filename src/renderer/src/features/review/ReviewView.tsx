@@ -13,7 +13,6 @@ import { FloatingPanel } from '@/components/FloatingPanel'
 import { InkLeaf } from '@/components/Illustrations'
 import { errText } from '../chat/useChat'
 import { MasteryPanel } from './MasteryView'
-import { GoalsPanel } from './GoalsView'
 import { MistakesView } from '../mistakes/MistakesView'
 import { useProvidePageContext } from '../assist/pageContext'
 import { RichMistake } from '../mistakes/RichMistake'
@@ -396,7 +395,7 @@ function ReviewToday() {
   )
 }
 
-type Tab = 'today' | 'mistakes' | 'mastery' | 'goals'
+type Tab = 'today' | 'mistakes' | 'mastery'
 
 export function ReviewView() {
   const { t } = useTranslation()
@@ -406,7 +405,7 @@ export function ReviewView() {
       <header className="drag flex h-[52px] shrink-0 items-center gap-6 border-b border-border/70 pr-[calc(var(--tb-right)+16px)] pl-8">
         <h1 className="font-serif text-md font-semibold tracking-wide text-fg">{t('review.title')}</h1>
         <div role="tablist" className="no-drag inline-flex rounded-lg bg-sunken p-0.5">
-          {(['today', 'mistakes', 'mastery', 'goals'] as Tab[]).map((k) => (
+          {(['today', 'mistakes', 'mastery'] as Tab[]).map((k) => (
             <button
               key={k}
               role="tab"
@@ -422,16 +421,10 @@ export function ReviewView() {
       <div className="min-h-0 flex-1 overflow-y-auto">
         {tab === 'today' && <ReviewToday />}
         {tab === 'mistakes' && <MistakesView />}
-        {tab !== 'today' && tab !== 'mistakes' && (
+        {tab === 'mastery' && (
           <div className="mx-auto max-w-[920px] px-10 pt-8 pb-16">
-            {tab === 'mastery' ? (
-              <>
-                <p className="mb-5 text-sm text-muted">{t('mastery.desc')}</p>
-                <MasteryPanel />
-              </>
-            ) : (
-              <GoalsPanel />
-            )}
+            <p className="mb-5 text-sm text-muted">{t('mastery.desc')}</p>
+            <MasteryPanel />
           </div>
         )}
       </div>

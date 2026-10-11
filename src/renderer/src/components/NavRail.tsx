@@ -87,12 +87,12 @@ function RailButton({
 
 export function NavRail() {
   const { t } = useTranslation()
-  const { view, setSettingsOpen, setPaletteOpen, browserOpen, reviewTab, lastInGroup, goNav } = useApp()
+  const { view, setSettingsOpen, setPaletteOpen, browserOpen, lastInGroup, goNav } = useApp()
   const sidebar = useSidebar()
   const { data: inbox = [] } = useInbox()
   const { data: stats } = useReviewStats()
   const inboxCount = inbox.filter((i) => i.status === 'new' || i.status === 'suggested').length
-  const current = currentNavItem({ view, browserOpen, reviewTab })
+  const current = currentNavItem({ view, browserOpen })
   const currentGroup = current ? groupOf(current) : null
 
   // 通过快捷键、链接等其他途径到达的页面，也记为这组的“上次”

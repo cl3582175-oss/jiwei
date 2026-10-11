@@ -3,7 +3,7 @@ import { canonicalUrl } from '@shared/browserUrl'
 import type { NoteSort, WorkspaceContext } from '@shared/types'
 import { toast } from 'sonner'
 
-export type View = 'today' | 'recording' | 'inbox' | 'notes' | 'library' | 'chat' | 'review' | 'reflect' | 'graph' | 'feynman' | 'trash'
+export type View = 'today' | 'recording' | 'inbox' | 'notes' | 'library' | 'chat' | 'review' | 'goals' | 'reflect' | 'graph' | 'feynman' | 'trash'
 
 /**
  * 导航五组（v0.6.7，设计见 docs/design/v0.7-platform-and-loop.md §2.1）：今日 · 收集 · 学习 · 计划（创作在 v0.9 加入）。
@@ -17,10 +17,9 @@ export const NAV_GROUPS: Record<NavGroup, NavItem[]> = {
   learn: ['notes', 'review', 'feynman', 'graph'],
   plan: ['goals', 'reflect']
 }
-/** 当前所在的导航条目（浏览器显示在笔记工作区左栏，算作“收集 · 浏览器”；复习页的目标标签算作“计划 · 目标”） */
-export function currentNavItem(s: { view: View; browserOpen: boolean; reviewTab: string }): NavItem | null {
+/** 当前所在的导航条目（浏览器显示在笔记工作区左栏，算作“收集 · 浏览器”） */
+export function currentNavItem(s: { view: View; browserOpen: boolean }): NavItem | null {
   if (s.view === 'notes' && s.browserOpen) return 'browser'
-  if (s.view === 'review' && s.reviewTab === 'goals') return 'goals'
   if (s.view === 'chat' || s.view === 'trash') return null
   return s.view as NavItem
 }
@@ -85,8 +84,8 @@ interface AppState extends Location {
   openGraph: (focus?: string | null) => void
 
   /** 复习页的标签：今日复习 / 掌握度地图 / 学习目标 */
-  reviewTab: 'today' | 'mistakes' | 'mastery' | 'goals'
-  setReviewTab: (t: 'today' | 'mistakes' | 'mastery' | 'goals') => void
+  reviewTab: 'today' | 'mistakes' | 'mastery'
+  setReviewTab: (t: 'today' | 'mistakes' | 'mastery') => void
 
   /** 复盘页中打开的复盘（null 为复盘首页） */
   reflectionId: string | null
@@ -247,11 +246,6 @@ export const useApp = create<AppState>((set, get) => {
       set({ lastInGroup: { ...s.lastInGroup, [groupOf(item)]: item } })
       if (item === 'browser') return s.openBrowser()
       if (s.browserOpen && item === 'notes') s.closeBrowser()
-      if (item === 'goals') {
-        set({ reviewTab: 'goals' })
-        return s.navigate({ view: 'review' })
-      }
-      if (item === 'review' && s.reviewTab === 'goals') set({ reviewTab: 'today' })
       if (item === 'graph') return s.openGraph(null)
       if (item === 'notes' && s.view === 'notes' && !s.browserOpen) return s.openNote(null)
       s.navigate({ view: item })

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { FloatingPanel } from '@/components/FloatingPanel'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Dialog as D } from 'radix-ui'
@@ -265,5 +266,22 @@ export function GoalsPanel() {
       )}
       {creating && <GoalDialog goal={null} onClose={() => setCreating(false)} />}
     </div>
+  )
+}
+
+/** 「计划 → 学习目标」（v0.7.1 起独立成页，不再是复习页的一个标签） */
+export function GoalsPage() {
+  const { t } = useTranslation()
+  return (
+    <FloatingPanel flushLeft className="flex flex-col">
+      <header className="drag flex h-[52px] shrink-0 items-center border-b border-border/70 pr-[calc(var(--tb-right)+16px)] pl-8">
+        <h1 className="font-serif text-md font-semibold tracking-wide text-fg">{t('nav.goals')}</h1>
+      </header>
+      <div className="min-h-0 flex-1 overflow-y-auto" data-testid="goals-view">
+        <div className="mx-auto max-w-[920px] px-10 pt-8 pb-16">
+          <GoalsPanel />
+        </div>
+      </div>
+    </FloatingPanel>
   )
 }
