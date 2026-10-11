@@ -124,7 +124,16 @@ function useMainEvents(): void {
       window.jiweiEvents.on('series:changed', refresh),
       window.jiweiEvents.on('recording:changed', refresh),
       window.jiweiEvents.on('people:changed', refresh),
-      window.jiweiEvents.on('reflection:changed', refresh)
+      window.jiweiEvents.on('reflection:changed', refresh),
+      // v0.7：系统通知“积微助手已完成”被点击；记账、MCP 状态与审计变化
+      window.jiweiEvents.on('nav:chat', ({ conversationId }) => {
+        useApp.getState().openConversation(conversationId)
+      }),
+      window.jiweiEvents.on('usage:changed', () => void qc.invalidateQueries({ queryKey: ['usage'] })),
+      window.jiweiEvents.on('mcp:changed', () => {
+        void qc.invalidateQueries({ queryKey: ['mcp'] })
+      }),
+      window.jiweiEvents.on('agent:audit', () => void qc.invalidateQueries({ queryKey: ['audit'] }))
     ]
     return () => subscriptions.forEach((unsubscribe) => unsubscribe())
   }, [qc])

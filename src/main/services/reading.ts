@@ -170,7 +170,7 @@ export async function translate(raw:ReadingBatch):Promise<ReadingBatchResult> {
       model=quickModel(configured.providerId,configured.model)
       let style=''
       try{style=loadSkill('translate-passage',getSettings().language.startsWith('zh'))}catch{ /* 内置风格常量仍满足翻译约束 */ }
-      const result=await structured({
+      const result=await structured({ purpose: 'reading',
         providerId:configured.providerId,model,system:`${READING_SYSTEM}\nStyle guidance (the structured output contract takes precedence):\n${style}`,
         prompt:`Translate into ${input.targetLanguage}; translation=${pending.some((item)=>item.translateNeeded)}. Follow each paragraph's translate flag; do not retranslate translate=false paragraphs. Do not annotate other words.\n<reading_data>\n${JSON.stringify(pending.map(({paragraph,missingCandidates,translateNeeded})=>({id:paragraph.id,text:paragraph.text,translate:translateNeeded,candidates:missingCandidates.map((candidate)=>candidate.word)})))}\n</reading_data>`,
         schema:ReadingOutputSchema,signal:AbortSignal.any([controller.signal,AbortSignal.timeout(90000)]),guard,

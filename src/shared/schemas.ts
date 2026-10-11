@@ -1,4 +1,5 @@
 import { CaptureSettingsSchema } from './capture'
+import { BudgetSchema, McpServeSettingsSchema } from './agent'
 export { InboxCreateSchema, InboxUpdateSchema, InboxAcceptSchema } from './inbox'
 import { z } from 'zod'
 import { ExternalBackupSchema } from './backup'
@@ -82,6 +83,10 @@ export const SettingsPatchSchema = z.object({
   onboarded: z.boolean().optional(),
   sidebarCollapsed: z.boolean().optional(),
   ai: z.lazy(() => AiSettingsSchema).optional(),
+  /** 费用上限（v0.7） */
+  budget: z.lazy(() => BudgetSchema).optional(),
+  /** 积微作为 MCP 服务端（v0.7） */
+  mcpServe: z.lazy(() => McpServeSettingsSchema).optional(),
   reflection: z
     .object({
       daily: z.boolean(),

@@ -2,7 +2,9 @@ import { net } from 'electron'
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 import { createAnthropic } from '@ai-sdk/anthropic'
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
-import type { LanguageModel } from 'ai'
+import { wrapLanguageModel, type LanguageModel, type LanguageModelMiddleware } from 'ai'
+import { checkBudget, recordUsage } from '../agent/usage'
+import { currentRun } from '../agent/context'
 import { PROVIDER_PRESETS, type Effort, type ProviderKind } from '@shared/ai'
 import { decryptKey, getProviderRow } from './providers'
 
@@ -58,7 +60,53 @@ function compatibleBody(kind: ProviderKind, effort: Effort, sendEffort: boolean)
   }
 }
 
+type ProviderUsage = {
+  inputTokens: { total?: number; cacheRead?: number }
+  outputTokens: { total?: number; reasoning?: number }
+}
+const toUsage = (u: ProviderUsage) => ({
+  inputTokens: u.inputTokens.total ?? 0,
+  outputTokens: u.outputTokens.total ?? 0,
+  reasoningTokens: u.outputTokens.reasoning ?? 0,
+  cachedInputTokens: u.inputTokens.cacheRead ?? 0
+})
+
+/**
+ * 记账与费用上限（v0.7）：每次请求前检查上限，结束后按服务商返回的 token 数记一条。
+ * 流式请求的回调可能不在原来的异步上下文里，所以在发起时取出当前运行。
+ */
+function meter(providerId: string, model: string): LanguageModelMiddleware {
+  return {
+    wrapGenerate: async ({ doGenerate }) => {
+      checkBudget()
+      const run = currentRun()
+      const result = await doGenerate()
+      recordUsage(providerId, model, toUsage(result.usage), run)
+      return result
+    },
+    wrapStream: async ({ doStream }) => {
+      checkBudget()
+      const run = currentRun()
+      const result = await doStream()
+      const stream = result.stream.pipeThrough(
+        new TransformStream({
+          transform(part, controller) {
+            if (part.type === 'finish') recordUsage(providerId, model, toUsage(part.usage), run)
+            controller.enqueue(part)
+          }
+        })
+      )
+      return { ...result, stream }
+    }
+  }
+}
+
 export function buildModel(req: ModelRequest): BuiltModel {
+  const built = buildRawModel(req)
+  return { ...built, model: wrapLanguageModel({ model: built.model as never, middleware: meter(req.providerId, req.model) }) }
+}
+
+function buildRawModel(req: ModelRequest): BuiltModel {
   const row = getProviderRow(req.providerId)
   const kind = row.kind as ProviderKind
   const preset = PROVIDER_PRESETS[kind]

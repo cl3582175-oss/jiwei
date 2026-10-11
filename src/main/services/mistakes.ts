@@ -171,7 +171,7 @@ async function split(id: string, text: string, ctx: JobContext): Promise<{ ids: 
       patch(id, { question: ocr || text, flags: JSON.stringify([...(allowed ? flagsOf(row).filter((f) => f === 'local-only') : ['local-only']), ...(ocr ? ['no-model'] : ['needs-recognition'])]) })
       return { ids: [id] }
     }
-    const result = await structured({ ...model, effort: 'off', system: MISTAKE_SPLIT_PROMPT,
+    const result = await structured({ purpose: 'mistakes', ...model, effort: 'off', system: MISTAKE_SPLIT_PROMPT,
       prompt: `<mistake-data>\n${JSON.stringify({ ocr, blocks: blocks.map((b, index) => ({ index, text: b.text, box: b.box })) })}\n</mistake-data>`,
       ...(!ocr && imageBytes ? { images: [{ data: imageBytes, mediaType: 'image/png' }] } : {}), schema: MistakeSplitSchema, signal: abort.signal, guard })
     guard()
@@ -192,7 +192,7 @@ async function split(id: string, text: string, ctx: JobContext): Promise<{ ids: 
       guard()
       let correctAnswer = original.correctAnswer, solution = original.solution, answerOrigin: Row['answerOrigin'] = 'image', verified = !!correctAnswer && !!solution
       if (!correctAnswer || !solution) {
-        const solved = await structured({ ...model, system: MISTAKE_SOLVE_PROMPT, prompt: `<mistake-data>${JSON.stringify({ question: original.question })}</mistake-data>`, schema: MistakeSolveSchema, signal: abort.signal, guard })
+        const solved = await structured({ purpose: 'mistakes', ...model, system: MISTAKE_SOLVE_PROMPT, prompt: `<mistake-data>${JSON.stringify({ question: original.question })}</mistake-data>`, schema: MistakeSolveSchema, signal: abort.signal, guard })
         guard()
         if (!correctAnswer) correctAnswer = solved.answer
         if (!solution) solution = solved.solution
@@ -203,7 +203,7 @@ async function split(id: string, text: string, ctx: JobContext): Promise<{ ids: 
       const correctionRows = cloudDiagnosisCorrections()
       const diagnosisGuard = (): void => { guard(); correctionRows.forEach((correction) => requireMistakeCloud(correction.id)) }
       const corrections = correctionRows.map((c) => ({ question: c.question.slice(0, 2000), myAnswer: c.myAnswer.slice(0, 1000), cause: c.cause, reason: c.causeReason, concepts: JSON.parse(c.concepts), subject: c.subject }))
-      const rawDiagnosis = await structured({ ...model, system: MISTAKE_DIAGNOSE_PROMPT,
+      const rawDiagnosis = await structured({ purpose: 'mistakes', ...model, system: MISTAKE_DIAGNOSE_PROMPT,
         prompt: `<mistake-data>${JSON.stringify({ ...original, correctAnswer, solution, candidates, corrections })}</mistake-data>`, schema: MistakeDiagnosisSchema, signal: abort.signal, guard: diagnosisGuard })
       const diagnosis = normalizeDiagnosis(rawDiagnosis, original.myAnswer)
       diagnosisGuard()

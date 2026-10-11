@@ -13,6 +13,7 @@ import {
   Sprout,
   Check,
   Flame,
+  PauseCircle,
   Target,
   NotebookText,
   PenLine,
@@ -148,7 +149,10 @@ function AskBox({ reply, clearReply }: { reply: string | null; clearReply: () =>
     clearReply()
   }
   return (
-    <div className="paper rounded-2xl shadow-[var(--shadow-1)] transition-shadow focus-within:shadow-[var(--shadow-2)]" data-testid="today-ask">
+    <div
+      className="paper rounded-2xl shadow-[var(--shadow-1)] transition-shadow focus-within:shadow-[var(--shadow-2)]"
+      data-testid="today-ask"
+    >
       {reply && (
         <div className="flex items-center gap-2 border-b border-border/60 px-4 pt-3 pb-2 text-xs text-muted">
           <Reply className="size-3.5 text-accent" />
@@ -181,7 +185,14 @@ function AskBox({ reply, clearReply }: { reply: string | null; clearReply: () =>
           }}
           className="block max-h-40 min-h-9 flex-1 resize-none bg-transparent py-1.5 text-[15px] leading-relaxed text-fg outline-none placeholder:text-subtle"
         />
-        <Button size="icon-sm" variant="primary" className="mb-0.5 rounded-full" disabled={!text.trim()} aria-label={t('today.askSend')} onClick={send}>
+        <Button
+          size="icon-sm"
+          variant="primary"
+          className="mb-0.5 rounded-full"
+          disabled={!text.trim()}
+          aria-label={t('today.askSend')}
+          onClick={send}
+        >
           <ArrowUp />
         </Button>
       </div>
@@ -206,7 +217,10 @@ function Briefing({ onReply }: { onReply: (text: string) => void }) {
   }
   const loading = !data || refreshing
   return (
-    <section className="relative overflow-hidden rounded-2xl border border-accent/20 bg-accent-soft/50 px-5 py-4" data-testid="today-briefing">
+    <section
+      className="relative overflow-hidden rounded-2xl border border-accent/20 bg-accent-soft/50 px-5 py-4"
+      data-testid="today-briefing"
+    >
       <div className="flex items-center gap-2">
         <Sparkles className="size-4 text-accent" />
         <h2 className="flex-1 text-xs font-semibold tracking-wide text-accent">{t('today.briefing')}</h2>
@@ -245,7 +259,13 @@ function Fresh() {
   const { t } = useTranslation()
   const createNote = useCreateNote()
   const items = [
-    { icon: <PenLine />, tint: 'bamboo' as Tint, title: t('today.fresh.note'), hint: t('today.fresh.noteHint'), go: () => void createNote() },
+    {
+      icon: <PenLine />,
+      tint: 'bamboo' as Tint,
+      title: t('today.fresh.note'),
+      hint: t('today.fresh.noteHint'),
+      go: () => void createNote()
+    },
     {
       icon: <FileUp />,
       tint: 'sky' as Tint,
@@ -253,7 +273,13 @@ function Fresh() {
       hint: t('today.fresh.sourceHint'),
       go: () => void api.sources.importDialog(null).then((r) => r.imported[0] && useApp.getState().openSource(r.imported[0].id))
     },
-    { icon: <Globe />, tint: 'lotus' as Tint, title: t('today.fresh.browser'), hint: t('today.fresh.browserHint'), go: () => useApp.getState().openBrowser() }
+    {
+      icon: <Globe />,
+      tint: 'lotus' as Tint,
+      title: t('today.fresh.browser'),
+      hint: t('today.fresh.browserHint'),
+      go: () => useApp.getState().openBrowser()
+    }
   ]
   return (
     <section className="paper rounded-2xl px-6 py-6 shadow-[var(--shadow-1)]" data-testid="today-fresh">
@@ -286,18 +312,50 @@ function pageText(s: TodaySummary, brief: string | undefined, zh: boolean): stri
     ? [
         `日期 ${s.date}，连续学习 ${s.streak} 天，今天已学习 ${Object.values(s.minutes).reduce((a, b) => a + b, 0)} 分钟。`,
         `复习到期 ${s.review.due} 张（今天已复习 ${s.review.doneToday}）；错题可练 ${s.mistakes.practiceReady} 道，待核对 ${s.mistakes.unverified} 道；收件箱待整理 ${s.inbox.pending} 条；待确认修改 ${s.proposals.pending} 处。`,
-        ...s.actions.map((a) => `行动项：${a.title}${a.dueAt ? `（${new Date(a.dueAt).toLocaleDateString()} 截止${a.overdue ? '，已逾期' : ''}）` : ''}`),
-        ...s.goals.map((g) => `目标：${g.title}，掌握 ${Math.round(g.mastered * 100)}%${g.daysLeft !== null ? `，剩 ${g.daysLeft} 天` : ''}`),
+        ...s.actions.map(
+          (a) => `行动项：${a.title}${a.dueAt ? `（${new Date(a.dueAt).toLocaleDateString()} 截止${a.overdue ? '，已逾期' : ''}）` : ''}`
+        ),
+        ...s.goals.map(
+          (g) => `目标：${g.title}，掌握 ${Math.round(g.mastered * 100)}%${g.daysLeft !== null ? `，剩 ${g.daysLeft} 天` : ''}`
+        ),
         ...(brief ? [`晨报：${brief}`] : [])
       ]
     : [
         `Date ${s.date}, ${s.streak}-day streak, ${Object.values(s.minutes).reduce((a, b) => a + b, 0)} minutes studied today.`,
         `${s.review.due} cards due (${s.review.doneToday} reviewed today); ${s.mistakes.practiceReady} mistakes to practise, ${s.mistakes.unverified} to check; ${s.inbox.pending} inbox items; ${s.proposals.pending} changes to confirm.`,
-        ...s.actions.map((a) => `Action: ${a.title}${a.dueAt ? ` (due ${new Date(a.dueAt).toLocaleDateString()}${a.overdue ? ', overdue' : ''})` : ''}`),
-        ...s.goals.map((g) => `Goal: ${g.title}, ${Math.round(g.mastered * 100)}% mastered${g.daysLeft !== null ? `, ${g.daysLeft} days left` : ''}`),
+        ...s.actions.map(
+          (a) => `Action: ${a.title}${a.dueAt ? ` (due ${new Date(a.dueAt).toLocaleDateString()}${a.overdue ? ', overdue' : ''})` : ''}`
+        ),
+        ...s.goals.map(
+          (g) => `Goal: ${g.title}, ${Math.round(g.mastered * 100)}% mastered${g.daysLeft !== null ? `, ${g.daysLeft} days left` : ''}`
+        ),
         ...(brief ? [`Brief: ${brief}`] : [])
       ]
   return lines.join('\n')
+}
+
+/** 费用达到上限时提醒（v0.7）：后台 AI 整理已暂停，可以今天继续或调整上限 */
+function BudgetBanner() {
+  const { t } = useTranslation()
+  const { data: u } = useQuery({ queryKey: ['usage'], queryFn: () => api.usage.summary() })
+  if (!u?.blocked) return null
+  return (
+    <div
+      className="flex flex-wrap items-center gap-3 rounded-xl border border-warning/30 bg-warning/10 px-4 py-3"
+      data-testid="today-budget"
+    >
+      <PauseCircle className="size-4 shrink-0 text-warning" />
+      <span className="min-w-0 flex-1 text-sm text-fg">
+        {t('agent.budget.banner', { kind: t(u.blocked === 'daily' ? 'agent.budget.bannerDaily' : 'agent.budget.bannerMonthly') })}
+      </span>
+      <Button size="sm" variant="outline" onClick={() => void api.usage.allowToday()}>
+        {t('agent.budget.continueToday')}
+      </Button>
+      <Button size="sm" variant="ghost" onClick={() => useApp.getState().openSettings('usage')}>
+        {t('agent.budget.adjust')}
+      </Button>
+    </div>
+  )
 }
 
 export function TodayView() {
@@ -308,7 +366,9 @@ export function TodayView() {
   const [reply, setReply] = useState<string | null>(null)
   const app = useApp.getState()
   const zh = i18n.language.startsWith('zh')
-  useProvidePageContext(useMemo(() => (s ? { title: t('today.pageTitle'), text: pageText(s, brief.data?.text, zh) } : null), [s, brief.data?.text, zh, t]))
+  useProvidePageContext(
+    useMemo(() => (s ? { title: t('today.pageTitle'), text: pageText(s, brief.data?.text, zh) } : null), [s, brief.data?.text, zh, t])
+  )
 
   const today = new Intl.DateTimeFormat(i18n.language, { month: 'long', day: 'numeric', weekday: 'long' }).format(new Date())
   const total = s ? Object.values(s.minutes).reduce((a, b) => a + b, 0) : 0
@@ -462,6 +522,7 @@ export function TodayView() {
         </div>
 
         <div className="mt-7 space-y-4">
+          <BudgetBanner />
           <AskBox reply={reply} clearReply={() => setReply(null)} />
           <Briefing onReply={setReply} />
         </div>
@@ -475,7 +536,10 @@ export function TodayView() {
             <div className="mt-9 grid grid-cols-1 gap-8 @min-[880px]:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
               <Section title={t('today.todo')}>
                 {tasks.length ? (
-                  <ul className="paper divide-y divide-border/70 overflow-hidden rounded-2xl shadow-[var(--shadow-1)]" data-testid="today-todo">
+                  <ul
+                    className="paper divide-y divide-border/70 overflow-hidden rounded-2xl shadow-[var(--shadow-1)]"
+                    data-testid="today-todo"
+                  >
                     {tasks}
                   </ul>
                 ) : (
@@ -491,7 +555,9 @@ export function TodayView() {
                   <div className="paper rounded-2xl px-5 py-4 shadow-[var(--shadow-1)]" data-testid="today-minutes">
                     <div className="flex items-end justify-between gap-4">
                       <div className="min-w-0">
-                        <p className="font-serif text-[26px] leading-tight font-semibold whitespace-nowrap text-fg tabular-nums">{t('today.minutesTotal', { count: total })}</p>
+                        <p className="font-serif text-[26px] leading-tight font-semibold whitespace-nowrap text-fg tabular-nums">
+                          {t('today.minutesTotal', { count: total })}
+                        </p>
                         <p className="mt-1 text-xs text-muted">
                           {total
                             ? (Object.entries(s.minutes) as [ActivityKind, number][])
@@ -546,7 +612,10 @@ export function TodayView() {
                     <ul className="paper divide-y divide-border/70 overflow-hidden rounded-2xl shadow-[var(--shadow-1)]">
                       {s.recentNotes.map((n) => (
                         <li key={n.id}>
-                          <button onClick={() => app.openNote(n.id)} className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-surface-hover">
+                          <button
+                            onClick={() => app.openNote(n.id)}
+                            className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-surface-hover"
+                          >
                             <NotebookText className="size-4 shrink-0 text-subtle" />
                             <span className="min-w-0 flex-1 truncate text-sm text-fg">{n.title || t('today.untitled')}</span>
                             <span className="shrink-0 text-xs text-subtle">{formatRelative(n.editedAt, i18n.language)}</span>

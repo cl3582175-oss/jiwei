@@ -45,5 +45,9 @@ export {
   series,
   derivations,
   derivationLandings,
-  hotwordCorrections
+  hotwordCorrections,
+  aiUsage,
+  agentAudit,
+  mcpServers,
+  mcpClients
 } from './schema'

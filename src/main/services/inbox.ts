@@ -377,7 +377,7 @@ async function runTriage(ids: string[] | undefined, canceled: () => boolean, fol
         })
       }))
     if (!material.length) continue
-    const result = await structured({
+    const result = await structured({ purpose: 'inbox',
       providerId: chat.providerId,
       model: chat.model,
       system:

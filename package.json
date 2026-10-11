@@ -1,7 +1,7 @@
 {
   "name": "jiwei",
   "productName": "积微",
-  "version": "0.6.7",
+  "version": "0.7.0",
   "description": "积微 · Jiwei — AI 驱动的学习笔记与个人知识库",
   "main": "./out/main/index.js",
   "author": "cl3582175-oss",
@@ -67,6 +67,7 @@
     "@floating-ui/dom": "^1.8.0",
     "@fontsource-variable/noto-serif-sc": "^5.3.0",
     "@fontsource/lxgw-wenkai": "^5.3.0",
+    "@modelcontextprotocol/sdk": "1.30.1",
     "@playwright/test": "^1.64.0",
     "@tailwindcss/vite": "^4.3.3",
     "@tanstack/react-query": "^5.104.1",

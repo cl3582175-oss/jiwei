@@ -124,7 +124,7 @@ export async function check(id: string, variantId: string | null, answer: string
     variantFor(id, variantId)
     if (contentRevision(requireMistake(id)) !== revision) throw new Error(mistakeText('changed'))
   }
-  const out = await structured({ ...chosen, effort: 'off', system: MISTAKE_CHECK_PROMPT,
+  const out = await structured({ purpose: 'mistakes', ...chosen, effort: 'off', system: MISTAKE_CHECK_PROMPT,
     prompt: `<mistake-data>${JSON.stringify({ ...content, userAnswer: answer.slice(0, 3000), language: getSettings().language })}</mistake-data>`, schema: CheckSchema, guard })
   guard()
   return { ...out, suggested: out.suggested as ReviewRating }
@@ -160,7 +160,7 @@ async function generate(id: string, ctx: JobContext): Promise<VariantResult> {
       guard()
       if (poolDeficit(variants(id)) === 0) break
       const existing = variants(id).slice(-12).map((v) => ({ question: v.question, flagged: v.flagged }))
-      const candidate = await structured({ ...chosen, system: MISTAKE_VARIANT_PROMPT,
+      const candidate = await structured({ purpose: 'mistakes', ...chosen, system: MISTAKE_VARIANT_PROMPT,
         prompt: `<mistake-data>${JSON.stringify({ question: row.question, ...(row.verified ? { answer: row.correctAnswer, solution: row.solution } : {}), cause: row.cause, reason: row.causeReason, concepts: JSON.parse(row.concepts), subject: row.subject, existing })}</mistake-data>`,
         schema: MistakeVariantSchema, signal: controller.signal, guard })
       guard(); result.generated++
@@ -172,7 +172,7 @@ async function generate(id: string, ctx: JobContext): Promise<VariantResult> {
       persist()
       if (row.subject === 'math') {
         // 独立调用只收到题干，候选的答案、解析、numericAnswer均不传入。
-        const independently = await structured({ ...chosen, system: MISTAKE_INDEPENDENT_PROMPT,
+        const independently = await structured({ purpose: 'mistakes', ...chosen, system: MISTAKE_INDEPENDENT_PROMPT,
           prompt: `<mistake-data>${JSON.stringify({ question: candidate.question })}</mistake-data>`, schema: MistakeIndependentSchema, signal: controller.signal, guard })
         guard()
         validation.independent = independently

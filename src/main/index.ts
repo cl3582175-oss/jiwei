@@ -32,6 +32,11 @@ import { emit } from './events'
 import { registerIndexJob, requestIndex } from './services/ai/indexer'
 import { refreshStatus, shutdown as shutdownEmbedding } from './services/ai/embedding'
 import { stopAll as stopChats } from './services/ai/chat'
+import { startServe, stopServe } from './services/mcp/serve'
+import { closeAllMcp } from './services/mcp/client'
+import { stopCallbackServer } from './services/mcp/oauth'
+import { denyAll } from './services/agent/approval'
+import { pruneAudit } from './services/agent/audit'
 import { startMemoryLearning, stopMemoryLearning } from './services/memoryLearn'
 import { syncAllCards } from './services/review'
 import { startReminders, stopReminders } from './services/reminders'
@@ -178,6 +183,8 @@ app.whenReady().then(async () => {
   void rebuildNoteImageReferences().catch((e) => log.warn('[note images] backfill failed', e))
   startMemoryLearning()
   startReminders()
+  // v0.7：让其他应用使用积微（MCP 服务，默认关闭）
+  void startServe().catch((e) => log.warn('[mcp-serve] start failed', e))
   // 复习卡片：补齐已有笔记的线索（升级到 v0.4 后第一次启动）
   setTimeout(() => {
     try {
@@ -201,13 +208,17 @@ app.whenReady().then(async () => {
       await purgeExpired()
       pruneRevisions()
       pruneJobs()
+      pruneAudit()
       await collectGarbage()
     } catch (e) {
       log.error('[maintenance] failed', e)
     }
   }
   void autoBackup().then(maintenance)
-  setInterval(() => { void autoBackup(); void maintenance() }, HOUR)
+  setInterval(() => {
+    void autoBackup()
+    void maintenance()
+  }, HOUR)
 
   createWindow()
   registerCapture()
@@ -231,7 +242,10 @@ app.on('before-quit', (e) => {
     .finally(async () => {
       stopCapture()
       await stopPhoneUpload()
+      denyAll()
       stopChats()
+      await Promise.all([stopServe(), closeAllMcp()]).catch(() => undefined)
+      stopCallbackServer()
       stopMemoryLearning()
       stopReminders()
       shutdownEmbedding()

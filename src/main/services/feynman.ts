@@ -135,7 +135,7 @@ export async function finishFeynman(conversationId: string): Promise<FeynmanRepo
     .map((m) => `${m.role === 'user' ? (zh ? '讲解者' : 'Explainer') : zh ? '学生' : 'Student'}：${clip(m.content, 2000)}`)
     .join('\n')
   // 诊断用对话所用的模型（质量优先），关闭思考
-  const out = await structured({
+  const out = await structured({ purpose: 'feynman',
     providerId,
     model,
     system: zh

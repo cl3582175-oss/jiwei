@@ -31,6 +31,21 @@ import {
 } from './recording'
 import { z } from 'zod'
 import { ActivityBatchSchema, type TodayBriefing, type TodaySummary } from './activity'
+import {
+  ApprovalDecisionSchema,
+  AuditQuerySchema,
+  McpClientCreateSchema,
+  McpClientPatchSchema,
+  McpServerInputSchema,
+  McpToolPolicyInputSchema,
+  type ApprovalRequest,
+  type AuditEntry,
+  type McpClientInfo,
+  type McpClientSecret,
+  type McpServeStatus,
+  type McpServerInfo,
+  type UsageSummary
+} from './agent'
 import { RestoreSchema, type BackupPreview, type BackupStatus, type RecordingCryptoStatus } from './backup'
 import { NetworkRuleSchema, DomainSchema, type NetworkRule } from './browserSafety'
 import * as M from './mistakes'
@@ -872,8 +887,46 @@ export const capabilities = {
     clear: cap<void>()({ description: '清除全部学习活动记录', params: none })
   },
   today: {
-    summary: cap<TodaySummary>()({ description: '今日首页：到期复习、错题、收件箱、提案、行动项、目标与投入时长', params: none, ai: { effect: 'read' } }),
+    summary: cap<TodaySummary>()({
+      description: '今日首页：到期复习、错题、收件箱、提案、行动项、目标与投入时长',
+      params: none,
+      ai: { effect: 'read' }
+    }),
     briefing: cap<TodayBriefing>()({ description: '今天的 AI 晨报（一天生成一次）', params: [['refresh', z.boolean().optional()]] })
+  },
+  /* ——— v0.7 智能体底座 ——— */
+  usage: {
+    summary: cap<UsageSummary>()({ description: '本月 AI 花费、每日柱状、按用途与模型分项、上限状态', params: none }),
+    allowToday: cap<void>()({ description: '达到上限后今天继续使用', params: none }),
+    clear: cap<void>()({ description: '清除 AI 记账', params: none })
+  },
+  agent: {
+    decide: cap<boolean>()({ description: '确认卡片：允许或拒绝', params: [['decision', ApprovalDecisionSchema]] }),
+    pending: cap<ApprovalRequest[]>()({ description: '等待确认的步骤', params: none }),
+    audit: cap<AuditEntry[]>()({ description: '审计日志', params: [['query', AuditQuerySchema]] }),
+    auditCallers: cap<string[]>()({ description: '审计日志中出现过的调用方', params: none }),
+    exportAudit: cap<string | null>()({ description: '导出审计日志（JSON）', params: none }),
+    clearAudit: cap<void>()({ description: '清除审计日志', params: none })
+  },
+  mcp: {
+    servers: cap<McpServerInfo[]>()({ description: '接入的外部 MCP 服务器', params: none }),
+    saveServer: cap<McpServerInfo>()({ description: '添加或修改外部 MCP 服务器', params: [['input', McpServerInputSchema]] }),
+    removeServer: cap<void>()({ description: '删除外部 MCP 服务器', params: [['id', z.string().max(64)]] }),
+    testServer: cap<McpServerInfo>()({ description: '连接（必要时在浏览器中登录）并列出工具', params: [['id', z.string().max(64)]] }),
+    logoutServer: cap<McpServerInfo>()({ description: '退出外部服务器的登录', params: [['id', z.string().max(64)]] }),
+    setToolPolicy: cap<McpServerInfo>()({ description: '设置外部工具的策略', params: [['input', McpToolPolicyInputSchema]] }),
+    serveStatus: cap<McpServeStatus>()({ description: '积微 MCP 服务状态', params: none }),
+    clients: cap<McpClientInfo[]>()({ description: '使用积微的客户端', params: none }),
+    createClient: cap<McpClientSecret>()({ description: '添加客户端（返回一次令牌与配置）', params: [['input', McpClientCreateSchema]] }),
+    updateClient: cap<McpClientInfo>()({
+      description: '修改客户端',
+      params: [
+        ['id', z.string().max(64)],
+        ['patch', McpClientPatchSchema]
+      ]
+    }),
+    rotateToken: cap<McpClientSecret>()({ description: '重新生成客户端令牌', params: [['id', z.string().max(64)]] }),
+    removeClient: cap<void>()({ description: '删除客户端', params: [['id', z.string().max(64)]] })
   }
 } as const
 

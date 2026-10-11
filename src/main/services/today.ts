@@ -239,7 +239,7 @@ export function todayBriefing(refresh = false): Promise<TodayBriefing> {
     if (chat.providerId && chat.model) {
       try {
         const zh = getSettings().language.startsWith('zh')
-        const r = await structured({
+        const r = await structured({ purpose: 'briefing',
           providerId: chat.providerId,
           model: quickModel(chat.providerId, chat.model),
           system: zh ? BRIEFING_PROMPT_ZH : BRIEFING_PROMPT_EN,

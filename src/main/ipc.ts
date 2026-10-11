@@ -19,7 +19,8 @@ import { voiceErrorText } from './services/voiceMessages'
 import { VoiceValidationError } from '@shared/recording'
 import { getMainWindow } from './mainWindow'
 import { queueNoteImages, recognizeNoteFormula } from './services/noteImages'
-import { BrowserWindow, ipcMain, shell, dialog } from 'electron'
+import { app, BrowserWindow, ipcMain, shell, dialog } from 'electron'
+import { basename, join } from 'path'
 import { writeFile } from 'fs/promises'
 import * as fullBackup from './services/fullBackup'
 import * as recordingFiles from './services/recordingFiles'
@@ -72,6 +73,11 @@ import { saveAnswer } from './services/saveAnswer'
 import { exportNote } from './services/exportNote'
 import { registerSandbox } from './services/sandbox'
 import * as skills from './services/ai/skills'
+import * as usage from './services/agent/usage'
+import * as approval from './services/agent/approval'
+import * as auditLog from './services/agent/audit'
+import * as mcpClient from './services/mcp/client'
+import * as mcpServe from './services/mcp/serve'
 
 /** 会影响知识库内容（或隐私范围）的操作完成后，更新索引 */
 const reindexAfter = <T>(v: T): T => {
@@ -162,8 +168,21 @@ const handlers: Handlers = {
     confirmRecovery: (_, group) => recordingFiles.confirmRecovery(group),
     cancelRecovery: () => recordingFiles.cancelRecovery(),
     saveRecovery: async () => {
-      const code = recordingFiles.pendingRecovery(), result = await dialog.showSaveDialog({ title: tr('保存录音恢复码', 'Save recording recovery code'), defaultPath: tr('积微录音恢复码.txt', 'Jiwei-recording-recovery-code.txt'), filters: [{ name: tr('文本文件', 'Text file'), extensions: ['txt'] }] })
-      if (!result.canceled && result.filePath) await writeFile(result.filePath, tr(`积微录音恢复码\n${code}\n请保存在安全的位置。换电脑或从备份恢复时需要此码。\n`, `Jiwei recording recovery code\n${code}\nKeep it somewhere safe. You need it on a new computer or when restoring from a backup.\n`), { mode: 0o600 })
+      const code = recordingFiles.pendingRecovery(),
+        result = await dialog.showSaveDialog({
+          title: tr('保存录音恢复码', 'Save recording recovery code'),
+          defaultPath: tr('积微录音恢复码.txt', 'Jiwei-recording-recovery-code.txt'),
+          filters: [{ name: tr('文本文件', 'Text file'), extensions: ['txt'] }]
+        })
+      if (!result.canceled && result.filePath)
+        await writeFile(
+          result.filePath,
+          tr(
+            `积微录音恢复码\n${code}\n请保存在安全的位置。换电脑或从备份恢复时需要此码。\n`,
+            `Jiwei recording recovery code\n${code}\nKeep it somewhere safe. You need it on a new computer or when restoring from a backup.\n`
+          ),
+          { mode: 0o600 }
+        )
     },
     unlock: (_, code) => recordingFiles.unlockRecordings(code),
     encryption: (_, enabled, confirmed) => recordingFiles.setRecordingEncryption(enabled, confirmed),
@@ -272,6 +291,7 @@ const handlers: Handlers = {
       if (patch.capture) capture.refreshShortcuts()
       // 换了识别引擎或开启插图解读：有待识别页的资料按新设置排队
       if (patch.ai && JSON.stringify(patch.ai.recognition ?? null) !== before) recognize.queuePending()
+      if (patch.mcpServe) void mcpServe.startServe()
       if (patch.browser) {
         browser.refreshPrivacy()
         if (patch.browser.course) browser.refreshCourseSettings(patch.browser.course)
@@ -567,6 +587,45 @@ const handlers: Handlers = {
   today: {
     summary: () => today.todaySummary(),
     briefing: (_, refresh) => today.todayBriefing(refresh)
+  },
+  usage: {
+    summary: () => usage.usageSummary(),
+    allowToday: () => usage.allowToday(),
+    clear: () => usage.clearUsage()
+  },
+  agent: {
+    decide: (_, d) => approval.decide(d.id, d.allow),
+    pending: () => approval.pendingApprovals(),
+    audit: (_, q) => auditLog.listAudit(q),
+    auditCallers: () => auditLog.auditCallers(),
+    exportAudit: async ({ win }) => {
+      const opts = {
+        defaultPath: join(app.getPath('documents'), `jiwei-audit-${new Date().toISOString().slice(0, 10)}.json`),
+        filters: [{ name: 'JSON', extensions: ['json'] }]
+      }
+      const testDir = !app.isPackaged ? process.env.JIWEI_EXPORT_DIR : undefined
+      const file = testDir
+        ? join(testDir, basename(opts.defaultPath))
+        : (win ? await dialog.showSaveDialog(win, opts) : await dialog.showSaveDialog(opts)).filePath
+      if (!file) return null
+      await writeFile(file, JSON.stringify(auditLog.listAudit({ limit: 100000 }), null, 2))
+      return file
+    },
+    clearAudit: () => auditLog.clearAudit()
+  },
+  mcp: {
+    servers: () => mcpClient.listServers(),
+    saveServer: (_, input) => mcpClient.saveServer(input),
+    removeServer: (_, id) => mcpClient.removeServer(id),
+    testServer: (_, id) => mcpClient.testServer(id),
+    logoutServer: (_, id) => mcpClient.logoutServer(id),
+    setToolPolicy: (_, input) => mcpClient.setToolPolicy(input.serverId, input.tool, input.policy),
+    serveStatus: () => mcpServe.serveStatus(),
+    clients: () => mcpServe.listClients(),
+    createClient: (_, input) => mcpServe.createClient(input.name, input.access),
+    updateClient: (_, id, patch) => mcpServe.updateClient(id, patch),
+    rotateToken: (_, id) => mcpServe.rotateToken(id),
+    removeClient: (_, id) => mcpServe.removeClient(id)
   }
 }
 

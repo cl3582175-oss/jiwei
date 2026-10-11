@@ -611,7 +611,7 @@ export async function harvestReflection(id: string): Promise<ReflectionHarvest> 
     .filter((i) => i.status === 'active')
     .slice(0, 40)
   const refs = new Map(existing.map((x, i) => [`i${i + 1}`, x]))
-  const out = await structured({
+  const out = await structured({ purpose: 'reflection',
     providerId: s.ai.chat.providerId,
     model: s.ai.chat.model,
     system: zh

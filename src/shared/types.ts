@@ -220,6 +220,10 @@ export interface Settings {
   /** 侧栏（目录 / 资料分类）是否收起 */
   sidebarCollapsed: boolean
   ai: AiSettings
+  /** 费用上限（v0.7） */
+  budget: import('./agent').Budget
+  /** 积微作为 MCP 服务端（v0.7） */
+  mcpServe: import('./agent').McpServeSettings
   /** 内置浏览器（v0.6.0） */
   browser?: BrowserSettings
   backup?: { external: import('./backup').ExternalBackup }
@@ -696,11 +700,23 @@ export interface AgentStep {
   tool: string
   /** 给用户看的简短说明，如“检索知识库：遗忘曲线” */
   label: string
-  status: 'running' | 'done' | 'error'
+  /** waiting：等待用户确认；denied：用户拒绝、超时或策略禁止 */
+  status: 'running' | 'waiting' | 'done' | 'error' | 'denied'
   /** 结果摘要或错误 */
   detail?: string
   /** 可跳转的目标（如生成的提案所在笔记） */
-  link?: { type: 'note' | 'source'; id: string }
+  link?: { type: 'note' | 'source' | 'action' | 'goal' | 'inbox'; id: string }
+  /** 需要用户确认的一步（v0.7） */
+  approval?: {
+    id: string
+    title: string
+    detail?: string
+    level: import('./agent').ToolLevel
+    tainted: boolean
+    state: 'pending' | 'allowed' | 'denied' | 'expired'
+  }
+  /** 来自外部 MCP 服务器时的服务器名称 */
+  server?: string
 }
 
 /** 回答引用的知识库片段 */
@@ -1019,12 +1035,20 @@ export interface JiweiEvents {
   'inbox:changed': Record<string, never>
   /** 内置浏览器里有操作或开始 / 停止播放（v0.6.7 活动记录） */
   'activity:pulse': { source: 'browser'; playing: boolean | null }
+  /** v0.7 智能体底座：记账变化、等待确认、确认已处理、审计新增、MCP 状态变化 */
+  'usage:changed': Record<string, never>
+  'agent:approval': import('./agent').ApprovalRequest
+  'agent:approval-done': { id: string; messageId: string; allow: boolean }
+  'agent:audit': Record<string, never>
+  'mcp:changed': Record<string, never>
   'mistakes:changed': Record<string, never>
   'mistakes:open': Record<string, never>
   'reading:word': import('./reading').ReadingWord
   'nav:inbox': Record<string, never>
   'docs:updated': { noteId: string; update: Uint8Array }
   'nav:open': { type: 'note' | 'source'; id: string }
+  /** 打开助手中的某个对话（系统通知点击，v0.7） */
+  'nav:chat': { conversationId: string }
   /** 复盘提醒被点击：打开复盘页 */
   'nav:reflect': { kind: 'daily' | 'weekly' }
   /** 复盘、洞见或行动项变化 */

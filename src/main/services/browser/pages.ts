@@ -324,7 +324,7 @@ export async function recapToNote(sourceId: string, noteId: string | null): Prom
   ]
     .filter(Boolean)
     .join('\n\n')
-  const out = await structured({
+  const out = await structured({ purpose: 'browser',
     providerId: s.ai.chat.providerId,
     model: quickModel(s.ai.chat.providerId, s.ai.chat.model),
     system: zh()

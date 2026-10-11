@@ -163,7 +163,7 @@ async function saveEntries(
   const s = getSettings()
   let cue = ''
   if (s.ai.chat.providerId && s.ai.chat.model) {
-    const result = await structured({
+    const result = await structured({ purpose: 'browser',
       providerId: s.ai.chat.providerId,
       model: quickModel(s.ai.chat.providerId, s.ai.chat.model),
       system: s.language.startsWith('zh')

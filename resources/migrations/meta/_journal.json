@@ -134,6 +134,13 @@
       "when": 1791649557777,
       "tag": "0018_activity_events",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1791653579488,
+      "tag": "0019_agent_platform",
+      "breakpoints": true
     }
   ]
 }

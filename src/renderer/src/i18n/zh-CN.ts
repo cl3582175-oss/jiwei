@@ -1,3 +1,4 @@
+import { agentZh } from '../features/agent/messages'
 import { mistakesZh } from '../features/mistakes/messages'
 import { todayZh } from '../features/today/messages'
 import { safetyZh } from '../features/settings/safetyMessages'
@@ -7,6 +8,7 @@ const zhCN = {
   mistakes: mistakesZh,
   today: todayZh,
   safety: safetyZh,
+  agent: agentZh,
   reading: readingZh,
   learning: {
     pendingProposal: '此提案须在错题或阅读入口完成审阅与确认。',

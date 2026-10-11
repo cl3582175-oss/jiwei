@@ -4,6 +4,7 @@ import log from 'electron-log/main'
 import { resolveCaps, type Effort } from '@shared/ai'
 import { extractJson } from '../../lib/learner'
 import { buildModel } from './model'
+import { withPurpose } from '../agent/context'
 import { getProviderRow } from './providers'
 
 // 后台小任务（记忆整理、技能偏好归纳）的结构化输出。
@@ -37,10 +38,26 @@ export async function structured<T>(opts: {
   signal?: AbortSignal
   /** 长流程每次发请求（含回退）前重读隐私与取消状态。 */
   guard?: () => void
+  /** 记账用途（v0.7）；不填时沿用外层（后台任务按任务类型） */
+  purpose?: string
 }): Promise<T> {
+  return opts.purpose ? withPurpose(opts.purpose, () => run(opts)) : run(opts)
+}
+
+async function run<T>(opts: Parameters<typeof structured<T>>[0]): Promise<T> {
   const built = buildModel({ providerId: opts.providerId, model: opts.model, effort: opts.effort ?? 'off' })
   const input = opts.images?.length
-    ? { messages: [{ role: 'user', content: [...opts.images.map((i) => ({ type: 'image' as const, image: i.data, mediaType: i.mediaType })), { type: 'text', text: opts.prompt }] }] as ModelMessage[] }
+    ? {
+        messages: [
+          {
+            role: 'user',
+            content: [
+              ...opts.images.map((i) => ({ type: 'image' as const, image: i.data, mediaType: i.mediaType })),
+              { type: 'text', text: opts.prompt }
+            ]
+          }
+        ] as ModelMessage[]
+      }
     : { prompt: opts.prompt }
   const base = {
     model: built.model,

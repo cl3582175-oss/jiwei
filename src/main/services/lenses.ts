@@ -127,7 +127,7 @@ export function guessScene(sourceId: string): Promise<SceneGuess | null> {
         requireLensCloud(sourceId, identity)
         if (revision !== transcriptRevision(sourceId)) throw new Error(lensMessage('changed'))
       }
-    const result = await structured({
+    const result = await structured({ purpose: 'lens',
       providerId: model.providerId,
       model: quickModel(model.providerId, model.model),
       system:
@@ -325,7 +325,7 @@ async function derive(id: string, ctx: JobContext): Promise<void> {
         }
       }
       snapshot.series.actions.forEach((a) => actionCandidates.set(a.id, a))
-      const raw = await structured({
+      const raw = await structured({ purpose: 'lens',
         providerId: input.providerId,
         model: d.model,
         system: SYSTEM + input.instruction,
@@ -401,7 +401,7 @@ async function derive(id: string, ctx: JobContext): Promise<void> {
         .join(' ')
         .slice(0, 1200)
     if (parts.length > 1 && items.length) {
-      const final = await structured({
+      const final = await structured({ purpose: 'lens',
         providerId: input.providerId,
         model: d.model,
         system:

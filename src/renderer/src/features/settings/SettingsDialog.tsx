@@ -28,7 +28,9 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Input, Tip } from '@/components/ui/primitives'
 import { prompt } from '@/components/ui/confirm'
-import { Library, Plus, Sparkles } from 'lucide-react'
+import { Cable, Gauge, Library, Plus, Sparkles } from 'lucide-react'
+import { UsageSettings } from '@/features/agent/UsageSettings'
+import { ConnectionsSettings } from '@/features/agent/ConnectionsSettings'
 import { AiSettingsTab } from '../ai/AiSettings'
 import { SkillsSettingsTab } from '../ai/SkillsSettings'
 import { LensSettings } from '../lenses/LensSettings'
@@ -41,7 +43,8 @@ import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Logo } from '@/components/Logo'
 
-type Tab = 'general' | 'me' | 'learning' | 'ai' | 'skills' | 'lenses' | 'appearance' | 'data' | 'browser' | 'about'
+type Tab =
+  'general' | 'me' | 'learning' | 'ai' | 'skills' | 'lenses' | 'appearance' | 'usage' | 'connections' | 'data' | 'browser' | 'about'
 
 const PALETTES: PaletteId[] = ['qinglu', 'celadon', 'dunhuang']
 
@@ -274,6 +277,8 @@ export function SettingsDialog() {
     { id: 'skills', icon: <Wand2 /> },
     { id: 'lenses', icon: <Layers /> },
     { id: 'appearance', icon: <Palette /> },
+    { id: 'usage', icon: <Gauge /> },
+    { id: 'connections', icon: <Cable /> },
     { id: 'data', icon: <Database /> },
     { id: 'browser', icon: <Monitor /> },
     { id: 'about', icon: <Info /> }
@@ -298,7 +303,11 @@ export function SettingsDialog() {
                 )}
               >
                 {it.icon}
-                {it.id === 'browser' ? '浏览器' : t(`settings.${it.id}`)}
+                {it.id === 'browser'
+                  ? '浏览器'
+                  : it.id === 'usage' || it.id === 'connections'
+                    ? t(`agent.tabs.${it.id}`)
+                    : t(`settings.${it.id}`)}
               </button>
             ))}
           </nav>
@@ -451,6 +460,8 @@ export function SettingsDialog() {
             {tab === 'me' && <MemorySettingsTab />}
             {tab === 'skills' && <SkillsSettingsTab />}
             {tab === 'lenses' && <LensSettings />}
+            {tab === 'usage' && <UsageSettings />}
+            {tab === 'connections' && <ConnectionsSettings />}
             {tab === 'data' && info && <DataTab />}
             {tab === 'about' && info && (
               <div className="flex h-full flex-col items-center justify-center pb-6 text-center">

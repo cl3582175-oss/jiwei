@@ -1,3 +1,4 @@
+import { agentEn } from '../features/agent/messages'
 import type { Messages } from './zh-CN'
 import { mistakesEn } from '../features/mistakes/messages'
 import { todayEn } from '../features/today/messages'
@@ -7,6 +8,7 @@ const en: Messages = {
   mistakes: mistakesEn,
   today: todayEn,
   safety: safetyEn,
+  agent: agentEn,
   reading: readingEn,
   learning: {
     pendingProposal: 'Complete this reviewed proposal from the mistake or reading view.',
@@ -864,7 +866,8 @@ const en: Messages = {
     stopped: 'Stopped',
     keys: 'Enter to send · Shift + Enter for a new line',
     emptyTitle: 'Ask Jiwei, or hand it a task',
-    emptyHint: 'I look for evidence in your notes and sources first and cite where each point came from. I can also organize notes or quiz you. Press ⌘J on any page to call me.',
+    emptyHint:
+      'I look for evidence in your notes and sources first and cite where each point came from. I can also organize notes or quiz you. Press ⌘J on any page to call me.',
     setupModel: 'Set up a model service',
     needModel: 'Choose a model first',
     kbNotReady: 'Embeddings are off — keyword search only',

@@ -20,6 +20,7 @@ import type { AgentStep, ChatMessage, Citation } from '@shared/types'
 import { cn, formatDate } from '@/lib/utils'
 import { useApp } from '@/store/app'
 import { Tip } from '@/components/ui/primitives'
+import { ApprovalCard, BudgetNotice, StepLinkButton, budgetKind } from '@/features/agent/ChatCards'
 
 /** 打开引用：笔记定位到段落，资料定位到片段 / 页码 */
 export function openCitation(c: Citation): void {
@@ -63,7 +64,8 @@ function Reasoning({ text, streaming, seconds }: { text: string; streaming: bool
 }
 
 /** 提案类步骤：需要用户到笔记里确认，始终显示 */
-const isProposal = (s: AgentStep): boolean => s.tool.startsWith('note_') && !['note_read', 'note_find'].includes(s.tool)
+const isProposal = (s: AgentStep): boolean =>
+  s.tool.startsWith('note_') && !['note_read', 'note_find', 'note_create'].includes(s.tool) && !s.approval
 
 function StepRow({ s }: { s: AgentStep }) {
   const { t } = useTranslation()
@@ -74,8 +76,10 @@ function StepRow({ s }: { s: AgentStep }) {
   }
   return (
     <li className="flex items-start gap-2 text-xs">
-      {s.status === 'running' ? (
+      {s.status === 'running' || s.status === 'waiting' ? (
         <LoaderCircle className="mt-px size-3.5 shrink-0 animate-spin text-accent" />
+      ) : s.status === 'denied' ? (
+        <CircleX className="mt-px size-3.5 shrink-0 text-subtle" />
       ) : s.status === 'error' ? (
         <CircleX className="mt-px size-3.5 shrink-0 text-danger" />
       ) : (
@@ -85,6 +89,9 @@ function StepRow({ s }: { s: AgentStep }) {
         <span className={cn('text-muted', s.status === 'error' && 'text-danger')}>{s.label}</span>
         {s.detail && <span className="block text-2xs break-all text-subtle">{s.detail}</span>}
       </span>
+      {s.link && !isProposal(s) && s.status === 'done' && s.link.type !== 'note' && s.link.type !== 'source' && (
+        <StepLinkButton link={s.link} />
+      )}
       {s.link && isProposal(s) && s.status === 'done' && (
         <button onClick={open} className="inline-flex shrink-0 items-center gap-0.5 text-2xs text-accent hover:underline">
           {t('chat.reviewProposal')}
@@ -99,7 +106,8 @@ function Steps({ steps, streaming }: { steps: AgentStep[]; streaming: boolean })
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const proposals = steps.filter(isProposal)
-  const others = steps.filter((s) => !isProposal(s))
+  const approvals = steps.filter((s) => s.approval)
+  const others = steps.filter((s) => !isProposal(s) && !s.approval)
   const expanded = open || streaming
   return (
     <div className="mb-3 space-y-1.5">
@@ -120,6 +128,13 @@ function Steps({ steps, streaming }: { steps: AgentStep[]; streaming: boolean })
               ))}
             </ul>
           )}
+        </div>
+      )}
+      {approvals.length > 0 && (
+        <div className="space-y-1.5">
+          {approvals.map((s) => (
+            <ApprovalCard key={s.id} step={s} />
+          ))}
         </div>
       )}
       {proposals.length > 0 && (
@@ -233,7 +248,8 @@ export function MessageItem({ m, compact, plain, grounded }: { m: ChatMessage; c
       ) : (
         streaming && !m.reasoning && !m.steps.length && <div className="h-5 w-16 animate-pulse rounded bg-sunken" />
       )}
-      {m.status === 'error' && (
+      {m.status === 'error' && budgetKind(m.error) && <BudgetNotice error={m.error!} />}
+      {m.status === 'error' && !budgetKind(m.error) && (
         <div className="mt-2 flex items-start gap-2 rounded-lg bg-danger-soft px-3 py-2 text-xs text-danger">
           <CircleAlert className="mt-0.5 size-3.5 shrink-0" />
           <span className="break-all">{m.error}</span>
@@ -249,7 +265,9 @@ export function MessageItem({ m, compact, plain, grounded }: { m: ChatMessage; c
           ))}
         </div>
       )}
-      {!plain && !grounded && m.status === 'done' && m.citations.length === 0 && m.steps.length === 0 && m.content && <p className="mt-2 text-2xs text-subtle">{t('chat.generalOnly')}</p>}
+      {!plain && !grounded && m.status === 'done' && m.citations.length === 0 && m.steps.length === 0 && m.content && (
+        <p className="mt-2 text-2xs text-subtle">{t('chat.generalOnly')}</p>
+      )}
 
       {!streaming && m.content && !compact && (
         <div className="mt-2 flex items-center gap-2 text-2xs text-subtle opacity-0 transition-opacity group-hover/msg:opacity-100">

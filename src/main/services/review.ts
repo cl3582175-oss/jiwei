@@ -440,7 +440,7 @@ export async function checkAnswer(id: string, answer: string, variantId?: string
   if (!s.ai.chat.providerId || !s.ai.chat.model) throw new Error(zh ? '还没有设置 AI 模型' : 'No AI model configured')
   const content = rowContent(c.noteId, c.blockId)
   if (!content) throw new Error('Card content not found')
-  const out = await structured({
+  const out = await structured({ purpose: 'review',
     providerId: s.ai.chat.providerId,
     model: quickModel(s.ai.chat.providerId, s.ai.chat.model),
     system: zh
@@ -458,4 +458,21 @@ export async function checkAnswer(id: string, answer: string, variantId?: string
     schema: CheckSchema
   })
   return { ...out, suggested: out.suggested as ReviewRating }
+}
+
+/** 今天到期的复习问题（不含答案），供外部应用通过 MCP 读取；“不给 AI”的笔记不包含（v0.7） */
+export function dueQuestions(limit = 20): { noteId: string; noteTitle: string; question: string; due: number }[] {
+  const endOfDay = startOfDay(Date.now()) + DAY
+  return getDb()
+    .select({ c: cards, title: notes.title })
+    .from(cards)
+    .innerJoin(notes, eq(notes.id, cards.noteId))
+    .where(
+      and(activeWhere(), eq(cards.kind, 'cornell'), eq(notes.aiExcluded, false), lte(cards.due, endOfDay), sql`${cards.state} != ${State.New}`)
+    )
+    .orderBy(asc(cards.due))
+    .limit(limit)
+    .all()
+    .map((r) => ({ noteId: r.c.noteId, noteTitle: r.title, question: rowContent(r.c.noteId, r.c.blockId)?.question ?? '', due: r.c.due }))
+    .filter((q) => q.question)
 }

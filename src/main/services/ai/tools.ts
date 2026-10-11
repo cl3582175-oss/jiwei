@@ -55,13 +55,20 @@ function readableNote(id: string): NoteCheck {
     .get()
   return n && !n.aiExcluded && !n.deletedAt ? { title: n.title } : null
 }
-function readableSource(id: string): { title: string } | null {
+function readableSource(id: string, zh: boolean): { title: string } {
   const s = getDb()
     .select({ title: sources.title, aiExcluded: sources.aiExcluded, deletedAt: sources.deletedAt })
     .from(sources)
     .where(eq(sources.id, id))
     .get()
-  return s && !s.aiExcluded && !s.deletedAt ? { title: s.title } : null
+  if (!s || s.deletedAt)
+    throw new Error(
+      zh
+        ? `没有 ID 为 ${id} 的资料。资料 ID 见 knowledge_search 结果里的 sourceId，不要自己编。`
+        : `No source with ID ${id}; use the sourceId from knowledge_search results.`
+    )
+  if (s.aiExcluded) throw new Error(zh ? '用户设置了这份资料不给 AI 读取。' : 'The user excluded this source from AI.')
+  return { title: s.title }
 }
 
 const fmtDate = (ts: number | null): string => (ts ? new Date(ts).toISOString().slice(0, 10) : '?')
@@ -84,8 +91,8 @@ export function numberHits(session: AgentSession, hits: SearchHit[]): string {
       }
       const meta =
         h.parentType === 'note'
-          ? `${zh ? '笔记' : 'Note'}《${h.title || '—'}》· ${zh ? '学习于' : 'learned'} ${fmtDate(h.learnedAt)} · ${zh ? '修改于' : 'edited'} ${fmtDate(h.updatedAt)}${STATUS[h.status ?? 'active']}${ORIGIN[h.origin ?? 'user']}`
-          : `${zh ? '资料' : 'Source'}《${h.title}》${h.locator ? ' · ' + h.locator : ''} · ${zh ? '片段' : 'segment'} ${h.ownerId}`
+          ? `${zh ? '笔记' : 'Note'}《${h.title || '—'}》（noteId: ${h.parentId}）· ${zh ? '学习于' : 'learned'} ${fmtDate(h.learnedAt)} · ${zh ? '修改于' : 'edited'} ${fmtDate(h.updatedAt)}${STATUS[h.status ?? 'active']}${ORIGIN[h.origin ?? 'user']}`
+          : `${zh ? '资料' : 'Source'}《${h.title}》（sourceId: ${h.parentId}）${h.locator ? ' · ' + h.locator : ''} · ${zh ? '片段' : 'segment'} ${h.ownerId}`
       return `[${n}] ${meta}\n${h.text}`
     })
     .join('\n\n')
@@ -129,7 +136,12 @@ function emptyCueParagraph(noteId: string, rowId: string): string | null {
 
 const mustNote = (noteId: string, zh: boolean): string => {
   const n = readableNote(noteId)
-  if (!n) throw new Error(zh ? '找不到这篇笔记，或用户设置了不让 AI 读取' : 'Note not found or excluded from AI')
+  if (!n)
+    throw new Error(
+      zh
+        ? `找不到这篇笔记（${noteId}），或用户设置了不给 AI。笔记 ID 用 note_find 或 knowledge_search 结果里的 noteId，不要自己编。`
+        : 'Note not found or excluded from AI; use noteId from note_find or knowledge_search.'
+    )
   return n.title
 }
 
@@ -267,8 +279,7 @@ export function buildTools(s: AgentSession): ToolSet {
           count: z.number().int().min(1).max(20).optional()
         }),
         execute: async ({ sourceId, from = 0, count = 12 }) => {
-          const src = readableSource(sourceId)
-          if (!src) throw new Error(zh ? '找不到这份资料，或用户设置了不让 AI 读取' : 'Source not found or excluded')
+          const src = readableSource(sourceId, zh)
           const segs = listSegments(sourceId)
           const part = segs.slice(from, from + count)
           const loc = (l: Record<string, unknown>): string => (l.value ? ` · ${String(l.value)}` : '')
@@ -678,8 +689,27 @@ export function stepLabel(name: string, input: unknown, zh: boolean): Pick<Agent
     note_add_mindmap: ['提案：思维导图', 'Proposal: mind map'],
     memory_remember: [`记住：${q('content')}`, `Remembering: ${q('content')}`],
     memory_search: [`回忆：${q('query')}`, `Recalling: ${q('query')}`],
-    today_overview: ['查看今天的安排与进度', "Checking today's plan and progress"]
+    today_overview: ['查看今天的安排与进度', "Checking today's plan and progress"],
+    actions_list: ['查看行动项', 'Checking actions'],
+    goals_list: ['查看学习目标', 'Checking goals'],
+    mistakes_list: ['查看错题本', 'Checking mistakes'],
+    action_create: [`新建行动项：${q('title')}`, `Creating action: ${q('title')}`],
+    action_complete: ['完成行动项', 'Completing action'],
+    goal_create: [`新建学习目标：${q('title')}`, `Creating goal: ${q('title')}`],
+    inbox_add: ['放进收件箱', 'Adding to inbox'],
+    note_create: [`新建笔记：${q('title')}`, `Creating note: ${q('title')}`],
+    browser_read_page: ['阅读网页', 'Reading page'],
+    browser_find: [`在网页中查找：${q('query')}`, `Finding in page: ${q('query')}`],
+    browser_links: ['查看网页链接', 'Listing links'],
+    browser_open: [`打开网页：${q('url')}`, `Opening: ${q('url')}`],
+    browser_tabs: ['查看标签页', 'Listing tabs'],
+    mcp_find_tools: [`查找外部工具：${q('query')}`, `Finding external tools: ${q('query')}`]
   }
+  if (name.startsWith('mcp__')) {
+    const [, server, tool] = name.split('__')
+    return { label: zh ? `外部工具 ${server} · ${tool}` : `External tool ${server} · ${tool}` }
+  }
+  if (name === 'mcp_call') return { label: zh ? `外部工具 ${q('tool')}` : `External tool ${q('tool')}` }
   const link = name === 'source_read' && typeof i.sourceId === 'string' ? { link: { type: 'source' as const, id: i.sourceId } } : note
   return { label: (L[name] ?? [name, name])[zh ? 0 : 1], ...link }
 }

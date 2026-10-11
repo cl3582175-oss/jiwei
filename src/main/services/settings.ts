@@ -4,6 +4,7 @@ import { app, nativeTheme } from 'electron'
 import { getDb } from '../db'
 import { settings } from '../db/schema'
 import type { Settings } from '@shared/types'
+import { DEFAULT_BUDGET, DEFAULT_MCP_PORT } from '@shared/agent'
 import type { SettingsPatch } from '@shared/schemas'
 
 function defaults(): Settings {
@@ -21,7 +22,9 @@ function defaults(): Settings {
     // 默认节奏：每天 1 分钟微复盘 + 每周日晚完整复盘
     reflection: { daily: true, weekly: true, weeklyDay: 0, time: '21:00' },
     // 复习：每天最多 20 张新卡，目标记忆保持率 90%（FSRS 默认）
-    review: { newPerDay: 20, retention: 0.9 }
+    review: { newPerDay: 20, retention: 0.9 },
+    budget: DEFAULT_BUDGET,
+    mcpServe: { enabled: false, port: DEFAULT_MCP_PORT }
   }
 }
 

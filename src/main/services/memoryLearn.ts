@@ -215,7 +215,7 @@ async function extract(conversationId: string): Promise<{ added: number; concept
     .filter(Boolean)
     .join('\n\n')
 
-  const out: Extract = await structured({
+  const out: Extract = await structured({ purpose: 'memory',
     providerId,
     model: quickModel(providerId, model),
     system: zh ? RULES_ZH : RULES_EN,
@@ -482,7 +482,7 @@ export function induceSkillPreferences(): Promise<Memory[]> {
         .filter(Boolean)
         .join('\n\n')
       try {
-        const out = await structured({
+        const out = await structured({ purpose: 'memory',
           providerId,
           model: quickModel(providerId, model),
           system: zh

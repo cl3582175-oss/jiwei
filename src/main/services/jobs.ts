@@ -1,4 +1,5 @@
 import { utilityProcess, type UtilityProcess } from 'electron'
+import { withRun } from './agent/context'
 import { join } from 'path'
 import { and, asc, desc, eq, inArray, lte } from 'drizzle-orm'
 import log from 'electron-log/main'
@@ -192,7 +193,7 @@ async function execute(r: Row): Promise<void> {
     isCanceled: () => canceled.has(r.id)
   }
   try {
-    const result = await kind.run(JSON.parse(r.payload), ctx)
+    const result = await withRun({ purpose: r.kind, caller: 'job' }, () => kind.run(JSON.parse(r.payload), ctx))
     if (canceled.has(r.id)) return
     setStatus(r.id, { status: 'done', progress: 1, error: null, result: result === undefined ? null : JSON.stringify(result) })
   } catch (e) {

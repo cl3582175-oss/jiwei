@@ -462,7 +462,9 @@ export const cards = sqliteTable(
     noteId: text('note_id').notNull(),
     /** 问题所在的块（通常是线索栏段落或整行） */
     blockId: text('block_id').notNull(),
-    kind: text('kind', { enum: ['cornell', 'mistake'] }).notNull().default('cornell'),
+    kind: text('kind', { enum: ['cornell', 'mistake'] })
+      .notNull()
+      .default('cornell'),
     mistakeId: text('mistake_id'),
     due: integer('due').notNull(),
     stability: real('stability').notNull().default(0),
@@ -514,19 +516,29 @@ export const mistakes = sqliteTable(
     myAnswer: text('my_answer').notNull().default(''),
     correctAnswer: text('correct_answer').notNull().default(''),
     solution: text('solution').notNull().default(''),
-    answerOrigin: text('answer_origin', { enum: ['image', 'ai', 'user'] }).notNull().default('image'),
+    answerOrigin: text('answer_origin', { enum: ['image', 'ai', 'user'] })
+      .notNull()
+      .default('image'),
     verified: integer('verified', { mode: 'boolean' }).notNull().default(false),
-    cause: text('cause', { enum: ['concept', 'calculation', 'reading', 'method', 'careless', 'unknown'] }).notNull().default('unknown'),
+    cause: text('cause', { enum: ['concept', 'calculation', 'reading', 'method', 'careless', 'unknown'] })
+      .notNull()
+      .default('unknown'),
     causeReason: text('cause_reason').notNull().default(''),
     concepts: text('concepts').notNull().default('[]'),
-    subject: text('subject', { enum: ['math', 'physics', 'chemistry', 'english', 'other'] }).notNull().default('other'),
+    subject: text('subject', { enum: ['math', 'physics', 'chemistry', 'english', 'other'] })
+      .notNull()
+      .default('other'),
     flags: text('flags').notNull().default('[]'),
     // 用户纠正与批次身份让下次诊断及崩溃重试都有可靠依据。
     diagnosisCorrection: integer('diagnosis_correction', { mode: 'boolean' }).notNull().default(false),
     ingestKey: text('ingest_key'),
     ...syncCols
   },
-  (t) => [index('mistakes_note_idx').on(t.noteId), index('mistakes_created_idx').on(t.createdAt), uniqueIndex('mistakes_ingest_idx').on(t.ingestKey)]
+  (t) => [
+    index('mistakes_note_idx').on(t.noteId),
+    index('mistakes_created_idx').on(t.createdAt),
+    uniqueIndex('mistakes_ingest_idx').on(t.ingestKey)
+  ]
 )
 
 export const mistakeVariants = sqliteTable(
@@ -560,7 +572,10 @@ export const translationCache = sqliteTable(
     usedAt: integer('used_at').notNull(),
     bytes: integer('bytes').notNull()
   },
-  (t) => [uniqueIndex('translation_cache_key_idx').on(t.textHash, t.targetLanguage, t.styleVersion), index('translation_cache_used_idx').on(t.usedAt)]
+  (t) => [
+    uniqueIndex('translation_cache_key_idx').on(t.textHash, t.targetLanguage, t.styleVersion),
+    index('translation_cache_used_idx').on(t.usedAt)
+  ]
 )
 
 /** 学习者画像：AI 了解“你”的依据，用户可查看、修改、清除 */
@@ -864,3 +879,75 @@ export const hotwordCorrections = sqliteTable(
   },
   (t) => [uniqueIndex('hotword_pair_idx').on(t.from, t.to)]
 )
+
+/* ————————————————— 智能体底座（v0.7） ————————————————— */
+
+/** AI 调用记账：每次请求模型一条（对话、晨报、阅读、错题、后台整理……）。cost 为美元估算，价格未知时为空 */
+export const aiUsage = sqliteTable(
+  'ai_usage',
+  {
+    id: text('id').primaryKey(),
+    at: integer('at').notNull(),
+    date: text('date').notNull(),
+    purpose: text('purpose').notNull(),
+    caller: text('caller').notNull(),
+    providerId: text('provider_id'),
+    model: text('model').notNull(),
+    inputTokens: integer('input_tokens').notNull().default(0),
+    outputTokens: integer('output_tokens').notNull().default(0),
+    reasoningTokens: integer('reasoning_tokens').notNull().default(0),
+    cachedInputTokens: integer('cached_input_tokens').notNull().default(0),
+    cost: real('cost')
+  },
+  (t) => [index('ai_usage_date_idx').on(t.date)]
+)
+
+/** 审计日志：每次工具调用（助手、MCP 客户端访问积微、助手使用外部工具）一条 */
+export const agentAudit = sqliteTable(
+  'agent_audit',
+  {
+    id: text('id').primaryKey(),
+    at: integer('at').notNull(),
+    caller: text('caller').notNull(),
+    tool: text('tool').notNull(),
+    level: text('level', { enum: ['read', 'write', 'external'] }).notNull(),
+    summary: text('summary').notNull(),
+    status: text('status', { enum: ['ok', 'error', 'denied'] }).notNull(),
+    detail: text('detail'),
+    durationMs: integer('duration_ms').notNull().default(0),
+    conversationId: text('conversation_id')
+  },
+  (t) => [index('agent_audit_at_idx').on(t.at)]
+)
+
+/** 积微作为 MCP 客户端时接入的外部服务器；环境变量、请求头、OAuth 令牌用系统钥匙串加密 */
+export const mcpServers = sqliteTable('mcp_servers', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  transport: text('transport', { enum: ['stdio', 'http'] }).notNull(),
+  command: text('command'),
+  args: text('args').notNull().default('[]'),
+  cwd: text('cwd'),
+  envEnc: blob('env_enc', { mode: 'buffer' }),
+  url: text('url'),
+  headersEnc: blob('headers_enc', { mode: 'buffer' }),
+  oauthEnc: blob('oauth_enc', { mode: 'buffer' }),
+  enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
+  /** 逐个工具的策略（JSON：{ 工具名: 'auto' | 'ask' | 'deny' }） */
+  toolPolicies: text('tool_policies').notNull().default('{}'),
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull()
+})
+
+/** 使用积微 MCP 服务的客户端（Claude、Cursor……）；令牌只存 SHA-256 */
+export const mcpClients = sqliteTable('mcp_clients', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  tokenHash: text('token_hash').notNull(),
+  access: text('access', { enum: ['read', 'add', 'propose'] })
+    .notNull()
+    .default('read'),
+  enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
+  lastUsedAt: integer('last_used_at'),
+  createdAt: integer('created_at').notNull()
+})
