@@ -34,6 +34,7 @@ import {
   type VoiceStatus
 } from './recording'
 import { z } from 'zod'
+import type { Insights } from './insights'
 import { WorkCreateSchema, WorkUpdateSchema, type VideoRender, type Work } from './works'
 import { AdvisorAskSchema, DecideSchema, ReviewDecisionSchema, type Decision } from './advisor'
 import { EventRange, EventSave, PhaseSave, MilestoneSave, IcsSave, ScheduleOptions, type SchedulePreview, type GoalPhase, type GoalMilestone, type IcsFeed, type PlanEvent, type ReviewForecast } from './plan'
@@ -653,6 +654,9 @@ export const capabilities = {
     }),
     harvest: cap<ReflectionHarvest>()({ description: 'AI 从复盘中提炼洞见、修正与行动项（供确认）', params: [id()] }),
     commit: cap<Reflection>()({ description: '保存确认的洞见、修正与行动项，复盘完成', params: [id(), ['input', S.HarvestCommitSchema]] })
+  },
+  learningInsights: {
+    get: cap<Insights>()({ description: '洞察看板：一段时间的投入、内化、产出、成本与知识漏斗（只读统计）', params: [['range', z.union([z.literal(7), z.literal(30), z.literal(90)])]] })
   },
   works: {
     list: cap<Work[]>()({ description: '创作工坊：全部作品', params: none }),

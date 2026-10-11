@@ -35,6 +35,7 @@
     "src/renderer/src/features/discover/messages.ts",
     "src/renderer/src/features/advisor/messages.ts",
     "src/renderer/src/features/works/messages.ts",
+    "src/renderer/src/features/reflect/insightMessages.ts",
     "src/renderer/src/features/tasks/mailMessages.ts",
     "src/renderer/src/features/agent/messages.ts"
   ]

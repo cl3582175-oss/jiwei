@@ -1,3 +1,5 @@
+import { InsightsView } from './InsightsView'
+import { Segmented } from '@/features/plan/ui'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -461,6 +463,8 @@ export function ReflectView() {
   const { t } = useTranslation()
   useReflectionEvents()
   const id = useApp((s) => s.reflectionId)
+  // 复盘 / 洞察（v0.9）：洞察看板放在复盘页里
+  const [tab, setTab] = useState<'reflect' | 'insights'>('reflect')
   return (
     <FloatingPanel flushLeft className="flex flex-col">
       <header className="drag flex h-[52px] shrink-0 items-center gap-2 border-b border-border/70 pr-[calc(var(--tb-right)+16px)] pl-4">
@@ -471,8 +475,23 @@ export function ReflectView() {
         )}
         <Sprout className="size-4 text-accent" />
         <span className="font-serif text-md font-semibold tracking-wide text-fg">{t('reflect.title')}</span>
+        {!id && (
+          <div className="no-drag ml-auto">
+            <Segmented
+              label={t('reflect.title')}
+              value={tab}
+              onChange={setTab}
+              options={[
+                { value: 'reflect', label: t('learningInsights.tab.reflect') },
+                { value: 'insights', label: t('learningInsights.tab.insights') }
+              ]}
+            />
+          </div>
+        )}
       </header>
-      <div className={cn('min-h-0 flex-1', id ? 'overflow-hidden' : 'overflow-y-auto')}>{id ? <Session key={id} id={id} /> : <ReflectHome />}</div>
+      <div className={cn('min-h-0 flex-1', id ? 'overflow-hidden' : 'overflow-y-auto')}>
+        {id ? <Session key={id} id={id} /> : tab === 'insights' ? <InsightsView /> : <ReflectHome />}
+      </div>
     </FloatingPanel>
   )
 }

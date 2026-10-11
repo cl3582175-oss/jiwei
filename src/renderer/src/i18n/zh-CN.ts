@@ -1,6 +1,7 @@
 import { discoverZh } from '../features/discover/messages'
 import { advisorZh } from '../features/advisor/messages'
 import { worksZh } from '../features/works/messages'
+import { learningInsightsZh } from '../features/reflect/insightMessages'
 import { tasksZh } from '../features/tasks/messages'
 import { mailZh } from '../features/tasks/mailMessages'
 import { planZh } from '../features/plan/messages'
@@ -15,6 +16,7 @@ const zhCN = {
   discover: discoverZh,
   advisor: advisorZh,
   works: worksZh,
+  learningInsights: learningInsightsZh,
   tasks: tasksZh,
   mail: mailZh,
   plan: planZh,

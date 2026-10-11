@@ -14,6 +14,7 @@ import * as discoverDaily from './services/discover/daily'
 import * as discoverPath from './services/discover/path'
 import * as discoverPodcast from './services/discover/podcast'
 import * as advisor from './services/advisor'
+import * as insightsSvc from './services/insights'
 import * as worksSvc from './services/works'
 import * as worksExport from './services/works/export'
 import * as worksVideo from './services/works/video'
@@ -440,6 +441,7 @@ const handlers: Handlers = {
     harvest: (_, id) => reflection.harvestReflection(id),
     commit: (_, id, input) => reflection.commitReflection(id, input)
   },
+  learningInsights: { get: (_, range) => insightsSvc.insights(range) },
   works: {
     list: () => worksSvc.listWorks(),
     get: (_, id) => worksSvc.getWork(id),
