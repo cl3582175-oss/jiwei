@@ -222,6 +222,16 @@ export function registerProtocol(): void {
       const body = Readable.toWeb(stream) as ReadableStream<Uint8Array>
       return new Response(body, { status: range ? 206 : 200, headers })
     }
+    if (url.hostname === 'works') {
+      // jiwei://works/<作品 ID>/video.mp4：渲染好的讲解视频（v0.9）
+      const m = /^\/([0-9a-zA-Z-]{8,40})\/(video\.mp4)$/.exec(url.pathname)
+      if (!m) return new Response('Bad request', { status: 400 })
+      const res = await net.fetch(pathToFileURL(join(dataDir(), 'works', m[1], m[2])).toString(), { headers: req.headers })
+      const headers = new Headers(res.headers)
+      headers.set('Content-Type', 'video/mp4')
+      headers.set('Cache-Control', 'no-store')
+      return new Response(res.body, { status: res.status, headers })
+    }
     if (url.hostname === 'podcast') {
       // jiwei://podcast/<日期>/<序号>.<wav|mp3>：每日播客的 AI 语音
       const m = /^\/(\d{4}-\d{2}-\d{2}|preview)\/([0-9a-z]{3,12})\.(wav|mp3)$/.exec(url.pathname)

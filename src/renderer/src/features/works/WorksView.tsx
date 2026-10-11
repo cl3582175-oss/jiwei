@@ -39,6 +39,7 @@ import { confirm } from '@/components/ui/confirm'
 import { api, cn } from '@/lib/utils'
 import { useApp } from '@/store/app'
 import { PlanDialog, Segmented, field } from '@/features/plan/ui'
+import { StoryboardStep, VideoDone, VideoStep } from './VideoSteps'
 
 // 创作工坊（v0.9）：作品列表 + 工作台（选题 → 素材 → 结构 → 起草 → 打磨 → 成品）。
 
@@ -46,7 +47,7 @@ const errText = (e: unknown): string =>
   String(e instanceof Error ? e.message : e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
 const TYPE_ICON: Record<WorkType, ReactNode> = { article: <FileText />, slides: <Presentation />, video: <Clapperboard /> }
 /** 当前可新建的类型（讲解视频在 P4 接入后加入） */
-export const CREATABLE: WorkType[] = ['article', 'slides']
+export const CREATABLE: WorkType[] = ['article', 'slides', 'video']
 
 function useWorkEvents(): void {
   const qc = useQueryClient()
@@ -104,7 +105,7 @@ function WorkList({ onCreate }: { onCreate: (t: WorkType) => void }) {
       <div>
         <p className="max-w-[680px] text-sm leading-relaxed text-muted">{t('works.intro')}</p>
         <p className="mt-6 text-xs text-subtle">{t('works.empty')}</p>
-        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <div className="mt-3 grid gap-3 sm:grid-cols-3">
           {CREATABLE.map((type) => (
             <button
               key={type}
@@ -191,7 +192,7 @@ function NewWorkDialog({ initial, onClose }: { initial: WorkType; onClose: () =>
         </div>
       }
     >
-      <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label={t('works.title')}>
+      <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label={t('works.title')}>
         {CREATABLE.map((k) => (
           <button
             key={k}
@@ -675,6 +676,11 @@ function move<T>(arr: T[], i: number, d: -1 | 1): T[] {
 }
 
 function OutlineStep({ w, next }: { w: Work; next: () => void }) {
+  if (w.type === 'video') return <StoryboardStep w={w} next={next} />
+  return <PartsOutline w={w} next={next} />
+}
+
+function PartsOutline({ w, next }: { w: Work; next: () => void }) {
   const { t } = useTranslation()
   const [busy, run] = useRun()
   const [content, update] = useParts(w)
@@ -683,7 +689,7 @@ function OutlineStep({ w, next }: { w: Work; next: () => void }) {
     if (!content) return
     if (content.kind === 'article')
       update({ kind: 'article', parts: [...content.parts, { id: newPartId(), title: '', points: [], sources: [], body: '' }] })
-    else update({ kind: 'slides', parts: [...content.parts, { id: newPartId(), title: '', bullets: [], notes: '', sources: [] }] })
+    else if (content.kind === 'slides') update({ kind: 'slides', parts: [...content.parts, { id: newPartId(), title: '', bullets: [], notes: '', sources: [] }] })
   }
   return (
     <div className="space-y-4">
@@ -736,7 +742,8 @@ function OutlineStep({ w, next }: { w: Work; next: () => void }) {
                   />
                 </PartFrame>
               ))
-            : content.parts.map((p, i) => (
+            : content.kind === 'slides' &&
+              content.parts.map((p, i) => (
                 <PartFrame
                   key={p.id}
                   index={i}
@@ -808,6 +815,7 @@ function DraftStep({ w, next }: { w: Work; next: () => void }) {
         <NextBar onNext={next} />
       </div>
     )
+  if (content.kind === 'video') return <VideoStep w={w} />
   const words = content.parts.reduce((n, p) => n + p.body.replace(/\s/g, '').length, 0)
   return (
     <div className="space-y-4">
@@ -1074,6 +1082,11 @@ function PolishStep({ w, next }: { w: Work; next: () => void }) {
 
 /* 6. 成品 */
 function DoneStep({ w }: { w: Work }) {
+  if (w.type === 'video') return <VideoDone w={w} />
+  return <DocDone w={w} />
+}
+
+function DocDone({ w }: { w: Work }) {
   const { t, i18n } = useTranslation()
   const [busy, run] = useRun()
   const [where, setWhere] = useState(w.publishedWhere ?? ''),

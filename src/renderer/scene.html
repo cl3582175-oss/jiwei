@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>积微 · 视频渲染</title>
+    <!-- 讲解视频的离屏录制页（v0.9）：不联网、不加载应用与预加载脚本 -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'"
+    />
+    <style>
+      html, body { margin: 0; padding: 0; background: #fbfcfa; overflow: hidden; }
+      .scene-svg-fit svg { max-width: 100%; max-height: 100%; height: auto; }
+      .jxgbox { position: relative; overflow: hidden; }
+    </style>
+  </head>
+  <body>
+    <div id="stage"></div>
+    <script type="module" src="/src/scene/main.tsx"></script>
+  </body>
+</html>

@@ -16,6 +16,7 @@ import * as discoverPodcast from './services/discover/podcast'
 import * as advisor from './services/advisor'
 import * as worksSvc from './services/works'
 import * as worksExport from './services/works/export'
+import * as worksVideo from './services/works/video'
 import * as discoverTts from './services/discover/tts'
 import * as localSpeech from './services/discover/localSpeech'
 import { MAIL_PRESETS } from '@shared/mail'
@@ -452,7 +453,11 @@ const handlers: Handlers = {
     draft: (_, id, partId) => worksSvc.draftWork(id, partId),
     polish: (_, id) => worksSvc.polishWork(id),
     unclearToCards: (_, id, indexes) => worksSvc.unclearToCards(id, indexes),
-    export: (ctx, id, format) => worksExport.exportWork(ctx.win, id, format)
+    export: (ctx, id, format) => worksExport.exportWork(ctx.win, id, format),
+    render: (_, id) => worksVideo.renderVideo(id),
+    renderStatus: (_, id) => worksVideo.renderStatus(id),
+    cancelRender: (_, id) => worksVideo.cancelRender(id),
+    exportVideo: (ctx, id, format) => worksVideo.exportVideo(ctx.win, id, format)
   },
   advisor: {
     list: () => advisor.listDecisions(),

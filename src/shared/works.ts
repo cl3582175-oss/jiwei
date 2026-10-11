@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { checkGraph } from './embeds/graph'
 
 // 创作工坊（v0.9）：选题 → 素材 → 结构 → 起草 → 打磨 → 成品与回流。
 // 第一批：图文长文（article）、课件 PPT（slides）、讲解视频（video，P4）。
@@ -90,7 +91,102 @@ export interface SlidePart {
   notes: string
   sources: string[]
 }
-export type WorkParts = { kind: 'article'; parts: ArticlePart[] } | { kind: 'slides'; parts: SlidePart[] }
+/* ——— 讲解视频（P4）：分镜 = 场景模板 + 参数 + 旁白；渲染器按时间驱动动画，逐帧录制 ——— */
+
+export const SCENE_TEMPLATES = ['title', 'bullets', 'formula', 'diagram', 'chart', 'graph', 'compare', 'quote', 'summary'] as const
+export type SceneTemplate = (typeof SCENE_TEMPLATES)[number]
+
+const sceneBase = {
+  title: z.string().trim().max(60).default(''),
+  /** 旁白：按它合成配音并切分字幕；场景时长跟随旁白 */
+  narration: z.string().trim().min(1).max(400),
+  sources: refs
+}
+export const SceneDraft = z.discriminatedUnion('template', [
+  z.object({ template: z.literal('title'), subtitle: z.string().max(80).default(''), ...sceneBase }),
+  z.object({ template: z.literal('bullets'), items: z.array(text(60)).min(1).max(5), ...sceneBase }),
+  /** 公式逐步推导：每步一个 LaTeX 式子 */
+  z.object({ template: z.literal('formula'), steps: z.array(text(200)).min(1).max(6), ...sceneBase }),
+  /** Mermaid 图示（flowchart 等） */
+  z.object({ template: z.literal('diagram'), code: z.string().min(5).max(3000), ...sceneBase }),
+  z.object({
+    template: z.literal('chart'),
+    kind: z.enum(['bar', 'line', 'pie']),
+    categories: z.array(text(20)).min(2).max(10),
+    series: z.array(z.object({ name: text(20), data: z.array(z.number()).min(2).max(10) })).min(1).max(3),
+    ...sceneBase
+  }),
+  /** 函数图：一个或几个 y = f(x)，语法同 graph 嵌入块 */
+  z.object({
+    template: z.literal('graph'),
+    functions: z.array(text(120)).min(1).max(3),
+    view: z.tuple([z.number(), z.number(), z.number(), z.number()]).default([-6, 6, -4, 4]),
+    ...sceneBase
+  }),
+  z.object({
+    template: z.literal('compare'),
+    left: z.object({ title: text(30), items: z.array(text(50)).min(1).max(4) }),
+    right: z.object({ title: text(30), items: z.array(text(50)).min(1).max(4) }),
+    ...sceneBase
+  }),
+  z.object({ template: z.literal('quote'), quote: text(160), by: z.string().max(60).default(''), ...sceneBase }),
+  z.object({ template: z.literal('summary'), items: z.array(text(60)).min(1).max(5), ...sceneBase })
+])
+export type SceneData = z.infer<typeof SceneDraft>
+export type VideoScene = SceneData & { id: string }
+export const StoryboardDraft = z.object({ scenes: z.array(SceneDraft).min(3).max(14) })
+
+export const VideoVoiceSchema = z.object({
+  /** local：本机 AI 语音；ai：云端语音合成；none：不配音，只有字幕 */
+  engine: z.enum(['local', 'ai', 'none']),
+  providerId: z.string().max(64).nullable().default(null),
+  voice: z.string().max(40).nullable().default(null)
+})
+export type VideoVoice = z.infer<typeof VideoVoiceSchema>
+
+export type WorkParts =
+  | { kind: 'article'; parts: ArticlePart[] }
+  | { kind: 'slides'; parts: SlidePart[] }
+  | { kind: 'video'; parts: VideoScene[]; voice: VideoVoice }
+
+/** 分镜的语义校验：函数图表达式可解析、图表数据与类别对齐；返回错误说明或 null */
+export function checkScene(s: SceneData): string | null {
+  if (s.template === 'graph')
+    for (const expr of s.functions) {
+      const err = checkGraph({ graph: { type: 'function', functions: [{ expr }], params: [], view: s.view } })
+      if (err) return err
+    }
+  if (s.template === 'chart' && s.series.some((x) => x.data.length !== s.categories.length)) return 'chart data must match categories'
+  return null
+}
+
+/** 旁白按句切分，按字数比例分配到配音时长内 */
+export function sceneCaptions(narration: string, start: number, spoken: number): { start: number; end: number; text: string }[] {
+  const sentences = (narration.match(/[^。！？!?；;\n]+[。！？!?；;]?/g) ?? [narration]).map((s) => s.trim()).filter(Boolean)
+  // 太长的句子再按逗号切，避免一行字幕过长
+  const pieces = sentences.flatMap((s) => (s.length <= 28 ? [s] : s.split(/(?<=[，,、])/).reduce<string[]>((acc, x) => {
+    if (acc.length && (acc[acc.length - 1] + x).length <= 28) acc[acc.length - 1] += x
+    else acc.push(x)
+    return acc
+  }, [])))
+  const total = pieces.reduce((n, p) => n + p.length, 0) || 1
+  let at = start
+  return pieces.map((text) => {
+    const d = (spoken * text.length) / total
+    const c = { start: at, end: at + d, text: text.replace(/[，,、；;]$/, '') }
+    at += d
+    return c
+  })
+}
+
+/** 渲染进度 / 结果（作品页显示） */
+export interface VideoRender {
+  status: 'idle' | 'running' | 'done' | 'error'
+  progress: number
+  stage: string | null
+  message: string | null
+  file: string | null
+}
 
 export interface WorkMaterial {
   id: string
@@ -178,6 +274,11 @@ export const WorkUpdateSchema = z.object({
             })
           )
           .max(40)
+      }),
+      z.object({
+        kind: z.literal('video'),
+        parts: z.array(z.intersection(SceneDraft, z.object({ id: z.string().max(40) }))).max(20),
+        voice: VideoVoiceSchema
       })
     ])
     .optional(),

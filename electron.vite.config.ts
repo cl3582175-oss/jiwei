@@ -38,6 +38,12 @@ export default defineConfig({
     resolve: {
       alias: { '@': resolve('src/renderer/src'), ...shared }
     },
-    plugins: [react(), tailwindcss()]
+    plugins: [react(), tailwindcss()],
+    build: {
+      rollupOptions: {
+        // scene：讲解视频的离屏录制页（v0.9）
+        input: { index: resolve('src/renderer/index.html'), scene: resolve('src/renderer/scene.html') }
+      }
+    }
   }
 })

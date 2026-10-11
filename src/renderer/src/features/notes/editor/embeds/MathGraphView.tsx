@@ -67,8 +67,10 @@ function GraphView({ entry }: EmbedViewProps) {
       jxg = ((mod as { default?: JXGModule }).default ?? mod) as JXGModule
       const [x0, x1, y0, y1] = d.graph.view
       const showAxes = d.graph.type === 'function' || d.graph.axes
+      // 函数图四周留边：视窗贴着坐标轴时刻度数字不被裁掉
+      const pad = d.graph.type === 'function' ? [(x1 - x0) * 0.06, (y1 - y0) * 0.08] : [0, 0]
       board = jxg.JSXGraph.initBoard(domId, {
-        boundingbox: [x0, y1, x1, y0],
+        boundingbox: [x0 - pad[0], y1 + pad[1], x1 + pad[0], y0 - pad[1]],
         axis: false,
         showCopyright: false,
         showNavigation: false,

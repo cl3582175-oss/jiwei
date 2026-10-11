@@ -45,6 +45,57 @@ function reply(system: string, prompt: string): unknown {
         { title: '总结与提问', bullets: ['按间隔复习，先测再看'], notes: '有什么问题？', sources: [] }
       ]
     }
+  if (system.includes('讲解视频的分镜'))
+    return {
+      scenes: [
+        {
+          template: 'title',
+          title: '间隔重复',
+          subtitle: '一分钟讲清楚',
+          narration: '今天用一分钟，讲清楚间隔重复为什么有效。',
+          sources: []
+        },
+        {
+          template: 'bullets',
+          title: '遗忘曲线',
+          items: ['二十分钟忘掉四成', '一天后只剩三成'],
+          narration: '艾宾浩斯发现，学完二十分钟就会忘掉四成。',
+          sources: [m1]
+        },
+        {
+          template: 'formula',
+          title: '记忆保持率',
+          steps: ['R = e^{-t/S}', 'S \\uparrow \\Rightarrow R \\uparrow'],
+          narration: '保持率随时间指数下降，稳定性越高，下降越慢。',
+          sources: []
+        },
+        {
+          template: 'graph',
+          title: '指数衰减',
+          functions: ['exp(-x/2)'],
+          view: [0, 8, 0, 1.2],
+          narration: '这条曲线就是遗忘的样子。',
+          sources: []
+        },
+        { template: 'graph', title: '坏的函数图', functions: ['alert(1)'], narration: '这个场景应被去掉。', sources: [] },
+        {
+          template: 'chart',
+          title: '复习之后',
+          kind: 'bar',
+          categories: ['不复习', '复习一次', '复习三次'],
+          series: [{ name: '一周后保持率', data: [20, 45, 80] }],
+          narration: '每复习一次，一周后记得的就更多。',
+          sources: []
+        },
+        {
+          template: 'summary',
+          title: '记住三点',
+          items: ['先测再看', '间隔逐渐拉长'],
+          narration: '记住：先测再看，间隔逐渐拉长。',
+          sources: []
+        }
+      ]
+    }
   if (system.includes('以目标受众的身份审读'))
     return {
       audience: [{ part: 0, issue: '开头太快进入概念', suggestion: '先讲一个忘记的例子' }],
@@ -244,4 +295,63 @@ test('教练模式：只给提示问题，不替写正文', async () => {
   await expect(page.getByTestId('coach-questions').first()).toContainText('你自己最常在什么时候忘记')
   const w = await page.evaluate((id) => window.jiwei.works.get(id), id)
   expect(w.content?.kind === 'article' && w.content.parts.every((p) => !p.body)).toBe(true)
+})
+
+test('讲解视频：分镜（去掉非法场景）→ 预览 → 渲染 MP4（画面、音轨、字幕、分镜表）→ 导出', async () => {
+  test.setTimeout(300_000)
+  await page.getByRole('button', { name: '全部作品' }).click()
+  await page.getByRole('button', { name: '新建作品' }).click()
+  const dialog = page.getByTestId('new-work-dialog')
+  await dialog.getByRole('radio', { name: /讲解视频/ }).click()
+  await dialog.getByRole('textbox', { name: '选题' }).fill('间隔重复一分钟')
+  await dialog.getByRole('button', { name: '开始创作' }).click()
+  await expect(page.getByTestId('work-materials')).toContainText('遗忘曲线', { timeout: 20_000 })
+  await page.getByRole('button', { name: '下一步' }).click()
+  await page.getByRole('button', { name: '生成分镜' }).click()
+  const board = page.getByTestId('storyboard')
+  await expect(board.locator(':scope > li')).toHaveCount(6)
+  await expect(board).not.toContainText('坏的函数图')
+  await expect(board.locator('.katex').first()).toBeVisible()
+  if (shots) await page.screenshot({ path: join(shots, '308-storyboard.png') })
+  await page.getByRole('button', { name: '下一步' }).click()
+  await page.getByRole('button', { name: '不配音（只有字幕）' }).click()
+  const preview = page.getByTestId('video-preview')
+  // 第 7 秒：第二个场景旁白中（每个场景开头有 0.35 秒留白，那时本来没有字幕）
+  await preview.getByRole('slider', { name: '预览' }).fill('7')
+  await expect(preview.locator('[data-caption]')).toBeVisible()
+  if (shots) await page.screenshot({ path: join(shots, '309-video-preview.png') })
+  await expect
+    .poll(async () => (await page.evaluate(() => window.jiwei.works.list())).find((w) => w.type === 'video')?.content)
+    .toMatchObject({ voice: { engine: 'none' } })
+  await page.getByTestId('work-steps').getByRole('button', { name: /成品/ }).click()
+  await page.getByRole('button', { name: '渲染视频' }).click()
+  const done = page.getByTestId('video-done')
+  await expect(done.getByTestId('video-player')).toBeVisible({ timeout: 240_000 })
+  if (shots) await page.screenshot({ path: join(shots, '310-video-done.png') })
+  for (const name of ['导出 MP4', '导出字幕 SRT', '导出分镜表']) await done.getByRole('button', { name }).click()
+  const mp4 = join(exportDir, '间隔重复一分钟.mp4')
+  await expect
+    .poll(
+      () => existsSync(mp4) && existsSync(join(exportDir, '间隔重复一分钟.srt')) && existsSync(join(exportDir, '间隔重复一分钟-分镜.json'))
+    )
+    .toBe(true)
+  const head = readFileSync(mp4)
+  expect(head.subarray(4, 8).toString()).toBe('ftyp')
+  expect(head.length).toBeGreaterThan(50_000)
+  const srt = readFileSync(join(exportDir, '间隔重复一分钟.srt'), 'utf8')
+  expect(srt).toContain('00:00:00,350 -->')
+  expect(srt).toContain('艾宾浩斯发现')
+  const story = JSON.parse(readFileSync(join(exportDir, '间隔重复一分钟-分镜.json'), 'utf8')) as { scenes: { duration: number }[] }
+  expect(story.scenes).toHaveLength(6)
+  const total = story.scenes.reduce((n, s) => n + s.duration, 0)
+  // 用应用下载的 ffmpeg 检查流与时长（本机有时）
+  const ff = join(process.env.HOME ?? '', 'Library/Application Support/jiwei-models/ffmpeg/ffmpeg')
+  if (existsSync(ff)) {
+    const { spawnSync } = await import('child_process')
+    const info = spawnSync(ff, ['-hide_banner', '-i', mp4]).stderr.toString()
+    expect(info).toMatch(/Video: h264.*1280x720/)
+    expect(info).toMatch(/Audio: aac/)
+    const [, h, m, sec] = /Duration: (\d+):(\d+):([\d.]+)/.exec(info)!
+    expect(Math.abs(Number(h) * 3600 + Number(m) * 60 + Number(sec) - total)).toBeLessThan(1)
+  }
 })

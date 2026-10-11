@@ -234,6 +234,7 @@ async function slidesPptx(w: Work, parts: SlidePart[]): Promise<Buffer> {
 export async function exportWork(win: BrowserWindow | null, id: string, format: WorkExportFormat): Promise<string | null> {
   const w = getWork(id)
   if (!w.content) throw new Error(zh() ? '作品还没有内容' : 'The work has no content yet')
+  if (w.content.kind === 'video') throw new Error(zh() ? '讲解视频请在成品步骤渲染导出' : 'Render videos from the Finish step')
   if (w.content.kind === 'slides' && format !== 'pptx' && format !== 'md') throw new Error('Unsupported format')
   if (w.content.kind === 'article' && format === 'pptx') throw new Error('Unsupported format')
   const file = await target(win, w, format)
@@ -244,7 +245,7 @@ export async function exportWork(win: BrowserWindow | null, id: string, format: 
     else if (format === 'docx') await writeFile(file, await articleDocx(w, parts))
     else await htmlToPdf(articleHtml(w, parts), file)
   } else if (format === 'pptx') await writeFile(file, await slidesPptx(w, w.content.parts))
-  else
+  else if (w.content.kind === 'slides')
     await writeFile(
       file,
       [

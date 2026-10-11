@@ -34,7 +34,7 @@ import {
   type VoiceStatus
 } from './recording'
 import { z } from 'zod'
-import { WorkCreateSchema, WorkUpdateSchema, type Work } from './works'
+import { WorkCreateSchema, WorkUpdateSchema, type VideoRender, type Work } from './works'
 import { AdvisorAskSchema, DecideSchema, ReviewDecisionSchema, type Decision } from './advisor'
 import { EventRange, EventSave, PhaseSave, MilestoneSave, IcsSave, ScheduleOptions, type SchedulePreview, type GoalPhase, type GoalMilestone, type IcsFeed, type PlanEvent, type ReviewForecast } from './plan'
 import { ActivityBatchSchema, type TodayBriefing, type TodaySummary } from './activity'
@@ -676,7 +676,11 @@ export const capabilities = {
     export: cap<string | null>()({
       description: '导出作品：长文 md / docx / pdf，课件 pptx / md',
       params: [id('id'), ['format', z.enum(['md', 'docx', 'pdf', 'pptx'])]]
-    })
+    }),
+    render: cap<string>()({ description: '渲染讲解视频（配音、逐帧录制、编码；云端配音按字数计费）', params: [id('id')] }),
+    renderStatus: cap<VideoRender>()({ description: '讲解视频的渲染进度', params: [id('id')] }),
+    cancelRender: cap<void>()({ description: '取消正在渲染的视频', params: [id('id')] }),
+    exportVideo: cap<string | null>()({ description: '另存渲染好的视频、字幕或分镜表', params: [id('id'), ['format', z.enum(['mp4', 'srt', 'json'])]] })
   },
   advisor: {
     list: cap<Decision[]>()({ description: '决策日志：全部决策（未删除）', params: none }),
