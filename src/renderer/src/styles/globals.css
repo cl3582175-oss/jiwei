@@ -1576,3 +1576,19 @@
 }
 .safety-ui input[type='checkbox'],
 .safety-ui input[type='radio'] { accent-color: var(--accent); }
+
+/* JSXGraph 画板（v0.9 函数图 / 几何图）：只保留必需的定位规则，配色由组件按主题传入 */
+.jxgbox {
+  position: relative;
+  overflow: hidden;
+  touch-action: none;
+  border-radius: 0.75rem;
+}
+.jxgbox .jxg-label {
+  font-family: inherit;
+}
+
+.graph-range {
+  accent-color: var(--accent);
+  height: 1.25rem;
+}

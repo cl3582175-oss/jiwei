@@ -1,3 +1,4 @@
+import { EMBED_KINDS } from '@shared/embeds'
 import { and, desc, eq, or } from 'drizzle-orm'
 import { getDb } from '../db'
 import { derivationLandings, notes, proposals } from '../db/schema'
@@ -41,6 +42,11 @@ export function createProposal(input: ProposalInput): Proposal {
   if (!note || note.deletedAt) throw new Error('Note not found')
   // 隐私：用户设为“不发送给 AI”的笔记，AI 也不能修改
   if (note.aiExcluded) throw new Error('This note is excluded from AI')
+  // 富内容块按种类校验：绕过助手工具（如 MCP、导入）写入的数据同样必须能显示
+  for (const [key, embed] of Object.entries(input.embeds ?? {})) {
+    const def = EMBED_KINDS[embed.kind]
+    if (def && !def.validate(embed.data)) throw new Error(`Invalid ${embed.kind} data in embed "${key}"`)
+  }
   const row: Row = {
     id: newId(),
     noteId: input.noteId,

@@ -1,3 +1,4 @@
+import { GraphDataSchema, checkGraph } from '@shared/embeds/graph'
 import { todayOverviewText } from '../today'
 import { tool, type ToolSet } from 'ai'
 import { z } from 'zod'
@@ -440,6 +441,18 @@ export function buildTools(s: AgentSession): ToolSet {
         return visual(noteId, title, 'diagram', { code, ...(diagramTitle ? { title: diagramTitle } : {}) }, cue, afterBlockId)
       }
     }),
+    note_add_graph: tool({
+      description: zh
+        ? '在笔记中插入可拖动的数学图（提案）。function：函数图，expr 只能用数字、x、参数名、+ - * / ^、括号与 sin cos tan exp ln log sqrt abs，可加参数滑块；geometry：几何图，元素按依赖顺序给出（先点，再线段 / 圆 / 垂线等），自由点可拖动。只填数据，不写代码。'
+        : 'Insert a draggable math graph (proposal). function: y = f(x) with expr using numbers, x, parameter names, + - * / ^, parentheses and sin cos tan exp ln log sqrt abs, optional parameter sliders; geometry: elements in dependency order (points first, then segments, circles, perpendiculars…), free points are draggable. Data only, no code.',
+      inputSchema: z.object({ ...PLACE, graph: GraphDataSchema }),
+      execute: async ({ noteId, title, cue, afterBlockId, graph }) => {
+        mustNote(noteId, zh)
+        const err = checkGraph(graph)
+        if (err) throw new Error(`${zh ? '图的数据有误，请修正后重试' : 'Invalid graph data, fix and retry'}：${err}`)
+        return visual(noteId, title, 'graph', graph, cue, afterBlockId)
+      }
+    }),
     note_add_timeline: tool({
       description: zh ? '在笔记中插入时间线（提案）：按时间顺序排列的事件。' : 'Insert a timeline (proposal).',
       inputSchema: z.object({
@@ -685,6 +698,7 @@ export function stepLabel(name: string, input: unknown, zh: boolean): Pick<Agent
     note_add_table: [`提案：${q('title')}`, `Proposal: ${q('title')}`],
     note_add_chart: [`提案：${q('title')}`, `Proposal: ${q('title')}`],
     note_add_diagram: [`提案：${q('title')}`, `Proposal: ${q('title')}`],
+    note_add_graph: [`提案：${q('title')}`, `Proposal: ${q('title')}`],
     note_add_timeline: [`提案：${q('title')}`, `Proposal: ${q('title')}`],
     note_add_code_steps: [`提案：${q('title')}`, `Proposal: ${q('title')}`],
     note_add_interactive: [`提案：${q('title')}`, `Proposal: ${q('title')}`],

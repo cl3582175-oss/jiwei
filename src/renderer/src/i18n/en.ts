@@ -552,7 +552,11 @@ const en: Messages = {
     keyChild: 'add child',
     keySibling: 'add sibling',
     keyEdit: 'edit text',
-    keyDelete: 'delete'
+    keyDelete: 'delete',
+    graph: 'Function / geometry graph',
+    graphReset: 'Reset positions',
+    graphDragPoints: 'Drag the points and watch which relations hold',
+    graphDragSliders: 'Drag the sliders to see how parameters change the graph'
   },
   proposals: {
     suggestion: 'AI suggestion',

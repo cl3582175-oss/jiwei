@@ -11,6 +11,7 @@ import {
   TimelineDataSchema,
   timelineText
 } from './visuals'
+import { GraphDataSchema, checkGraph, graphText } from './graph'
 import type { z } from 'zod'
 
 const def = <T>(kind: string, schema: z.ZodType<T>, text: (d: T) => string): EmbedKindDef => ({
@@ -46,7 +47,15 @@ export const EMBED_KINDS: Record<string, EmbedKindDef> = {
   diagram: def('diagram', DiagramDataSchema, diagramText),
   timeline: def('timeline', TimelineDataSchema, timelineText),
   steps: def('steps', StepsDataSchema, stepsText),
-  interactive: def('interactive', InteractiveDataSchema, interactiveText)
+  interactive: def('interactive', InteractiveDataSchema, interactiveText),
+  graph: {
+    ...def('graph', GraphDataSchema, graphText),
+    // 除结构外还要语义正确（表达式可解析、几何引用有效），否则 AI 或导入写入的图无法显示
+    validate: (d) => {
+      const r = GraphDataSchema.safeParse(d)
+      return r.success && !checkGraph(r.data)
+    }
+  }
 }
 
 export function embedText(kind: string, data: unknown): string {

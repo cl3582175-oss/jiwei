@@ -156,6 +156,80 @@ test('all visual kinds render after accepting a proposal (live previews first)',
   await expect.poll(async () => JSON.stringify(await page.evaluate((id) => window.jiwei.notes.blocks(id), noteId))).toContain('巴特利特')
 })
 
+test('函数图滑块与几何图拖动（JSXGraph），非法表达式被拒', async () => {
+  const graphs = {
+    g1: {
+      kind: 'graph',
+      data: {
+        title: '二次函数平移',
+        graph: {
+          type: 'function',
+          functions: [{ expr: 'a(x-h)^2', label: 'y = a(x-h)²' }],
+          params: [
+            { name: 'a', min: -2, max: 2, value: 1 },
+            { name: 'h', min: -3, max: 3, value: 0 }
+          ],
+          view: [-5, 5, -4, 6]
+        }
+      }
+    },
+    g2: {
+      kind: 'graph',
+      data: {
+        title: '三角形的高',
+        graph: {
+          type: 'geometry',
+          elements: [
+            { type: 'point', id: 'A', x: -3, y: -1 },
+            { type: 'point', id: 'B', x: 3, y: -1 },
+            { type: 'point', id: 'C', x: 0, y: 2.5 },
+            { type: 'polygon', id: 'T', points: ['A', 'B', 'C'] },
+            { type: 'segment', id: 'AB', from: 'A', to: 'B' },
+            { type: 'perpendicular', id: 'h', line: 'AB', through: 'C' }
+          ]
+        }
+      }
+    }
+  }
+  await page.evaluate(
+    ({ noteId, ops, embeds }) => window.jiwei.proposals.create({ noteId, title: '数学图', ops, embeds }),
+    { noteId, ops: [row('graph', 'g1'), row('graph', 'g2')], embeds: graphs }
+  )
+  await page.getByRole('button', { name: '全部接受' }).click()
+  const doc = page.locator('.cornell-doc')
+  const fn = doc.locator('.embed-block[data-kind="graph"]').filter({ hasText: '二次函数平移' })
+  const geo = doc.locator('.embed-block[data-kind="graph"]').filter({ hasText: '三角形的高' })
+  await expect(fn.locator('.jxgbox svg').first()).toBeVisible({ timeout: 15_000 })
+  await expect(geo.locator('.jxgbox svg').first()).toBeVisible({ timeout: 15_000 })
+  await expect(fn).toContainText('拖动滑块')
+  await expect(geo).toContainText('拖动点')
+  // 拖动滑块：函数曲线的路径随参数改变
+  await fn.scrollIntoViewIfNeeded()
+  if (shots) await page.screenshot({ path: join(shots, '104a-graphs.png') })
+  const curve = (): Promise<string> => fn.locator('.jxgbox svg path').evaluateAll((ps) => ps.map((p) => p.getAttribute('d') ?? '').sort((a, b) => b.length - a.length)[0])
+  const before = await curve()
+  // 参数滑块在图下方（原生 range，可键盘操作）
+  await fn.getByRole('slider', { name: 'a' }).fill('2')
+  await expect(fn.getByTestId('graph-params')).toContainText('a = 2')
+  await expect.poll(curve).not.toBe(before)
+  if (shots) {
+    await page.waitForTimeout(300)
+    await page.screenshot({ path: join(shots, '104-graphs.png') })
+    await geo.scrollIntoViewIfNeeded()
+    await page.waitForTimeout(300)
+    await page.screenshot({ path: join(shots, '105-geometry.png') })
+  }
+  // 检索文本包含表达式
+  await expect.poll(async () => JSON.stringify(await page.evaluate((id) => window.jiwei.notes.blocks(id), noteId))).toContain('a(x-h)^2')
+  // 非法表达式在注册表层被拒（不会以“内容缺失”的块写入笔记）
+  const bad = await page
+    .evaluate(
+      ({ noteId, ops, embeds }) => window.jiwei.proposals.create({ noteId, title: '坏图', ops, embeds }).then(() => 'stored', (e) => String(e)),
+      { noteId, ops: [row('graph', 'bad')], embeds: { bad: { kind: 'graph', data: { graph: { type: 'function', functions: [{ expr: 'alert(1)' }] } } } } }
+    )
+  expect(bad).not.toBe('stored')
+})
+
 test('Mermaid validation reports syntax errors back to the model', async () => {
   const ok = await page.evaluate(() => window.__jiweiValidate!('diagram', { code: 'flowchart TD\n  A[学] --> B[习]' }))
   expect(ok).toBeNull()

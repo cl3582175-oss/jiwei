@@ -539,7 +539,11 @@ const zhCN = {
     keyChild: '添加子节点',
     keySibling: '添加同级',
     keyEdit: '编辑文字',
-    keyDelete: '删除'
+    keyDelete: '删除',
+    graph: '函数图 / 几何图',
+    graphReset: '恢复初始位置',
+    graphDragPoints: '拖动点，观察图形关系如何保持',
+    graphDragSliders: '拖动滑块，观察参数如何改变图像'
   },
   proposals: {
     suggestion: 'AI 建议',
