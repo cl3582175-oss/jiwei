@@ -73,12 +73,12 @@ export const taskRecipes: TaskRecipe[] = [
     id: 'industry-weekly',
     name: { zh: '每周行业简报', en: 'Weekly industry brief' },
     instructionEn:
-      'Summarize this week’s developments from the knowledge base and specified webpages for my directions. Distinguish facts, sources and inferences; state missing sources.',
+      'Search this week’s developments for my directions using the configured search service and knowledge base. Distinguish facts, sources and inferences; state missing sources.',
     task: {
       name: '每周行业简报',
-      instruction: '从我关注方向的已知资料和指定网页汇总本周行业进展，区分事实、来源与推断。没有来源就说明缺失。',
+      instruction: '使用已配置搜索服务与知识库搜索我关注方向的本周行业进展，区分事实、来源与推断。没有来源就说明缺失。',
       trigger: schedule('week', '09:00', [1]),
-      tools: ['knowledge_search', 'goals_list', 'web_fetch'],
+      tools: ['knowledge_search', 'goals_list', 'web_fetch', 'web_search'],
       outputs: { inbox: true },
       recipe: 'industry-weekly'
     }

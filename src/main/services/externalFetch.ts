@@ -44,7 +44,8 @@ export async function externalFetch(
     const response = await inDomain(u, async () => {
       options.signal?.throwIfAborted()
       const signal = options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000)
-      const res = await net.fetch(u.href, { method, body, headers, credentials: 'omit', redirect: 'manual', signal })
+      // 条件刷新由订阅服务管理；Chromium 的缓存不能另加条件或隐藏网页更新。
+      const res = await net.fetch(u.href, { method, body, headers, cache: 'no-store', credentials: 'omit', redirect: 'manual', signal })
       if (res.status >= 300 && res.status < 400 && res.status !== 304) return { status: res.status, text: '', bytes: new Uint8Array(), headers: res.headers }
       const max = options.maxBytes ?? 2 * 1024 * 1024
       if (Number(res.headers.get('content-length')) > max) throw new Error('Response too large')

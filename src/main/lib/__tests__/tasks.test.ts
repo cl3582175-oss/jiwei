@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { nextTriggerAt, previousScheduleAt, catchUpAt } from '../../services/tasks/triggers'
+import { nextTriggerAt, previousScheduleAt, catchUpAt, calendarTriggerDue } from '../../services/tasks/triggers'
 import { taskPermission } from '../../services/tasks/policy'
 
 describe('任务本地时间调度与补跑', () => {
@@ -20,6 +20,13 @@ describe('任务本地时间调度与补跑', () => {
     expect(catchUpAt(t, now - 3 * 86400000, now)).toBe(previous)
     expect(catchUpAt(t, previous, now)).toBeNull()
     expect(catchUpAt({ type: 'schedule', every: 'week', time: '08:00', days: [4] }, 0, now)).toBeNull()
+  })
+  it('日历零分钟触发跨过开始时刻也运行，只接收检查窗口内的到期时刻', () => {
+    const now = new Date(2026, 9, 11, 9, 0, 23).getTime()
+    expect(calendarTriggerDue(now - 23000, 0, now - 60000, now)).toBe(true)
+    expect(calendarTriggerDue(now + 30 * 60000 - 23000, 30, now - 60000, now)).toBe(true)
+    expect(calendarTriggerDue(now - 60000, 0, now - 60000, now)).toBe(false)
+    expect(calendarTriggerDue(now + 1, 0, now - 60000, now)).toBe(false)
   })
 })
 describe('后台任务工具权限', () => {

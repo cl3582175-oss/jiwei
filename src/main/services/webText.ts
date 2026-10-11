@@ -4,13 +4,15 @@ import { externalFetch, checkedWebUrl } from './externalFetch'
 import { getSettings } from './settings'
 import { isSensitiveUrl } from '../lib/browserPolicy'
 
-export async function fetchWebText(url: string, selector?: string, signal?: AbortSignal): Promise<{ title: string; text: string; url: string }> {
-  const u = checkedWebUrl(url)
+export async function fetchWebText(url: string, selector?: string, signal?: AbortSignal): Promise<{ title: string; text: string; url: string; sourceUrls: string[] }> {
+  const u = checkedWebUrl(url),
+    sourceUrls = [u.href]
   if (isSensitiveUrl(u.href, getSettings().browser?.aiBlockedSites ?? [])) throw new Error('This site is excluded from AI')
   const r = await externalFetch(u.href, {
     signal,
     validateUrl: (next) => {
       if (isSensitiveUrl(next, getSettings().browser?.aiBlockedSites ?? [])) throw new Error('This site is excluded from AI')
+      if (!sourceUrls.includes(next)) sourceUrls.push(next)
     }
   })
   if (r.status !== 200) throw new Error(`Web fetch failed (HTTP ${r.status})`)
@@ -23,5 +25,7 @@ export async function fetchWebText(url: string, selector?: string, signal?: Abor
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 20000)
-  return { title: document.title || u.hostname, text, url: u.href }
+  for (const source of sourceUrls)
+    if (isSensitiveUrl(source, getSettings().browser?.aiBlockedSites ?? [])) throw new Error('This site is excluded from AI')
+  return { title: document.title || u.hostname, text, url: u.href, sourceUrls }
 }

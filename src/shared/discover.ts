@@ -34,7 +34,8 @@ export const PickScore = z.object({
   diverse: z.boolean(),
   news: z.boolean()
 })
-export type DiscoveryScore = z.infer<typeof PickScore>
+// 由主进程加上来源许可指纹，不接受模型提供的隐私许可。
+export type DiscoveryScore = z.infer<typeof PickScore> & { privacySignature?: string }
 export interface FeedItem {
   id: string
   feedId: string | null

@@ -94,7 +94,8 @@ export function upsertCandidate(item: ParsedItem, feedId: string | null, origin:
           reason: null,
           gap: null,
           minutes: null,
-          pickedAt: null,
+          // 页面刷新不会返还已投递名额；再次入选时由投递流程更新日期。
+          pickedAt: old.pickedAt,
           laterAt: null,
           inboxId: null,
           ...sync

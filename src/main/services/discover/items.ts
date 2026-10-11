@@ -2,7 +2,8 @@ import { and, desc, eq, isNull } from 'drizzle-orm'
 import type { DiscoverAction, FeedItem, DiscoveryScore } from '@shared/discover'
 import { DiscoverAct } from '@shared/discover'
 import { getDb } from '../../db'
-import { feedItems, discoverFeedback, inboxItems, sources } from '../../db/schema'
+import { feedItems, discoverFeedback, inboxItems, sources, meta } from '../../db/schema'
+import { dayStart, localDay } from '@shared/plan'
 import { newId } from '../../lib/ids'
 import { deviceId } from '../device'
 import { emit } from '../../events'
@@ -13,6 +14,26 @@ import { audit } from '../agent/audit'
 import { tr } from '../../lib/messages'
 import { checkDiscoverUrl, discoverChanged } from './feeds'
 import { allowedRelated } from './context'
+import { privacyFingerprint } from '../ai/privacy'
+
+type Delivery = { id: string; url: string; diverse: boolean }
+const deliveryKey = (now: number): string => `discover.deliveries:${localDay(now)}`
+/** 已投递额度独立于卡片的状态、正文刷新或删除，且与写入卡片处在同一知识库事务。 */
+export function dailyDeliveries(now = Date.now()): Delivery[] {
+  const db = getDb(),
+    stored: Delivery[] = JSON.parse(db.select().from(meta).where(eq(meta.key, deliveryKey(now))).get()?.value ?? '[]'),
+    seen = new Set(stored.map((i) => i.id))
+  // 补齐升级前已有的当天投递，保存、稍后和删除都不能返还额度。
+  for (const i of db.select().from(feedItems).all())
+    if (!i.remedyId && i.pickedAt !== null && i.pickedAt >= dayStart(now) && i.pickedAt <= now && !seen.has(i.id)) {
+      stored.push({ id: i.id, url: i.url, diverse: !!(i.score && (JSON.parse(i.score) as DiscoveryScore).diverse) })
+      seen.add(i.id)
+    }
+  return stored
+}
+export function scoreAllowed(score: DiscoveryScore): boolean {
+  return score.privacySignature === privacyFingerprint() && allowedRelated(score.related).length === score.related.length
+}
 
 export function knowledgeTarget(url: string): { type: 'note' | 'source'; id: string } | null {
   const match = /^jiwei:\/\/(note|source)\/([\w-]+)$/.exec(url)
@@ -35,16 +56,23 @@ export function items(all = false): FeedItem[] {
     .filter((r) => all || r.status === 'picked')
     .map(toItem)
 }
-export function publishPick(id: string, score: DiscoveryScore, remedyId?: string): string {
+export function publishPick(id: string, score: DiscoveryScore, remedyId?: string, countDelivery = !remedyId): string {
   const db = getDb(),
     r = db.select().from(feedItems).where(eq(feedItems.id, id)).get()
   if (!r || r.deletedAt) throw new Error('Candidate not found')
+  if (!scoreAllowed(score)) throw new Error('Recommendation privacy context changed')
   if (!knowledgeTarget(r.url)) checkDiscoverUrl(r.url)
   const related = allowedRelated(score.related),
     now = Date.now(),
     text = `${r.title}\n${r.url}\n${tr('为什么推荐给你', 'Why this is for you')}: ${score.reason}\n${score.gap}\n${related.map((ref) => `${ref.type}:${ref.id}`).join(' · ')}\n${score.minutes} ${tr('分钟', 'minutes')}`
   let inboxId = r.inboxId
   db.transaction(() => {
+    if (countDelivery) {
+      const delivered = dailyDeliveries(now)
+      if (!delivered.some((i) => i.id === id)) delivered.push({ id, url: r.url, diverse: score.diverse })
+      const key = deliveryKey(now), value = JSON.stringify(delivered)
+      db.insert(meta).values({ key, value }).onConflictDoUpdate({ target: meta.key, set: { value } }).run()
+    }
     const old = inboxId ? db.select().from(inboxItems).where(eq(inboxItems.id, inboxId)).get() : null
     if (!old || old.deletedAt) inboxId = create({ kind: 'pick', text, origin: { itemId: id, ...(remedyId ? { remedyId } : {}) } }).id
     else db.update(inboxItems).set({ text, status: 'new', updatedAt: now, updatedBy: deviceId() }).where(eq(inboxItems.id, inboxId!)).run()
@@ -56,7 +84,7 @@ export function publishPick(id: string, score: DiscoveryScore, remedyId?: string
         gap: score.gap,
         minutes: score.minutes,
         related: JSON.stringify(related),
-        pickedAt: r.pickedAt ?? now,
+        pickedAt: countDelivery ? now : (r.pickedAt ?? now),
         inboxId,
         remedyId: remedyId ?? r.remedyId,
         laterAt: null,
@@ -152,5 +180,6 @@ export function restoreLater(now = Date.now()): void {
     .from(feedItems)
     .where(and(eq(feedItems.status, 'later'), isNull(feedItems.deletedAt)))
     .all())
-    if (r.laterAt !== null && r.laterAt <= now && r.score) publishPick(r.id, JSON.parse(r.score), r.remedyId ?? undefined)
+    if (r.laterAt !== null && r.laterAt <= now && r.score && scoreAllowed(JSON.parse(r.score)))
+      publishPick(r.id, JSON.parse(r.score), r.remedyId ?? undefined, false)
 }

@@ -1,7 +1,7 @@
-import { and, eq, sql } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { getDb } from '../../db'
-import { mailSeen, meta, jobs } from '../../db/schema'
-import { listTasks, queueTask } from '../tasks/service'
+import { mailSeen, meta } from '../../db/schema'
+import { listTasks, queueTriggeredTask, taskBusy } from '../tasks/service'
 import { pollMail } from './imap'
 
 /** 同一账户只推进一次游标，先扇出到所有匹配任务，再提交游标，避免首个任务消费其他任务的邮件。 */
@@ -14,16 +14,7 @@ export async function checkMailTriggers(now: number): Promise<void> {
       last = Number(getDb().select().from(meta).where(eq(meta.key, key)).get()?.value ?? 0)
     if (now - last < 300000) continue
     // 手动运行尚未结束时不丢弃增量批次，留给下一次轮询。
-    if (
-      tasks.some((t) =>
-        getDb()
-          .select({ id: jobs.id })
-          .from(jobs)
-          .where(and(eq(jobs.dedupeKey, `task:${t.id}`), sql`${jobs.status} IN ('running','queued')`))
-          .get()
-      )
-    )
-      continue
+    if (tasks.some((t) => taskBusy(t.id))) continue
     try {
       const old = getDb()
         .select()
@@ -31,8 +22,11 @@ export async function checkMailTriggers(now: number): Promise<void> {
         .where(and(eq(mailSeen.accountId, accountId), eq(mailSeen.mailbox, 'INBOX')))
         .get()
       const batch = await pollMail(accountId, old?.uidValidity ?? null, old?.lastUid ?? 0)
+      // 网络等待期间也可能启动手动任务；再次检查后再同步扇出和提交游标。
+      const current = listTasks().filter((t) => t.enabled && t.trigger.type === 'mail' && t.trigger.accountId === accountId)
+      if (current.some((t) => taskBusy(t.id))) continue
       getDb().transaction(() => {
-        for (const t of tasks) {
+        for (const t of current) {
           if (t.trigger.type !== 'mail') continue
           const trigger = t.trigger,
             matches = batch.mails.filter(
@@ -40,7 +34,8 @@ export async function checkMailTriggers(now: number): Promise<void> {
                 (!trigger.from || m.from.toLowerCase().includes(trigger.from.toLowerCase())) &&
                 (!trigger.subjectContains || m.subject.toLowerCase().includes(trigger.subjectContains.toLowerCase()))
             )
-          if (matches.length) queueTask(t.id, { type: 'mail', accountId, mailIds: matches.map((m) => m.id) })
+          if (matches.length && !queueTriggeredTask(t.id, { type: 'mail', accountId, mailIds: matches.map((m) => m.id) }))
+            throw new Error('Mail trigger was not accepted')
         }
         getDb()
           .insert(mailSeen)

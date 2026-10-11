@@ -71,4 +71,21 @@ describe('精选约束', () => {
     expect(choosePicks(items, 0, new Set())).toEqual([])
     expect(choosePicks([{ ...items[11], score: { ...items[11].score, relevance: 0 } }], 5, new Set())).toEqual([])
   })
+  it('同一天再次运行沿用已投递来源数量，已有跨领域条目不再抢占排序', () => {
+    const selected = choosePicks(items, 3, new Set(['exam']), [
+      { id: 'earlier-1', url: 'https://a.org/earlier-1', diverse: true },
+      { id: 'earlier-2', url: 'https://a.org/earlier-2', diverse: false }
+    ])
+    expect(selected).toHaveLength(3)
+    expect(selected.every((p) => new URL(p.url).hostname !== 'a.org')).toBe(true)
+    expect(selected.map((p) => p.id)).toEqual(['6', '7', '8'])
+  })
+  it('已投递页面更新为跨领域后，不能挡住仍可投递的跨领域候选', () => {
+    const refreshed = { ...items[6], score: { ...items[6].score, diverse: true } },
+      fresh = { ...items[11], id: 'fresh-diverse', url: 'https://fresh.org/lesson' }
+    const selected = choosePicks([refreshed, items[7], fresh], 1, new Set(), [
+      { id: refreshed.id, url: refreshed.url, diverse: false }
+    ])
+    expect(selected.map((p) => p.id)).toEqual(['fresh-diverse'])
+  })
 })

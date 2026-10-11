@@ -212,7 +212,7 @@ test('外部工具：在设置里添加本地 MCP 服务器，工具按级别显
   await page.getByRole('button', { name: '连接' }).click()
   const settings = page.getByTestId('connections-settings')
   await expect(settings).toContainText('还没有接入外部工具')
-  await settings.getByRole('button', { name: '添加' }).click()
+  await settings.getByRole('button', { name: '添加', exact: true }).click()
   const form = page.getByTestId('mcp-server-form')
   await form.getByLabel('名称', { exact: true }).fill('testsrv')
   await form.getByLabel('命令', { exact: true }).fill(process.execPath)

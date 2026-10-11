@@ -8,8 +8,8 @@ import { dayStart, localDay } from '@shared/plan'
 import { getDb } from '../../db'
 import { aiTasks, meta } from '../../db/schema'
 import { getSettings } from '../settings'
-import { getTask, listTasks, queueTask, changed } from './service'
-import { catchUpAt, nextTriggerAt } from './triggers'
+import { getTask, listTasks, queueTriggeredTask, changed } from './service'
+import { catchUpAt, nextTriggerAt, calendarTriggerDue } from './triggers'
 import { events } from '../plan/calendar'
 import { listGoals } from '../progress'
 import * as mistakes from '../mistakes'
@@ -74,7 +74,7 @@ function scheduled(id: string, at: number, now: number, delayed: boolean): void 
   if (!t) return
   const state = triggerState(id)
   if (state.scheduleAt === at) return
-  queueTask(id, { type: t.trigger.type, dueAt: at }, delayed)
+  if (!queueTriggeredTask(id, { type: t.trigger.type, dueAt: at }, delayed)) return
   writeTriggerState(id, { ...state, scheduleAt: at })
   getDb()
     .update(aiTasks)
@@ -116,19 +116,21 @@ export async function checkTasks(now = Date.now()): Promise<void> {
         const seen = new Set(state.seen ?? []),
           today = localDay(now)
         if (t.type === 'calendar') {
-          const upcoming = events({ startAt: now, endAt: now + Math.max(60000, t.minutesBefore * 60000 + 60000) }).filter(
+          const after = Math.max(state.lastCheck ?? now - 60000, now - 86400000),
+            upcoming = events({ startAt: after + t.minutesBefore * 60000, endAt: now + t.minutesBefore * 60000 + 1 }).filter(
             (e) =>
-              e.status === 'planned' && (!t.kind || e.kind === t.kind) && e.startAt >= now && e.startAt - t.minutesBefore * 60000 <= now
+              e.status === 'planned' && (!t.kind || e.kind === t.kind) && calendarTriggerDue(e.startAt, t.minutesBefore, after, now)
           )
           const fresh = upcoming.filter((e) => !seen.has(`${e.id}:${e.startAt}`))
           if (fresh.length) {
-            queueTask(task.id, {
+            if (!queueTriggeredTask(task.id, {
               type: 'calendar',
               eventIds: fresh.map((e) => e.id),
               events: fresh.map((e) => ({ title: e.title, startAt: e.startAt, kind: e.kind }))
-            })
+            })) continue
             for (const e of fresh) seen.add(`${e.id}:${e.startAt}`)
           }
+          state.lastCheck = now
         } else if (t.type === 'deadline') {
           const gs = listGoals().filter(
             (g) =>
@@ -139,27 +141,27 @@ export async function checkTasks(now = Date.now()): Promise<void> {
               !seen.has(`${today}:${g.id}`)
           )
           if (gs.length) {
-            queueTask(task.id, { type: 'deadline', goalIds: gs.map((g) => g.id) })
+            if (!queueTriggeredTask(task.id, { type: 'deadline', goalIds: gs.map((g) => g.id) })) continue
             for (const g of gs) seen.add(`${today}:${g.id}`)
           }
         } else if (t.type === 'mistakes') {
           const ids = mistakes.list({}).map((m) => m.id),
             fresh = ids.filter((id) => !state.mistakeIds?.includes(id))
           if (fresh.length >= t.count) {
-            queueTask(task.id, { type: 'mistakes', mistakeIds: fresh })
+            if (!queueTriggeredTask(task.id, { type: 'mistakes', mistakeIds: fresh })) continue
             state.mistakeIds = ids
           }
         } else if (t.type === 'folder' && now - (state.lastCheck ?? 0) >= 5 * 60000) {
           const files = await filesIn(t.path),
             fresh = files.filter((f) => !state.files?.includes(f))
-          if (state.files && fresh.length) queueTask(task.id, { type: 'folder', path: t.path, files: fresh })
+          if (state.files && fresh.length && !queueTriggeredTask(task.id, { type: 'folder', path: t.path, files: fresh })) continue
           state.files = files
           state.lastCheck = now
         } else if (t.type === 'web' && now - (state.lastCheck ?? 0) >= 6 * 3600000) {
           const page = await fetchWebText(t.url, t.selector),
             hash = createHash('sha256').update(page.text).digest('hex')
-          if (state.webHash && state.webHash !== hash)
-            queueTask(task.id, { type: 'web', url: t.url, title: page.title, text: page.text.slice(0, 8000) })
+          if (state.webHash && state.webHash !== hash &&
+            !queueTriggeredTask(task.id, { type: 'web', url: t.url, sourceUrls: page.sourceUrls, title: page.title, text: page.text.slice(0, 8000) })) continue
           state.webHash = hash
           state.lastCheck = now
         }

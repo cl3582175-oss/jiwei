@@ -6,11 +6,17 @@ export function feedbackAllowed(url: string, allowed: Set<string>): boolean {
 export function choosePicks<T extends { id: string; url: string; score: DiscoveryScore }>(
   items: T[],
   limit: number,
-  exams: Set<string>
+  exams: Set<string>,
+  delivered: { id: string; url: string; diverse: boolean }[] = []
 ): T[] {
   if (limit <= 0) return []
   const sorted = items
-    .filter((i) => i.score.relevance >= 2 && !(i.score.news && i.score.goalIds.some((id) => exams.has(id))))
+    .filter(
+      (i) =>
+        !delivered.some((p) => p.id === i.id) &&
+        i.score.relevance >= 2 &&
+        !(i.score.news && i.score.goalIds.some((id) => exams.has(id)))
+    )
     .sort(
       (a, b) =>
         b.score.relevance * 2 +
@@ -21,13 +27,24 @@ export function choosePicks<T extends { id: string; url: string; score: Discover
     )
   const selected: T[] = [],
     counts = new Map<string, number>()
+  for (const i of delivered) {
+    const host = new URL(i.url).hostname
+    counts.set(host, (counts.get(host) ?? 0) + 1)
+  }
   const add = (i: T): void => {
     const host = new URL(i.url).hostname
-    if (selected.length >= limit || selected.some((p) => p.id === i.id) || (counts.get(host) ?? 0) >= 2) return
+    if (
+      selected.length >= limit ||
+      delivered.some((p) => p.id === i.id) ||
+      selected.some((p) => p.id === i.id) ||
+      (counts.get(host) ?? 0) >= 2
+    ) return
     selected.push(i)
     counts.set(host, (counts.get(host) ?? 0) + 1)
   }
-  const diverse = sorted.find((i) => i.score.diverse)
+  const diverse =
+    !delivered.some((i) => i.diverse) &&
+    sorted.find((i) => i.score.diverse && (counts.get(new URL(i.url).hostname) ?? 0) < 2)
   if (diverse) add(diverse)
   sorted.forEach(add)
   return selected.sort((a, b) => sorted.indexOf(a) - sorted.indexOf(b))

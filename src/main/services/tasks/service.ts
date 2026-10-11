@@ -77,23 +77,26 @@ export async function saveTask(input: TaskInput): Promise<AiTask> {
   const v = TaskSave.parse(input),
     old = v.id ? getTask(v.id) : undefined
   if (v.id && !old) throw new Error('Task not found')
-  if (v.recipe === 'daily-picks' && (!v.outputs.inbox || v.outputs.noteId || v.outputs.actions || v.tools.length))
+  if (v.enabled && v.recipe === 'daily-picks' && (!v.outputs.inbox || v.outputs.noteId || v.outputs.actions || v.tools.length))
     throw new Error(getSettings().language.startsWith('zh') ? '每日精选配方需要收件箱输出，工具与其他写入由固定发现流程管理' : 'Daily picks requires inbox output; its fixed discovery workflow manages tools and writes')
-  const { taskToolCatalog } = await import('./tools')
-  const catalog = await taskToolCatalog()
-  if (v.tools.some((name) => !catalog.tools[name]))
-    throw new Error(
-      getSettings().language.startsWith('zh') ? '任务包含不可用或不允许的工具' : 'Task contains unavailable or unauthorized tools'
-    )
-  if (v.trigger.type === 'mail') accountRow(v.trigger.accountId)
-  if (v.outputs.noteId) {
-    const note = getDb().select().from(notes).where(eq(notes.id, v.outputs.noteId)).get()
-    if (!note || note.aiExcluded || note.deletedAt) throw new Error('Output note is unavailable or excluded from AI')
+  // 停用必须始终可用；失效的账号、工具或目标只能阻止启用，不能阻止撤回执行许可。
+  if (v.enabled) {
+    const { taskToolCatalog } = await import('./tools')
+    const catalog = await taskToolCatalog()
+    if (v.tools.some((name) => !catalog.tools[name]))
+      throw new Error(
+        getSettings().language.startsWith('zh') ? '任务包含不可用或不允许的工具' : 'Task contains unavailable or unauthorized tools'
+      )
+    if (v.trigger.type === 'mail') accountRow(v.trigger.accountId)
+    if (v.outputs.noteId) {
+      const note = getDb().select().from(notes).where(eq(notes.id, v.outputs.noteId)).get()
+      if (!note || note.aiExcluded || note.deletedAt) throw new Error('Output note is unavailable or excluded from AI')
+    }
   }
   const id = v.id ?? newId(),
     now = Date.now(),
     triggerChanged = !old || JSON.stringify(old.trigger) !== JSON.stringify(v.trigger)
-  if (triggerChanged) await initializeTrigger(id, v.trigger)
+  if (v.enabled && (triggerChanged || !old?.enabled)) await initializeTrigger(id, v.trigger)
   const row = {
     name: v.name,
     instruction: v.instruction,
@@ -136,16 +139,29 @@ export function pauseAll(paused: boolean): void {
   if (paused) for (const t of listTasks()) cancelTaskJobs(t.id)
   changed()
 }
-export function queueTask(id: string, triggerInfo: Record<string, unknown> = { type: 'manual' }, delayed = false): string {
+export function taskBusy(id: string): boolean {
+  return !!getDb()
+    .select({ id: jobs.id })
+    .from(jobs)
+    .where(and(eq(jobs.dedupeKey, `task:${id}`), sql`${jobs.status} IN ('running','queued')`))
+    .get()
+}
+/** null 表示新负载没有入队；调度器只能在真正接收后推进来源游标。 */
+export function queueTriggeredTask(id: string, triggerInfo: Record<string, unknown>, delayed = false): string | null {
   const task = getTask(id)
   if (!task || !task.enabled || getSettings().tasks.paused) throw new Error('Task is paused or unavailable')
+  if (taskBusy(id)) return null
+  return enqueue('ai.task', { taskId: id, triggerInfo, delayed }, { dedupeKey: `task:${id}` })
+}
+export function queueTask(id: string, triggerInfo: Record<string, unknown> = { type: 'manual' }, delayed = false): string {
+  const queued = queueTriggeredTask(id, triggerInfo, delayed)
+  if (queued) return queued
   const active = getDb()
     .select()
     .from(jobs)
     .where(and(eq(jobs.dedupeKey, `task:${id}`), sql`${jobs.status} IN ('running','queued')`))
     .get()
-  if (active) return active.id
-  return enqueue('ai.task', { taskId: id, triggerInfo, delayed }, { dedupeKey: `task:${id}` })
+  return active!.id
 }
 export async function parseTask(description: string): Promise<TaskInput> {
   const chat = getSettings().ai.chat

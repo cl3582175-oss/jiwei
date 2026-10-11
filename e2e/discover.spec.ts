@@ -280,7 +280,7 @@ test.beforeAll(async () => {
       { id, text }
     )
     await navTo(page, /^笔记/)
-    await page.getByText(id === setup.note ? '概率论 KNOWN_RESOURCE' : 'DEDUP_TOKEN 基础', { exact: true }).click()
+    await page.locator(`[data-note-id="${id}"]`).click()
     await page.getByRole('button', { name: '全部接受', exact: true }).click()
     await expect.poll(async () => (await page.evaluate((id) => window.jiwei.notes.get(id), id))?.excerpt).toContain(text)
   }

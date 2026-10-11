@@ -23,7 +23,8 @@ import { enqueue, registerJobKind, runJobNow } from '../jobs'
 import { allowedCandidate, allowedRelated, discoveryContext } from './context'
 import { checkFeeds, discoverChanged, listFeeds, refreshFeed, upsertCandidate } from './feeds'
 import { hasSearch, search } from './search'
-import { publishPick, restoreLater } from './items'
+import { publishPick, restoreLater, dailyDeliveries, scoreAllowed } from './items'
+import { privacyFingerprint } from '../ai/privacy'
 import { audit } from '../agent/audit'
 
 const Queries = z.object({ queries: z.array(z.string().min(1).max(200)).min(3).max(6) })
@@ -168,6 +169,10 @@ async function doDaily(
       }
     }
     stage = 'deduplicate'
+    // 缓存的理由可能由后来排除的素材推导；先丢弃派生文本，再按当前允许素材重打分。
+    for (const i of db.select().from(feedItems).where(eq(feedItems.status, 'scored')).all())
+      if (i.score && !scoreAllowed(JSON.parse(i.score)))
+        db.update(feedItems).set({ status: 'new', score: null, reason: null, gap: null, related: '[]', minutes: null, ...sync() }).where(eq(feedItems.id, i.id)).run()
     const enabledFeeds = new Set(
         listFeeds()
           .filter((f) => f.enabled)
@@ -241,6 +246,7 @@ async function doDaily(
         seen.add(id)
         const normalized: DiscoveryScore = {
           ...score,
+          privacySignature: privacyFingerprint(),
           related: allowedRelated(score.related),
           goalIds: score.goalIds.filter((id) => context.facts.directions.some((g) => g.id === id)),
           relevance: anchors.some((a) => score.reason.toLocaleLowerCase().includes(a.toLocaleLowerCase())) ? score.relevance : 0
@@ -284,12 +290,7 @@ async function doDaily(
       resultStatus = 'error'
       message = tr('素材或隐私设置变化，请重新运行', 'Materials or privacy settings changed; run again')
     } else {
-      const count = db
-          .select()
-          .from(feedItems)
-          .where(and(isNull(feedItems.deletedAt), gte(feedItems.pickedAt, dayStart(Date.now()))))
-          .all()
-          .filter((i) => !i.remedyId).length,
+      const delivered = dailyDeliveries(),
         eligible = db
           .select()
           .from(feedItems)
@@ -297,10 +298,13 @@ async function doDaily(
           .all()
           .filter((i) => i.score && allowedCandidate(i.url) && (!i.feedId || listFeeds().some((f) => f.id === i.feedId && f.enabled)))
           .map((i) => ({ ...i, score: JSON.parse(i.score!) as DiscoveryScore }))
+          .filter((i) => scoreAllowed(i.score)),
+        exams = new Set(context.facts.directions.filter((g) => g.kind === 'exam').map((g) => g.id))
       for (const i of choosePicks(
         eligible,
-        Math.max(0, getSettings().discover.dailyLimit - count),
-        new Set(context.facts.directions.filter((g) => g.kind === 'exam').map((g) => g.id))
+        Math.max(0, getSettings().discover.dailyLimit - delivered.length),
+        exams,
+        delivered
       ))
         inboxIds.push(publishPick(i.id, i.score))
     }

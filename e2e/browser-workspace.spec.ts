@@ -37,6 +37,8 @@ test.afterAll(async () => {
 
 /** 原生网页视图与浏览器区域重合 */
 async function nativeMatches(): Promise<void> {
+  // 菜单关闭后的原生视图冻结有一个渲染过渡，不能在插槽隐藏时读取坐标。
+  await expect(page.getByTestId('browser-view')).toBeVisible()
   const slot = (await page.getByTestId('browser-view').boundingBox())!
   await expect
     .poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].contentView.children[0]?.getBounds() ?? null))

@@ -15,7 +15,7 @@ import { audit } from '../agent/audit'
 import { requireMistakeCloud } from '../mistakesPrivacy'
 import { enqueue, registerJobKind, runJobNow } from '../jobs'
 import { allowedCandidate, allowedRelated } from './context'
-import { knowledgeTarget } from './items'
+import { knowledgeTarget, scoreAllowed } from './items'
 import { checkDiscoveryBudget, dailyStatus, discoveryModel } from './daily'
 import { discoverChanged } from './feeds'
 
@@ -50,7 +50,7 @@ function material(now = Date.now()) {
     .map((p) => {
       const refs = JSON.parse(p.related) as { type: 'note' | 'source'; id: string }[]
       let allowed =
-        allowedRelated(refs).length === refs.length && !privateTitles.some((title) => `${p.title}\n${p.reason ?? ''}`.includes(title))
+        !!p.score && scoreAllowed(JSON.parse(p.score)) && allowedRelated(refs).length === refs.length && !privateTitles.some((title) => `${p.title}\n${p.reason ?? ''}`.includes(title))
       try {
         allowed &&= !!knowledgeTarget(p.url) || allowedCandidate(p.url)
       } catch {

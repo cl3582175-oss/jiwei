@@ -3,6 +3,7 @@ import { createServer, type Server } from 'node:http'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { createHash } from 'node:crypto'
 import { navTo } from './fixtures/nav'
 
 let app: ElectronApplication,
@@ -162,13 +163,23 @@ test.beforeAll(async () => {
     await expect.poll(() => page.evaluate((id) => window.jiwei.review.forNote(id), id)).toHaveLength(1)
   }
   await page.evaluate((id) => window.jiwei.notes.update(id, { aiExcluded: true }), setup.p)
+  // 构造有当前许可依据的受控精选；生产精选由每日流程附加该指纹。
+  const excluded = await app.evaluate(({ app }) => {
+    const load = process.getBuiltinModule('module').createRequire(app.getAppPath() + '/package.json'),
+      db = new (load('better-sqlite3'))(process.getBuiltinModule('path').join(app.getPath('userData'), 'data/jiwei.db'))
+    try {
+      return ['notes', 'sources'].map((table) => db.prepare(`SELECT id FROM ${table} WHERE deleted_at IS NOT NULL OR ai_excluded=1 ORDER BY id`).all().map((r: { id: string }) => r.id))
+    } finally { db.close() }
+  })
+  const blocked = ((await page.evaluate(() => window.jiwei.settings.get())).browser?.aiBlockedSites ?? []).map((s) => s.toLowerCase()).sort(),
+    privacySignature = createHash('sha256').update(JSON.stringify({ excluded, excludedMistakes: [], blocked })).digest('hex')
   for (const [id, title, related] of [
     ['public', 'PUBLIC_PICK 条件概率', '[]'],
     ['private', 'PRIVATE_PICK', JSON.stringify([{ type: 'note', id: setup.p }])]
   ])
     await sqlRun(
-      "INSERT INTO feed_items(id, url, title, summary, reason, origin, status, picked_at, fetched_at, related, created_at, updated_at, updated_by) VALUES (?, ?, ?, '', '补足条件概率方向', 'feed', 'picked', ?, ?, ?, ?, ?, 'test')",
-      [id, `https://example.org/${id}`, title, Date.now(), Date.now(), related, Date.now(), Date.now()]
+      "INSERT INTO feed_items(id, url, title, summary, reason, score, origin, status, picked_at, fetched_at, related, created_at, updated_at, updated_by) VALUES (?, ?, ?, '', '补足条件概率方向', ?, 'feed', 'picked', ?, ?, ?, ?, ?, 'test')",
+      [id, `https://example.org/${id}`, title, JSON.stringify({ privacySignature, related: JSON.parse(related) }), Date.now(), Date.now(), related, Date.now(), Date.now()]
     )
   await page.evaluate(async (base) => {
     const provider = await window.jiwei.providers.save({

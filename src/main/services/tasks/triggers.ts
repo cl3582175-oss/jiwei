@@ -37,3 +37,8 @@ export function catchUpAt(t: Trigger, lastRun: number | null, now = Date.now()):
   const at = previousScheduleAt(t, now)
   return at !== null && now - at <= 86400000 && (lastRun === null || lastRun < at) ? at : null
 }
+/** 轮询会跨过事件开始的毫秒；判断到期时刻穿过检查窗口，而不是要求时钟相等。 */
+export function calendarTriggerDue(startAt: number, minutesBefore: number, after: number, now: number): boolean {
+  const due = startAt - minutesBefore * 60000
+  return due > after && due <= now
+}

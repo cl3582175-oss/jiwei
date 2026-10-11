@@ -23,6 +23,7 @@ import { checkDiscoveryBudget, discoveryModel } from './daily'
 import { discoveryContext, allowedCandidate } from './context'
 import { upsertCandidate } from './feeds'
 import { publishPick } from './items'
+import { privacyFingerprint } from '../ai/privacy'
 
 type Resource = LearningPath['steps'][number]['resources'][number] & { text: string }
 async function resources(query: string, guard: () => void): Promise<Resource[]> {
@@ -194,6 +195,7 @@ export async function remedy(mistakeId: string): Promise<string[]> {
           'search'
         ),
         score: DiscoveryScore = {
+          privacySignature: privacyFingerprint(),
           relevance: 5,
           novelty: 0,
           credibility: 3,

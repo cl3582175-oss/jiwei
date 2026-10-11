@@ -6,7 +6,7 @@ import type { z } from 'zod'
 import { IcsSave, addDays, dayStart, type IcsFeed } from '@shared/plan'
 import type { IcsOccurrence } from '../../lib/ics'
 import { getDb } from '../../db'
-import { icsFeeds, planEvents } from '../../db/schema'
+import { icsFeeds, planEvents, meta } from '../../db/schema'
 import { newId } from '../../lib/ids'
 import { deviceId } from '../device'
 import { emit } from '../../events'
@@ -16,6 +16,7 @@ import { audit } from '../agent/audit'
 import { getSettings } from '../settings'
 
 const inFlight = new Map<string, Promise<void>>()
+const expansionKey = (id: string): string => `ics.expanded:${id}`
 export function feeds(): IcsFeed[] {
   return getDb().select().from(icsFeeds).where(isNull(icsFeeds.deletedAt)).all()
 }
@@ -53,16 +54,23 @@ export function refresh(id: string): Promise<void> {
     const feed = feeds().find((f) => f.id === id)
     if (!feed || !feed.enabled || feed.url.startsWith('file:')) return
     try {
-      const headers: Record<string, string> = {}
-      if (feed.etag) headers['If-None-Match'] = feed.etag
-      if (feed.lastModified) headers['If-Modified-Since'] = feed.lastModified
+      const expandedAt = Number(db.select().from(meta).where(eq(meta.key, expansionKey(id))).get()?.value ?? 0),
+        needsExpansion = expandedAt !== dayStart(),
+        headers: Record<string, string> = {}
+      // 304 没有正文，不能扩展新进入的重复日程；每日首次刷新强制取完整的有界快照。
+      if (!needsExpansion && feed.etag) headers['If-None-Match'] = feed.etag
+      if (!needsExpansion && feed.lastModified) headers['If-Modified-Since'] = feed.lastModified
       const r = await externalFetch(feed.url, { headers, httpsOnly: true })
       if (!active() || !feeds().some((f) => f.id === id && f.enabled)) return
-      if (r.status !== 304) {
+      if (r.status !== 304 || needsExpansion) {
         if (r.status !== 200) throw new Error('Calendar fetch failed')
         const rows = await parse(r.text)
         if (!active() || !feeds().some((f) => f.id === id && f.enabled)) return
-        replaceEvents(id, rows)
+        db.transaction(() => {
+          replaceEvents(id, rows)
+          const key = expansionKey(id), value = String(dayStart())
+          db.insert(meta).values({ key, value }).onConflictDoUpdate({ target: meta.key, set: { value } }).run()
+        })
       }
       db.update(icsFeeds)
         .set({
@@ -124,6 +132,7 @@ export function save(input: z.input<typeof IcsSave>): IcsFeed {
     db.insert(icsFeeds)
       .values({ ...row, id, createdAt: now })
       .run()
+  if (changed) db.delete(meta).where(eq(meta.key, expansionKey(id))).run()
   if (v.enabled && (changed || !old?.enabled)) enqueue('plan.ics', { feedId: id }, { dedupeKey: `ics:${id}` })
   emit('plan:changed', {})
   return feeds().find((f) => f.id === id)!
@@ -134,6 +143,7 @@ export function remove(id: string): void {
   db.transaction((tx) => {
     tx.update(icsFeeds).set({ deletedAt: now, updatedAt: now, updatedBy: deviceId() }).where(eq(icsFeeds.id, id)).run()
     tx.update(planEvents).set({ deletedAt: now, updatedAt: now, updatedBy: deviceId() }).where(eq(planEvents.feedId, id)).run()
+    tx.delete(meta).where(eq(meta.key, expansionKey(id))).run()
   })
   emit('plan:changed', {})
 }

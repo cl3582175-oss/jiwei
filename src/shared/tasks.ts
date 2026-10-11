@@ -137,7 +137,8 @@ export const TASK_READ_TOOLS = [
   'actions_list',
   'goals_list',
   'mistakes_list',
-  'web_fetch'
+  'web_fetch',
+  'web_search'
 ] as const
 export const TaskSettings = z.object({
   paused: z.boolean().default(false),

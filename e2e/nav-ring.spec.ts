@@ -95,7 +95,10 @@ test('移开鼠标收起；从组图标移到浮卡不会收起', async () => {
   const g = rail().getByRole('button', { name: /^计划/ })
   await g.hover()
   await expect(ring()).toBeVisible()
-  await expect(ring().getByRole('menuitem')).toHaveCount(2)
+  await expect(ring().getByRole('menuitem')).toHaveCount(3)
+  await expect(ring().getByRole('menuitem', { name: '日历', exact: true })).toBeVisible()
+  await expect(ring().getByRole('menuitem', { name: '方向', exact: true })).toBeVisible()
+  await expect(ring().getByRole('menuitem', { name: /^复盘(?:\s|$)/ })).toBeVisible()
   await page.waitForTimeout(300)
   await shot('ring-plan')
   const b = (await ring().getByRole('menuitem', { name: '复盘' }).boundingBox())!
