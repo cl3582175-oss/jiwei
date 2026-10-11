@@ -13,6 +13,9 @@ files:
   - '!e2e/**'
   - '!test-results/**'
   - '!playwright-report/**'
+  # 本地打包产物与测试数据：不能打进应用（否则每次本地打包都会把旧版本装进去，体积越来越大）
+  - '!release/**'
+  - '!out/test-*/**'
   - '!electron.vite.config.{js,ts,mjs,cjs}'
   - '!drizzle.config.ts'
   - '!drizzle.profile.config.ts'
