@@ -24,6 +24,7 @@ export {
   sourceSegments,
   sourcePages,
   goals,
+  planEvents,
   reviews,
   insights,
   insightVersions,

@@ -13,8 +13,9 @@ import { useCategories } from '@/lib/queries'
 import { MasteryPanel } from './MasteryView'
 import { ActionRow } from '../reflect/ReflectHome'
 import { errText } from '../chat/useChat'
+import { TINTS } from '@/lib/tint'
 
-// 学习目标：一个目标关联一个分类（含子分类）和若干笔记；进度由其中的复习卡片计算。
+// 方向：一个目标关联一个分类（含子分类）和若干笔记；进度由其中的复习卡片计算。
 // 目标会出现在 AI 的系统提示与每周复盘的素材包中。
 
 function GoalDialog({ goal, onClose }: { goal: Goal | null; onClose: () => void }) {
@@ -27,6 +28,11 @@ function GoalDialog({ goal, onClose }: { goal: Goal | null; onClose: () => void 
   const [desc, setDesc] = useState(goal?.description ?? '')
   const [target, setTarget] = useState(goal?.targetAt ? toDateInput(goal.targetAt) : '')
   const [cat, setCat] = useState(goal?.categoryId ?? '')
+  const [kind, setKind] = useState<Goal['kind']>(goal?.kind ?? 'skill')
+  const [start, setStart] = useState(goal?.startAt ? toDateInput(goal.startAt) : '')
+  const [weekly, setWeekly] = useState(goal?.weeklyMinutes ?? 180)
+  const [daily, setDaily] = useState<number[] | null>(goal?.weekdayMinutes ?? null)
+  const [color, setColor] = useState(goal?.color ?? 'bamboo')
   const save = async (): Promise<void> => {
     if (!title.trim()) return
     try {
@@ -35,7 +41,8 @@ function GoalDialog({ goal, onClose }: { goal: Goal | null; onClose: () => void 
         title: title.trim(),
         description: desc.trim() || null,
         targetAt: target ? new Date(`${target}T23:59:59`).getTime() : null,
-        categoryId: cat || null
+        categoryId: cat || null,
+        kind, startAt: start ? new Date(`${start}T00:00:00`).getTime() : null, weeklyMinutes: weekly, weekdayMinutes: daily, color: color as typeof TINTS[number]
       })
       void qc.invalidateQueries({ queryKey: ['goals'] })
       onClose()
@@ -48,7 +55,7 @@ function GoalDialog({ goal, onClose }: { goal: Goal | null; onClose: () => void 
     <D.Root open onOpenChange={(o) => !o && onClose()}>
       <D.Portal>
         <D.Overlay className="fixed inset-0 z-40 bg-black/25 backdrop-blur-[2px]" />
-        <D.Content className="fixed top-1/2 left-1/2 z-50 w-[min(92vw,480px)] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-border bg-surface p-6 shadow-float outline-none">
+        <D.Content className="fixed top-1/2 left-1/2 z-50 max-h-[90vh] w-[min(92vw,480px)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-2xl border border-border bg-surface p-6 shadow-float outline-none">
           <D.Title className="font-serif text-lg font-semibold text-fg">{goal ? t('goals.edit') : t('goals.new')}</D.Title>
           <D.Description className="mt-1 text-xs text-muted">{t('goals.dialogDesc')}</D.Description>
           <div className="mt-5 space-y-4">
@@ -77,6 +84,14 @@ function GoalDialog({ goal, onClose }: { goal: Goal | null; onClose: () => void 
                 </select>
               </label>
             </div>
+            <div className="grid grid-cols-2 gap-3">
+              <label className="text-xs text-muted">{t('plan.directionType')}<select aria-label={t('plan.directionType')} className={field} value={kind} onChange={(e) => setKind(e.target.value as Goal['kind'])}>{(['exam', 'skill', 'project', 'interest'] as const).map((k) => <option key={k} value={k}>{t(`plan.directionKinds.${k}`)}</option>)}</select></label>
+              <label className="text-xs text-muted">{t('plan.startDate')}<input className={field} type="date" value={start} onChange={(e) => setStart(e.target.value)} /></label>
+              <label className="text-xs text-muted">{t('plan.weeklyMinutes')}<input aria-label={t('plan.weeklyMinutes')} className={field} type="number" min="0" max="10080" value={weekly} onChange={(e) => setWeekly(Number(e.target.value))} /></label>
+              <label className="text-xs text-muted">{t('plan.color')}<select className={field} value={color} onChange={(e) => setColor(e.target.value)}>{TINTS.map((c) => <option key={c} value={c}>{t(`tints.${c}`, { defaultValue: c })}</option>)}</select></label>
+            </div>
+            <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={daily !== null} onChange={(e) => setDaily(e.target.checked ? Array.from({ length: 7 }, (_, i) => Math.floor(weekly / 7) + (i < weekly % 7 ? 1 : 0)) : null)} />{t('plan.weekdays')}</label>
+            {daily && <div className="grid grid-cols-4 gap-2">{[1, 2, 3, 4, 5, 6, 0].map((d) => <label key={d} className="text-xs text-muted">{t(`plan.days.${d}`)}<input className={field} type="number" min="0" max="1440" value={daily[d]} onChange={(e) => setDaily(daily.map((v, i) => i === d ? Number(e.target.value) : v))} /></label>)}</div>}
             <p className="text-2xs leading-relaxed text-subtle">{t('goals.linkHint')}</p>
           </div>
           <div className="mt-6 flex justify-end gap-2">
@@ -113,6 +128,7 @@ function GoalCard({ goal, onOpen }: { goal: Goal; onOpen: () => void }) {
       </div>
       {p && (
         <>
+          <p className="mt-2 text-2xs text-muted">{t(`plan.directionKinds.${goal.kind}`)} · {t('plan.invested', { actual: p.minutesThisWeek, planned: p.plannedMinutesThisWeek })}</p>
           <div className="mt-3 flex items-baseline justify-between text-2xs text-muted">
             <span>{t('goals.mastered', { pct: Math.round(p.mastered * 100) })}</span>
             <span>
@@ -269,7 +285,7 @@ export function GoalsPanel() {
   )
 }
 
-/** 「计划 → 学习目标」（v0.7.1 起独立成页，不再是复习页的一个标签） */
+/** 「计划 → 方向」（v0.7.1 起独立成页，不再是复习页的一个标签） */
 export function GoalsPage() {
   const { t } = useTranslation()
   return (

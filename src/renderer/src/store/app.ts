@@ -3,19 +3,19 @@ import { canonicalUrl } from '@shared/browserUrl'
 import type { NoteSort, WorkspaceContext } from '@shared/types'
 import { toast } from 'sonner'
 
-export type View = 'today' | 'recording' | 'inbox' | 'notes' | 'library' | 'chat' | 'review' | 'goals' | 'reflect' | 'graph' | 'feynman' | 'trash' | 'usage'
+export type View = 'today' | 'recording' | 'inbox' | 'notes' | 'library' | 'chat' | 'review' | 'calendar' | 'goals' | 'reflect' | 'graph' | 'feynman' | 'trash' | 'usage'
 
 /**
  * 导航五组（v0.6.7，设计见 docs/design/v0.7-platform-and-loop.md §2.1）：今日 · 收集 · 学习 · 计划（创作在 v0.9 加入）。
  * 积微助手（'chat'）不属于任何一组，常驻导航顶部。
  */
 export type NavGroup = 'today' | 'collect' | 'learn' | 'plan'
-export type NavItem = 'today' | 'inbox' | 'library' | 'browser' | 'recording' | 'notes' | 'review' | 'feynman' | 'graph' | 'goals' | 'reflect'
+export type NavItem = 'today' | 'inbox' | 'library' | 'browser' | 'recording' | 'notes' | 'review' | 'feynman' | 'graph' | 'calendar' | 'goals' | 'reflect'
 export const NAV_GROUPS: Record<NavGroup, NavItem[]> = {
   today: ['today'],
   collect: ['inbox', 'library', 'browser', 'recording'],
   learn: ['notes', 'review', 'feynman', 'graph'],
-  plan: ['goals', 'reflect']
+  plan: ['calendar', 'goals', 'reflect']
 }
 /** 当前所在的导航条目（浏览器显示在笔记工作区左栏，算作“收集 · 浏览器”） */
 export function currentNavItem(s: { view: View; browserOpen: boolean }): NavItem | null {
@@ -90,7 +90,7 @@ interface AppState extends Location {
   /** 用量看板（v0.7.5）：从设置进入时先关闭设置 */
   openUsage: () => void
 
-  /** 复习页的标签：今日复习 / 掌握度地图 / 学习目标 */
+  /** 复习页的标签：今日复习 / 掌握度地图 / 方向 */
   reviewTab: 'today' | 'cards' | 'mistakes' | 'mastery'
   setReviewTab: (t: 'today' | 'cards' | 'mistakes' | 'mastery') => void
   /** 自选复习（v0.7.6）：从卡片库选中的卡片，按顺序复习；null 为按计划的今日复习 */

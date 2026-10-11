@@ -241,7 +241,7 @@ export function buildTools(s: AgentSession): ToolSet {
     Object.assign(tools, {
       today_overview: tool({
         description: zh
-          ? '查看用户今天的学习安排与进度：到期复习、错题、收件箱、待确认修改、行动项、学习目标、今天学了多久。用户问“今天做什么 / 怎么安排 / 进度如何”时使用。'
+          ? '查看用户今天的学习安排与进度：到期复习、错题、收件箱、待确认修改、行动项、方向、今天学了多久。用户问“今天做什么 / 怎么安排 / 进度如何”时使用。'
           : "See the user's plan and progress today: reviews due, mistakes, inbox, pending changes, actions, goals, time studied. Use when asked what to do today or how things are going.",
         inputSchema: z.object({}),
         execute: async () => todayOverviewText(zh)
@@ -693,11 +693,11 @@ export function stepLabel(name: string, input: unknown, zh: boolean): Pick<Agent
     memory_search: [`回忆：${q('query')}`, `Recalling: ${q('query')}`],
     today_overview: ['查看今天的安排与进度', "Checking today's plan and progress"],
     actions_list: ['查看行动项', 'Checking actions'],
-    goals_list: ['查看学习目标', 'Checking goals'],
+    goals_list: ['查看方向', 'Checking goals'],
     mistakes_list: ['查看错题本', 'Checking mistakes'],
     action_create: [`新建行动项：${q('title')}`, `Creating action: ${q('title')}`],
     action_complete: ['完成行动项', 'Completing action'],
-    goal_create: [`新建学习目标：${q('title')}`, `Creating goal: ${q('title')}`],
+    goal_create: [`新建方向：${q('title')}`, `Creating goal: ${q('title')}`],
     inbox_add: ['放进收件箱', 'Adding to inbox'],
     note_create: [`新建笔记：${q('title')}`, `Creating note: ${q('title')}`],
     browser_read_page: ['阅读网页', 'Reading page'],

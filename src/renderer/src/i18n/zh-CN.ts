@@ -1,3 +1,4 @@
+import { planZh } from '../features/plan/messages'
 import { agentZh } from '../features/agent/messages'
 import { spendZh } from '../features/agent/spendMessages'
 import { mistakesZh } from '../features/mistakes/messages'
@@ -6,6 +7,7 @@ import { safetyZh } from '../features/settings/safetyMessages'
 import { readingZh } from '../features/reading/messages'
 
 const zhCN = {
+  plan: planZh,
   mistakes: mistakesZh,
   today: todayZh,
   safety: safetyZh,
@@ -400,7 +402,7 @@ const zhCN = {
     assistant: '积微助手',
     assistantPanel: '侧栏',
     feynman: '费曼练习',
-    goals: '学习目标',
+    goals: '方向',
     groups: { collect: '收集', learn: '学习', plan: '计划' },
     browser: '浏览',
     chat: '积微助手',
@@ -1181,30 +1183,30 @@ const zhCN = {
     legend: '红色薄弱 · 黄色学习中 · 绿色牢固 · 蓝色未开始 · 灰色空白。点击一块打开笔记。'
   },
   goals: {
-    desc: '为什么而学？目标关联一个分类和若干笔记，进度由其中的复习情况计算，AI 回答与每周复盘都会参考它。',
-    new: '新建目标',
-    edit: '修改目标',
-    dialogDesc: '一个具体、有截止日期的目标，最能帮你坚持。',
-    title: '目标',
+    desc: '为什么而学？方向关联一个分类和若干笔记，进度由其中的复习情况计算，AI 回答与每周复盘都会参考它。',
+    new: '新建方向',
+    edit: '修改方向',
+    dialogDesc: '一个具体、有截止日期的方向，最能帮你坚持。',
+    title: '方向名称',
     titlePh: '例如：三个月内能独立做 A/B 测试分析',
     why: '为什么想学',
     whyPh: '例如：工作中需要自己判断实验结果',
-    target: '目标日期',
+    target: '方向日期',
     category: '关联分类',
     noCategory: '不关联分类',
-    linkHint: '分类下（含子分类）的笔记都算进这个目标；也可以在笔记的「更多」菜单中单独关联。',
-    linkNote: '关联到学习目标',
-    empty: '还没有学习目标。设一个吧：学什么、为什么、什么时候学会。',
+    linkHint: '分类下（含子分类）的笔记都算进这个方向；也可以在笔记的「更多」菜单中单独关联。',
+    linkNote: '关联到方向',
+    empty: '还没有方向。设一个吧：学什么、为什么、什么时候学会。',
     status: { active: '进行中', achieved: '已达成', paused: '暂停', dropped: '放弃' },
     mastered: '掌握 {{pct}}%',
     daysLeft: '还有 {{count}} 天',
-    overdue: '已过目标日期',
+    overdue: '已过方向日期',
     summary: '{{notes}} 篇笔记 · {{cards}} 张卡片 · 近 7 天复习 {{reviews}} 次',
     weakN: '{{count}} 篇薄弱',
-    all: '全部目标',
+    all: '全部方向',
     achieve: '标为已达成',
     reopen: '重新开始',
-    removeTitle: '删除这个目标？',
+    removeTitle: '删除这个方向？',
     noActions: '还没有行动项。',
     statMastered: '掌握',
     statNotes: '笔记',
@@ -1267,7 +1269,7 @@ const zhCN = {
     tab: { material: '素材包', coach: 'AI 追问' },
     noMaterial: '这段时间还没有学习记录。',
     new: '新',
-    mGoals: '学习目标',
+    mGoals: '方向',
     mActions: '上次的行动项',
     mActionsHint: '做到了就勾上；做不到也没关系，写下原因。',
     mNotes: '学习的笔记',
@@ -1393,7 +1395,7 @@ const zhCN = {
     noAnswer: '这一行的笔记栏是空的。',
     rateLabel: '评分',
     pageCard: '正在复习《{{title}}》中的这张卡片：',
-    tabs: { today: '今日复习', cards: '卡片', mastery: '掌握度', goals: '学习目标' },
+    tabs: { today: '今日复习', cards: '卡片', mastery: '掌握度', goals: '方向' },
     cards: {
       filter: { due: '今天到期', new: '新卡片', learning: '学习中', review: '已在复习', weak: '常忘', suspended: '已暂停', all: '全部' },
       search: '搜索问题或笔记',
@@ -1457,7 +1459,7 @@ const zhCN = {
     profile: {
       role: '我是',
       rolePh: '例如：大三计算机专业学生 / 产品经理，正在转行做数据分析',
-      goals: '学习目标',
+      goals: '方向',
       goalsPh: '例如：三个月内通过 PMP 考试',
       background: '已有基础',
       backgroundPh: '例如：Python 熟练，统计学只学过入门',

@@ -67,11 +67,11 @@ export function buildDoTools(zh: boolean): { tools: ToolSet; meta: Record<string
       }
     }),
     goals_list: tool({
-      description: zh ? '列出学习目标：掌握度、剩余天数、关联笔记数' : 'List learning goals with mastery and days left',
+      description: zh ? '列出方向：掌握度、剩余天数、关联笔记数' : 'List learning goals with mastery and days left',
       inputSchema: z.object({}),
       execute: async () => {
         const goals = listGoals().filter((g) => g.status === 'active')
-        if (!goals.length) return zh ? '还没有进行中的学习目标。' : 'No active goals.'
+        if (!goals.length) return zh ? '还没有进行中的方向。' : 'No active goals.'
         return goals
           .map((g) => {
             const p = goalProgress(g.id)
@@ -137,12 +137,12 @@ export function buildDoTools(zh: boolean): { tools: ToolSet; meta: Record<string
     }),
     goal_create: tool({
       description: zh
-        ? '新建一个学习目标（如“六月通过考研数学一”），可设截止日期。用户确认后才会创建。'
+        ? '新建一个方向（如“六月通过考研数学一”），可设截止日期。用户确认后才会创建。'
         : 'Create a learning goal with an optional deadline.',
       inputSchema: z.object({ title: z.string().min(1).max(200), due: DateStr.optional(), description: z.string().max(1000).optional() }),
       execute: async ({ title, due, description }) => {
         const g = saveGoal({ title: title.trim(), targetAt: due ? atNoon(due) : null, description: description ?? null })
-        return zh ? `已创建学习目标（${g.id}）。` : `Goal created (${g.id}).`
+        return zh ? `已创建方向（${g.id}）。` : `Goal created (${g.id}).`
       }
     }),
     inbox_add: tool({
@@ -211,7 +211,7 @@ export function buildDoTools(zh: boolean): { tools: ToolSet; meta: Record<string
       confirm: true,
       describe: (i) => ({
         title: zh
-          ? `新建学习目标「${cut(String(i.title ?? ''), 60)}」${i.due ? `，截止 ${fmtDay(zh, String(i.due))}` : ''}`
+          ? `新建方向「${cut(String(i.title ?? ''), 60)}」${i.due ? `，截止 ${fmtDay(zh, String(i.due))}` : ''}`
           : `Create goal “${cut(String(i.title ?? ''), 60)}”${i.due ? `, due ${String(i.due)}` : ''}`
       })
     },

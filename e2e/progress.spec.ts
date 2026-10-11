@@ -4,7 +4,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import { navTo } from './fixtures/nav'
 
-// 学习目标与掌握度地图（不需要 API Key）。
+// 方向与掌握度地图（不需要 API Key）。
 test.describe.configure({ mode: 'serial' })
 
 let app: ElectronApplication
@@ -77,10 +77,10 @@ test('mastery map: treemap, filters and list', async () => {
 })
 
 test('goals: create with a category, progress, actions, link another note', async () => {
-  await navTo(page, /^学习目标/)
+  await navTo(page, /^方向/)
   await expect(page.getByTestId('goals-view')).toBeVisible()
-  await page.getByRole('button', { name: '新建目标' }).click()
-  await page.getByRole('dialog').getByRole('textbox', { name: '目标', exact: true }).fill('三个月内能独立做 A/B 测试分析')
+  await page.getByRole('button', { name: '新建方向' }).click()
+  await page.getByRole('dialog').getByRole('textbox', { name: '方向名称', exact: true }).fill('三个月内能独立做 A/B 测试分析')
   await page.getByRole('dialog').getByRole('combobox', { name: '关联分类' }).selectOption({ label: '统计学' })
   await page.getByRole('dialog').getByRole('button', { name: '保存' }).click()
   const card = page.locator('[data-goal="三个月内能独立做 A/B 测试分析"]')
@@ -107,7 +107,7 @@ test('goals: create with a category, progress, actions, link another note', asyn
   await expect(page.getByPlaceholder('笔记标题')).toHaveValue('边际效用')
   // 笔记编辑器右上角的“更多”（侧栏分类上也有同名按钮）
   await page.getByRole('button', { name: '更多', exact: true }).last().click()
-  await page.getByRole('menuitem', { name: '关联到学习目标' }).focus()
+  await page.getByRole('menuitem', { name: '关联到方向' }).focus()
   await page.keyboard.press('ArrowRight')
   const item = page.getByRole('menuitem', { name: '三个月内能独立做 A/B 测试分析' })
   await item.focus()
@@ -122,5 +122,5 @@ test('goals appear in the weekly review material', async () => {
   const r = await page.evaluate(() => window.jiwei.reflection.start({ kind: 'weekly' }))
   const m = await page.evaluate((id) => window.jiwei.reflection.material(id), r.id)
   expect(m.goals.map((g) => g.title)).toContain('三个月内能独立做 A/B 测试分析')
-  expect(m.text).toContain('学习目标')
+  expect(m.text).toContain('方向')
 })

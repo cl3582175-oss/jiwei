@@ -1,3 +1,4 @@
+import { planEn } from '../features/plan/messages'
 import { agentEn } from '../features/agent/messages'
 import { spendEn } from '../features/agent/spendMessages'
 import type { Messages } from './zh-CN'
@@ -6,6 +7,7 @@ import { todayEn } from '../features/today/messages'
 import { safetyEn } from '../features/settings/safetyMessages'
 import { readingEn } from '../features/reading/messages'
 const en: Messages = {
+  plan: planEn,
   mistakes: mistakesEn,
   today: todayEn,
   safety: safetyEn,
@@ -413,7 +415,7 @@ const en: Messages = {
     assistant: 'Jiwei Assistant',
     assistantPanel: 'side panel',
     feynman: 'Feynman practice',
-    goals: 'Goals',
+    goals: 'Directions',
     groups: { collect: 'Collect', learn: 'Learn', plan: 'Plan' },
     browser: 'Browse',
     chat: 'Jiwei Assistant',
@@ -1220,11 +1222,11 @@ const en: Messages = {
     legend: 'Red weak · amber learning · green solid · blue not started · grey blank. Click a block to open the note.'
   },
   goals: {
-    desc: 'What are you learning for? A goal covers a category and notes; progress comes from their reviews, and AI answers and weekly reviews take it into account.',
-    new: 'New goal',
-    edit: 'Edit goal',
-    dialogDesc: 'A concrete goal with a date is the easiest to stick with.',
-    title: 'Goal',
+    desc: 'What are you learning for? A direction covers a category and notes; progress comes from their reviews, and AI answers and weekly reviews take it into account.',
+    new: 'New direction',
+    edit: 'Edit direction',
+    dialogDesc: 'A concrete direction with a date is the easiest to stick with.',
+    title: 'Direction',
     titlePh: 'e.g. Run A/B test analyses on my own within three months',
     why: 'Why',
     whyPh: 'e.g. I need to judge experiment results at work',
@@ -1232,19 +1234,19 @@ const en: Messages = {
     category: 'Category',
     noCategory: 'No category',
     linkHint:
-      'Notes in the category (and subcategories) count towards this goal; you can also link single notes from a note’s “More” menu.',
-    linkNote: 'Link to goal',
-    empty: 'No goals yet. Set one: what, why, and by when.',
+      'Notes in the category (and subcategories) count towards this direction; you can also link single notes from a note’s “More” menu.',
+    linkNote: 'Link to direction',
+    empty: 'No directions yet. Set one: what, why, and by when.',
     status: { active: 'Active', achieved: 'Achieved', paused: 'Paused', dropped: 'Dropped' },
     mastered: '{{pct}}% mastered',
     daysLeft: '{{count}} days left',
     overdue: 'Past target date',
     summary: '{{notes}} notes · {{cards}} cards · {{reviews}} reviews in 7 days',
     weakN: '{{count}} weak',
-    all: 'All goals',
+    all: 'All directions',
     achieve: 'Mark achieved',
     reopen: 'Reopen',
-    removeTitle: 'Delete this goal?',
+    removeTitle: 'Delete this direction?',
     noActions: 'No action items yet.',
     statMastered: 'Mastered',
     statNotes: 'Notes',
@@ -1511,7 +1513,7 @@ const en: Messages = {
     profile: {
       role: 'I am',
       rolePh: 'e.g. a CS junior / a PM moving into data analysis',
-      goals: 'Learning goals',
+      goals: 'Directions',
       goalsPh: 'e.g. pass the PMP exam within three months',
       background: 'Background',
       backgroundPh: 'e.g. fluent in Python, only intro statistics',

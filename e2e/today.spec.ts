@@ -93,14 +93,14 @@ test('导航分组：点组回到上次去过的页面，⌘9 回到今日', asy
   await expect(page.getByTestId('today-view')).toBeVisible()
   await rail.getByRole('button', { name: /^学习/ }).click()
   await expect(currentNav(page, '学习', '图谱')).toBeVisible()
-  // 收集组：资料库；计划组：学习目标、复盘
+  // 收集组：资料库；计划组：方向、复盘
   await navTo(page, /^资料库/)
   await expect(currentNav(page, '收集', '资料库')).toBeVisible()
-  await navTo(page, /^学习目标/)
+  await navTo(page, /^方向/)
   await expect(page.getByTestId('goals-view')).toBeVisible()
-  // 学习目标只在「计划」里，复习页不再有这个标签
-  await expect(page.getByRole('tab', { name: '学习目标' })).toHaveCount(0)
-  await expect(currentNav(page, '计划', '学习目标')).toBeVisible()
+  // 方向只在「计划」里，复习页不再有这个标签
+  await expect(page.getByRole('tab', { name: '方向' })).toHaveCount(0)
+  await expect(currentNav(page, '计划', '方向')).toBeVisible()
   await page.keyboard.press('ControlOrMeta+9')
 })
 

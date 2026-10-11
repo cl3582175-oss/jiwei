@@ -214,7 +214,7 @@ Rules:
       ? `${zh ? '用户卡片（关于这位用户，回答时自然地参考，不要复述）' : 'About the user (use naturally, do not recite)'}：\n${card}`
       : null,
     goals
-      ? `${zh ? '用户正在进行的学习目标（回答时可以联系到它们）' : "The user's active learning goals (relate to them when useful)"}：\n${goals}`
+      ? `${zh ? '用户正在进行的方向（回答时可以联系到它们）' : "The user's active learning goals (relate to them when useful)"}：\n${goals}`
       : null,
     `${zh ? '今天是' : 'Today is'} ${fmtDate(Date.now())}。`
   ]

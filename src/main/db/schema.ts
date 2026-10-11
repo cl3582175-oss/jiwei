@@ -376,6 +376,11 @@ export const sourcePages = sqliteTable(
 
 export const goals = sqliteTable('goals', {
   id: text('id').primaryKey(),
+  kind: text('kind', { enum: ['exam', 'skill', 'project', 'interest'] }).notNull().default('skill'),
+  startAt: integer('start_at'),
+  weeklyMinutes: integer('weekly_minutes'),
+  weekdayMinutes: text('weekday_minutes'),
+  color: text('color'),
   title: text('title').notNull(),
   description: text('description'),
   status: text('status', { enum: ['active', 'achieved', 'paused', 'dropped'] })
@@ -440,6 +445,7 @@ export const insightVersions = sqliteTable(
 
 export const actions = sqliteTable('actions', {
   id: text('id').primaryKey(),
+  phaseId: text('phase_id'),
   title: text('title').notNull(),
   status: text('status', { enum: ['open', 'done', 'dropped'] })
     .notNull()
@@ -453,6 +459,23 @@ export const actions = sqliteTable('actions', {
   origin: text('origin'),
   ...syncCols
 })
+
+export const planEvents = sqliteTable('plan_events', {
+  id: text('id').primaryKey(),
+  kind: text('kind', { enum: ['study', 'exam', 'deadline', 'event'] }).notNull(),
+  title: text('title').notNull(),
+  startAt: integer('start_at').notNull(),
+  endAt: integer('end_at').notNull(),
+  allDay: integer('all_day', { mode: 'boolean' }).notNull().default(false),
+  goalId: text('goal_id'),
+  phaseId: text('phase_id'),
+  status: text('status', { enum: ['planned', 'done', 'skipped'] }).notNull().default('planned'),
+  origin: text('origin', { enum: ['user', 'ai', 'ics'] }).notNull().default('user'),
+  feedId: text('feed_id'),
+  uid: text('uid'),
+  note: text('note'),
+  ...syncCols
+}, (t) => [index('plan_events_range_idx').on(t.startAt, t.endAt), uniqueIndex('plan_events_feed_uid_idx').on(t.feedId, t.uid, t.startAt)])
 
 /** 复习卡片（FSRS）：问题来自线索段落 */
 export const cards = sqliteTable(

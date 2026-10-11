@@ -11,6 +11,8 @@ import { listGoals, goalProgress } from './progress'
 import { listActions, reflectionOverview } from './reflection'
 import { getSettings } from './settings'
 import { structured, quickModel } from './ai/structured'
+import { events as planEvents } from './plan/calendar'
+import { addDays, dayStart } from '@shared/plan'
 
 // 「今日」首页（v0.6.7）：回答“今天该做什么”。只汇总已有数据，不新建任何学习内容。
 
@@ -91,6 +93,7 @@ export function todaySummary(): TodaySummary {
   const sourceCount = db.select({ n: sql<number>`count(*)` }).from(sources).where(isNull(sources.deletedAt)).get()?.n ?? 0
   return {
     date: localDate(),
+    schedule: planEvents({ startAt: dayStart(now), endAt: addDays(dayStart(now), 1) }),
     streak: streakDays(),
     minutes: minutesOn(localDate()),
     week: recentMinutes(7),
@@ -156,6 +159,7 @@ function briefingFacts(s: TodaySummary): unknown {
     proposalsToConfirm: s.proposals.pending,
     actions: s.actions.map((a) => ({ title: cut(a.title, 60), due: a.dueAt ? new Date(a.dueAt).toISOString().slice(0, 10) : null, overdue: a.overdue })),
     goals: s.goals.map((g) => ({ title: cut(g.title, 40), daysLeft: g.daysLeft, masteredPercent: Math.round(g.mastered * 100) })),
+    schedule: s.schedule.map((e) => ({ title: cut(e.title, 60), kind: e.kind, startAt: e.startAt, endAt: e.endAt, allDay: e.allDay, status: e.status })),
     reflection: s.reflection,
     recentNotes: s.recentNotes.filter((n) => !hidden.has(n.id)).map((n) => cut(n.title || '', 40))
   }
@@ -205,6 +209,7 @@ export function fingerprint(s: TodaySummary): string {
     s.fresh,
     s.actions.map((a) => a.id).sort(),
     s.goals.map((g) => g.id).sort(),
+    s.schedule.map((e) => [e.id, e.startAt, e.endAt, e.status]),
     s.review.due > 0,
     s.mistakes.practiceReady > 0,
     s.inbox.pending > 0,

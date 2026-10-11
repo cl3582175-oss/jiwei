@@ -19,6 +19,7 @@ import { LibraryView } from './features/library/LibraryView'
 import { TrashView } from './features/trash/TrashView'
 import { ChatView } from './features/chat/ChatView'
 import { ReviewView } from './features/review/ReviewView'
+import { CalendarView } from './features/plan/CalendarView'
 import { GoalsPage } from './features/review/GoalsView'
 import { UsageDashboard, useUsageAlerts } from './features/agent/UsageDashboard'
 import { FeynmanView } from './features/feynman/FeynmanView'
@@ -123,6 +124,11 @@ function useMainEvents(): void {
         void qc.invalidateQueries({ queryKey: [key] })
     }
     const subscriptions = [
+      // 日历与方向会在其他页面修改，未挂载的页面也要立即失效缓存。
+      window.jiweiEvents.on('plan:changed', () => {
+        for (const key of ['plan', 'today', 'today-briefing', 'goals']) void qc.invalidateQueries({ queryKey: [key] })
+      }),
+      window.jiweiEvents.on('review:changed', () => void qc.invalidateQueries({ queryKey: ['plan', 'forecast'] })),
       window.jiweiEvents.on('lenses:changed', refresh),
       window.jiweiEvents.on('series:changed', refresh),
       window.jiweiEvents.on('recording:changed', refresh),
@@ -133,7 +139,10 @@ function useMainEvents(): void {
         useApp.getState().openConversation(conversationId)
       }),
       window.jiweiEvents.on('usage:changed', () => void qc.invalidateQueries({ queryKey: ['usage'] })),
-      window.jiweiEvents.on('settings:changed', () => void qc.invalidateQueries({ queryKey: ['settings'] })),
+      window.jiweiEvents.on('settings:changed', () => {
+        void qc.invalidateQueries({ queryKey: ['settings'] })
+        void qc.invalidateQueries({ queryKey: ['plan', 'forecast'] })
+      }),
       // 整份资料的导图 / 总结 / 提纲做好了（v0.7.6）
       window.jiweiEvents.on('digest:done', ({ noteId, title, task }) => {
         void qc.invalidateQueries({ queryKey: ['notes'] })
@@ -214,6 +223,7 @@ export function App() {
             {view === 'library' && <LibraryView />}
             {view === 'chat' && <ChatView />}
             {view === 'review' && <ReviewView />}
+            {view === 'calendar' && <CalendarView />}
             {view === 'goals' && <GoalsPage />}
             {view === 'usage' && <UsageDashboard />}
             {view === 'feynman' && <FeynmanView />}

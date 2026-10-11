@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { Command } from 'cmdk'
 import { Dialog as D } from 'radix-ui'
 import { useTranslation } from 'react-i18next'
-import { NotebookText, PenLine, Library, Settings, Trash2, Search, Home, Layers, GraduationCap, Sprout, Network, Globe, Sun, Sparkles, Target, BarChart3 } from 'lucide-react'
+import { NotebookText, PenLine, Library, Settings, Trash2, Search, Home, Layers, GraduationCap, Sprout, Network, Globe, Sun, Sparkles, Target, CalendarDays, BarChart3 } from 'lucide-react'
 import { useApp } from '@/store/app'
 import { useNotes } from '@/lib/queries'
 import { useCreateNote } from '@/lib/shortcuts'
@@ -87,6 +87,9 @@ export function CommandPalette() {
                     <Layers />
                     <span className="flex-1">{t('nav.review')}</span>
                     <Kbd>{modKey}4</Kbd>
+                  </Command.Item>
+                  <Command.Item className={itemCls} onSelect={run(() => useApp.getState().goNav('calendar'))}>
+                    <CalendarDays /><span className="flex-1">{t('plan.calendar')}</span>
                   </Command.Item>
                   <Command.Item className={itemCls} onSelect={run(() => useApp.getState().goNav('goals'))}>
                     <Target />

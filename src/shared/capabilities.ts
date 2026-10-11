@@ -30,6 +30,7 @@ import {
   type VoiceStatus
 } from './recording'
 import { z } from 'zod'
+import { EventRange, EventSave, type PlanEvent, type ReviewForecast } from './plan'
 import { ActivityBatchSchema, type TodayBriefing, type TodaySummary } from './activity'
 import {
   ApprovalDecisionSchema,
@@ -647,11 +648,17 @@ export const capabilities = {
     harvest: cap<ReflectionHarvest>()({ description: 'AI 从复盘中提炼洞见、修正与行动项（供确认）', params: [id()] }),
     commit: cap<Reflection>()({ description: '保存确认的洞见、修正与行动项，复盘完成', params: [id(), ['input', S.HarvestCommitSchema]] })
   },
+  plan: {
+    events: cap<PlanEvent[]>()({ description: '查询日历日程（含行动项与方向截止标记）', params: [['range', EventRange]] }),
+    eventSave: cap<PlanEvent>()({ description: '新建或修改日程；订阅事件只读', params: [['input', EventSave]] }),
+    eventRemove: cap<void>()({ description: '删除自己创建的日程', params: [id()] }),
+    forecast: cap<ReviewForecast[]>()({ description: '未来复习负荷的已排期下限', params: [['days', z.number().int().min(1).max(366).default(42)]] })
+  },
   goals: {
-    list: cap<Goal[]>()({ description: '列出学习目标', params: none }),
-    save: cap<Goal>()({ description: '新建或修改学习目标', params: [['input', S.GoalInputSchema]] }),
-    remove: cap<void>()({ description: '删除学习目标', params: [id()] }),
-    progress: cap<GoalProgress>()({ description: '学习目标的进度（笔记、卡片、掌握比例、近 7 天复习）', params: [id()] }),
+    list: cap<Goal[]>()({ description: '列出方向', params: none }),
+    save: cap<Goal>()({ description: '新建或修改方向', params: [['input', S.GoalInputSchema]] }),
+    remove: cap<void>()({ description: '删除方向', params: [id()] }),
+    progress: cap<GoalProgress>()({ description: '方向的进度（笔记、卡片、掌握比例、近 7 天复习）', params: [id()] }),
     linkNote: cap<Goal>()({ description: '把笔记关联到目标或取消关联', params: [id(), id('noteId'), ['linked', z.boolean()]] })
   },
   connections: {
@@ -708,6 +715,7 @@ export const capabilities = {
     })
   },
   review: {
+    forecast: cap<ReviewForecast[]>()({ description: '未来每天的到期与新卡负荷（不模拟 FSRS）', params: [['days', z.number().int().min(1).max(366).default(42)]] }),
     next: cap<ReviewCard | null>()({
       description: '下一张要复习的卡片（exclude：本轮刚复习过的）',
       params: [['exclude', z.array(S.Id).max(500)]]

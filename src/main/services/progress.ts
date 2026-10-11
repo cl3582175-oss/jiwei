@@ -1,7 +1,7 @@
 import { and, eq, inArray, isNull, gte, sql } from 'drizzle-orm'
 import { fsrs, generatorParameters, type Card as FsrsCard, State } from 'ts-fsrs'
 import { getDb } from '../db'
-import { actions, cards, categories, goals, links, notes, reviewLogs } from '../db/schema'
+import { actions, activityEvents, cards, categories, goals, links, notes, reviewLogs } from '../db/schema'
 import { profileDb } from '../db/profile'
 import { newId } from '../lib/ids'
 import { masteryLevel, normConcept } from '../lib/learner'
@@ -13,10 +13,10 @@ import { deviceId } from './device'
 import { descendantIds } from './categories'
 import { getSettings } from './settings'
 
-// 学习目标与掌握度地图（v0.4.3）。
+// 方向与掌握度地图（v0.4.3）。
 // 掌握度来自复习卡片的 FSRS 状态：可提取性（现在还记得的概率）+ 稳定性（记忆能保持多久）。
 // 一篇笔记：没有线索 → 空白；有卡片没复习 → 未开始；否则按平均可提取性与稳定性分为薄弱 / 学习中 / 牢固。
-// 学习目标关联分类与笔记，进度按其中的笔记与卡片汇总。设计见 docs/design/v0.4-learning-loop.md §5。
+// 方向关联分类与笔记，进度按其中的笔记与卡片汇总。设计见 docs/design/v0.4-learning-loop.md §5。
 
 const DAY = 86_400_000
 
@@ -130,7 +130,7 @@ export function masteryMap(goalId?: string | null): MasteryMap {
   return { categories: allCats.filter((c) => catIds.has(c.id)), notes: list, totals }
 }
 
-/* ————————————————— 学习目标 ————————————————— */
+/* ————————————————— 方向 ————————————————— */
 
 type GoalRow = typeof goals.$inferSelect
 
@@ -143,6 +143,11 @@ function toGoal(g: GoalRow): Goal {
     .map((l) => l.id)
   return {
     id: g.id,
+    kind: g.kind,
+    startAt: g.startAt,
+    weeklyMinutes: g.weeklyMinutes,
+    weekdayMinutes: g.weekdayMinutes ? JSON.parse(g.weekdayMinutes) : null,
+    color: g.color,
     title: g.title,
     description: g.description,
     status: g.status,
@@ -167,10 +172,18 @@ export function saveGoal(input: GoalInput): Goal {
   const db = getDb()
   const now = Date.now()
   const id = input.id ?? newId()
+  const direction = {
+    ...(input.kind !== undefined ? { kind: input.kind } : {}),
+    ...(input.startAt !== undefined ? { startAt: input.startAt } : {}),
+    ...(input.weeklyMinutes !== undefined ? { weeklyMinutes: input.weeklyMinutes } : {}),
+    ...(input.weekdayMinutes !== undefined ? { weekdayMinutes: input.weekdayMinutes ? JSON.stringify(input.weekdayMinutes) : null } : {}),
+    ...(input.color !== undefined ? { color: input.color } : {})
+  }
   db.transaction((tx) => {
     if (input.id) {
       tx.update(goals)
         .set({
+          ...direction,
           title: input.title,
           ...(input.description !== undefined ? { description: input.description } : {}),
           ...(input.status ? { status: input.status } : {}),
@@ -184,6 +197,7 @@ export function saveGoal(input: GoalInput): Goal {
     } else {
       tx.insert(goals)
         .values({
+          ...direction,
           id,
           title: input.title,
           description: input.description ?? null,
@@ -207,6 +221,7 @@ export function saveGoal(input: GoalInput): Goal {
     }
   })
   emit('reflection:changed', {})
+  emit('plan:changed', {})
   return toGoal(db.select().from(goals).where(eq(goals.id, id)).get()!)
 }
 
@@ -223,6 +238,7 @@ export function removeGoal(id: string): void {
   const now = Date.now()
   getDb().update(goals).set({ deletedAt: now, updatedAt: now }).where(eq(goals.id, id)).run()
   emit('reflection:changed', {})
+  emit('plan:changed', {})
 }
 
 export function goalProgress(id: string): GoalProgress {
@@ -234,6 +250,12 @@ export function goalProgress(id: string): GoalProgress {
   const cardRows = ids.length ? db.select().from(cards).where(and(inArray(cards.noteId, ids), isNull(cards.deletedAt), eq(cards.suspended, false))).all() : []
   const f = scheduler()
   const now = new Date()
+  const weekStart = new Date(now)
+  weekStart.setHours(0, 0, 0, 0)
+  weekStart.setDate(weekStart.getDate() - (weekStart.getDay() + 6) % 7)
+  const cardIds = new Set(cardRows.map((c) => c.id))
+  const study = db.select().from(activityEvents).where(gte(activityEvents.at, weekStart.getTime())).all()
+    .filter((e) => (e.refType === 'note' && ids.includes(e.refId ?? '')) || (e.refType === 'card' && cardIds.has(e.refId ?? '')))
   const mastered = cardRows.filter((c) => c.state !== State.New && cardSolid(f.get_retrievability(toFsrs(c), now, false), c.stability)).length
   const reviewed = map.notes.reduce((s, n) => s + n.reviewed, 0)
   const recalls = map.notes.filter((n) => n.recall !== null)
@@ -246,6 +268,8 @@ export function goalProgress(id: string): GoalProgress {
     : 0
   return {
     goal: toGoal(g),
+    minutesThisWeek: Math.round(study.reduce((n, e) => n + e.durationMs, 0) / 60000),
+    plannedMinutesThisWeek: g.weekdayMinutes ? (JSON.parse(g.weekdayMinutes) as number[]).reduce((n, v) => n + v, 0) : g.weeklyMinutes ?? 0,
     notes: map.notes.length,
     cards: cardRows.length,
     reviewed,
@@ -264,7 +288,7 @@ export function goalProgress(id: string): GoalProgress {
   }
 }
 
-/** 进行中的学习目标（放进 AI 的系统提示：回答时知道你在为什么而学） */
+/** 进行中的方向（放进 AI 的系统提示：回答时知道你在为什么而学） */
 export function activeGoalsText(zh: boolean): string | null {
   const list = listGoals().filter((g) => g.status === 'active')
   if (!list.length) return null

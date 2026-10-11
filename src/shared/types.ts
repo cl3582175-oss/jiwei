@@ -510,7 +510,7 @@ export interface KnowledgeGraph {
   categories: { id: string; name: string; color: string | null }[]
 }
 
-/* ——— 学习目标与掌握度（v0.4.3） ——— */
+/* ——— 方向与掌握度（v0.4.3） ——— */
 
 /**
  * 一篇笔记的掌握情况（由复习卡片的 FSRS 状态计算）：
@@ -542,6 +542,11 @@ export interface MasteryMap {
 
 export interface Goal {
   id: string
+  kind: 'exam' | 'skill' | 'project' | 'interest'
+  startAt: number | null
+  weeklyMinutes: number | null
+  weekdayMinutes: number[] | null
+  color: string | null
   title: string
   description: string | null
   status: 'active' | 'achieved' | 'paused' | 'dropped'
@@ -555,6 +560,8 @@ export interface Goal {
 
 export interface GoalProgress {
   goal: Goal
+  minutesThisWeek: number
+  plannedMinutesThisWeek: number
   notes: number
   cards: number
   reviewed: number
@@ -601,7 +608,7 @@ export interface ReflectionMaterial {
   feynman: { concept: string; level: 'weak' | 'learning' | 'solid' | null; conversationId: string }[]
   /** 到期或期间完成的行动项（闭环检查） */
   actions: ActionItem[]
-  /** 进行中的学习目标及进度 */
+  /** 进行中的方向及进度 */
   goals: { id: string; title: string; mastered: number; reviews7d: number; daysLeft: number | null }[]
   /** 期间新增的批注：高亮总数；有评论或存疑的条目 */
   annotations: {
@@ -647,6 +654,7 @@ export interface InsightVersion {
 
 export interface ActionItem {
   id: string
+  phaseId?: string | null
   title: string
   status: 'open' | 'done' | 'dropped'
   dueAt: number | null
@@ -1044,6 +1052,7 @@ export interface JiweiEvents {
   'jobs:changed': { ids: string[] }
   /** 复习卡片或到期数量变化 */
   'review:changed': Record<string, never>
+  'plan:changed': Record<string, never>
   /** 资料分段已更新 */
   'segments:changed': { sourceId: string }
   /** 文档识别引擎状态 */

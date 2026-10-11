@@ -20,6 +20,7 @@ import {
   FolderInput,
   BookOpen,
   CalendarRange,
+  CalendarDays,
   Target,
   GraduationCap
 } from 'lucide-react'
@@ -204,6 +205,7 @@ export function NavRail() {
     review: { label: `${t('nav.review')}  ${modKey}4`, icon: <Layers />, badge: stats?.due },
     feynman: { label: t('nav.feynman'), icon: <GraduationCap /> },
     graph: { label: `${t('nav.graph')}  ${modKey}6`, icon: <Network /> },
+    calendar: { label: t('plan.calendar'), icon: <CalendarDays /> },
     goals: { label: t('nav.goals'), icon: <Target /> },
     reflect: { label: `${t('nav.reflect')}  ${modKey}5`, icon: <Sprout /> }
   }

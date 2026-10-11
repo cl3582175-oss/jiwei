@@ -550,7 +550,7 @@ export function reflectionMaterial(id: string): ReflectionMaterial {
           .join('\n')}`
       : '',
     goalList.length
-      ? `${L('学习目标', 'Goals')}：${goalList.map((g) => `${g.title}（${L('掌握', 'mastered')} ${Math.round(g.mastered * 100)}%${g.daysLeft !== null ? `，${L(`剩 ${g.daysLeft} 天`, `${g.daysLeft} days left`)}` : ''}）`).join('；')}`
+      ? `${L('方向', 'Goals')}：${goalList.map((g) => `${g.title}（${L('掌握', 'mastered')} ${Math.round(g.mastered * 100)}%${g.daysLeft !== null ? `，${L(`剩 ${g.daysLeft} 天`, `${g.daysLeft} days left`)}` : ''}）`).join('；')}`
       : ''
   ]
     .filter(Boolean)

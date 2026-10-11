@@ -34,7 +34,7 @@ export const todayZh = {
   dailyReflection: '每日 1 分钟复盘',
   weeklyReflection: '本周完整复盘',
   start: '开始',
-  goals: '学习目标',
+  goals: '方向',
   goalMastered: '已掌握 {{percent}}%',
   goalDays: '还剩 {{count}} 天',
   goalOverdue: '已过截止日',

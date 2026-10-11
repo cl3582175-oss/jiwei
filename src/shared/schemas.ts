@@ -1,4 +1,5 @@
 import { CaptureSettingsSchema } from './capture'
+import { DirectionFields } from './plan'
 import { BudgetSchema, McpServeSettingsSchema } from './agent'
 import { CurrencyCode, MoneySettingsSchema } from './money'
 export { InboxCreateSchema, InboxUpdateSchema, InboxAcceptSchema } from './inbox'
@@ -386,9 +387,10 @@ export const ActionUpdateSchema = z.object({
   dueAt: z.number().int().nullable().optional()
 })
 
-/* ——— 学习目标 ——— */
+/* ——— 方向 ——— */
 
 export const GoalInputSchema = z.object({
+  ...DirectionFields,
   id: Id.optional(),
   title: z.string().min(1).max(200),
   description: z.string().max(2000).nullable().optional(),

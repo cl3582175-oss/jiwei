@@ -28,6 +28,7 @@ export interface ActivityMinutes {
 
 /** 「今日」首页需要的全部数字与条目（主进程汇总，渲染进程只负责展示）。 */
 export interface TodaySummary {
+  schedule: import('./plan').PlanEvent[]
   date: string
   streak: number
   /** 今天各类有效学习分钟数 */

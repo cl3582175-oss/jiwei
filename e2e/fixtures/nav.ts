@@ -5,7 +5,7 @@ import { expect, type Page } from '@playwright/test'
 const GROUPS: [RegExp, string][] = [
   [/收件箱|资料库|浏览|录音/, '收集'],
   [/笔记|复习|费曼|图谱/, '学习'],
-  [/学习目标|复盘/, '计划'],
+  [/日历|方向|复盘/, '计划'],
   [/今日/, '今日']
 ]
 

@@ -35,7 +35,7 @@ import { useProvidePageContext } from '../assist/pageContext'
 // 「今日」（v0.6.7，默认首页）：回答“今天该做什么”。每张卡片都能直接处理，不放只供观看的数字。
 // 设计见 docs/design/v0.7-platform-and-loop.md §2.2。
 
-const EVENTS = ['review:changed', 'inbox:changed', 'mistakes:changed', 'notes:changed', 'reflection:changed', 'sources:changed'] as const
+const EVENTS = ['plan:changed', 'review:changed', 'inbox:changed', 'mistakes:changed', 'notes:changed', 'reflection:changed', 'sources:changed'] as const
 
 function greetingKey(): 'morning' | 'noon' | 'afternoon' | 'evening' {
   const h = new Date().getHours()
@@ -44,7 +44,7 @@ function greetingKey(): 'morning' | 'noon' | 'afternoon' | 'evening' {
 
 export function useToday() {
   const qc = useQueryClient()
-  const query = useQuery({ queryKey: ['today'], queryFn: () => api.today.summary(), refetchInterval: 60_000 })
+  const query = useQuery({ queryKey: ['today'], queryFn: () => api.today.summary(), staleTime: 0, refetchInterval: 60_000 })
   useEffect(() => {
     // 数据变化时晨报也重新取：主进程只在要点变化时才重新生成，其余直接返回当天缓存
     const offs = EVENTS.map((e) =>
@@ -527,6 +527,7 @@ export function TodayView() {
           <Briefing onReply={setReply} />
         </div>
 
+        {!!s?.schedule.length && <section className="mt-8" data-testid="today-schedule"><h2 className="mb-3 text-sm font-semibold text-fg">{t('plan.schedule')}</h2><ul className="paper divide-y divide-border rounded-2xl px-5">{s.schedule.map((e) => <li key={e.id} className="flex items-center gap-3 py-3 text-sm text-fg"><span className="text-xs text-muted">{e.allDay ? t('plan.allDay') : new Date(e.startAt).toLocaleTimeString(i18n.language, { hour: '2-digit', minute: '2-digit' })}</span><button className="min-w-0 flex-1 truncate text-left" onClick={() => useApp.getState().goNav('calendar')}>{e.title}</button>{e.kind === 'study' && !e.readonly && e.status === 'planned' ? <Button size="sm" onClick={() => void api.plan.eventSave({ ...e, status: 'done' }).catch((err) => toast.error(String(err)))}>{t('plan.done')}</Button> : <span className="text-xs text-subtle">{t(`plan.status.${e.status}`)}</span>}</li>)}</ul></section>}
         {s?.fresh ? (
           <div className="mt-8">
             <Fresh />

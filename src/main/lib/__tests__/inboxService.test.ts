@@ -7,7 +7,7 @@ type Row = typeof inboxItems.$inferSelect
 const state = vi.hoisted(() => ({
   rows: [] as Row[],
   recordingSources: [] as { id: string; aiExcluded: boolean; deletedAt: number | null }[],
-  goals: [{ id: 'goal', title: '学习目标' }],
+  goals: [{ id: 'goal', title: '方向' }],
   settings: {
     language: 'zh-CN',
     capture: { daily: true, time: '21:00', offPeak: false },

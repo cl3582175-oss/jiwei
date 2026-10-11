@@ -1,4 +1,5 @@
 import { tr } from './lib/messages'
+import * as plan from './services/plan/calendar'
 import * as browserCapture from './services/browser/capture'
 import * as mistakes from './services/mistakes'
 import * as mistakeEntries from './services/mistakeEntries'
@@ -415,6 +416,12 @@ const handlers: Handlers = {
     harvest: (_, id) => reflection.harvestReflection(id),
     commit: (_, id, input) => reflection.commitReflection(id, input)
   },
+  plan: {
+    events: (_, range) => plan.events(range),
+    eventSave: (_, input) => plan.eventSave(input),
+    eventRemove: (_, id) => plan.eventRemove(id),
+    forecast: (_, days) => plan.forecast(days)
+  },
   goals: {
     list: () => progress.listGoals(),
     save: (_, input) => progress.saveGoal(input),
@@ -453,6 +460,7 @@ const handlers: Handlers = {
     addCues: (_, id, indices) => feynman.addFeynmanCues(id, indices)
   },
   review: {
+    forecast: (_, days) => plan.forecast(days),
     next: (_, exclude) => review.nextCard(exclude),
     get: (_, id) => review.getCard(id),
     list: (_, filter, search) => review.listCards(filter, search),

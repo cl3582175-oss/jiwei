@@ -218,7 +218,7 @@ export function markUsed(ids: string[]): void {
 
 const PROFILE_LABEL: Record<ProfileKey, [string, string]> = {
   role: ['身份', 'Who I am'],
-  goals: ['学习目标', 'Learning goals'],
+  goals: ['方向', 'Learning goals'],
   background: ['已有基础', 'Background'],
   style: ['回答偏好', 'Answer style'],
   avoid: ['请避免', 'Please avoid']
