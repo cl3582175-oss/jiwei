@@ -1038,6 +1038,7 @@ export const agentAudit = sqliteTable(
 
 /** 积微作为 MCP 客户端时接入的外部服务器；环境变量、请求头、OAuth 令牌用系统钥匙串加密 */
 export const mcpServers = sqliteTable('mcp_servers', {
+  pluginId: text('plugin_id'),
   id: text('id').primaryKey(),
   name: text('name').notNull(),
   transport: text('transport', { enum: ['stdio', 'http'] }).notNull(),
@@ -1069,6 +1070,7 @@ export const mcpClients = sqliteTable('mcp_clients', {
 })
 
 export const aiTasks = sqliteTable('ai_tasks', {
+  pluginId: text('plugin_id'),
   id: text('id').primaryKey(),
   name: text('name').notNull(),
   instruction: text('instruction').notNull(),
@@ -1126,6 +1128,7 @@ export const mailSeen = sqliteTable(
 )
 
 export const feeds = sqliteTable('feeds', {
+  pluginId: text('plugin_id'),
   id: text('id').primaryKey(), kind: text('kind').notNull(), url: text('url').notNull(), title: text('title').notNull(),
   enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true), goalId: text('goal_id'),
   lastFetchedAt: integer('last_fetched_at'), etag: text('etag'), lastModified: text('last_modified'), error: text('error'),
@@ -1147,4 +1150,27 @@ export const discoverFeedback = sqliteTable('discover_feedback', {
 export const searchConnections = sqliteTable('search_connections', {
   service: text('service').primaryKey(), keyEnc: blob('key_enc', { mode: 'buffer' }),
   enabled: integer('enabled', { mode: 'boolean' }).notNull().default(false), updatedAt: integer('updated_at').notNull()
+})
+
+/** 插件凭证仅存密文；生命周期事务由 plugins/install 维护。 */
+export const pluginMarkets = sqliteTable('plugin_markets', {
+  name: text('name').primaryKey(),
+  source: text('source').notNull(),
+  builtin: integer('builtin', { mode: 'boolean' }).notNull().default(false),
+  catalog: text('catalog'),
+  fetchedAt: integer('fetched_at'),
+  error: text('error'),
+  addedAt: integer('added_at').notNull()
+})
+export const plugins = sqliteTable('plugins', {
+  id: text('id').primaryKey(),
+  market: text('market').notNull(),
+  version: text('version').notNull(),
+  previousVersion: text('previous_version'),
+  enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
+  capabilities: text('capabilities').notNull(),
+  config: text('config').notNull().default('{}'),
+  secretsEnc: blob('secrets_enc', { mode: 'buffer' }),
+  installedAt: integer('installed_at').notNull(),
+  updatedAt: integer('updated_at').notNull()
 })

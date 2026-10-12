@@ -64,5 +64,7 @@ export {
   aiUsage,
   agentAudit,
   mcpServers,
+  pluginMarkets,
+  plugins,
   mcpClients
 } from './schema'

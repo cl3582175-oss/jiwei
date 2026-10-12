@@ -204,6 +204,13 @@
       "when": 1791741718306,
       "tag": "0028_works",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "6",
+      "when": 1791767420893,
+      "tag": "0029_plugins",
+      "breakpoints": true
     }
   ]
 }
