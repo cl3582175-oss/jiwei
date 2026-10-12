@@ -258,111 +258,126 @@ async function cleanupVersions(id: string): Promise<void> {
     if (!keep.has(path)) await rm(path, { recursive: true, force: true })
   }
 }
-export function confirmPluginInstall(token: string, input: { feeds?: number[]; config?: PluginConfig }): Promise<PluginInfo> {
-  return pluginMutation(async () => {
-    const pending = previews.get(token)
-    if (!pending) throw new Error('Invalid or already used plugin preview')
-    previews.delete(token)
-    clearTimeout(pending.timer)
-    const active = { canceled: false, committed: false }
-    installing.set(token, active)
-    const checkCanceled = (): void => {
-      if (active.canceled) throw new Error('Plugin installation canceled / 插件安装已取消')
-    }
-    let reconnect: string[] = []
-    let target: string | undefined,
-      newIdForCleanup: string | undefined,
-      committed = false
-    try {
-      if (Date.now() >= pending.expiresAt) throw new Error('Plugin preview expired; inspect again')
-      const opts = PluginConfirmOptions.parse(input),
-        parsed = await parsePlugin(pending.prepared.root, pending.options),
-        id = `${parsed.manifest.name}@${pending.origin.market}`
-      checkCanceled()
-      if (parsed.hash !== pending.parsed.hash) throw new Error('Plugin changed after preview; inspect again')
-      const rows = getDb().select().from(plugins).all()
-      if (rows.some((r) => r.id !== id && r.id.split('@')[0] === parsed.manifest.name))
-        throw new Error('Plugin namespace already installed from another market')
-      const old = rows.find((r) => r.id === id),
-        oldState = old ? readState(id) : undefined
-      if ((oldState?.current.directory ?? null) !== pending.expected) throw new Error('Installed plugin changed; inspect again')
-      if (opts.feeds.some((i) => !parsed.feeds[i])) throw new Error('Invalid selected subscription')
-      emit('plugins:progress', { id, phase: 'install' })
-      const config = prepareConfig(parsed.manifest, opts.config, old)
-      if (!old) newIdForCleanup = id
-      const root = await owned(pluginCache(id))
-      await mkdir(root, { recursive: true })
-      target = await owned(join(root, `${parsed.hash}-${randomBytes(6).toString('hex')}`))
-      await rename(pending.prepared.root, target)
-      const installed = await parsePlugin(target, pending.options)
-      if (installed.hash !== parsed.hash) throw new Error('Plugin changed during installation')
-      await mkdir(await owned(pluginData(id)), { recursive: true })
-      checkCanceled()
-      reconnect = listServers()
-        .filter((s) => s.pluginId === id && s.enabled && s.state === 'ready')
-        .map((s) => s.id)
-      await disconnectPlugin(id)
-      checkCanceled()
-      const version: InstalledVersion = {
-        hash: parsed.hash,
-        version: parsed.version,
-        directory: target,
-        options: pending.options,
-        capabilities: parsed.capabilities
+export async function confirmPluginInstall(token: string, input: { feeds?: number[]; config?: PluginConfig }): Promise<PluginInfo> {
+  const recovery: { pluginId: string; directory: string; serverId: string }[] = []
+  try {
+    return await pluginMutation(async () => {
+      const pending = previews.get(token)
+      if (!pending) throw new Error('Invalid or already used plugin preview')
+      previews.delete(token)
+      clearTimeout(pending.timer)
+      const active = { canceled: false, committed: false }
+      installing.set(token, active)
+      const checkCanceled = (): void => {
+        if (active.canceled) throw new Error('Plugin installation canceled / 插件安装已取消')
       }
-      getDb().transaction(() => {
-        const values = {
-          market: pending.origin.market,
+      let reconnect: typeof recovery = []
+      let target: string | undefined,
+        newIdForCleanup: string | undefined,
+        committed = false
+      try {
+        if (Date.now() >= pending.expiresAt) throw new Error('Plugin preview expired; inspect again')
+        const opts = PluginConfirmOptions.parse(input),
+          parsed = await parsePlugin(pending.prepared.root, pending.options),
+          id = `${parsed.manifest.name}@${pending.origin.market}`
+        checkCanceled()
+        if (parsed.hash !== pending.parsed.hash) throw new Error('Plugin changed after preview; inspect again')
+        const rows = getDb().select().from(plugins).all()
+        if (rows.some((r) => r.id !== id && r.id.split('@')[0] === parsed.manifest.name))
+          throw new Error('Plugin namespace already installed from another market')
+        const old = rows.find((r) => r.id === id),
+          oldState = old ? readState(id) : undefined
+        if ((oldState?.current.directory ?? null) !== pending.expected) throw new Error('Installed plugin changed; inspect again')
+        if (opts.feeds.some((i) => !parsed.feeds[i])) throw new Error('Invalid selected subscription')
+        emit('plugins:progress', { id, phase: 'install' })
+        const config = prepareConfig(parsed.manifest, opts.config, old)
+        if (!old) newIdForCleanup = id
+        const root = await owned(pluginCache(id))
+        await mkdir(root, { recursive: true })
+        target = await owned(join(root, `${parsed.hash}-${randomBytes(6).toString('hex')}`))
+        await rename(pending.prepared.root, target)
+        const installed = await parsePlugin(target, pending.options)
+        if (installed.hash !== parsed.hash) throw new Error('Plugin changed during installation')
+        await mkdir(await owned(pluginData(id)), { recursive: true })
+        checkCanceled()
+        reconnect = listServers()
+          .filter((s) => s.pluginId === id && s.enabled && s.state === 'ready')
+          .map((s) => ({ pluginId: id, directory: oldState!.current.directory, serverId: s.id }))
+        await disconnectPlugin(id)
+        checkCanceled()
+        const version: InstalledVersion = {
+          hash: parsed.hash,
           version: parsed.version,
-          previousVersion: old?.version ?? null,
-          enabled: old?.enabled ?? true,
-          capabilities: JSON.stringify(parsed.capabilities),
-          config: config.config,
-          secretsEnc: config.secretsEnc,
-          updatedAt: Date.now()
+          directory: target,
+          options: pending.options,
+          capabilities: parsed.capabilities
         }
-        getDb()
-          .insert(plugins)
-          .values({ ...values, id, installedAt: old?.installedAt ?? Date.now() })
-          .onConflictDoUpdate({ target: plugins.id, set: values })
-          .run()
-        writeState(id, { origin: pending.origin, current: version, previous: oldState?.current, secretKeys: config.secretKeys })
-        writeMcp(id, installed)
-        for (const index of new Set(opts.feeds)) {
-          const f = installed.feeds[index]
-          if (
-            getDb()
-              .select()
-              .from(feeds)
-              .where(eq(feeds.pluginId, id))
-              .all()
-              .some((r) => r.url === f.url && !r.deletedAt)
-          )
-            continue
-          // 保存停用行避免事务失败后留下排队任务；提交后调度器按真实 enabled 状态抓取。
-          const created = saveFeed({ ...f, enabled: false, goalId: null })
-          getDb().update(feeds).set({ pluginId: id, enabled: true }).where(eq(feeds.id, created.id)).run()
+        getDb().transaction(() => {
+          const values = {
+            market: pending.origin.market,
+            version: parsed.version,
+            previousVersion: old?.version ?? null,
+            enabled: old?.enabled ?? true,
+            capabilities: JSON.stringify(parsed.capabilities),
+            config: config.config,
+            secretsEnc: config.secretsEnc,
+            updatedAt: Date.now()
+          }
+          getDb()
+            .insert(plugins)
+            .values({ ...values, id, installedAt: old?.installedAt ?? Date.now() })
+            .onConflictDoUpdate({ target: plugins.id, set: values })
+            .run()
+          writeState(id, { origin: pending.origin, current: version, previous: oldState?.current, secretKeys: config.secretKeys })
+          writeMcp(id, installed)
+          for (const index of new Set(opts.feeds)) {
+            const f = installed.feeds[index]
+            if (
+              getDb()
+                .select()
+                .from(feeds)
+                .where(eq(feeds.pluginId, id))
+                .all()
+                .some((r) => r.url === f.url && !r.deletedAt)
+            )
+              continue
+            // 保存停用行避免事务失败后留下排队任务；提交后调度器按真实 enabled 状态抓取。
+            const created = saveFeed({ ...f, enabled: false, goalId: null })
+            getDb().update(feeds).set({ pluginId: id, enabled: true }).where(eq(feeds.id, created.id)).run()
+          }
+          record(old ? 'update' : 'install', id)
+        })
+        committed = true
+        active.committed = true
+        replacePluginRegistry(id, installed)
+        notify()
+        // 提交后清理失败不回报安装失败；重启会继续回收，仅操作插件自有目录。
+        await cleanupVersions(id).catch(() => undefined)
+        return getPlugin(id)
+      } finally {
+        installing.delete(token)
+        if (!committed && active.canceled) recovery.push(...reconnect)
+        if (!committed && target) await rm(target, { recursive: true, force: true })
+        if (!committed && newIdForCleanup) {
+          await rm(await owned(pluginData(newIdForCleanup)), { recursive: true, force: true })
+          await rm(await owned(pluginCache(newIdForCleanup)), { recursive: true, force: true })
         }
-        record(old ? 'update' : 'install', id)
-      })
-      committed = true
-      active.committed = true
-      replacePluginRegistry(id, installed)
-      notify()
-      // 提交后清理失败不回报安装失败；重启会继续回收，仅操作插件自有目录。
-      await cleanupVersions(id).catch(() => undefined)
-      return getPlugin(id)
-    } finally {
-      installing.delete(token)
-      if (!committed && active.canceled) for (const id of reconnect) await connectServer(id).catch(() => undefined)
-      if (!committed && target) await rm(target, { recursive: true, force: true })
-      if (!committed && newIdForCleanup) {
-        await rm(await owned(pluginData(newIdForCleanup)), { recursive: true, force: true })
-        await rm(await owned(pluginCache(newIdForCleanup)), { recursive: true, force: true })
+        await pending.prepared.cleanup().catch(() => undefined)
       }
-      await pending.prepared.cleanup().catch(() => undefined)
+    })
+  } finally {
+    // 清理与互斥释放后再恢复；每次 await 后重查版本与许可，仍经过真正的 MCP 连接 guard。
+    for (const candidate of recovery) {
+      await (async () => {
+        const plugin = getDb().select().from(plugins).where(eq(plugins.id, candidate.pluginId)).get()
+        if (!plugin?.enabled || !registeredPlugin(candidate.pluginId)) return
+        if (readState(candidate.pluginId).current.directory !== candidate.directory) return
+        const server = listServers().find((s) => s.id === candidate.serverId)
+        if (server?.pluginId !== candidate.pluginId || !server.enabled || server.state !== 'idle') return
+        await connectServer(candidate.serverId)
+      })().catch(() => undefined)
     }
-  })
+  }
 }
 export function setPluginEnabled(id: string, enabled: boolean): Promise<PluginInfo> {
   return pluginMutation(async () => {

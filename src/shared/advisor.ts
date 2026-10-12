@@ -5,6 +5,9 @@ import type { PluginRegistryItem, PluginFramework } from './plugins'
 
 const text = (max: number) => z.string().trim().min(1).max(max)
 
+export const AdvisorCriterionName = text(200)
+export const AdvisorWeightsSchema = z.record(AdvisorCriterionName, z.number().int().min(0).max(5)).nullable()
+
 export const DecisionMemoDraft = z.object({
   /** 对问题的一句话重述（帮助用户确认 AI 理解对了） */
   restated: text(300),
@@ -13,7 +16,7 @@ export const DecisionMemoDraft = z.object({
     .min(2)
     .max(5),
   criteria: z
-    .array(z.object({ name: text(200), weight: z.number().int().min(1).max(5), why: z.string().max(200).default('') }))
+    .array(z.object({ name: AdvisorCriterionName, weight: z.number().int().min(1).max(5), why: z.string().max(200).default('') }))
     .min(2)
     .max(8),
   /** 每个选项在每条准则上的评分 1–5 */

@@ -61,7 +61,7 @@ import {
 import { z } from 'zod'
 import type { Insights } from './insights'
 import { WorkCreateSchema, WorkUpdateSchema, type VideoRender, type Work } from './works'
-import { AdvisorAskSchema, DecideSchema, ReviewDecisionSchema, type Decision } from './advisor'
+import { AdvisorAskSchema, AdvisorWeightsSchema, DecideSchema, ReviewDecisionSchema, type Decision } from './advisor'
 import {
   EventRange,
   EventSave,
@@ -750,7 +750,7 @@ export const capabilities = {
     regenerate: cap<Decision>()({ description: '重新生成决策备忘录（花费 AI 费用）', params: [id('id')] }),
     weights: cap<Decision>()({
       description: '调整决策矩阵的准则权重（null 恢复建议权重）',
-      params: [id('id'), ['weights', z.record(z.string().max(40), z.number().int().min(0).max(5)).nullable()]]
+      params: [id('id'), ['weights', AdvisorWeightsSchema]]
     }),
     decide: cap<Decision>()({ description: '记录选定的选项、当时的预期与回看日期', params: [['input', DecideSchema]] }),
     review: cap<Decision>()({

@@ -91,7 +91,7 @@ vi.mock('../../ai/structured', () => ({
 import { updatePlugin, inspectPluginPath, confirmPluginInstall, setPluginEnabled, uninstallPlugin, initializePlugins } from '../install'
 import { replacePluginRegistry } from '../registry'
 import { createWork, generateOutline, getWork, updateWork } from '../../works'
-import { ask, getDecision, listDecisions, regenerate } from '../../advisor'
+import { ask, getDecision, listDecisions, regenerate, setWeights } from '../../advisor'
 import { recipes, saveTask } from '../../tasks/service'
 import { TaskSave } from '@shared/tasks'
 let db: Database.Database, root: string, source: string
@@ -254,6 +254,15 @@ describe('plugin selections enter persisted product paths', () => {
     expect(call.prompt).toContain('<external-data source=')
     expect(call.system).not.toContain('UNTRUSTED_FRAMEWORK_MARKER')
     expect(getDecision(draft.id).memo?.options).toHaveLength(2)
+  })
+  it('persists the maximum legal criterion weight and rejects names beyond the shared contract', async () => {
+    const decision = await ask({ question: 'Which weights are legal?', frameworkId: 'product:a' })
+    const name = '准'.repeat(200)
+    setWeights(decision.id, { [name]: 3, Cost: 4 })
+    expect(getDecision(decision.id).weights).toEqual({ [name]: 3, Cost: 4 })
+    expect(() => setWeights(decision.id, { ['准'.repeat(201)]: 2 })).toThrow()
+    expect(getDecision(decision.id).weights?.[name]).toBe(3)
+    expect(setWeights(decision.id, null).weights).toBeNull()
   })
   it('rejects stale selection and preserves the ordinary create and advisor flows', async () => {
     expect(() => createWork({ type: 'slides', templateId: 'product:a', mode: 'cowrite' })).toThrow('does not match')

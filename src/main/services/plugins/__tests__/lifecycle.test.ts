@@ -20,6 +20,7 @@ const env = vi.hoisted(() => ({
   transport: {} as Record<string, unknown>,
   attach: undefined as (() => Promise<void>) | undefined,
   closed: 0,
+  close: undefined as (() => Promise<void>) | undefined,
   audits: [] as unknown[],
   call: undefined as (() => Promise<unknown>) | undefined
 }))
@@ -90,6 +91,7 @@ vi.mock('@modelcontextprotocol/sdk/client/index.js', () => ({
     setNotificationHandler() {}
     async close() {
       env.closed++
+      await env.close?.()
     }
   }
 }))
@@ -213,6 +215,7 @@ beforeEach(async () => {
   env.journalFault = ''
   env.attach = undefined
   env.closed = 0
+  env.close = undefined
   env.audits = []
   env.call = undefined
   env.transport = {}
@@ -713,6 +716,38 @@ describe('plugin MCP connection boundary', () => {
 })
 
 describe('in-flight preview cancellation', () => {
+  it('restores a ready MCP through real connectServer after cancellation during disconnect', async () => {
+    await install({ token: 'synthetic-reconnect-token' })
+    const server = listServers()[0]
+    await saveServer({ ...serverInput(server), enabled: true })
+    await connectServer(server.id)
+    expect(listServers()[0].state).toBe('ready')
+    await fixture('two')
+    const preview = await updatePlugin('sample@local')
+    let release!: () => void, reached!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const ready = new Promise<void>((resolve) => {
+      reached = resolve
+    })
+    env.close = async () => {
+      env.close = undefined
+      reached()
+      await gate
+    }
+    const result = confirmPluginInstall(preview.token, {})
+    const rejection = expect(result).rejects.toThrow('Plugin installation canceled')
+    await ready
+    await expect(connectServer(server.id)).rejects.toThrow('Plugin operation in progress')
+    await cancelPluginPreview(preview.token)
+    release()
+    await rejection
+    expect(listPlugins()[0].version).toBe('one')
+    expect(listServers()[0].state).toBe('ready')
+    expect((await readdir(pluginCache('sample@local'))).length).toBe(1)
+  })
+
   for (const update of [false, true])
     it(`cancels ${update ? 'update' : 'install'} before commit and restores the prior state`, async () => {
       if (update) {
@@ -745,6 +780,44 @@ describe('in-flight preview cancellation', () => {
       else expect(existsSync(pluginCache('sample@local'))).toBe(false)
       await expect(confirmPluginInstall(preview.token, {})).rejects.toThrow('already used')
     })
+  it('does not restore revoked MCP permissions while recovering canceled update connections', async () => {
+    const servers = { one: { command: 'fixture', args: [] }, two: { command: 'fixture', args: [] } }
+    await fixture('one', { mcpServers: servers })
+    await install()
+    for (const server of listServers()) {
+      await saveServer({ ...serverInput(server), enabled: true })
+      await connectServer(server.id)
+    }
+    expect(listServers().every((s) => s.state === 'ready')).toBe(true)
+    await fixture('two', { mcpServers: servers })
+    const preview = await updatePlugin('sample@local')
+    let release!: () => void, reached!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const ready = new Promise<void>((resolve) => {
+      reached = resolve
+    })
+    env.close = async () => {
+      env.close = undefined
+      reached()
+      await gate
+    }
+    const result = confirmPluginInstall(preview.token, {})
+    const rejection = expect(result).rejects.toThrow('Plugin installation canceled')
+    await ready
+    await cancelPluginPreview(preview.token)
+    let resumed = 0
+    env.attach = async () => {
+      resumed++
+      await setPluginEnabled('sample@local', false)
+    }
+    release()
+    await rejection
+    expect(resumed).toBe(1)
+    expect(listPlugins()[0]).toMatchObject({ version: 'one', enabled: false })
+    expect(listServers().every((s) => !s.enabled && s.state === 'off' && !s.tools.length)).toBe(true)
+  })
   it('reports committed installation unchanged when cancel arrives after commit', async () => {
     const preview = await inspectPluginPath(source)
     const installed = await confirmPluginInstall(preview.token, { feeds: [] })

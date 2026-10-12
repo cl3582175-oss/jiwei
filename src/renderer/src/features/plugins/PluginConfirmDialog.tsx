@@ -232,11 +232,7 @@ export function PluginConfirmDialog({
             <D.Title className="truncate font-serif text-lg" title={preview.manifest.displayName ?? preview.manifest.name}>
               {preview.manifest.displayName ?? preview.manifest.name} · {preview.version}
             </D.Title>
-            <D.Description className="text-xs text-muted">{preview.manifest.description ?? t('plugins.contents')}</D.Description>
             <PluginOriginLabel origin={preview.origin} />
-            <p className="text-xs text-muted">
-              {typeof preview.manifest.author === 'string' ? preview.manifest.author : preview.manifest.author?.name}
-            </p>
             {preview.origin.market !== 'jiwei' && <p className="text-xs text-warning">{t('plugins.thirdParty')}</p>}
           </header>
           <div className="min-h-0 space-y-4 overflow-y-auto p-5 [overflow-wrap:anywhere]">
@@ -289,6 +285,10 @@ export function PluginConfirmDialog({
                 ))}
               </section>
             )}
+            <section className="space-y-2 text-xs text-muted">
+              <D.Description className="whitespace-pre-wrap">{preview.manifest.description ?? t('plugins.contents')}</D.Description>
+              <p>{typeof preview.manifest.author === 'string' ? preview.manifest.author : preview.manifest.author?.name}</p>
+            </section>
             <section className="space-y-2">
               <h3 className="text-sm font-medium">{t('plugins.contents')}</h3>
               {(['skill', 'command', 'lens'] as const).map((kind, i) => (

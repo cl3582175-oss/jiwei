@@ -1,6 +1,7 @@
 import { and, desc, eq, inArray, isNull, lte } from 'drizzle-orm'
 import {
   AdvisorAskSchema,
+  AdvisorWeightsSchema,
   DecideSchema,
   DecisionMemoDraft,
   ReviewDecisionSchema,
@@ -256,7 +257,8 @@ export async function regenerate(id: string): Promise<Decision> {
 
 export function setWeights(id: string, weights: Record<string, number> | null): Decision {
   row(id)
-  return patch(id, { weights: weights ? JSON.stringify(weights) : null })
+  const validated = AdvisorWeightsSchema.parse(weights)
+  return patch(id, { weights: validated ? JSON.stringify(validated) : null })
 }
 
 export function decide(input: z.input<typeof DecideSchema>): Decision {

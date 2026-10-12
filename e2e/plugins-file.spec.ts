@@ -11,6 +11,7 @@ let app: ElectronApplication, page: Page, server: Server, root: string, source: 
 let workId: string, decisionId: string, taskId: string
 const prompts: { system: string; prompt: string }[] = []
 const shots = process.env.SHOTS_DIR
+const longCriterion = '证据完整性与长期可核查性的综合评价'.repeat(4)
 function file(path: string, value: string | object) {
   mkdirSync(dirname(path), { recursive: true })
   writeFileSync(path, typeof value === 'string' ? value : JSON.stringify(value))
@@ -20,8 +21,8 @@ function fixture(version = '1', risky = false) {
     name: 'b2-fixture',
     displayName: '自编产品插件',
     version,
-    description: 'Self-authored integration evidence',
-    author: { name: 'Jiwei test fixture' },
+    description: risky ? '长描述需要完整查看。'.repeat(799) + '描述结尾' : 'Self-authored integration evidence',
+    author: { name: risky ? '合法长作者名'.repeat(1000) + '作者结尾' : 'Jiwei test fixture' },
     ...(risky
       ? {
           userConfig: { token: { type: 'string', title: '合成凭证', description: 'Synthetic test only', sensitive: true, required: true } },
@@ -51,7 +52,7 @@ function fixture(version = '1', risky = false) {
     title: { zh: '证据决策框架', en: 'Evidence decision' },
     description: { zh: '核对事实和代价', en: 'Check facts and costs' },
     criteria: [
-      { name: '证据强度', weight: 5, hint: 'FRAMEWORK_DATA_ONLY: verify the evidence' },
+      { name: longCriterion, weight: 5, hint: 'FRAMEWORK_DATA_ONLY: verify the evidence' },
       { name: '成本', weight: 2, hint: 'Estimate cost' }
     ],
     questions: ['还缺什么证据？']
@@ -150,7 +151,7 @@ test.beforeAll(async () => {
               { id: 'O2', title: '选择二', summary: '路径二' }
             ],
             criteria: [
-              { name: '证据强度', weight: 5, why: '受控' },
+              { name: longCriterion, weight: 5, why: '受控' },
               { name: '成本', weight: 2, why: '受控' }
             ],
             scores: [],
@@ -286,6 +287,14 @@ test('selected template and framework persist and reach real main model inputs; 
   const d = (await page.evaluate(() => window.jiwei.advisor.list()))[0]
   decisionId = d.id
   expect(d.framework?.criteria[0].weight).toBe(5)
+  expect(d.memo?.criteria[0].name).toBe(longCriterion)
+  await page.evaluate(
+    async ({ id, name }) => {
+      await window.jiwei.advisor.weights(id, { [name]: 3, 成本: 4 })
+    },
+    { id: d.id, name: longCriterion }
+  )
+  expect((await page.evaluate((id) => window.jiwei.advisor.get(id), d.id)).weights).toEqual({ [longCriterion]: 3, 成本: 4 })
   const call = prompts.find((x) => x.prompt.includes('FRAMEWORK_DATA_ONLY'))!
   expect(call.prompt).toContain('还缺什么证据')
   expect(call.system).not.toContain('FRAMEWORK_DATA_ONLY')
@@ -326,6 +335,24 @@ test('capability update needs high-risk confirmation, safe focus, presence-only 
     const win = BrowserWindow.getAllWindows()[0]
     win.setMinimumSize(640, 640)
     win.setSize(760, 760)
+  })
+  const footerBox = await confirm.locator('footer').boundingBox()
+  const dialogBox = await confirm.boundingBox()
+  expect(footerBox!.y + footerBox!.height).toBeLessThanOrEqual(dialogBox!.y + dialogBox!.height)
+  await expect(confirm.getByRole('button', { name: '取消', exact: true })).toBeInViewport()
+  await expect(confirm.getByRole('button', { name: '更新并同意新的能力' })).toBeInViewport()
+  await expect(confirm.getByText('运行程序: fixture-never-run', { exact: true })).toBeInViewport()
+  const scroll = confirm.locator('div.overflow-y-auto').first()
+  expect(await scroll.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true)
+  await scroll.evaluate((el) => {
+    el.scrollTop = el.scrollHeight
+  })
+  expect(await scroll.evaluate((el) => el.scrollTop)).toBeGreaterThan(0)
+  await expect(confirm).toContainText('描述结尾')
+  await expect(confirm).toContainText('作者结尾')
+  await expect(confirm.getByRole('button', { name: '取消', exact: true })).toBeInViewport()
+  await scroll.evaluate((el) => {
+    el.scrollTop = 0
   })
   await shot('b2-confirm-narrow')
   expect(await confirm.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true)
