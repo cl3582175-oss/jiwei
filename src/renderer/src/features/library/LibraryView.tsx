@@ -56,6 +56,7 @@ import { CategoryTree, SectionHeader, categoryPaths } from '../notes/CategoryTre
 import { TagEditor } from '../notes/TagEditor'
 import { lensSelectClass } from '../lenses/SeriesSelect'
 import type { Scene } from '@shared/recording'
+import { ImportLibraryButton } from '../import/ImportWizard'
 
 export const KIND_ICON: Record<SourceKind, ReactNode> = {
   book: <BookOpen />,
@@ -489,4 +490,3 @@ export function LibraryView() {
     </div>
   )
 }
-import { ImportLibraryButton } from '../import/ImportWizard'

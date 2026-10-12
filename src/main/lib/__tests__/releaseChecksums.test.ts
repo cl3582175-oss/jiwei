@@ -4,7 +4,10 @@ import { tmpdir } from 'node:os'
 import { it, expect } from 'vitest'
 
 const modulePath = new URL('../../../../scripts/release-checksums.mjs', import.meta.url).href
-const { checksumArtifacts } = (await import(modulePath)) as { checksumArtifacts(root: string): Promise<{ name: string; sha256: string }[]> }
+const { checksumArtifacts, changelogSection } = (await import(modulePath)) as {
+  checksumArtifacts(root: string): Promise<{ name: string; sha256: string }[]>
+  changelogSection(text: string, version: string): string
+}
 
 it('hashes installer bytes and excludes metadata from the installer list', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'jiwei-release-hashes-'))
@@ -26,4 +29,11 @@ it('fails an empty release instead of producing an empty success manifest', asyn
   } finally {
     await rm(directory, { recursive: true, force: true })
   }
+})
+
+it('takes only the released version from the changelog for the in-app release notes', () => {
+  const log = '# 更新日志\n\n## [1.1.0] - 2026-11-01\n\n新内容\n- 一\n\n## [1.0.0] - 2026-10-01\n\n旧内容\n'
+  expect(changelogSection(log, '1.1.0')).toBe('新内容\n- 一')
+  expect(changelogSection(log, '1.0.0')).toBe('旧内容')
+  expect(changelogSection(log, '2.0.0')).toBe('')
 })

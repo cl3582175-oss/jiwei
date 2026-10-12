@@ -169,6 +169,8 @@ app.on('second-instance', (_, argv) => {
 app.whenReady().then(async () => {
   setMessageLanguage(process.env.JIWEI_LANG || app.getLocale())
   electronApp.setAppUserModelId('io.github.cl3582175-oss.jiwei')
+  // 系统“关于积微”面板（macOS 应用菜单、Linux）
+  app.setAboutPanelOptions({ applicationName: '积微', copyright: '青风铃 出品 · © 2026' })
   app.on('browser-window-created', (_, w) => optimizer.watchWindowShortcuts(w))
 
   await initializeBackupSafety()

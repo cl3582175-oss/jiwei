@@ -17,16 +17,17 @@ export function UpdateNotice() {
     <aside
       data-testid={restart ? 'update-restart-notice' : 'update-available-notice'}
       aria-live="polite"
-      className="fixed right-5 bottom-5 z-30 w-[min(360px,calc(100vw-40px))] rounded-xl border border-border bg-surface p-4 text-sm shadow-float"
+      className="fixed right-5 bottom-24 z-30 w-[min(360px,calc(100vw-40px))] rounded-xl border border-border bg-surface p-4 text-sm shadow-float"
     >
       <p>{t(restart ? 'updates.readyNotice' : 'updates.available', { version: state.nextVersion })}</p>
       <div className="mt-3 flex flex-wrap gap-2">
         <Button
           size="sm"
+          variant="primary"
           onClick={() =>
             restart
-              ? void api.updates.install().catch(() => useApp.getState().openSettings('updates'))
-              : useApp.getState().openSettings('updates')
+              ? void api.updates.install().catch(() => useApp.getState().openSettings('about'))
+              : useApp.getState().openSettings('about')
           }
         >
           {t(restart ? 'updates.restart' : 'updates.view')}

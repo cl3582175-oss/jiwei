@@ -364,7 +364,7 @@ test('optional AI cues use metered proposals and block a note excluded before it
     const usage = await env.page.evaluate(() => window.jiwei.usage.summary())
     expect(usage.byPurpose.find((p) => p.key === 'import.cues')?.calls).toBe(1)
     writeFileSync(join(d, '另一个.md'), '# 另一个\n\n待撤回的文本。')
-    await wizard.getByRole('button', { name: '导入笔记库', exact: true }).click()
+    await wizard.getByRole('button', { name: '再导入一个', exact: true }).click()
     await choose(d)
     await wizard.getByRole('button', { name: '下一步：导入选项' }).click()
     await expect(wizard.getByRole('checkbox', { name: '用 AI 为导入的笔记补线索问题', exact: true })).not.toBeChecked()

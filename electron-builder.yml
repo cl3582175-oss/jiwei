@@ -1,7 +1,7 @@
 appId: io.github.cl3582175-oss.jiwei
 productName: 积微
 artifactName: Jiwei-${version}-${os}-${arch}.${ext}
-copyright: Copyright © 2026 cl3582175-oss
+copyright: Copyright © 2026 青风铃
 beforePack: scripts/mac-before-pack.cjs
 afterPack: scripts/mac-after-pack.cjs
 afterSign: scripts/mac-after-sign.cjs
@@ -78,7 +78,7 @@ nsis:
 linux:
   category: Education
   target: [AppImage, deb]
-  maintainer: cl3582175-oss
+  maintainer: 青风铃
 publish:
   provider: github
   owner: cl3582175-oss

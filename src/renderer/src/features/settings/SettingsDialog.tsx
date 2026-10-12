@@ -1,5 +1,5 @@
 import { PluginUpdateDot } from '../plugins/PluginMarketplace'
-import { UpdateSettings } from '../update/UpdateSettings'
+import { AboutSettings } from '../update/UpdateSettings'
 import { ImportLibraryButton } from '../import/ImportWizard'
 import { Puzzle } from 'lucide-react'
 import { PluginsSettings } from '../plugins/PluginsSettings'
@@ -48,7 +48,6 @@ import { useApp } from '@/store/app'
 import { api, cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
-import { Logo } from '@/components/Logo'
 
 type Tab =
   | 'plugins'
@@ -66,7 +65,6 @@ type Tab =
   | 'data'
   | 'browser'
   | 'about'
-  | 'updates'
 
 const PALETTES: PaletteId[] = ['qinglu', 'celadon', 'dunhuang']
 
@@ -271,9 +269,11 @@ function DataTab() {
           </Tip>
         </div>
       </Row>
+      <Row label={t('importer.title')} desc={t('importer.settingsDesc')}>
+        <ImportLibraryButton />
+      </Row>
       <RecordingSecurity />
       <BackupSettings />
-      <ImportLibraryButton />
     </>
   )
 }
@@ -307,8 +307,7 @@ export function SettingsDialog() {
     { id: 'discover', icon: <Compass /> },
     { id: 'data', icon: <Database /> },
     { id: 'browser', icon: <Monitor /> },
-    { id: 'about', icon: <Info /> },
-    { id: 'updates', icon: <Info /> }
+    { id: 'about', icon: <Info /> }
   ]
 
   return (
@@ -333,7 +332,7 @@ export function SettingsDialog() {
                 )}
               >
                 {it.icon}
-                {it.id === 'updates' ? t('updates.title') : it.id === 'plugins'
+                {it.id === 'plugins'
                   ? t('plugins.title')
                   : it.id === 'discover'
                     ? t('discover.title')
@@ -519,18 +518,7 @@ export function SettingsDialog() {
             {tab === 'usage' && <UsageSettings />}
             {tab === 'connections' && <ConnectionsSettings />}
             {tab === 'data' && info && <DataTab />}
-            {tab === 'updates' && <UpdateSettings />}
-            {tab === 'about' && info && (
-              <div className="flex h-full flex-col items-center justify-center pb-6 text-center">
-                <Logo size={56} />
-                <h3 className="mt-5 font-serif text-xl font-semibold tracking-widest text-fg">{t('app.name')}</h3>
-                <p className="mt-1 text-sm text-muted">{t('app.slogan')}</p>
-                <p className="mt-6 text-xs text-subtle">
-                  {t('settings.version')} {info.version}
-                </p>
-                <p className="mt-1 max-w-[360px] text-xs leading-relaxed text-subtle">{t('settings.licenseDesc')}</p>
-              </div>
-            )}
+            {tab === 'about' && <AboutSettings />}
           </div>
           <D.Close className="absolute top-4 right-4 rounded-md p-1 text-subtle transition-colors hover:bg-surface-hover hover:text-fg">
             <X className="size-4" />

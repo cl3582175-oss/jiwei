@@ -4,6 +4,8 @@
 
 **积微成著，日进有功**
 
+青风铃 出品
+
 AI 驱动的学习笔记与个人知识库 — 你记下的每一条笔记，都会成为 AI 回答你时最可靠的信息源。
 
 [![License: PolyForm Noncommercial](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-3d8a74)](LICENSE.md)
@@ -24,9 +26,12 @@ AI 驱动的学习笔记与个人知识库 — 你记下的每一条笔记，都
 | Windows 64 位 | `Jiwei-<版本>-win-x64.exe` | 运行安装器，可选择目录 |
 | Linux | `.AppImage` / `.deb` | AppImage 加执行权限；deb 用系统包管理器安装 |
 
-当前默认使用免费签名方案，尚未购买 Apple Developer ID / Windows 代码签名证书，因此系统可能在首次打开时提示无法验证来源。macOS 若提示 **Apple 无法验证 / 无法验证开发者**，先尝试打开，再进入 **系统设置 → 隐私与安全性 → 安全性 → 仍要打开**。Windows 若提示 **Windows 已保护你的电脑**，选择 **更多信息 → 仍要运行**。只对来自官方发布仓库、SHA-256 一致的安装包放行；签名提示与哈希不能替代来源审查。macOS 替换新版本后可能需要再次放行。
+积微暂未购买 Apple / Windows 的付费签名证书，所以第一次打开时系统会提示无法验证开发者，这不影响使用：
 
-> 真实系统截图待 Claude 发布审查补入：macOS 隐私与安全性“仍要打开”；Windows SmartScreen“更多信息”。本地 P0/P1 技术截图保存在实施审查证据目录。
+- **macOS**：双击打开，看到“Apple 无法验证”时点“完成”；然后打开 **系统设置 → 隐私与安全性**，在页面下方点 **仍要打开**。以后更新替换后可能需要再放行一次。
+- **Windows**：看到“Windows 已保护你的电脑”时，点 **更多信息 → 仍要运行**。
+
+请只安装从上面发布仓库下载、且 SHA-256 一致的安装包。
 
 **English:** Download from [official releases](https://github.com/cl3582175-oss/jiwei-releases/releases) and verify SHA-256. Choose `mac-arm64.dmg` for Apple Silicon, `mac-x64.dmg` for Intel, `win-x64.exe` for Windows, or AppImage/deb for Linux. With the free signing mode, macOS may require **System Settings → Privacy & Security → Open Anyway** after the first open attempt; Windows SmartScreen may require **More info → Run anyway**. Allow only verified official downloads. See [release instructions](docs/release.md) for signing and update details.
 

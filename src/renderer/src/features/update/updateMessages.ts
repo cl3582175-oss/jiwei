@@ -1,5 +1,10 @@
 export const updatesZh = {
-  title: '关于与更新',
+  title: '关于',
+  section: '软件更新',
+  appleSilicon: 'Apple 芯片',
+  intel: 'Intel',
+  bit64: '64 位',
+  maker: '青风铃 出品 · © 2026',
   check: '检查更新',
   checking: '正在检查更新…',
   current: '已是最新版本',
@@ -14,7 +19,7 @@ export const updatesZh = {
   save: '保存更新源',
   download: '下载更新',
   downloading: '正在下载 {{percent}}%',
-  ready: '更新已下载并校验',
+  ready: '新版本已下载并通过校验',
   retry: '重试',
   notes: '更新说明',
   fullNotes: '查看完整更新说明',
@@ -41,7 +46,12 @@ export const updatesZh = {
   }
 }
 export const updatesEn = {
-  title: 'About & updates',
+  title: 'About',
+  section: 'Software update',
+  appleSilicon: 'Apple silicon',
+  intel: 'Intel',
+  bit64: '64-bit',
+  maker: 'Made by Qingfengling (青风铃) · © 2026',
   check: 'Check for updates',
   checking: 'Checking for updates…',
   current: 'Jiwei is up to date',
