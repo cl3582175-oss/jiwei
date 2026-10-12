@@ -20,6 +20,8 @@ export interface PluginState {
   previous?: InstalledVersion
   /** 只保存敏感字段是否已设置，读取列表不解密。 */
   secretKeys: string[]
+  /** 起步进度属于安装身份；更新/停用保留，卸载时随 state 一起删除。 */
+  starterProgress?: { dismissed: boolean; completed: string[] }
 }
 export const pluginRoot = (): string => join(app.getPath('userData'), 'plugins')
 export const pathKey = (id: string): string => createHash('sha256').update(id).digest('hex')

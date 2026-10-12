@@ -4,7 +4,13 @@ import {
   type PluginMarketInfo,
   type PluginCatalogCard,
   type PluginDetection,
-  type PluginDetails
+  type PluginDetails,
+  type RoleCatalogCard,
+  type RoleBatchPreview,
+  type RoleBatchRecovery,
+  type RoleStarters,
+  type PluginStarter,
+  RoleBatchSelections
 } from './plugins'
 import {
   PluginInspectSource,
@@ -1167,6 +1173,33 @@ export const capabilities = {
     clearAudit: cap<void>()({ description: '清除审计日志', params: none })
   },
   plugins: {
+    roleCatalog: cap<RoleCatalogCard[]>()({ description: '实际角色目录、内容数量与安装启用状态', params: none }),
+    beginRoleSelection: cap<string>()({ description: '创建窗口拥有的可取消角色选择', params: none }),
+    previewRoles: cap<RoleBatchPreview>()({
+      description: '合并预览所选角色，不安装',
+      params: [
+        ['token', z.string().length(64)],
+        ['ids', z.array(z.string().min(1).max(257)).min(1).max(8)]
+      ]
+    }),
+    confirmRoles: cap<RoleBatchRecovery>()({
+      description: '一次确认角色批次，返回已安装和待重试状态',
+      params: [
+        ['token', z.string().length(64)],
+        ['selections', RoleBatchSelections]
+      ]
+    }),
+    cancelRoleSelection: cap<void>()({ description: '取消本窗口角色批次，保留已经提交的包', params: [['token', z.string().length(64)]] }),
+    roleRecovery: cap<RoleBatchRecovery | null>()({ description: '上次角色确认的真实持久化恢复状态', params: none }),
+    roleStarters: cap<RoleStarters[]>()({ description: '启用角色的未关闭起步卡与逐项完成状态', params: none }),
+    activateStarter: cap<PluginStarter['action']>()({
+      description: '记录点击完成并返回经过身份验证的纯导航动作，不运行模型或任务',
+      params: [
+        ['pluginId', z.string().min(1).max(257)],
+        ['starterId', z.string().min(1).max(257)]
+      ]
+    }),
+    dismissStarters: cap<void>()({ description: '关闭角色起步卡并持久化', params: [['pluginId', z.string().min(1).max(257)]] }),
     markets: cap<PluginMarketInfo[]>()({ description: '市场清单与每个市场的缓存状态', params: none }),
     catalog: cap<PluginCatalogCard[]>()({ description: '缓存中的合并插件目录', params: none }),
     addMarket: cap<PluginMarketInfo>()({ description: '添加已确认信任的第三方市场', params: [['input', MarketInputSchema]] }),

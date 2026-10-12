@@ -1,4 +1,4 @@
-import { sourceLink, type MarketSource } from './acquisition'
+import { sourceLink, type MarketSource, type AcquisitionBatch } from './acquisition'
 import { pluginIcon } from './icon'
 import { dialog, shell, type BrowserWindow } from 'electron'
 import { randomBytes } from 'crypto'
@@ -52,7 +52,11 @@ export interface PluginAcquisition {
 }
 /** P2 注册主进程来源适配器。它必须验证市场身份并获取真实 source，不接受 renderer 的信任位。 */
 let acquire:
-  ((input: PluginInspectInput | PluginOrigin, context?: { signal: AbortSignal; id: string }) => Promise<PluginAcquisition>) | undefined
+  | ((
+      input: PluginInspectInput | PluginOrigin,
+      context?: { signal: AbortSignal; id: string; batch?: AcquisitionBatch }
+    ) => Promise<PluginAcquisition>)
+  | undefined
 export function registerPluginSourceAdapter(adapter: NonNullable<typeof acquire>): void {
   acquire = adapter
 }
@@ -170,6 +174,7 @@ export async function inspectAcquired(input: PluginAcquisition, updateId?: strin
     })
     return {
       token,
+      category: parsed.extension?.category,
       expiresAt,
       id,
       version: parsed.version,
@@ -197,13 +202,16 @@ export async function inspectAcquired(input: PluginAcquisition, updateId?: strin
 export function inspectPluginPath(path: string): Promise<PluginPreview> {
   return pluginMutation(() => inspectAcquired({ path, type: sourceType(path), origin: { kind: 'local', market: 'local', locator: path } }))
 }
-export function inspectPlugin(input: PluginInspectInput, context?: { signal: AbortSignal; id: string }): Promise<PluginPreview> {
+export function inspectPlugin(
+  input: PluginInspectInput,
+  context?: { signal: AbortSignal; id: string; batch?: AcquisitionBatch }
+): Promise<PluginPreview> {
   return pluginMutation(async () => {
     if (!acquire) throw new Error('Plugin source adapter unavailable')
     return inspectAcquired({ ...(await acquire(input, context)), progressId: context?.id }, undefined, context?.signal)
   })
 }
-export function updatePlugin(id: string, context?: { signal: AbortSignal; id: string }): Promise<PluginPreview> {
+export function updatePlugin(id: string, context?: { signal: AbortSignal; id: string; batch?: AcquisitionBatch }): Promise<PluginPreview> {
   return pluginMutation(async () => {
     const state = readState(id),
       origin = state.origin
@@ -358,7 +366,13 @@ export async function confirmPluginInstall(token: string, input: { feeds?: numbe
             .values({ ...values, id, installedAt: old?.installedAt ?? Date.now() })
             .onConflictDoUpdate({ target: plugins.id, set: values })
             .run()
-          writeState(id, { origin: pending.origin, current: version, previous: oldState?.current, secretKeys: config.secretKeys })
+          writeState(id, {
+            origin: pending.origin,
+            current: version,
+            previous: oldState?.current,
+            secretKeys: config.secretKeys,
+            starterProgress: oldState?.starterProgress
+          })
           writeMcp(id, installed)
           for (const index of new Set(opts.feeds)) {
             const f = installed.feeds[index]

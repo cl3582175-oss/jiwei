@@ -1,6 +1,8 @@
 import * as pluginMarkets from './services/plugins/markets'
 import * as pluginDirect from './services/plugins/direct'
 import * as plugins from './services/plugins/install'
+import * as pluginRoles from './services/plugins/roles'
+import * as pluginStarters from './services/plugins/starters'
 import * as pluginRegistry from './services/plugins/registry'
 import { tr } from './lib/messages'
 import * as plan from './services/plan/calendar'
@@ -128,6 +130,7 @@ type Handlers = {
   }
 }
 
+const pluginRoleOwners = new Set<number>()
 const pluginAcquisitionOwners = new Set<number>()
 const handlers: Handlers = {
   mistakes: {
@@ -784,6 +787,26 @@ const handlers: Handlers = {
     clearAudit: () => auditLog.clearAudit()
   },
   plugins: {
+    roleCatalog: () => pluginRoles.roleCatalog(),
+    beginRoleSelection: ({ win }) => {
+      if (!win) throw new Error('Window unavailable')
+      const owner = win.webContents.id
+      if (!pluginRoleOwners.has(owner)) {
+        pluginRoleOwners.add(owner)
+        win.webContents.once('destroyed', () => {
+          pluginRoleOwners.delete(owner)
+          void pluginRoles.cancelOwnerRoleSelections(owner)
+        })
+      }
+      return pluginRoles.beginRoleSelection(owner)
+    },
+    previewRoles: ({ win }, token, ids) => pluginRoles.previewRoles(win?.webContents.id ?? -1, token, ids),
+    confirmRoles: ({ win }, token, selections) => pluginRoles.confirmRoles(win?.webContents.id ?? -1, token, selections),
+    cancelRoleSelection: ({ win }, token) => pluginRoles.cancelRoleSelection(win?.webContents.id ?? -1, token),
+    roleRecovery: () => pluginRoles.roleRecovery(),
+    roleStarters: () => pluginStarters.listRoleStarters(),
+    activateStarter: (_, pluginId, starterId) => pluginStarters.completeRoleStarter(pluginId, starterId),
+    dismissStarters: (_, pluginId) => pluginStarters.dismissRoleStarters(pluginId),
     markets: () => pluginMarkets.listMarkets(),
     catalog: () => pluginMarkets.catalogPlugins(),
     addMarket: (_, input) => pluginMarkets.addMarket(input),

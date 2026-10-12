@@ -400,6 +400,7 @@ export interface PluginInfo {
   tasks: number
 }
 export interface PluginPreview {
+  category?: JiweiExt['category']
   token: string
   expiresAt: number
   id: string
@@ -434,6 +435,7 @@ export interface PluginMarketInfo {
   count: number
 }
 export interface PluginCatalogCard {
+  counts?: PluginContributionCounts
   icon?: string
   id: string
   name: string
@@ -486,4 +488,50 @@ export function marketplaceComponentSelection(entry?: MarketplaceEntry): string[
   for (const mcp of Array.isArray(entry.mcpServers) ? entry.mcpServers : [entry.mcpServers]) if (typeof mcp === 'string') paths.push(mcp)
   const normalized = [...new Set(paths.map(safeRelativePath))]
   return normalized.filter((p) => !normalized.some((parent) => parent !== p && (parent === '.' || p.startsWith(parent + '/'))))
+}
+
+/** 今日的安装级起步状态，仅由主进程投影。 */
+export interface RoleStarters {
+  pluginId: string
+  name: { zh: string; en: string }
+  installedAt: number
+  starters: (PluginStarter & { completed: boolean })[]
+}
+
+export interface PluginContributionCounts {
+  skills: number
+  lenses: number
+  templates: number
+  frameworks: number
+  recipes: number
+  feeds: number
+  starters: number
+}
+export interface RoleCatalogCard extends PluginCatalogCard {
+  group: 'student' | 'work' | 'other'
+  enabled: boolean | null
+}
+export type RoleBatchPreview = {
+  token: string
+  expiresAt: number
+  roles: Omit<PluginPreview, 'token'>[]
+  alreadyInstalled: string[]
+}
+export const RoleBatchSelections = z
+  .array(
+    z
+      .object({
+        id: z.string().min(1).max(257),
+        options: PluginConfirmOptions
+      })
+      .strict()
+  )
+  .max(8)
+  .refine((items) => new Set(items.map((x) => x.id)).size === items.length, 'Duplicate role')
+export interface RoleBatchRecovery {
+  selected: string[]
+  installed: string[]
+  remaining: string[]
+  status: 'complete' | 'partial' | 'canceled' | 'interrupted'
+  error?: string
 }

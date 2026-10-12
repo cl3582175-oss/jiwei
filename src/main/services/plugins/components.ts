@@ -24,6 +24,7 @@ import {
   type PluginManifest,
   type JiweiExt,
   type PluginTemplate,
+  type PluginContributionCounts,
   type PluginFramework,
   type PluginRecipe,
   type PluginStarter,
@@ -431,4 +432,16 @@ export function resolvePluginMcp(
     env: map(server.env),
     headers: map(server.headers)
   })
+}
+
+export function pluginContributionCounts(parsed: ParsedPlugin): PluginContributionCounts {
+  return {
+    skills: parsed.skills.filter((s) => s.metadata.kind !== 'lens').length,
+    lenses: parsed.skills.filter((s) => s.metadata.kind === 'lens').length,
+    templates: parsed.templates.length,
+    frameworks: parsed.frameworks.length,
+    recipes: parsed.recipes.length,
+    feeds: parsed.feeds.length,
+    starters: parsed.starters.length
+  }
 }
