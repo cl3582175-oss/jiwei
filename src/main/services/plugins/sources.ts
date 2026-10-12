@@ -242,6 +242,13 @@ function tarHeaderBudget(): (chunk: Buffer) => void {
           // 使用依赖的公开 PAX 解析器保持有效 size 与 tar.Parser 一致，防止跳错下一个 header。
           if (metadataType === 'ExtendedHeader' || metadataType === 'OldExtendedHeader') extended = tar.Pax.parse(value, extended)
           else if (metadataType === 'GlobalExtendedHeader') globalExtended = tar.Pax.parse(value, globalExtended, true)
+          else if (metadataType === 'NextFileHasLongPath' || metadataType === 'OldGnuLongPath') {
+            extended ??= new tar.Pax({})
+            extended.path = value.split('\0', 1)[0]
+          } else if (metadataType === 'NextFileHasLongLinkpath') {
+            extended ??= new tar.Pax({})
+            extended.linkpath = value.split('\0', 1)[0]
+          }
           metadata = []
         }
         continue
@@ -257,9 +264,13 @@ function tarHeaderBudget(): (chunk: Buffer) => void {
       if (!raw.cksumValid) throw new Error('Invalid tar header checksum')
       safeRelativePath(raw.path ?? '')
       const header = new tar.Header(headerBlock, 0, extended, globalExtended),
+        entry = new tar.ReadEntry(header, extended, globalExtended),
         declaredSize = header.size ?? 0
-      declared(budget, raw.path ?? '', declaredSize)
-      const isMetadata = metadataTypes.has(header.type)
+      // 同时核对解析器实际建立的 entry：冲突的 PAX size 不能让正文边界与元数据消费分叉。
+      entry.destroy()
+      if (entry.size !== declaredSize) throw new Error('Unsupported conflicting tar size metadata')
+      declared(budget, entry.path, declaredSize)
+      const isMetadata = metadataTypes.has(entry.type)
       if (isMetadata && declaredSize > PLUGIN_LIMITS.textBytes) throw new Error('Plugin tar metadata size limit exceeded')
       bodyBytes = Math.ceil(declaredSize / 512) * 512
       metadataType = header.type

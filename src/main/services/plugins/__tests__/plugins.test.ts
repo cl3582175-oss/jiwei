@@ -375,6 +375,78 @@ describe('safe staging', () => {
     await pax.cleanup()
     expect((await readdir(parent)).filter((name) => name.startsWith('jiwei-plugin-'))).toEqual([])
   })
+  it.each([false, true])('rejects GNU directory framing hiding excessive metadata (mixed=%s)', async (mixed) => {
+    const parent = await temp(),
+      path = join(parent, 'gnu-directory.tar.gz')
+    const encode = (value: ConstructorParameters<typeof tar.Header>[0]) => {
+      const header = new tar.Header(value)
+      header.encode()
+      return header.block!
+    }
+    const directoryName = Buffer.alloc(512)
+    directoryName.write('folder/\0')
+    const metadata = encode({ path: 'metadata', size: 0, type: 'ExtendedHeader', mode: 0o600 })
+    const headers = Array.from({ length: PLUGIN_LIMITS.entries + 1 }, () => metadata)
+    const prefix = mixed ? [new tar.Pax({ mtime: new Date(0) }, true).encode(), new tar.Pax({ path: 'original.png' }).encode()] : []
+    await writeFile(
+      path,
+      gzipSync(
+        Buffer.concat([
+          ...prefix,
+          encode({ path: 'long-name', size: 8, type: mixed ? 'OldGnuLongPath' : 'NextFileHasLongPath', mode: 0o600 }),
+          directoryName,
+          encode({ path: 'placeholder.png', size: (PLUGIN_LIMITS.entries + 2) * 512, type: 'File', mode: 0o600 }),
+          ...headers,
+          encode({ path: 'valid.txt', size: 0, type: 'File', mode: 0o600 }),
+          Buffer.alloc(1024)
+        ])
+      )
+    )
+    await expect(preparePluginSource({ path, type: 'tar.gz', tempParent: parent })).rejects.toThrow('limit')
+    expect((await readdir(parent)).filter((name) => name.startsWith('jiwei-plugin-'))).toEqual([])
+  })
+  it.each(['pax', 'gnu'] as const)('uses effective %s long binary names without rejecting valid payloads', async (kind) => {
+    const parent = await temp(),
+      path = join(parent, 'long-binary.tar.gz'),
+      name = 'a'.repeat(120) + '.png',
+      payload = Buffer.alloc(2 * 1024 * 1024)
+    const ordinary = new tar.Header({ path: name, size: payload.length, type: 'File', mode: 0o600 })
+    ordinary.encode()
+    let metadata: Buffer
+    if (kind === 'pax') metadata = new tar.Pax({ path: name }).encode()
+    else {
+      const header = new tar.Header({ path: 'long-name', size: Buffer.byteLength(name) + 1, type: 'NextFileHasLongPath', mode: 0o600 })
+      header.encode()
+      const body = Buffer.alloc(512)
+      body.write(name)
+      metadata = Buffer.concat([header.block!, body])
+    }
+    await writeFile(path, gzipSync(Buffer.concat([metadata, ordinary.block!, payload, Buffer.alloc(1024)])))
+    const source = await preparePluginSource({ path, type: 'tar.gz', tempParent: parent })
+    expect((await readFile(join(source.root, name))).length).toBe(payload.length)
+    await source.cleanup()
+    expect((await readdir(parent)).filter((name) => name.startsWith('jiwei-plugin-'))).toEqual([])
+  })
+  it('rejects GNU long-link and conflicting PAX sizes without temporary residue', async () => {
+    const parent = await temp(),
+      path = join(parent, 'conflicting.tar.gz')
+    const fileHeader = new tar.Header({ path: 'valid.txt', size: 0, type: 'File', mode: 0o600 })
+    fileHeader.encode()
+    const linkHeader = new tar.Header({ path: 'long-link', size: 7, type: 'NextFileHasLongLinkpath', mode: 0o600 })
+    linkHeader.encode()
+    const link = Buffer.alloc(512)
+    link.write('target\0')
+    await writeFile(path, gzipSync(Buffer.concat([linkHeader.block!, link, fileHeader.block!, Buffer.alloc(1024)])))
+    await expect(preparePluginSource({ path, type: 'tar.gz', tempParent: parent })).rejects.toThrow('symlink')
+    await writeFile(
+      path,
+      gzipSync(
+        Buffer.concat([new tar.Pax({ size: 2 }, true).encode(), new tar.Pax({ size: 3 }).encode(), fileHeader.block!, Buffer.alloc(1536)])
+      )
+    )
+    await expect(preparePluginSource({ path, type: 'tar.gz', tempParent: parent })).rejects.toThrow('conflicting tar size')
+    expect((await readdir(parent)).filter((name) => name.startsWith('jiwei-plugin-'))).toEqual([])
+  })
   it('rejects manifest references through a symlink before component reads', async () => {
     const parent = await temp(),
       root = join(parent, 'plugin'),
