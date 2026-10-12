@@ -16,6 +16,11 @@ playwright-report/
 # Codex / superpowers 本地证据
 .superpowers/
 
+# 内部开发文档（实施说明书、审查记录、计划）不进公开仓库，存放在仓库外
+docs/specs/
+docs/reviews/
+docs/superpowers/
+
 # 测试运行时生成的错题图
 e2e/fixtures/mistakes-*.png
 __pycache__/
