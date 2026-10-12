@@ -1,4 +1,5 @@
 import { PluginUpdateDot } from '../plugins/PluginMarketplace'
+import { UpdateSettings } from '../update/UpdateSettings'
 import { Puzzle } from 'lucide-react'
 import { PluginsSettings } from '../plugins/PluginsSettings'
 import { DiscoverSettings } from '../discover/DiscoverSettings'
@@ -64,6 +65,7 @@ type Tab =
   | 'data'
   | 'browser'
   | 'about'
+  | 'updates'
 
 const PALETTES: PaletteId[] = ['qinglu', 'celadon', 'dunhuang']
 
@@ -303,7 +305,8 @@ export function SettingsDialog() {
     { id: 'discover', icon: <Compass /> },
     { id: 'data', icon: <Database /> },
     { id: 'browser', icon: <Monitor /> },
-    { id: 'about', icon: <Info /> }
+    { id: 'about', icon: <Info /> },
+    { id: 'updates', icon: <Info /> }
   ]
 
   return (
@@ -328,7 +331,7 @@ export function SettingsDialog() {
                 )}
               >
                 {it.icon}
-                {it.id === 'plugins'
+                {it.id === 'updates' ? t('updates.title') : it.id === 'plugins'
                   ? t('plugins.title')
                   : it.id === 'discover'
                     ? t('discover.title')
@@ -514,6 +517,7 @@ export function SettingsDialog() {
             {tab === 'usage' && <UsageSettings />}
             {tab === 'connections' && <ConnectionsSettings />}
             {tab === 'data' && info && <DataTab />}
+            {tab === 'updates' && <UpdateSettings />}
             {tab === 'about' && info && (
               <div className="flex h-full flex-col items-center justify-center pb-6 text-center">
                 <Logo size={56} />

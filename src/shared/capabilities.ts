@@ -1290,6 +1290,14 @@ export const capabilities = {
     }),
     rotateToken: cap<McpClientSecret>()({ description: '重新生成客户端令牌', params: [['id', z.string().max(64)]] }),
     removeClient: cap<void>()({ description: '删除客户端', params: [['id', z.string().max(64)]] })
+  },
+  updates: {
+    status: cap<import('./updates').UpdateState>()({ description: '应用更新状态', params: none }),
+    check: cap<import('./updates').UpdateState>()({ description: '检查应用更新', params: none }),
+    download: cap<import('./updates').UpdateState>()({ description: '下载并校验应用更新', params: none }),
+    install: cap<void>()({ description: '安装已校验的应用更新', params: none }),
+    acknowledge: cap<void>()({ description: '关闭已升级提示', params: none }),
+    openLink: cap<void>()({ description: '在系统浏览器打开更新说明', params: [['url', z.string().max(2000).optional()]] })
   }
 } as const
 

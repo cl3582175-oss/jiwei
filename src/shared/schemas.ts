@@ -9,6 +9,7 @@ import { ExternalBackupSchema } from './backup'
 import { DomainSchema, NetworkRuleSchema } from './browserSafety'
 import { AnchorSchema, ContextPacketSchema } from './context'
 import { RecordingFiltersSchema } from './lens'
+import { UpdateSettingsSchema } from './updates'
 
 // 所有跨进程输入的 zod 模式。类型由模式推导，保证“声明一次、处处一致”。
 
@@ -125,7 +126,8 @@ export const SettingsPatchSchema = z.object({
       noteSize: z.number().min(15).max(85).optional()
     })
     .optional(),
-  backup: z.object({ external: ExternalBackupSchema }).optional()
+  backup: z.object({ external: ExternalBackupSchema }).optional(),
+  updates: UpdateSettingsSchema.optional()
 })
 export type SettingsPatch = z.infer<typeof SettingsPatchSchema>
 

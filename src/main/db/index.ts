@@ -8,12 +8,16 @@ import { migrate } from 'drizzle-orm/better-sqlite3/migrator'
 import log from 'electron-log/main'
 import * as schema from './knowledgeSchema'
 import { defaultDataDir, readBootConfig } from '../lib/config'
+import { upgradeSnapshot } from '../lib/updateBackup'
+import type { UpgradeNotice } from '@shared/updates'
 
 export type DB = BetterSQLite3Database<typeof schema>
 
 let sqlite: Database.Database | null = null
 let db: DB | null = null
 let resolvedDataDir: string | null = null
+let startupUpgrade: UpgradeNotice | null = null
+export const getStartupUpgrade = (): UpgradeNotice | null => startupUpgrade
 
 /** 数据根目录：数据库、素材、备份都在这里 */
 export function dataDir(): string {
@@ -50,6 +54,12 @@ export async function openDatabase(): Promise<DB> {
   // 向量检索扩展；安装包中原生文件位于 app.asar.unpacked
   sqlite.loadExtension(getLoadablePath().replace('app.asar', 'app.asar.unpacked'))
 
+  // 按知识库记录运行版本；升级快照必须先于任何迁移。
+  const hasMeta = sqlite.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='meta'").get()
+  const previous = hasMeta ? sqlite.prepare("SELECT value FROM meta WHERE key='app.runVersion'").get() as { value: string } | undefined : undefined
+  startupUpgrade = previous ? await upgradeSnapshot({ from: previous.value, to: app.getVersion(), directory: join(backupsDir(), 'updates'), backup: (target) => sqlite!.backup(target) }) : null
+  if (startupUpgrade?.backupFailed) log.warn('[updates] pre-upgrade snapshot failed; startup will continue')
+
   if (!isNew && hasPendingMigrations(sqlite)) {
     const target = join(backupsDir(), `pre-migrate-${Date.now()}.db`)
     log.info('[db] pending migrations, backing up to', target)
@@ -58,6 +68,9 @@ export async function openDatabase(): Promise<DB> {
 
   db = drizzle(sqlite, { schema })
   migrate(db, { migrationsFolder: migrationsDir() })
+  try {
+    sqlite.prepare("INSERT INTO meta(key,value) VALUES('app.runVersion',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(app.getVersion())
+  } catch { log.warn('[updates] running version could not be recorded; startup will continue') }
   return db
 }
 

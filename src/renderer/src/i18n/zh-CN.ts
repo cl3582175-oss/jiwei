@@ -1,4 +1,5 @@
 import { pluginsZh } from '../features/plugins/pluginMessages'
+import { updatesZh } from '../features/update/updateMessages'
 import { discoverZh } from '../features/discover/messages'
 import { advisorZh } from '../features/advisor/messages'
 import { worksZh } from '../features/works/messages'
@@ -14,6 +15,7 @@ import { safetyZh } from '../features/settings/safetyMessages'
 import { readingZh } from '../features/reading/messages'
 
 const zhCN = {
+  updates: updatesZh,
   discover: discoverZh,
   advisor: advisorZh,
   works: worksZh,

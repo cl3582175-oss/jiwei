@@ -1,4 +1,5 @@
 import * as pluginMarkets from './services/plugins/markets'
+import * as updates from './services/updates'
 import * as pluginDirect from './services/plugins/direct'
 import * as plugins from './services/plugins/install'
 import * as pluginRegistry from './services/plugins/registry'
@@ -845,6 +846,14 @@ const handlers: Handlers = {
     updateClient: (_, id, patch) => mcpServe.updateClient(id, patch),
     rotateToken: (_, id) => mcpServe.rotateToken(id),
     removeClient: (_, id) => mcpServe.removeClient(id)
+  },
+  updates: {
+    status: () => updates.getUpdateState(),
+    check: () => updates.checkUpdates(),
+    download: () => updates.downloadUpdate(),
+    install: () => updates.installUpdate(),
+    acknowledge: () => updates.acknowledgeUpgrade(),
+    openLink: (_, url) => updates.openUpdateLink(url)
   }
 }
 
@@ -855,6 +864,7 @@ export function registerIpc(): void {
     ipcMain.handle(`${ns}:${name}`, async (e, ...raw) => {
       // 内置浏览器中的网页不得调用积微的接口（内容脚本只走 jw-page:* 消息）
       if (browser.isBrowserContents(e.sender)) throw new Error('Forbidden')
+      if (['updates', 'importer'].includes(ns) && (e.sender !== getMainWindow()?.webContents || e.senderFrame !== e.sender.mainFrame)) throw new Error('Forbidden')
       if (
         ['recording', 'people', 'voiceprint', 'lenses', 'series', 'plugins'].includes(ns) &&
         (e.sender !== getMainWindow()?.webContents || e.senderFrame !== e.sender.mainFrame)

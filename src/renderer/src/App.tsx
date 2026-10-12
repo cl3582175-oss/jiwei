@@ -28,6 +28,7 @@ import { FeynmanView } from './features/feynman/FeynmanView'
 import { ReflectView } from './features/reflect/ReflectView'
 import { GraphView } from './features/graph/GraphView'
 import { SettingsDialog } from './features/settings/SettingsDialog'
+import { UpdateNotice } from './features/update/UpdateNotice'
 import { CommandPalette } from './features/palette/CommandPalette'
 import { Onboarding } from './features/onboarding/Onboarding'
 import { useGlobalShortcuts } from './lib/shortcuts'
@@ -263,6 +264,7 @@ export function App() {
       <LensPages />
       <PhoneDialog />
       <SettingsDialog />
+      <UpdateNotice />
       <CommandPalette />
       <Onboarding />
       <DialogHost />

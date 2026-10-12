@@ -58,6 +58,7 @@ import { initializeBackupSafety, backupOperation } from './services/fullBackup'
 import { setMessageLanguage } from './lib/messages'
 import { initializeRecordingFiles, resumeCryptoMigration, clearRecordingKeys, cryptoOperation } from './services/recordingFiles'
 import { refreshBrowserNetwork } from './services/browser/network'
+import { startUpdates, stopUpdates } from './services/updates'
 
 const HOUR = 3_600_000
 const DEEP_LINK = /^jiwei:\/\/(note|source)\/([0-9a-f-]{36})/i
@@ -250,6 +251,7 @@ app.whenReady().then(async () => {
     void maintenance()
   }, HOUR)
 
+  await startUpdates()
   createWindow()
   startResidency(createWindow)
   registerCapture()
@@ -273,6 +275,7 @@ app.on('before-quit', (e) => {
     .finally(async () => {
       stopResidency()
       stopCapture()
+      stopUpdates()
       await stopPhoneUpload()
       denyAll()
       stopChats()

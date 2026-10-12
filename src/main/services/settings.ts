@@ -35,7 +35,8 @@ function defaults(): Settings {
     budget: DEFAULT_BUDGET,
     // 币种：中文界面默认人民币
     money: defaultMoney(language),
-    mcpServe: { enabled: false, port: DEFAULT_MCP_PORT }
+    mcpServe: { enabled: false, port: DEFAULT_MCP_PORT },
+    updates: { autoCheck: true, feedUrl: '' }
   }
 }
 
@@ -50,13 +51,15 @@ export function getSettings(): Settings {
     money: { ...base.money, ...stored.money },
     plugins: { ...base.plugins, ...stored.plugins },
     tasks: { ...base.tasks, ...stored.tasks },
-    discover: { ...base.discover, ...stored.discover }
+    discover: { ...base.discover, ...stored.discover },
+    updates: { ...base.updates!, ...stored.updates }
   }
   setMessageLanguage(result.language)
   return result
 }
 
 export function setSettings(patch: SettingsPatch): Settings {
+  if (patch.updates) patch = { ...patch, updates: { ...getSettings().updates!, ...patch.updates } }
   if (patch.plugins) patch = { ...patch, plugins: { ...getSettings().plugins, ...patch.plugins } }
   if (patch.discover) patch = { ...patch, discover: { ...getSettings().discover, ...patch.discover } }
   if (patch.tasks) patch = { ...patch, tasks: { ...getSettings().tasks, ...patch.tasks } }

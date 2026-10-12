@@ -1,4 +1,5 @@
 import { pluginsEn } from '../features/plugins/pluginMessages'
+import { updatesEn } from '../features/update/updateMessages'
 import { discoverEn } from '../features/discover/messages'
 import { advisorEn } from '../features/advisor/messages'
 import { worksEn } from '../features/works/messages'
@@ -14,6 +15,7 @@ import { todayEn } from '../features/today/messages'
 import { safetyEn } from '../features/settings/safetyMessages'
 import { readingEn } from '../features/reading/messages'
 const en: Messages = {
+  updates: updatesEn,
   discover: discoverEn,
   advisor: advisorEn,
   works: worksEn,

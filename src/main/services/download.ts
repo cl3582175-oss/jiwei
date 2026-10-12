@@ -1,9 +1,10 @@
 import { net, session } from 'electron'
 import { createHash } from 'crypto'
 import { createReadStream, createWriteStream } from 'fs'
-import { mkdir, rename, rm, stat } from 'fs/promises'
+import { mkdir, rename, rm, stat, open } from 'fs/promises'
 import { dirname } from 'path'
 import log from 'electron-log/main'
+import { verifyUpdateSha512 } from '../lib/updateIntegrity'
 
 // 多镜像下载器（大文件：模型、运行时）
 //   1. 并行测速：每个镜像下载前 256KB，按速度排序，失败的镜像排除
@@ -16,7 +17,9 @@ export interface DownloadSpec {
   /** 显示名 */
   name: string
   size: number
-  sha256: string
+  sha256?: string
+  /** 安装更新文件使用 metadata 的 SHA-512；仍走同一下载/进度路径。 */
+  sha512?: string
   urls: string[]
   dest: string
   /** 分段并行下载的连接数（单连接很慢的源，如国内访问 GitHub Releases）；服务器须支持 Range */
@@ -181,7 +184,7 @@ async function fetchInto(
     if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`)
     // 服务器不支持 Range 时只能从头开始
     const resumed = res.status === 206
-    const out = createWriteStream(part, { flags: resumed ? 'a' : 'w' })
+    const out = await open(part, resumed ? 'a' : 'w', 0o600)
     let received = resumed ? offset : 0
     const samples: [number, number][] = [[Date.now(), received]]
     let slowSince: number | null = null
@@ -190,7 +193,7 @@ async function fetchInto(
       for (;;) {
         const { done, value } = await reader.read()
         if (done) break
-        if (!out.write(value)) await new Promise<void>((r) => out.once('drain', () => r()))
+        await out.writeFile(value)
         received += value.byteLength
         const now = Date.now()
         samples.push([now, received])
@@ -203,7 +206,7 @@ async function fetchInto(
         } else slowSince = null
       }
     } finally {
-      await new Promise<void>((r) => out.end(() => r()))
+      await out.close()
     }
   } finally {
     signal.removeEventListener('abort', abort)
@@ -216,7 +219,14 @@ export async function download(
   onProgress: (p: DownloadProgress) => void,
   signal: AbortSignal = new AbortController().signal
 ): Promise<void> {
-  if ((await exists(spec.dest)) === spec.size && (await sha256File(spec.dest)) === spec.sha256) return
+  if (!spec.sha256 && !spec.sha512) throw new Error('Download checksum is required')
+  const verify = async (path: string): Promise<boolean> => {
+    if (spec.sha512) {
+      try { await verifyUpdateSha512(path, spec.sha512); return true } catch { return false }
+    }
+    return (await sha256File(path)) === spec.sha256
+  }
+  if ((await exists(spec.dest)) === spec.size && (await verify(spec.dest))) return
   await mkdir(dirname(spec.dest), { recursive: true })
   const part = `${spec.dest}.part`
   let ranked = await probeMirrors(spec.urls)
@@ -235,14 +245,21 @@ export async function download(
         await fetchParallel(url, part, spec, spec.parallel, signal, onProgress)
       else await fetchInto(url, part, spec, slowBelow, signal, onProgress)
       if ((await exists(part)) !== spec.size) throw new Error('文件大小不符')
-      if ((await sha256File(part)) !== spec.sha256) {
+      if (!(await verify(part))) {
         await rm(part, { force: true })
-        throw new Error('校验失败（sha256 不一致）')
+        throw new Error(spec.sha512 ? 'SHA-512 checksum mismatch' : '校验失败（sha256 不一致）')
       }
       await rename(part, spec.dest)
       log.info('[download]', spec.name, 'done via', host(url))
       return
     } catch (e) {
+      if (spec.sha512) {
+        const code = typeof e === 'object' && e && 'code' in e && typeof e.code === 'string' && ['EACCES', 'EPERM', 'ENOSPC', 'EDQUOT', 'EIO', 'EROFS', 'EEXIST'].includes(e.code) ? e.code : ''
+        const reason = e instanceof Error && /checksum/.test(e.message) ? 'SHA-512 checksum mismatch' : `Update download failed${code ? ` (${code})` : ''}`
+        log.warn('[download]', spec.name, reason)
+        errors.push(reason)
+        continue
+      }
       const msg =
         e instanceof SlowMirror ? `${host(url)} 速度过慢，切换镜像` : `${host(url)}: ${e instanceof Error ? e.message : String(e)}`
       log.warn('[download]', spec.name, msg)

@@ -238,6 +238,7 @@ export interface Settings {
   /** 内置浏览器（v0.6.0） */
   browser?: BrowserSettings
   backup?: { external: import('./backup').ExternalBackup }
+  updates?: { autoCheck: boolean; feedUrl: string }
 }
 
 export interface BrowserSettings {
@@ -1132,6 +1133,7 @@ export interface JiweiEvents {
   'nav:reflect': { kind: 'daily' | 'weekly' }
   /** 复盘、洞见或行动项变化 */
   'reflection:changed': Record<string, never>
+  'updates:changed': import('./updates').UpdateState
 }
 
 /** 本地 grounding 识别结果；保留版面块供公式与扫描文字层使用。 */

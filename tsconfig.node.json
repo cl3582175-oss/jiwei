@@ -38,6 +38,7 @@
     "src/renderer/src/features/reflect/insightMessages.ts",
     "src/renderer/src/features/tasks/mailMessages.ts",
     "src/renderer/src/features/agent/messages.ts",
-    "src/renderer/src/features/plugins/pluginMessages.ts"
+    "src/renderer/src/features/plugins/pluginMessages.ts",
+    "src/renderer/src/features/update/updateMessages.ts"
   ]
 }
