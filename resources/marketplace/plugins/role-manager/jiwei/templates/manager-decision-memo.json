@@ -7,7 +7,7 @@
     "en": "Decision memo"
   },
   "description": {
-    "zh": "决策备忘录，按指定结构组织已有素材。",
+    "zh": "叙述体、1500 字内：背景、要做的决定、选项与取舍、建议、风险、需要的支持。",
     "en": "Explain a decision in connected prose, including options, trade-offs, risks and support needed."
   },
   "outline": [

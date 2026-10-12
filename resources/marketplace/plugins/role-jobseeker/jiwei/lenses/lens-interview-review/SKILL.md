@@ -1,6 +1,6 @@
 ---
 name: lens-interview-review
-description: 面试复盘：从对应录音提取指定事项，逐条附原声证据。
+description: "面试复盘：提取面试问题原话、你的回答要点、卡壳处，以及对方透露的团队和流程信息。"
 metadata:
   kind: lens
   title: 面试复盘

@@ -7,7 +7,9 @@ import { useSettings, useUpdateSettings } from '@/lib/queries'
 import { Button } from '@/components/ui/button'
 import { PlanDialog, field } from '../plan/ui'
 import { PluginOriginLabel, pluginError } from './PluginConfirmDialog'
-import { usePluginAcquisition } from './PluginAcquisition'
+import { PluginInstallButtons, usePluginAcquisition } from './PluginAcquisition'
+import { Tip } from '@/components/ui/primitives'
+import { RefreshCw, X } from 'lucide-react'
 import { PluginIcon } from './PluginDetailsDialog'
 
 export function PluginUpdateDot() {
@@ -18,13 +20,7 @@ export function PluginUpdateDot() {
     <span aria-label={t('plugins.hasUpdate')} title={t('plugins.hasUpdate')} className="ml-auto size-1.5 rounded-full bg-accent" />
   ) : null
 }
-export function PluginMarketplace({
-  rolesOnly = false,
-  onInstalledDetails
-}: {
-  rolesOnly?: boolean
-  onInstalledDetails: (id: string) => void
-}) {
+export function PluginMarketplace({ onInstalledDetails }: { onInstalledDetails: (id: string) => void }) {
   const { t, i18n } = useTranslation()
   const { data: settings } = useSettings(),
     updateSettings = useUpdateSettings()
@@ -81,7 +77,7 @@ export function PluginMarketplace({
   const cards = (catalog.data ?? []).filter(
     (p) =>
       (!market || p.origin.market === market) &&
-      (rolesOnly ? p.category === 'role' : !category || p.category === category) &&
+      (!category || p.category === category) &&
       [
         p.name,
         p.displayName,
@@ -98,15 +94,34 @@ export function PluginMarketplace({
         .includes(debounced.trim().toLocaleLowerCase())
   )
   const locked = busy || acquisition.active
+  const ctl = 'h-[34px] rounded-lg border border-border bg-surface px-3 text-sm text-fg outline-none focus:border-accent'
+  const added = new Set((markets.data ?? []).map((m) => m.name))
+  const recommended = [
+    { repo: 'anthropics/knowledge-work-plugins', market: 'knowledge-work-plugins' },
+    { repo: 'anthropics/skills', market: 'anthropic-agent-skills' }
+  ].filter((r) => !added.has(r.market))
+  const lastFetched = Math.max(0, ...(markets.data ?? []).map((m) => m.fetchedAt ?? 0))
+  const chosen = markets.data?.find((m) => m.name === market)
   return (
     <div className="space-y-4" data-testid="plugin-marketplace">
-      <div className="flex flex-wrap gap-2">
-        <select
-          aria-label={t('plugins.allMarkets')}
-          className={`${field} flex-1`}
-          value={market}
-          onChange={(e) => setMarket(e.target.value)}
-        >
+      {/* 一行工具栏：搜索为主，筛选与市场管理靠右 */}
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          className={`${ctl} min-w-48 flex-1`}
+          aria-label={t('plugins.search')}
+          placeholder={t('plugins.search')}
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        <select aria-label={t('plugins.category')} className={ctl} value={category} onChange={(e) => setCategory(e.target.value)}>
+          <option value="">{t('plugins.allCategories')}</option>
+          {['role', 'skills', 'templates', 'sources', 'connector', 'renderer'].map((c) => (
+            <option key={c} value={c}>
+              {t(`plugins.category_${c}`)}
+            </option>
+          ))}
+        </select>
+        <select aria-label={t('plugins.allMarkets')} className={ctl} value={market} onChange={(e) => setMarket(e.target.value)}>
           <option value="">{t('plugins.allMarkets')}</option>
           {markets.data?.map((m) => (
             <option key={m.name} value={m.name}>
@@ -124,96 +139,96 @@ export function PluginMarketplace({
         >
           {t('plugins.addMarket')}
         </Button>
-        <Button disabled={locked} onClick={() => void run(() => api.plugins.refreshMarket(market || undefined))}>
-          {t('plugins.refresh')}
-        </Button>
+        <Tip
+          label={lastFetched ? t('plugins.cachedAt', { time: new Date(lastFetched).toLocaleString(i18n.language) }) : t('plugins.refresh')}
+        >
+          <Button
+            size="icon"
+            aria-label={t('plugins.refresh')}
+            disabled={locked}
+            onClick={() => void run(() => api.plugins.refreshMarket(market || undefined))}
+          >
+            <RefreshCw className={busy ? 'animate-spin' : ''} />
+          </Button>
+        </Tip>
       </div>
-      {!settings?.plugins.recommendedDismissed && (
-        <aside className="space-y-2 rounded-xl border border-border bg-sunken p-3 text-xs">
-          <h3 className="font-medium">{t('plugins.recommend')}</h3>
-          <p>{t('plugins.recommendHint')}</p>
-          <div className="flex flex-wrap gap-2">
-            {['anthropics/knowledge-work-plugins', 'anthropics/skills'].map((repo) => (
-              <Button
-                size="sm"
-                key={repo}
-                disabled={locked}
-                onClick={() => void acquisition.start({ source: { kind: 'github', url: repo } })}
-              >
-                {repo}
-              </Button>
-            ))}
+      {!settings?.plugins.recommendedDismissed && recommended.length > 0 && (
+        <aside className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl bg-sunken px-4 py-3 text-xs">
+          <span className="min-w-0 flex-1 basis-60 text-muted">
+            <strong className="font-medium text-fg">{t('plugins.recommend')}</strong> {t('plugins.recommendHint')}
+          </span>
+          {recommended.map(({ repo }) => (
             <Button
               size="sm"
+              key={repo}
+              disabled={locked}
+              onClick={() => void acquisition.start({ source: { kind: 'github', url: repo } })}
+            >
+              {repo.split('/')[1]}
+            </Button>
+          ))}
+          <Tip label={t('plugins.dismiss')}>
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              aria-label={t('plugins.dismiss')}
               disabled={updateSettings.isPending}
               onClick={() => void run(() => updateSettings.mutateAsync({ plugins: { recommendedDismissed: true } }))}
             >
-              {t('plugins.dismiss')}
+              <X />
             </Button>
-          </div>
+          </Tip>
         </aside>
       )}
+      {/* 市场状态：只在出错，或选中一个第三方市场时显示 */}
       {(markets.data ?? [])
-        .filter((m) => !market || market === m.name)
+        .filter((m) => m.error || (market === m.name && !m.builtin))
         .map((m) => (
           <section
             data-market-name={m.name}
             key={m.name}
-            className="space-y-1 rounded-lg border border-border p-3 text-xs [overflow-wrap:anywhere]"
+            className="flex flex-wrap items-center gap-2 rounded-lg border border-border px-3 py-2 text-xs [overflow-wrap:anywhere]"
           >
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <strong>{m.builtin ? t('plugins.official') : m.name}</strong>
-              {!m.builtin && (
-                <Button
-                  size="sm"
-                  disabled={locked}
-                  onClick={() => {
-                    setRemoving(m)
-                    setUninstall(true)
-                  }}
-                >
-                  {t('plugins.removeMarket')}
-                </Button>
+            <span className="min-w-0 flex-1">
+              <strong className="font-medium">{m.builtin ? t('plugins.official') : m.name}</strong>
+              <span className="text-muted">
+                {' · '}
+                {m.owner} ·{' '}
+                {m.fetchedAt
+                  ? t('plugins.cachedAt', { time: new Date(m.fetchedAt).toLocaleString(i18n.language) })
+                  : t('plugins.neverFetched')}
+              </span>
+              {m.error && (
+                <span role="alert" className="mt-1 block text-danger">
+                  {m.error}
+                </span>
               )}
-            </div>
-            <p className="text-muted">
-              {m.owner} ·{' '}
-              {m.fetchedAt
-                ? t('plugins.cachedAt', { time: new Date(m.fetchedAt).toLocaleString(i18n.language) })
-                : t('plugins.neverFetched')}
-            </p>
+            </span>
             {m.error && (
-              <div role="alert" className="text-danger">
-                <p>{m.error}</p>
-                <Button size="sm" disabled={locked} onClick={() => void run(() => api.plugins.refreshMarket(m.name))}>
-                  {t('plugins.retry')}
-                </Button>
-              </div>
+              <Button size="sm" disabled={locked} onClick={() => void run(() => api.plugins.refreshMarket(m.name))}>
+                {t('plugins.retry')}
+              </Button>
             )}
-            {m.count === 0 && <p className="text-muted">{t('plugins.emptyMarket')}</p>}
+            {!m.builtin && (
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={locked}
+                onClick={() => {
+                  setRemoving(m)
+                  setUninstall(true)
+                }}
+              >
+                {t('plugins.removeMarket')}
+              </Button>
+            )}
           </section>
         ))}
-      <input
-        className={field}
-        aria-label={t('plugins.search')}
-        placeholder={t('plugins.search')}
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-      />
-      {!rolesOnly && (
-        <select aria-label={t('plugins.category')} className={field} value={category} onChange={(e) => setCategory(e.target.value)}>
-          <option value="">{t('plugins.allCategories')}</option>
-          {['role', 'skills', 'templates', 'sources', 'connector', 'renderer'].map((c) => (
-            <option key={c} value={c}>
-              {t(`plugins.category_${c}`)}
-            </option>
-          ))}
-        </select>
-      )}
+      {chosen?.count === 0 && <p className="text-sm text-muted">{t('plugins.emptyMarket')}</p>}
       {(markets.isPending || catalog.isPending) && (
-        <div role="status" className="space-y-3">
-          {[1, 2, 3].map((n) => (
-            <div key={n} className="h-24 animate-pulse rounded-xl bg-sunken" />
+        <div role="status" className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {[1, 2, 3, 4].map((n) => (
+            <div key={n} className="h-28 animate-pulse rounded-xl bg-sunken" />
           ))}
         </div>
       )}
@@ -223,9 +238,10 @@ export function PluginMarketplace({
         </p>
       )}
       {!catalog.isPending && cards.length === 0 && (
-        <div className="space-y-2 text-sm text-muted">
-          <p>{t(rolesOnly && !search && !market ? 'plugins.rolesEmpty' : 'plugins.noResults')}</p>
+        <div className="space-y-2 py-6 text-center text-sm text-muted">
+          <p>{t('plugins.noResults')}</p>
           <Button
+            size="sm"
             onClick={() => {
               setMarket('')
               setCategory('')
@@ -236,61 +252,65 @@ export function PluginMarketplace({
           </Button>
         </div>
       )}
-      <div className="grid grid-cols-1 gap-3">
-        {cards.map((p) => (
-          <article
-            key={p.id}
-            data-catalog-id={p.id}
-            className="min-w-0 space-y-3 rounded-xl border border-border p-4 transition-colors hover:bg-surface-hover [overflow-wrap:anywhere]"
-          >
-            <div className="flex gap-3">
-              <PluginIcon icon={p.icon} name={local(p, 'Name')} category={p.category} />
-              <div className="min-w-0 flex-1">
-                <h3 className="truncate text-sm font-medium" title={local(p, 'Name')}>
-                  {local(p, 'Name')}
-                </h3>
-                <p className="line-clamp-2 text-xs text-muted" title={local(p, 'Description')}>
-                  {local(p, 'Description')}
-                </p>
-              </div>
-            </div>
-            <div className="flex flex-wrap gap-2 text-xs text-muted">
-              <span>{t(`plugins.category_${p.category}`)}</span>
-              <PluginOriginLabel origin={p.origin} />
-              <span>{typeof p.author === 'string' ? p.author : p.author?.name}</span>
-              <span>{p.installedVersion ? `${t('plugins.installed')} · ${p.installedVersion}` : p.version}</span>
-              {p.updateAvailable && <span className="text-accent">{t('plugins.hasUpdate')}</span>}
-            </div>
-            {p.updateUnavailable && <p className="text-xs text-warning">{t('plugins.noUpdates')}</p>}
-            {!p.supported && <p className="text-xs text-warning">{p.unsupportedReason}</p>}
-            <div className="flex flex-wrap gap-2">
-              <Button
-                size="sm"
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {cards.map((p) => {
+          const author = typeof p.author === 'string' ? p.author : p.author?.name
+          const official = p.origin.kind === 'market' && markets.data?.some((m) => m.builtin && m.name === p.origin.market)
+          const openDetails = () =>
+            p.installedVersion
+              ? onInstalledDetails(p.id)
+              : void acquisition.start({ source: { kind: 'market', market: p.origin.market, name: p.name }, details: true })
+          return (
+            <article
+              key={p.id}
+              data-catalog-id={p.id}
+              className="flex min-w-0 flex-col rounded-xl border border-border bg-surface p-4 transition-colors hover:border-accent/40 [overflow-wrap:anywhere]"
+            >
+              <button
+                className="flex min-w-0 flex-1 gap-3 text-left"
+                data-open-details
+                title={t('plugins.details')}
                 disabled={locked || !p.supported}
-                onClick={() =>
-                  p.installedVersion
-                    ? onInstalledDetails(p.id)
-                    : void acquisition.start({ source: { kind: 'market', market: p.origin.market, name: p.name }, details: true })
-                }
+                onClick={openDetails}
               >
-                {t('plugins.details')}
-              </Button>
-              <Button
-                size="sm"
-                variant="primary"
-                disabled={locked || !p.supported || (!!p.installedVersion && !p.updateAvailable)}
-                onClick={() =>
-                  void acquisition.start(
-                    p.installedVersion ? { update: p.id } : { source: { kind: 'market', market: p.origin.market, name: p.name } }
-                  )
-                }
-              >
-                {t(p.updateAvailable ? 'plugins.updateAction' : p.installedVersion ? 'plugins.installed' : 'plugins.install')}
-              </Button>
-            </div>
-          </article>
-        ))}
+                <PluginIcon icon={p.icon} name={local(p, 'Name')} category={p.category} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-medium text-fg" title={local(p, 'Name')}>
+                    {local(p, 'Name')}
+                  </span>
+                  <span className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-muted" title={local(p, 'Description')}>
+                    {local(p, 'Description')}
+                  </span>
+                </span>
+              </button>
+              {!p.supported && <p className="mt-2 text-xs text-warning">{p.unsupportedReason}</p>}
+              <div className="mt-3 flex items-center gap-2">
+                <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 text-2xs text-muted">
+                  <span>{t(`plugins.category_${p.category}`)}</span>
+                  <PluginOriginLabel origin={p.origin} />
+                  {!official && author && <span className="truncate">{author}</span>}
+                  {p.installedVersion && <span>{p.installedVersion}</span>}
+                  {p.updateAvailable && <span className="text-accent">{t('plugins.hasUpdate')}</span>}
+                  {p.updateUnavailable && <span className="text-warning">{t('plugins.noUpdates')}</span>}
+                </span>
+                <Button
+                  size="sm"
+                  variant={p.installedVersion && !p.updateAvailable ? 'ghost' : 'primary'}
+                  disabled={locked || !p.supported || (!!p.installedVersion && !p.updateAvailable)}
+                  onClick={() =>
+                    void acquisition.start(
+                      p.installedVersion ? { update: p.id } : { source: { kind: 'market', market: p.origin.market, name: p.name } }
+                    )
+                  }
+                >
+                  {t(p.updateAvailable ? 'plugins.updateAction' : p.installedVersion ? 'plugins.installed' : 'plugins.install')}
+                </Button>
+              </div>
+            </article>
+          )
+        })}
       </div>
+      <PluginInstallButtons />
       {add && (
         <PlanDialog
           title={t('plugins.addMarket')}

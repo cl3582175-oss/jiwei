@@ -1,6 +1,6 @@
 ---
 name: lens-lesson-observation
-description: 听课评课：从对应录音提取指定事项，逐条附原声证据。
+description: "听课评课：记录教学环节、教师提问及类型、学生回应、亮点和可改进之处。"
 metadata:
   kind: lens
   title: 听课评课

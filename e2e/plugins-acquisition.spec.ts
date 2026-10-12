@@ -77,7 +77,10 @@ test('P2A isolated production IPC: marketplace → owned acquisition → preview
       return { initial, cards, invalidRejected, installed, readme: details.readme }
     })
     expect(result.initial).toEqual([expect.objectContaining({ name: 'jiwei', builtin: true })])
-    expect(result.cards).toEqual([expect.objectContaining({ name: 'ipc-plugin', supported: true })])
+    // 内置官方市场自带角色包；这里只核对测试市场里的条目
+    expect(result.cards.filter((c) => c.origin.market === 'ipc-market')).toEqual([
+      expect.objectContaining({ name: 'ipc-plugin', supported: true })
+    ])
     expect(result.invalidRejected).toBe(true)
     expect(result.installed.id).toBe('ipc-plugin@ipc-market')
     expect(result.readme).toContain('&lt;script&gt;')

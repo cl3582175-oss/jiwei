@@ -465,6 +465,7 @@ export interface PluginDetails {
   unsupported: string[]
   contents: {
     skills: string[]
+    lenses: string[]
     templates: string[]
     frameworks: string[]
     recipes: string[]

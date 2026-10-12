@@ -1,6 +1,6 @@
 ---
 name: lens-user-interview
-description: 用户访谈：从对应录音提取指定事项，逐条附原声证据。
+description: "用户访谈：只提取受访者的痛点、现在的做法、使用场景和原话，不算访谈者的引导。"
 metadata:
   kind: lens
   title: 用户访谈

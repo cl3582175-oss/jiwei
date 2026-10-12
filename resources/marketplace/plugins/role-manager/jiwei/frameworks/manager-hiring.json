@@ -5,8 +5,8 @@
     "en": "Make a hiring decision"
   },
   "description": {
-    "zh": "结合个人约束与真实证据比较选项，权重可调整，最终由你决定。",
-    "en": "Compare options using evidence and your constraints. Adjust the weights and make the final decision yourself."
+    "zh": "决定是否录用：关键能力、动机与稳定性、团队互补、成长潜力和风险信号。",
+    "en": "Decide on a hire: key skills, motivation, team fit, growth potential and red flags."
   },
   "criteria": [
     {

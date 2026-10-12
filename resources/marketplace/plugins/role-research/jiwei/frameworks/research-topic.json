@@ -5,8 +5,8 @@
     "en": "Choose a research direction"
   },
   "description": {
-    "zh": "结合个人约束与真实证据比较选项，权重可调整，最终由你决定。",
-    "en": "Compare options using evidence and your constraints. Adjust the weights and make the final decision yourself."
+    "zh": "比较研究方向或题目：兴趣、可行性、新颖性、导师支持、毕业要求和失败风险。",
+    "en": "Compare research topics on interest, feasibility, novelty, supervisor support, graduation fit and risk."
   },
   "criteria": [
     {

@@ -6,8 +6,8 @@
       "en": "Work through a trade-off"
     },
     "body": {
-      "zh": "带上备选方案、已有证据和个人约束，先检查预填的问题。",
-      "en": "Bring your options, evidence and constraints, then review the prefilled question before starting."
+      "zh": "按战略契合、影响、成本、可逆性等打分，看清该做什么、该停什么。",
+      "en": "Score options on strategy, impact, cost and reversibility to see what to do and what to stop."
     },
     "action": {
       "kind": "advisor",
@@ -25,8 +25,8 @@
       "en": "Prepare your next one-to-one"
     },
     "body": {
-      "zh": "先准备相关材料，打开助手后检查预填内容，再按发送开始。",
-      "en": "Bring the relevant material, review the prefilled request in the assistant, then send it when ready."
+      "zh": "整理对方上次的关切和还没兑现的承诺，排好议程。",
+      "en": "Gather their last concerns and open commitments into an agenda."
     },
     "action": {
       "kind": "chat",
@@ -44,8 +44,8 @@
       "en": "Set up a Monday decision list"
     },
     "body": {
-      "zh": "先查看时间、读取工具、结果去向和单次预算；确认并启用后才运行。",
-      "en": "Review the schedule, reading tools, destination and per-run budget. The task runs only after you confirm and enable it."
+      "zh": "每周一早上列出本周必须做的决定和逾期的承诺。",
+      "en": "Every Monday morning, list this week’s decisions and overdue commitments."
     },
     "action": {
       "kind": "recipe",

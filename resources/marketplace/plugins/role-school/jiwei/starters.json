@@ -6,8 +6,8 @@
       "en": "Analyze your last exam"
     },
     "body": {
-      "zh": "先准备相关材料，打开助手后检查预填内容，再按发送开始。",
-      "en": "Bring the relevant material, review the prefilled request in the assistant, then send it when ready."
+      "zh": "把分数和错题告诉我，十分钟找出失分最多的地方和下一步练什么。",
+      "en": "Share your scores and mistakes to see where most points went and what to practise next."
     },
     "action": {
       "kind": "chat",
@@ -25,8 +25,8 @@
       "en": "Understand one mistake"
     },
     "body": {
-      "zh": "先准备相关材料，打开助手后检查预填内容，再按发送开始。",
-      "en": "Bring the relevant material, review the prefilled request in the assistant, then send it when ready."
+      "zh": "先说说你当时怎么想的，一步步找到卡住的地方，再做一道同类题。",
+      "en": "Explain how you approached it, find where you got stuck, then try a similar question."
     },
     "action": {
       "kind": "chat",
@@ -44,8 +44,8 @@
       "en": "Set up a Sunday mistake review"
     },
     "body": {
-      "zh": "先查看时间、读取工具、结果去向和单次预算；确认并启用后才运行。",
-      "en": "Review the schedule, reading tools, destination and per-run budget. The task runs only after you confirm and enable it."
+      "zh": "每周日晚上把这周的错题按知识点分组，挑出最值得重做的 3 道。",
+      "en": "Every Sunday evening, group the week’s mistakes by topic and pick the 3 most worth redoing."
     },
     "action": {
       "kind": "recipe",

@@ -1,4 +1,4 @@
-import { PluginSourceLabel } from '../plugins/PluginSourceLabel'
+import { PluginSourceLabel, usePluginNames } from '../plugins/PluginSourceLabel'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
@@ -58,8 +58,17 @@ function useWorkEvents(): void {
 export function WorksView() {
   const { t } = useTranslation()
   const workId = useApp((s) => s.workId)
-  const [creating, setCreating] = useState<WorkType | null>(null)
+  const [creating, setCreating] = useState<WorkType | null>(null),
+    [template, setTemplate] = useState<string>()
   useWorkEvents()
+  // 角色起步卡：直接打开「新建作品」并选好模板
+  useEffect(() => {
+    const intent = useApp.getState().takeStarterIntent('work')
+    if (!intent) return
+    useApp.setState({ workId: null })
+    setTemplate(intent.template)
+    setCreating('article')
+  }, [])
   return (
     <FloatingPanel flushLeft className="flex flex-col">
       <header className="drag flex h-[52px] shrink-0 items-center border-b border-border/70 pr-[calc(var(--tb-right)+16px)] pl-8">
@@ -80,7 +89,16 @@ export function WorksView() {
           </div>
         )}
       </div>
-      {creating && <NewWorkDialog initial={creating} onClose={() => setCreating(null)} />}
+      {creating && (
+        <NewWorkDialog
+          initial={creating}
+          template={template}
+          onClose={() => {
+            setCreating(null)
+            setTemplate(undefined)
+          }}
+        />
+      )}
     </FloatingPanel>
   )
 }
@@ -152,12 +170,26 @@ function WorkList({ onCreate }: { onCreate: (t: WorkType) => void }) {
   )
 }
 
-function NewWorkDialog({ initial, onClose }: { initial: WorkType; onClose: () => void }) {
+function NewWorkDialog({ initial, template, onClose }: { initial: WorkType; template?: string; onClose: () => void }) {
   const { t, i18n } = useTranslation()
   const { data: goals = [] } = useQuery({ queryKey: ['goals'], queryFn: () => api.goals.list() })
   const { data: templates = [] } = useQuery({ queryKey: ['templates'], queryFn: () => api.plugins.templates() })
+  const pluginName = usePluginNames()
   const [templateId, setTemplateId] = useState('')
   const selected = templates.find((x) => x.id === templateId)
+  const applyTemplate = (id: string): void => {
+    setTemplateId(id)
+    const item = templates.find((x) => x.id === id)
+    if (!item) return
+    // 模板决定类型、读者和写法；选题仍由用户自己填
+    setType(item.type)
+    setAudience((item.audience ?? '').slice(0, 60))
+    setMode(item.mode === 'coach' || item.mode === 'ghost' ? item.mode : 'cowrite')
+  }
+  useEffect(() => {
+    if (template && !templateId && templates.some((x) => x.id === template)) applyTemplate(template)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [template, templates])
   const [type, setType] = useState<WorkType>(initial),
     [topic, setTopic] = useState(''),
     [audience, setAudience] = useState(''),
@@ -203,26 +235,12 @@ function NewWorkDialog({ initial, onClose }: { initial: WorkType; onClose: () =>
     >
       <label className="block text-xs text-muted">
         {t('plugins.template')}
-        <select
-          aria-label={t('plugins.template')}
-          className={field}
-          value={templateId}
-          onChange={(e) => {
-            setTemplateId(e.target.value)
-            const item = templates.find((x) => x.id === e.target.value)
-            if (item) {
-              setType(item.type)
-              setTopic((i18n.language.startsWith('zh') ? item.title.zh : item.title.en).slice(0, 120))
-              setAudience((item.audience ?? '').slice(0, 60))
-              setMode(item.mode === 'coach' || item.mode === 'ghost' ? item.mode : 'cowrite')
-            }
-          }}
-        >
+        <select aria-label={t('plugins.template')} className={field} value={templateId} onChange={(e) => applyTemplate(e.target.value)}>
           <option value="">{t('plugins.none')}</option>
           {templates.map((x) => (
             <option key={x.id} value={x.id}>
               {i18n.language.startsWith('zh') ? x.title.zh : x.title.en}
-              {x.pluginId ? ` · ${x.pluginId.split('@')[0]}` : ''}
+              {x.pluginId ? ` · ${pluginName(x.pluginId)}` : ''}
             </option>
           ))}
         </select>

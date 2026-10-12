@@ -1,4 +1,4 @@
-import { PluginSourceLabel } from '../plugins/PluginSourceLabel'
+import { PluginSourceLabel, usePluginNames } from '../plugins/PluginSourceLabel'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
@@ -81,6 +81,7 @@ function Home({ onOpen }: { onOpen: (id: string) => void }) {
   const { data: list = [] } = useQuery({ queryKey: ['advisor', 'list'], queryFn: () => api.advisor.list() })
   const { data: goals = [] } = useQuery({ queryKey: ['goals'], queryFn: () => api.goals.list() })
   const { data: frameworks = [] } = useQuery({ queryKey: ['frameworks'], queryFn: () => api.plugins.frameworks() })
+  const pluginName = usePluginNames()
   const [frameworkId, setFrameworkId] = useState('')
   const selected = frameworks.find((x) => x.id === frameworkId)
   const [question, setQuestion] = useState(''),
@@ -88,6 +89,13 @@ function Home({ onOpen }: { onOpen: (id: string) => void }) {
     [showContext, setShowContext] = useState(false),
     [goalId, setGoalId] = useState(''),
     [busy, setBusy] = useState(false)
+  // 角色起步卡：选好分析框架、预填问题，不自动提交
+  useEffect(() => {
+    const intent = useApp.getState().takeStarterIntent('advisor')
+    if (!intent) return
+    setFrameworkId(intent.framework)
+    setQuestion(intent.question)
+  }, [])
   const model = settings?.ai.chat.model ?? null
   // 一次备忘录：约 7k 输入（问题 + 10 段依据）、2.5k 输出
   const cost = model
@@ -154,7 +162,7 @@ function Home({ onOpen }: { onOpen: (id: string) => void }) {
               {frameworks.map((x) => (
                 <option key={x.id} value={x.id}>
                   {i18n.language.startsWith('zh') ? x.title.zh : x.title.en}
-                  {x.pluginId ? ` · ${x.pluginId.split('@')[0]}` : ''}
+                  {x.pluginId ? ` · ${pluginName(x.pluginId)}` : ''}
                 </option>
               ))}
             </select>

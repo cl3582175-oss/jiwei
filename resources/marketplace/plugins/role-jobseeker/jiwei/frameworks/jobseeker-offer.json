@@ -5,8 +5,8 @@
     "en": "Compare job offers"
   },
   "description": {
-    "zh": "结合个人约束与真实证据比较选项，权重可调整，最终由你决定。",
-    "en": "Compare options using evidence and your constraints. Adjust the weights and make the final decision yourself."
+    "zh": "比较 offer：成长空间、薪酬总包、上级与团队、行业前景、城市生活和稳定性。",
+    "en": "Compare offers on growth, total pay, manager and team, prospects, city and stability."
   },
   "criteria": [
     {

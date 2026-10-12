@@ -6,8 +6,8 @@
       "en": "Read a paper closely"
     },
     "body": {
-      "zh": "先准备相关材料，打开助手后检查预填内容，再按发送开始。 学科专属订阅（如 arXiv）请到发现页按你的学科添加。",
-      "en": "Bring the relevant material, review the prefilled request in the assistant, then send it when ready. Add field-specific feeds such as arXiv from Discover for your discipline."
+      "zh": "导入或打开一篇论文，拆成问题、方法、结果、局限，以及和你的研究有什么关系。",
+      "en": "Open a paper and break it into question, method, results, limits and relevance to your work."
     },
     "action": {
       "kind": "chat",
@@ -25,8 +25,8 @@
       "en": "Compare several papers"
     },
     "body": {
-      "zh": "先准备相关材料，打开助手后检查预填内容，再按发送开始。 学科专属订阅（如 arXiv）请到发现页按你的学科添加。",
-      "en": "Bring the relevant material, review the prefilled request in the assistant, then send it when ready. Add field-specific feeds such as arXiv from Discover for your discipline."
+      "zh": "选几篇资料，按问题、方法、数据、结果、局限做成对比表，找出研究空白。",
+      "en": "Compare several papers by question, method, data, results and limits, and spot the gaps."
     },
     "action": {
       "kind": "chat",
@@ -44,8 +44,8 @@
       "en": "Prepare your next research meeting"
     },
     "body": {
-      "zh": "选择真实笔记或资料，按模板确认结构，再开始创作。",
-      "en": "Choose your own notes or sources, review the template structure and start creating."
+      "zh": "按“进展、结果、问题、需要导师决定的事”搭好组会汇报。",
+      "en": "Build a group-meeting deck: progress, results, problems and decisions you need."
     },
     "action": {
       "kind": "work",

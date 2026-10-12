@@ -1,6 +1,6 @@
 ---
 name: lens-one-on-one
-description: 一对一：从对应录音提取指定事项，逐条附原声证据。
+description: "一对一：提取对方的关切原话、双方的承诺和需要你跟进的事。"
 metadata:
   kind: lens
   title: 一对一

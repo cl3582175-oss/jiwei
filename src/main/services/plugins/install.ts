@@ -1,3 +1,4 @@
+import { tr } from '../../lib/messages'
 import { sourceLink, type MarketSource, type AcquisitionBatch } from './acquisition'
 import { pluginIcon } from './icon'
 import { dialog, shell, type BrowserWindow } from 'electron'
@@ -89,8 +90,12 @@ async function owned(path: string): Promise<string> {
 }
 function safeManifest(parsed: ParsedPlugin) {
   // 敏感默认值不进入 UI，亦不会自动启用；用户配置只通过专门的密文路径保存。
+  // 积微扩展里有中英文名称和简介时，按界面语言显示（Claude 格式只有一种语言）
+  const ext = parsed.extension
   return {
     ...parsed.manifest,
+    ...(ext?.name ? { displayName: tr(ext.name.zh, ext.name.en) } : {}),
+    ...(ext?.description ? { description: tr(ext.description.zh, ext.description.en) } : {}),
     userConfig: Object.fromEntries(
       Object.entries(parsed.manifest.userConfig ?? {}).map(([k, v]) => [k, v.sensitive ? { ...v, default: undefined } : v])
     )
@@ -647,12 +652,14 @@ export async function pluginDetails(input: { id?: string; token?: string }): Pro
     readme,
     unsupported: parsed.unsupported,
     starters: parsed.starters,
+    // 给人看的名称（按界面语言），不是内部 ID
     contents: {
-      skills: parsed.skills.map((x) => x.name),
-      templates: parsed.templates.map((x) => x.id),
-      frameworks: parsed.frameworks.map((x) => x.id),
-      recipes: parsed.recipes.map((x) => x.id),
-      starters: parsed.starters.map((x) => x.id),
+      skills: parsed.skills.filter((x) => x.metadata.kind !== 'lens').map((x) => x.metadata.title || x.name),
+      lenses: parsed.skills.filter((x) => x.metadata.kind === 'lens').map((x) => x.metadata.title || x.name),
+      templates: parsed.templates.map((x) => tr(x.title.zh, x.title.en)),
+      frameworks: parsed.frameworks.map((x) => tr(x.title.zh, x.title.en)),
+      recipes: parsed.recipes.map((x) => tr(x.name.zh, x.name.en)),
+      starters: parsed.starters.map((x) => tr(x.title.zh, x.title.en)),
       feeds: parsed.feeds.map((x) => x.title),
       mcp: Object.keys(parsed.mcpServers)
     }

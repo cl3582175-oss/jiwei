@@ -1,4 +1,5 @@
 import { DueDecisions } from '@/features/advisor/AdvisorView'
+import { RoleStartersCard } from '@/features/plugins/RoleStarters'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -40,7 +41,17 @@ import { PodcastBar } from '../discover/PodcastPlayer'
 // 「今日」（v0.6.7，默认首页）：回答“今天该做什么”。每张卡片都能直接处理，不放只供观看的数字。
 // 设计见 docs/design/v0.7-platform-and-loop.md §2.2。
 
-const EVENTS = ['tasks:changed', 'tasks:run', 'plan:changed', 'review:changed', 'inbox:changed', 'mistakes:changed', 'notes:changed', 'reflection:changed', 'sources:changed'] as const
+const EVENTS = [
+  'tasks:changed',
+  'tasks:run',
+  'plan:changed',
+  'review:changed',
+  'inbox:changed',
+  'mistakes:changed',
+  'notes:changed',
+  'reflection:changed',
+  'sources:changed'
+] as const
 
 function greetingKey(): 'morning' | 'noon' | 'afternoon' | 'evening' {
   const h = new Date().getHours()
@@ -369,7 +380,10 @@ function useLagText(): (lag: { title: string; missed: number; milestones: number
   return (lag) =>
     [
       t('plan.lagHead', { title: lag.title }),
-      [lag.missed ? t('plan.lagMissed', { count: lag.missed }) : null, lag.milestones ? t('plan.lagMilestones', { count: lag.milestones }) : null]
+      [
+        lag.missed ? t('plan.lagMissed', { count: lag.missed }) : null,
+        lag.milestones ? t('plan.lagMilestones', { count: lag.milestones }) : null
+      ]
         .filter(Boolean)
         .join(t('plan.lagJoin'))
     ].join('')
@@ -554,7 +568,12 @@ export function TodayView() {
                 <li key={lag.goalId} className="flex items-center gap-3 text-sm text-fg">
                   <AlertTriangle className="size-4 shrink-0 text-warning" />
                   <span className="min-w-0 flex-1">{lagText(lag)}</span>
-                  <Button size="sm" variant="ghost" className="shrink-0 text-warning hover:text-warning" onClick={() => useApp.getState().openGoal(lag.goalId, true)}>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="shrink-0 text-warning hover:text-warning"
+                    onClick={() => useApp.getState().openGoal(lag.goalId, true)}
+                  >
                     {t('plan.adjustPlan')}
                     <ChevronRight />
                   </Button>
@@ -565,6 +584,8 @@ export function TodayView() {
         )}
         {/* 到期待回看的决策（v0.9 参谋） */}
         <DueDecisions />
+        {/* 角色包的起步建议（v0.10） */}
+        <RoleStartersCard />
         {/* 新用户引导：已有今日日程或任务结果（如刚排完计划、还没写笔记）时仍显示正常布局 */}
         {s?.fresh && !s.schedule.length && !s.taskResults.length ? (
           <div className="mt-8">
@@ -599,21 +620,37 @@ export function TodayView() {
                     </button>
                   }
                 >
-                  <ul className="paper divide-y divide-border/70 overflow-hidden rounded-2xl shadow-[var(--shadow-1)]" data-testid="today-schedule">
+                  <ul
+                    className="paper divide-y divide-border/70 overflow-hidden rounded-2xl shadow-[var(--shadow-1)]"
+                    data-testid="today-schedule"
+                  >
                     {s.schedule.map((e) => (
-                      <li key={e.id} data-tint={tintFor(e.goalId ?? e.feedId ?? e.id, e.color)} className="flex items-center gap-3 px-4 py-3 text-sm text-fg">
+                      <li
+                        key={e.id}
+                        data-tint={tintFor(e.goalId ?? e.feedId ?? e.id, e.color)}
+                        className="flex items-center gap-3 px-4 py-3 text-sm text-fg"
+                      >
                         <span className="w-12 shrink-0 text-xs text-muted tabular-nums">
-                          {e.allDay ? t('plan.allDay') : new Date(e.startAt).toLocaleTimeString(i18n.language, { hour: '2-digit', minute: '2-digit' })}
+                          {e.allDay
+                            ? t('plan.allDay')
+                            : new Date(e.startAt).toLocaleTimeString(i18n.language, { hour: '2-digit', minute: '2-digit' })}
                         </span>
                         <span className="h-8 w-1 shrink-0 rounded-full bg-[var(--tint-ink)]/60" />
                         <button
-                          className={cn('min-w-0 flex-1 truncate text-left hover:text-accent', e.status !== 'planned' && 'text-subtle line-through')}
+                          className={cn(
+                            'min-w-0 flex-1 truncate text-left hover:text-accent',
+                            e.status !== 'planned' && 'text-subtle line-through'
+                          )}
                           onClick={() => app.goNav('calendar')}
                         >
                           {e.title}
                         </button>
                         {e.kind === 'study' && !e.readonly && e.status === 'planned' ? (
-                          <Button size="sm" variant="outline" onClick={() => void api.plan.eventSave({ ...e, status: 'done' }).catch((err) => toast.error(String(err)))}>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => void api.plan.eventSave({ ...e, status: 'done' }).catch((err) => toast.error(String(err)))}
+                          >
                             <Check />
                             {t('plan.done')}
                           </Button>
@@ -630,7 +667,10 @@ export function TodayView() {
                 {/* AI 任务的结果（v0.8） */}
                 {!!s.taskResults.length && (
                   <Section title={t('tasks.output.briefing')}>
-                    <ul className="paper divide-y divide-border/70 overflow-hidden rounded-2xl shadow-[var(--shadow-1)]" data-testid="today-task-results">
+                    <ul
+                      className="paper divide-y divide-border/70 overflow-hidden rounded-2xl shadow-[var(--shadow-1)]"
+                      data-testid="today-task-results"
+                    >
                       {s.taskResults.map((r) => (
                         <li key={r.id}>
                           <button
@@ -696,7 +736,10 @@ export function TodayView() {
                             )}
                           </div>
                           <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-sunken">
-                            <div className="h-full rounded-full bg-[var(--tint-ink)]/70" style={{ width: `${Math.round(g.mastered * 100)}%` }} />
+                            <div
+                              className="h-full rounded-full bg-[var(--tint-ink)]/70"
+                              style={{ width: `${Math.round(g.mastered * 100)}%` }}
+                            />
                           </div>
                           <p className="mt-1.5 text-xs text-muted">
                             {g.cards ? t('today.goalMastered', { percent: Math.round(g.mastered * 100) }) : t('today.goalNoCards')}

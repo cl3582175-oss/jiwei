@@ -213,12 +213,18 @@ export function PluginInstallButtons({ fileOnly = false }: { fileOnly?: boolean 
     [url, setUrl] = useState('')
   return (
     <>
-      <div className="flex flex-wrap gap-2">
-        <Button disabled={acquisition.active} onClick={() => void acquisition.start({ file: true })}>
+      <div className="flex flex-wrap items-center gap-1 text-xs text-muted">
+        {!fileOnly && <span className="mr-1">{t('plugins.otherWays')}</span>}
+        <Button
+          size="sm"
+          variant={fileOnly ? 'outline' : 'ghost'}
+          disabled={acquisition.active}
+          onClick={() => void acquisition.start({ file: true })}
+        >
           {t('plugins.fromFile')}
         </Button>
         {!fileOnly && (
-          <Button disabled={acquisition.active} onClick={() => setGithub(true)}>
+          <Button size="sm" variant="ghost" disabled={acquisition.active} onClick={() => setGithub(true)}>
             {t('plugins.fromGithub')}
           </Button>
         )}

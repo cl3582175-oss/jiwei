@@ -354,7 +354,10 @@ describe('market acquisition through real HTTP, SQLite, files and token lifecycl
     await cancelAcquisition(1, id)
     await rejected
     expect(listPlugins()).toEqual([])
-    expect((await readdir(tmpdir())).filter((x) => x.startsWith('jiwei-plugin-download-'))).toEqual(before)
+    // 系统临时目录是共享的：并行的其他测试文件可能正短暂占用同前缀目录，等它们清理完再比较
+    await vi.waitFor(async () => expect((await readdir(tmpdir())).filter((x) => x.startsWith('jiwei-plugin-download-'))).toEqual(before), {
+      timeout: 5000
+    })
     expect(await readdir(join(env.root, 'data/plugins/previews')).catch(() => [])).toEqual([])
   })
   it('detects market/plugin/skills and only selected skills reach token install, with empty directories preserved', async () => {

@@ -1,6 +1,6 @@
 ---
 name: lens-requirement-review
-description: 需求评审：从对应录音提取指定事项，逐条附原声证据。
+description: "需求评审：提取通过的需求、被砍或延后的需求及原因、未决问题和指派的待办。"
 metadata:
   kind: lens
   title: 需求评审

@@ -113,6 +113,9 @@ import {
 } from '../roles'
 import { TaskSave } from '@shared/tasks'
 import { listRoleStarters, completeRoleStarter, dismissRoleStarters } from '../starters'
+
+// 解包上限与真实安装流程较重；机器忙时 5 秒默认超时会误报
+vi.setConfig({ testTimeout: 20_000 })
 let db: Database.Database, root: string, source: string
 async function file(path: string, value: unknown) {
   await mkdir(dirname(path), { recursive: true })

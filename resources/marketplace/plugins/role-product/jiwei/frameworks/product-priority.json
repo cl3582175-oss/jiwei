@@ -5,8 +5,8 @@
     "en": "Prioritise requirements"
   },
   "description": {
-    "zh": "结合个人约束与真实证据比较选项，权重可调整，最终由你决定。",
-    "en": "Compare options using evidence and your constraints. Adjust the weights and make the final decision yourself."
+    "zh": "给需求排序：影响用户数、对核心指标的影响、证据强度、投入成本和战略契合。",
+    "en": "Rank requests by reach, metric impact, evidence, cost and strategic fit."
   },
   "criteria": [
     {

@@ -7,7 +7,7 @@
     "en": "Release retrospective"
   },
   "description": {
-    "zh": "版本复盘，按指定结构组织已有素材。",
+    "zh": "对照目标看数据结果，写做得好的、问题与原因、下一步；对事不对人。",
     "en": "Compare release outcomes against goals and identify causes and concrete next steps."
   },
   "outline": [

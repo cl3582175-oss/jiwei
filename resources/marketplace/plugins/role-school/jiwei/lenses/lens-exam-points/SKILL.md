@@ -1,6 +1,6 @@
 ---
 name: lens-exam-points
-description: 老师划的重点：从对应录音提取指定事项，逐条附原声证据。
+description: "老师划的重点：只提取老师明确强调的内容：必考点、常错点、典型题和布置的作业。"
 metadata:
   kind: lens
   title: 老师划的重点

@@ -7,7 +7,7 @@
     "en": "Product requirements document"
   },
   "description": {
-    "zh": "需求文档（PRD），按指定结构组织已有素材。",
+    "zh": "背景与目标、用户与场景、做与不做、主流程与异常、指标与埋点、上线与风险。",
     "en": "Define a measurable goal, user scenarios, scope, normal and error flows, and a release plan."
   },
   "outline": [

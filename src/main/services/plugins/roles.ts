@@ -16,6 +16,13 @@ import { pluginContributionCounts } from './components'
 import { catalogPlugins, OFFICIAL_MARKET } from './markets'
 import { inspectPlugin, confirmPluginInstall, cancelPluginPreview, listPlugins } from './install'
 
+/** 已安装且内容可用的插件 ID。内容丢失或校验失败的安装（available=false）不算已装，让角色选择可以重新预览修复。 */
+const usable = (): Set<string> =>
+  new Set(
+    listPlugins()
+      .filter((p) => p.available)
+      .map((p) => p.id)
+  )
 const presets = ['school', 'research', 'kaoyan', 'jobseeker', 'product', 'teacher', 'creator', 'manager']
 const lifetime = 10 * 60_000
 const recoveryKey = 'plugin.role-selection:last'
@@ -136,10 +143,10 @@ export async function previewRoles(owner: number, token: string, input: string[]
   item.busy = true
   item.selected = ids
   const batch = new AcquisitionBatch(item.controller.signal, token)
+  let result: RoleBatchPreview
   try {
-    const alreadyInstalled = listPlugins()
-      .filter((p) => ids.includes(p.id))
-      .map((p) => p.id)
+    const ok = usable()
+    const alreadyInstalled = ids.filter((id) => ok.has(id))
     for (const id of ids.filter((id) => !alreadyInstalled.includes(id))) {
       selection(owner, token)
       const card = catalog.find((c) => c.id === id)!
@@ -152,7 +159,7 @@ export async function previewRoles(owner: number, token: string, input: string[]
       if (preview.category !== 'role' || preview.id !== id) throw new Error('Role changed after catalog; refresh / 角色目录已变化')
       item.expiresAt = Math.min(item.expiresAt, preview.expiresAt)
     }
-    return { token, expiresAt: item.expiresAt, alreadyInstalled, roles: item.previews.map(({ token: _token, ...preview }) => preview) }
+    result = { token, expiresAt: item.expiresAt, alreadyInstalled, roles: item.previews.map(({ token: _token, ...preview }) => preview) }
   } catch (error) {
     await cleanup(token, item)
     throw error
@@ -160,6 +167,12 @@ export async function previewRoles(owner: number, token: string, input: string[]
     await batch.cleanup()
     item.busy = false
   }
+  // 收尾期间被取消：取消时因 busy 没能删除，这里补删，并且不返回可用的预览
+  if (item.controller.signal.aborted) {
+    await cleanup(token, item)
+    throw new Error('Role selection expired or canceled / 请重新预览角色')
+  }
+  return result
 }
 
 function saveRecovery(value: RoleBatchRecovery): void {
@@ -170,7 +183,7 @@ function saveRecovery(value: RoleBatchRecovery): void {
     .run()
 }
 function snapshot(selected: string[], status: RoleBatchRecovery['status'], error?: string): RoleBatchRecovery {
-  const ids = new Set(listPlugins().map((p) => p.id))
+  const ids = usable()
   const installed = selected.filter((id) => ids.has(id)),
     remaining = selected.filter((id) => !ids.has(id))
   return {

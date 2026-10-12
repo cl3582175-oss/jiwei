@@ -6,8 +6,8 @@
       "en": "Tailor your résumé to a role"
     },
     "body": {
-      "zh": "先准备相关材料，打开助手后检查预填内容，再按发送开始。",
-      "en": "Bring the relevant material, review the prefilled request in the assistant, then send it when ready."
+      "zh": "贴上岗位描述和你的经历，逐条对照、改写成简历句。只用真实经历，缺什么如实标出。",
+      "en": "Paste a job description and your experience to match and rewrite bullets — real experience only."
     },
     "action": {
       "kind": "chat",
@@ -25,8 +25,8 @@
       "en": "Practise an interview"
     },
     "body": {
-      "zh": "先准备相关材料，打开助手后检查预填内容，再按发送开始。",
-      "en": "Bring the relevant material, review the prefilled request in the assistant, then send it when ready."
+      "zh": "按岗位预测问题，一题一题模拟，每题答完给点评。",
+      "en": "Predict questions for the role and practise them one at a time, with feedback after each."
     },
     "action": {
       "kind": "chat",
@@ -44,8 +44,8 @@
       "en": "Compare your job offers"
     },
     "body": {
-      "zh": "带上备选方案、已有证据和个人约束，先检查预填的问题。",
-      "en": "Bring your options, evidence and constraints, then review the prefilled question before starting."
+      "zh": "从成长、薪酬、团队、前景等维度打分，比较手上的几个 offer。",
+      "en": "Compare your offers on growth, pay, team, prospects and more."
     },
     "action": {
       "kind": "advisor",

@@ -5,8 +5,8 @@
     "en": "Choose a postgraduate programme"
   },
   "description": {
-    "zh": "结合个人约束与真实证据比较选项，权重可调整，最终由你决定。",
-    "en": "Compare options using evidence and your constraints. Adjust the weights and make the final decision yourself."
+    "zh": "比较院校和专业：分数差距、专业课难度、复试比例、学校平台、地域就业和导师方向。",
+    "en": "Compare programmes on score gap, exam difficulty, interview weighting, institution, location and supervisors."
   },
   "criteria": [
     {

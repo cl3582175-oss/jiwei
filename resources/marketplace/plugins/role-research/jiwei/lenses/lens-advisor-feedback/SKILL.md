@@ -1,6 +1,6 @@
 ---
 name: lens-advisor-feedback
-description: 导师意见：从对应录音提取指定事项，逐条附原声证据。
+description: "导师意见：只提取导师的意见，分成必须改、建议、开放问题；“必须改”转为待办。"
 metadata:
   kind: lens
   title: 导师意见

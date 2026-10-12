@@ -1,49 +1,57 @@
-# 教师 / Teacher
+# 教师
 
-备课、分层出题、写评语、听评课
+备课、分层出题、写评语、听评课。
 
-Plan lessons, create differentiated exercises, write feedback and review observed lessons
+## 适合谁
 
-默认不安装。安装只加入可选内容，不会创建或启用 AI 任务；起步卡打开目标页面并预填，仍需你确认或发送。
+中小学、大学教师和培训讲师。
 
-Optional installation. Installing adds content without creating or enabling AI tasks. Starter cards open the relevant page; review the prefilled content before sending or confirming.
+## 能帮你做什么
 
-## 包含内容 / Contents
+- **教学设计**：逆向设计：先定目标和检验方式，再排活动、重难点和分层作业。
+- **分层出题**：基础、提高、拓展三层出题，干扰项对应常见错误，附评分要点。
+- **作业评语**：一个具体优点、一个最重要的改进点、一句鼓励；每份都不一样。
+- **作品模板「一节课的课件」**：导入问题、学习目标、新知、例题、练习、小结、作业；讲者备注写提问话术。
+- **作品模板「微课视频」**：3–5 分钟，从一个问题讲起，适合学生课后自学。
+- **作品模板「教学反思」**：教练模式：用学生的表现做证据，写目标、效果、意外情况、原因和下次改什么。
+- **参谋框架「教学方案取舍」**：在几种教学方案间取舍：目标达成、课时、学生差异、准备成本和评价是否可操作。
+- **录音视角「听课评课」**：记录教学环节、教师提问及类型、学生回应、亮点和可改进之处。
+- **AI 任务「明日备课提醒」**（默认关闭）
+- **AI 任务「每周教学反思素材」**（默认关闭）
 
-- 技能：教学设计（`role-teacher:lesson-design`）
-- 技能：分层出题（`role-teacher:question-bank`）
-- 技能：作业评语（`role-teacher:student-feedback`）
-- 视角：听课评课（`role-teacher:lens-lesson-observation`）
-- 作品模板：一节课的课件 / Lesson slides（`role-teacher:teacher-courseware`）
-- 作品模板：微课视频 / A short teaching video（`role-teacher:teacher-micro-lesson`）
-- 作品模板：教学反思 / Teaching reflection（`role-teacher:teacher-reflection`）
-- 参谋框架：教学方案取舍 / Choose a lesson approach（`role-teacher:teacher-plan-choice`）
-- AI 任务配方：明日备课提醒 / Prepare tomorrow’s lessons（`role-teacher:teacher-tomorrow`）
-- AI 任务配方：每周教学反思素材 / Weekly teaching reflection prompts（`role-teacher:teacher-weekly-reflection`）
+## 从这里开始
 
-## 起步建议 / Getting started
+装好后，「今日」页会出现这几张卡片：
 
-- **备一节课 / Plan a lesson**：先准备相关材料，打开助手后检查预填内容，再按发送开始。
-  Bring the relevant material, review the prefilled request in the assistant, then send it when ready.
-- **出一套分层练习 / Create differentiated exercises**：先准备相关材料，打开助手后检查预填内容，再按发送开始。
-  Bring the relevant material, review the prefilled request in the assistant, then send it when ready.
-- **做一节课的课件 / Create lesson slides**：选择真实笔记或资料，按模板确认结构，再开始创作。
-  Choose your own notes or sources, review the template structure and start creating.
+- **备一节课**：从学习目标倒推：先想好怎么检验学会了，再设计课堂活动。
+- **出一套分层练习**：按基础、提高、拓展三层出题，附答案和评分要点。
+- **做一节课的课件**：导入、新授、练习、小结，生成一节课的课件和讲稿。
 
-## 使用边界 / Before you begin
+## 订阅源
 
-技能需要你提供真实材料，缺证据会请求补充。笔记写入走提案，行动与日程走现有确认；不会替你外发、投递或发布。
-Skills need real material. Missing evidence is identified explicitly. Note changes use proposals; actions and calendar changes follow confirmation. Nothing is submitted or published on your behalf.
+安装时可以逐个取消。
 
-配方默认停用，`budgetPerRun: null` 与内置配方一致，继承任务的全局单次预算；若全局没有上限，就没有额外单次上限。创建和启用前请核对预算、时间和结果去向。
-Recipes are disabled by default and inherit the global per-run task budget, just like built-in recipes. An unset global limit means there is no additional per-run cap. Review budget, schedule and destination before creating or enabling a task.
+- [The Learning Scientists](https://www.learningscientists.org/blog?format=rss)
 
-现有读取工具可能缺创建日期、已完成历史、掌握状态或正文；配方会标明缺口，不能把未找到当成没有发生。实际完整用途仍需后续契约补齐与人工审查。
-Some current reading tools omit creation dates, completion history, mastery state or note bodies. Recipes identify these gaps; missing records do not prove something never happened. Full behaviour remains subject to the follow-up tool contract work and review.
+## 说明
 
-## 信息源 / Sources
+- 这个包只包含文字内容，不运行任何程序，也不会把数据发到别处。
+- AI 任务装好后默认关闭，在「设置 → AI 任务」里检查时间和预算后再打开。
+- 需要写笔记、建行动项或日程时，都会先请你确认。
+- 技能只根据你提供的真实材料工作，不会编造经历、数据或出处。
 
-- [The Learning Scientists](https://www.learningscientists.org/blog?format=rss)（rss）
+---
 
-来源仅是候选资料入口；更新与可访问性会变化。新闻、个人观点和部分摘要不等于考试规则、学术原始证据或全文免费授权。实时验证范围与未采用候选见项目 review。
-Sources are starting points for further reading. Availability and updates can change. News, opinions and partial summaries are not official exam rules, primary research evidence or a promise of free full-text access. See the project review for probe limits and excluded candidates.
+## Teacher
+
+Plan lessons, create differentiated exercises, write feedback and review observed lessons.
+
+**For:** School teachers, lecturers and trainers.
+
+**Getting started:**
+
+- **Plan a lesson** — Design backwards: decide how you’ll check learning, then plan the activities.
+- **Create differentiated exercises** — Create tiered questions — core, stretch, challenge — with answers and marking points.
+- **Create lesson slides** — Generate slides and speaker notes for one lesson: hook, teaching, practice, wrap-up.
+
+Text only — runs no programs and sends nothing elsewhere. AI tasks are added switched off; anything written to your notes, actions or calendar asks you first.

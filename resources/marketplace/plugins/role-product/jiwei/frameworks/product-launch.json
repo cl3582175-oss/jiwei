@@ -5,8 +5,8 @@
     "en": "Launch or hold"
   },
   "description": {
-    "zh": "结合个人约束与真实证据比较选项，权重可调整，最终由你决定。",
-    "en": "Compare options using evidence and your constraints. Adjust the weights and make the final decision yourself."
+    "zh": "决定上线还是推迟：已知问题、指标风险、回滚难度、时间窗口和沟通准备。",
+    "en": "Decide whether to ship: known issues, metric risk, rollback, timing and communication."
   },
   "criteria": [
     {

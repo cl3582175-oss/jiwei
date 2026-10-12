@@ -6,8 +6,8 @@
       "en": "Review a requirements document"
     },
     "body": {
-      "zh": "先准备相关材料，打开助手后检查预填内容，再按发送开始。",
-      "en": "Bring the relevant material, review the prefilled request in the assistant, then send it when ready."
+      "zh": "按 7 项清单检查需求文档，只列问题，并标出严重程度。",
+      "en": "Check a PRD against a 7-point checklist; only problems, each with a severity."
     },
     "action": {
       "kind": "chat",
@@ -25,8 +25,8 @@
       "en": "Analyse recent customer interviews"
     },
     "body": {
-      "zh": "先准备相关材料，打开助手后检查预填内容，再按发送开始。",
-      "en": "Bring the relevant material, review the prefilled request in the assistant, then send it when ready."
+      "zh": "把几次访谈的痛点聚成主题，附原话和出现次数。",
+      "en": "Cluster pain points from several interviews into themes, with quotes and counts."
     },
     "action": {
       "kind": "chat",
@@ -44,8 +44,8 @@
       "en": "Prioritise your backlog"
     },
     "body": {
-      "zh": "带上备选方案、已有证据和个人约束，先检查预填的问题。",
-      "en": "Bring your options, evidence and constraints, then review the prefilled question before starting."
+      "zh": "按用户影响、证据强度、投入成本、战略契合给需求排序。",
+      "en": "Rank requests by user impact, evidence, cost and strategic fit."
     },
     "action": {
       "kind": "advisor",

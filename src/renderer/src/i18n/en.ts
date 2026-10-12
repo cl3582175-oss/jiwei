@@ -796,6 +796,11 @@ const en: Messages = {
     personalize: 'Make Jiwei yours',
     personalizeDesc: 'You can change these anytime in Settings.',
     namePlaceholder: 'Name shown when collaborating',
+    roles: 'What will you mostly use Jiwei for?',
+    rolesDesc:
+      'Pick one or more. Jiwei adds matching skills, templates and decision frameworks, and shows where to start on Today. Text only — disable or remove any time.',
+    installRoles: 'Install {{count}} and continue',
+    skipRoles: 'Skip for now',
     cornell: 'The Cornell method in three minutes',
     cornellDesc:
       'Each row is one idea: key points on the right, a question that prompts them on the left, and a short summary at the bottom. To review, cover the right side and answer from the questions.',

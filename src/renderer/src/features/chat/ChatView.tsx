@@ -44,7 +44,13 @@ function ChatSidebar() {
         <h2 className="font-serif text-lg font-semibold tracking-wide text-fg">{t('chat.title')}</h2>
         <div className="no-drag flex items-center gap-0.5">
           <SidebarToggle />
-          <Button variant="outline" size="sm" className="ml-1 h-7 rounded-full px-2.5" onClick={() => openConversation(null)} aria-label={t('chat.new')}>
+          <Button
+            variant="outline"
+            size="sm"
+            className="ml-1 h-7 rounded-full px-2.5"
+            onClick={() => openConversation(null)}
+            aria-label={t('chat.new')}
+          >
             <Plus />
             {t('common.create')}
           </Button>
@@ -93,12 +99,15 @@ export function Composer({
   busy,
   onSend,
   onStop,
-  placeholder
+  placeholder,
+  prefill
 }: {
   busy: boolean
   onSend: (text: string) => void
   onStop: () => void
   placeholder?: string
+  /** 预填的文字（角色起步卡）：只填入输入框，由用户检查后发送 */
+  prefill?: string
 }) {
   const { t } = useTranslation()
   const [text, setText] = useState('')
@@ -110,6 +119,14 @@ export function Composer({
     el.style.height = '0px'
     el.style.height = Math.min(el.scrollHeight, 220) + 'px'
   }
+  useEffect(() => {
+    if (!prefill) return
+    setText(prefill)
+    requestAnimationFrame(() => {
+      resize()
+      ref.current?.setSelectionRange(prefill.length, prefill.length)
+    })
+  }, [prefill])
   const submit = (): void => {
     if (!text.trim() || busy) return
     onSend(text.trim())
@@ -228,9 +245,13 @@ function ChatPanel() {
     return () => window.removeEventListener(REPLY_EVENT, onReply)
   }, [conversationId])
 
-
   // 「今日」输入框与晨报回复：进入助手页后自动发送（模型就绪后发送一次）
   const draftSent = useRef(false)
+  const [prefill, setPrefill] = useState('')
+  useEffect(() => {
+    const intent = useApp.getState().takeStarterIntent('chat')
+    if (intent) setPrefill(intent.text)
+  }, [])
   useEffect(() => {
     if (draftSent.current || !choice.providerId || !choice.model || !useApp.getState().assistantDraft) return
     const d = useApp.getState().takeAssistantDraft()
@@ -306,7 +327,12 @@ function ChatPanel() {
 
       <div className="shrink-0 px-8 pb-5">
         <div className="paper mx-auto max-w-[760px] rounded-2xl shadow-[var(--shadow-2)]">
-          <Composer busy={!!streaming} onSend={(text) => void send(text)} onStop={() => streaming && void api.chat.stop(streaming.id)} />
+          <Composer
+            prefill={prefill}
+            busy={!!streaming}
+            onSend={(text) => void send(text)}
+            onStop={() => streaming && void api.chat.stop(streaming.id)}
+          />
           <div className="flex flex-wrap items-center gap-2 border-t border-border/60 px-3 py-2">
             <ModelPicker compact value={choice} onChange={setChoice} />
             {provider && <EffortPicker compact kind={provider.kind} value={effort} onChange={setEffort} />}

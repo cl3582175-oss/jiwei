@@ -7,7 +7,7 @@
     "en": "Project portfolio"
   },
   "description": {
-    "zh": "作品集 / 项目展示，按指定结构组织已有素材。",
+    "zh": "每个项目讲清问题、你做了什么、结果如何，结果页留数据或截图位置。",
     "en": "Show project problems, your contribution and supported outcomes in a clear portfolio."
   },
   "outline": [

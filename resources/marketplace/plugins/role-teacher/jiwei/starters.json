@@ -6,8 +6,8 @@
       "en": "Plan a lesson"
     },
     "body": {
-      "zh": "先准备相关材料，打开助手后检查预填内容，再按发送开始。",
-      "en": "Bring the relevant material, review the prefilled request in the assistant, then send it when ready."
+      "zh": "从学习目标倒推：先想好怎么检验学会了，再设计课堂活动。",
+      "en": "Design backwards: decide how you’ll check learning, then plan the activities."
     },
     "action": {
       "kind": "chat",
@@ -25,8 +25,8 @@
       "en": "Create differentiated exercises"
     },
     "body": {
-      "zh": "先准备相关材料，打开助手后检查预填内容，再按发送开始。",
-      "en": "Bring the relevant material, review the prefilled request in the assistant, then send it when ready."
+      "zh": "按基础、提高、拓展三层出题，附答案和评分要点。",
+      "en": "Create tiered questions — core, stretch, challenge — with answers and marking points."
     },
     "action": {
       "kind": "chat",
@@ -44,8 +44,8 @@
       "en": "Create lesson slides"
     },
     "body": {
-      "zh": "选择真实笔记或资料，按模板确认结构，再开始创作。",
-      "en": "Choose your own notes or sources, review the template structure and start creating."
+      "zh": "导入、新授、练习、小结，生成一节课的课件和讲稿。",
+      "en": "Generate slides and speaker notes for one lesson: hook, teaching, practice, wrap-up."
     },
     "action": {
       "kind": "work",

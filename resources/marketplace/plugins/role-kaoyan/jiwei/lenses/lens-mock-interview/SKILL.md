@@ -1,6 +1,6 @@
 ---
 name: lens-mock-interview
-description: 模拟面试复盘：从对应录音提取指定事项，逐条附原声证据。
+description: "模拟面试复盘：提取被问到的问题、你答的要点、卡壳的地方和对方的追问。"
 metadata:
   kind: lens
   title: 模拟面试复盘

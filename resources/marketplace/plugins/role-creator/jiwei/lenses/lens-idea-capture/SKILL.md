@@ -1,6 +1,6 @@
 ---
 name: lens-idea-capture
-description: 灵感速记：从对应录音提取指定事项，逐条附原声证据。
+description: "灵感速记：从随口说的想法里提取选题点子、金句原话、要查证的事实和可用的个人故事。"
 metadata:
   kind: lens
   title: 灵感速记

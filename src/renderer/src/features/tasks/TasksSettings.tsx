@@ -410,6 +410,15 @@ export function TasksSettings() {
     [parsing, setParsing] = useState(false),
     [selected, setSelected] = useState<string | null>(focus)
   useEffect(() => setSelected(focus), [focus])
+  // 角色起步卡：打开对应配方的确认表单（任务默认停用，用户检查后保存）
+  useEffect(() => {
+    if (!recipes.length) return
+    const intent = useApp.getState().starterIntent
+    if (intent?.kind !== 'recipe') return
+    const recipe = recipes.find((r) => r.id === intent.recipe)
+    useApp.getState().takeStarterIntent('recipe')
+    if (recipe) setEditing({ ...recipe.task })
+  }, [recipes])
   useEffect(() => {
     const off = window.jiweiEvents.on('tasks:changed', () => {
       void qc.invalidateQueries({ queryKey: ['tasks'] })

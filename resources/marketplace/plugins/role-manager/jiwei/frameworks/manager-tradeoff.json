@@ -5,8 +5,8 @@
     "en": "Make trade-offs and set priorities"
   },
   "description": {
-    "zh": "结合个人约束与真实证据比较选项，权重可调整，最终由你决定。",
-    "en": "Compare options using evidence and your constraints. Adjust the weights and make the final decision yourself."
+    "zh": "决定做什么、停什么：战略契合、影响、成本人力、可逆性、紧迫性和团队负荷。",
+    "en": "Decide what to do and stop: strategy, impact, cost, reversibility, urgency and team load."
   },
   "criteria": [
     {

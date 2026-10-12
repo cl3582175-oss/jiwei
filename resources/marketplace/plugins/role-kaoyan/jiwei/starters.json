@@ -6,8 +6,8 @@
       "en": "Think through programme choices"
     },
     "body": {
-      "zh": "带上备选方案、已有证据和个人约束，先检查预填的问题。",
-      "en": "Bring your options, evidence and constraints, then review the prefilled question before starting."
+      "zh": "按分数差距、专业课难度、复试比例等打分比较，帮你想清楚，决定权在你。",
+      "en": "Score options on score gap, exam difficulty, interview weighting and more — the decision stays yours."
     },
     "action": {
       "kind": "advisor",
@@ -25,8 +25,8 @@
       "en": "Review a past exam paper"
     },
     "body": {
-      "zh": "先准备相关材料，打开助手后检查预填内容，再按发送开始。",
-      "en": "Bring the relevant material, review the prefilled request in the assistant, then send it when ready."
+      "zh": "告诉我年份、科目和各题型得分，找出差距在哪、该回炉哪些章节。",
+      "en": "Share the year, subject and section scores to find the gaps and chapters to revisit."
     },
     "action": {
       "kind": "chat",
@@ -44,8 +44,8 @@
       "en": "Set up a weekly progress check"
     },
     "body": {
-      "zh": "先查看时间、读取工具、结果去向和单次预算；确认并启用后才运行。",
-      "en": "Review the schedule, reading tools, destination and per-run budget. The task runs only after you confirm and enable it."
+      "zh": "每周日对照阶段目标：完成了什么、落后多少、错题集中在哪。",
+      "en": "Every Sunday, check progress against your plan: what’s done, how far behind, where mistakes cluster."
     },
     "action": {
       "kind": "recipe",

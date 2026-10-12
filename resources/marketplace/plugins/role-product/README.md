@@ -1,53 +1,61 @@
-# 产品经理 / Product manager
+# 产品经理
 
-审需求、归纳访谈、拆竞品、排优先级
+审需求、归纳访谈、拆竞品、排优先级。
 
-Review requirements, analyse interviews, compare competitors and prioritise work
+## 适合谁
 
-默认不安装。安装只加入可选内容，不会创建或启用 AI 任务；起步卡打开目标页面并预填，仍需你确认或发送。
+互联网和软件产品经理。
 
-Optional installation. Installing adds content without creating or enabling AI tasks. Starter cards open the relevant page; review the prefilled content before sending or confirming.
+## 能帮你做什么
 
-## 包含内容 / Contents
+- **竞品拆解**：从定位、流程、功能、定价、体验拆解竞品，并与你的产品对比。
+- **用户访谈归纳**：把多次访谈的痛点聚类，附出现次数和原话，提炼机会点。
+- **需求文档审阅**：按七项清单检查需求文档，只报问题并标严重程度。
+- **作品模板「需求文档（PRD）」**：背景与目标、用户与场景、做与不做、主流程与异常、指标与埋点、上线与风险。
+- **作品模板「版本复盘」**：对照目标看数据结果，写做得好的、问题与原因、下一步；对事不对人。
+- **作品模板「需求评审 PPT」**：8–10 页：问题与机会、用户证据、方案、范围排期、风险、需要决定的事。
+- **参谋框架「上线 / 不上线」**：决定上线还是推迟：已知问题、指标风险、回滚难度、时间窗口和沟通准备。
+- **参谋框架「需求优先级」**：给需求排序：影响用户数、对核心指标的影响、证据强度、投入成本和战略契合。
+- **录音视角「需求评审」**：提取通过的需求、被砍或延后的需求及原因、未决问题和指派的待办。
+- **录音视角「用户访谈」**：只提取受访者的痛点、现在的做法、使用场景和原话，不算访谈者的引导。
+- **AI 任务「评审前准备」**（默认关闭）
+- **AI 任务「每周用户声音」**（默认关闭）
 
-- 技能：竞品拆解（`role-product:competitor-teardown`）
-- 技能：用户访谈归纳（`role-product:interview-synthesis`）
-- 技能：需求文档审阅（`role-product:prd-review`）
-- 视角：需求评审（`role-product:lens-requirement-review`）
-- 视角：用户访谈（`role-product:lens-user-interview`）
-- 作品模板：需求文档（PRD） / Product requirements document（`role-product:product-prd`）
-- 作品模板：版本复盘 / Release retrospective（`role-product:product-retro`）
-- 作品模板：需求评审 PPT / Requirements review deck（`role-product:product-review-deck`）
-- 参谋框架：上线 / 不上线 / Launch or hold（`role-product:product-launch`）
-- 参谋框架：需求优先级 / Prioritise requirements（`role-product:product-priority`）
-- AI 任务配方：评审前准备 / Requirements review preparation（`role-product:product-review-prep`）
-- AI 任务配方：每周用户声音 / Weekly customer voice（`role-product:product-weekly-voice`）
+## 从这里开始
 
-## 起步建议 / Getting started
+装好后，「今日」页会出现这几张卡片：
 
-- **审一份需求文档 / Review a requirements document**：先准备相关材料，打开助手后检查预填内容，再按发送开始。
-  Bring the relevant material, review the prefilled request in the assistant, then send it when ready.
-- **归纳最近的用户访谈 / Analyse recent customer interviews**：先准备相关材料，打开助手后检查预填内容，再按发送开始。
-  Bring the relevant material, review the prefilled request in the assistant, then send it when ready.
-- **给待办需求排优先级 / Prioritise your backlog**：带上备选方案、已有证据和个人约束，先检查预填的问题。
-  Bring your options, evidence and constraints, then review the prefilled question before starting.
+- **审一份需求文档**：按 7 项清单检查需求文档，只列问题，并标出严重程度。
+- **归纳最近的用户访谈**：把几次访谈的痛点聚成主题，附原话和出现次数。
+- **给待办需求排优先级**：按用户影响、证据强度、投入成本、战略契合给需求排序。
 
-## 使用边界 / Before you begin
+## 订阅源
 
-技能需要你提供真实材料，缺证据会请求补充。笔记写入走提案，行动与日程走现有确认；不会替你外发、投递或发布。
-Skills need real material. Missing evidence is identified explicitly. Note changes use proposals; actions and calendar changes follow confirmation. Nothing is submitted or published on your behalf.
+安装时可以逐个取消。
 
-配方默认停用，`budgetPerRun: null` 与内置配方一致，继承任务的全局单次预算；若全局没有上限，就没有额外单次上限。创建和启用前请核对预算、时间和结果去向。
-Recipes are disabled by default and inherit the global per-run task budget, just like built-in recipes. An unset global limit means there is no additional per-run cap. Review budget, schedule and destination before creating or enabling a task.
+- [人人都是产品经理](https://www.woshipm.com/feed)
+- [少数派](https://sspai.com/feed)
+- [Lenny's Newsletter（公开订阅）](https://www.lennysnewsletter.com/feed)
 
-现有读取工具可能缺创建日期、已完成历史、掌握状态或正文；配方会标明缺口，不能把未找到当成没有发生。实际完整用途仍需后续契约补齐与人工审查。
-Some current reading tools omit creation dates, completion history, mastery state or note bodies. Recipes identify these gaps; missing records do not prove something never happened. Full behaviour remains subject to the follow-up tool contract work and review.
+## 说明
 
-## 信息源 / Sources
+- 这个包只包含文字内容，不运行任何程序，也不会把数据发到别处。
+- AI 任务装好后默认关闭，在「设置 → AI 任务」里检查时间和预算后再打开。
+- 需要写笔记、建行动项或日程时，都会先请你确认。
+- 技能只根据你提供的真实材料工作，不会编造经历、数据或出处。
 
-- [人人都是产品经理](https://www.woshipm.com/feed)（rss）
-- [少数派](https://sspai.com/feed)（rss）
-- [Lenny's Newsletter（公开订阅）](https://www.lennysnewsletter.com/feed)（rss）
+---
 
-来源仅是候选资料入口；更新与可访问性会变化。新闻、个人观点和部分摘要不等于考试规则、学术原始证据或全文免费授权。实时验证范围与未采用候选见项目 review。
-Sources are starting points for further reading. Availability and updates can change. News, opinions and partial summaries are not official exam rules, primary research evidence or a promise of free full-text access. See the project review for probe limits and excluded candidates.
+## Product manager
+
+Review requirements, analyse interviews, compare competitors and prioritise work.
+
+**For:** Product managers in software and internet teams.
+
+**Getting started:**
+
+- **Review a requirements document** — Check a PRD against a 7-point checklist; only problems, each with a severity.
+- **Analyse recent customer interviews** — Cluster pain points from several interviews into themes, with quotes and counts.
+- **Prioritise your backlog** — Rank requests by user impact, evidence, cost and strategic fit.
+
+Text only — runs no programs and sends nothing elsewhere. AI tasks are added switched off; anything written to your notes, actions or calendar asks you first.
