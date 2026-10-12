@@ -206,7 +206,14 @@ export function updatePlugin(id: string, context?: { signal: AbortSignal; id: st
       origin = state.origin
     if (origin.kind === 'local')
       return inspectAcquired(
-        { path: origin.locator, type: sourceType(origin.locator), origin, options: state.current.options, progressId: context?.id },
+        {
+          path: origin.locator,
+          type: sourceType(origin.locator),
+          subdir: origin.subdir,
+          origin,
+          options: state.current.options,
+          progressId: context?.id
+        },
         id,
         context?.signal
       )

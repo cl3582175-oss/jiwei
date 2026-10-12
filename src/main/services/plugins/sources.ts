@@ -135,15 +135,18 @@ export interface PreparePluginSourceInput {
   subdir?: string
   tempParent?: string
   selection?: string[]
+  /** main 发现阶段/市场快照使用仓库预算；普通安装默认保持插件预算。 */
+  repository?: boolean
 }
 export async function preparePluginSource(input: PreparePluginSourceInput): Promise<PreparedPluginSource> {
+  const limits = input.repository ? REPOSITORY_LIMITS : PLUGIN_LIMITS
   const container = await mkdtemp(join(input.tempParent ?? tmpdir(), 'jiwei-plugin-')),
     root = join(container, 'content')
   try {
     await mkdir(root)
     if (input.type === 'folder') {
       const selectedRoot = await safePluginPath(input.path, input.subdir ?? '.')
-      if (!input.selection) await copyFolder(selectedRoot, root)
+      if (!input.selection) await copyFolder(selectedRoot, root, undefined, limits)
       else {
         const actual = { bytes: 0, entries: 0 }
         const paths = [...new Set([...input.selection, '.claude-plugin/plugin.json', 'README.md'].map(safeRelativePath))].filter(
@@ -161,43 +164,61 @@ export async function preparePluginSource(input: PreparePluginSourceInput): Prom
           }
           if (stat.isDirectory()) {
             await mkdir(target, { recursive: true })
-            if (++actual.entries > PLUGIN_LIMITS.entries) throw new Error('Plugin entry limit exceeded')
-            await copyFolder(source, target, actual)
+            if (++actual.entries > limits.entries) throw new Error('Plugin entry limit exceeded')
+            await copyFolder(source, target, actual, limits)
           } else if (stat.isFile()) {
-            declared({ bytes: 0, entries: 0 }, relative, stat.size)
-            if (++actual.entries > PLUGIN_LIMITS.entries) throw new Error('Plugin entry limit exceeded')
+            declared({ bytes: 0, entries: 0 }, relative, stat.size, limits)
+            if (++actual.entries > limits.entries) throw new Error('Plugin entry limit exceeded')
             await mkdir(dirname(target), { recursive: true })
             const handle = await open(source, constants.O_RDONLY | constants.O_NOFOLLOW)
             try {
-              await pipeline(handle.createReadStream(), limiter(actual, relative), createWriteStream(target, { flags: 'wx', mode: 0o600 }))
+              await pipeline(
+                handle.createReadStream(),
+                limiter(actual, relative, limits),
+                createWriteStream(target, { flags: 'wx', mode: 0o600 })
+              )
             } finally {
               await handle.close()
             }
           } else throw new Error('Plugin special file rejected')
         }
-        await inspectPluginFolder(root)
+        await inspectPluginFolder(root, limits)
       }
     } else {
       const st = await lstat(input.path)
       if (!st.isFile() || st.isSymbolicLink() || st.size > PLUGIN_LIMITS.archiveBytes) throw new Error('Invalid plugin archive')
       if (input.type === 'zip') {
         const buffer = await readArchive(input.path)
-        inspectZip(buffer)
+        inspectZip(buffer, !!input.repository || !!input.selection || !!input.subdir)
         const zip = await JSZip.loadAsync(buffer),
           actual = { bytes: 0, entries: 0 }
-        for (const item of Object.values(zip.files)) {
-          safeRelativePath(item.unsafeOriginalName ?? item.name)
-          const dest = await safePluginPath(root, item.name)
+        const subdir = safeRelativePath(input.subdir ?? '.'),
+          prefix = subdir === '.' ? '' : subdir + '/'
+        const selection = input.selection?.map(safeRelativePath)
+        const entries = Object.values(zip.files).filter((item) => {
+          if (!item.name.startsWith(prefix) || item.name === prefix) return false
+          const name = item.name.slice(prefix.length).replace(/\/$/, '')
+          return (
+            !selection ||
+            ['.claude-plugin/plugin.json', 'README.md'].includes(name) ||
+            selection.some((p) => p === '.' || name === p || name.startsWith(p + '/'))
+          )
+        })
+        if (prefix && !entries.length && !zip.files[prefix]?.dir) throw new Error('Plugin subdirectory not found')
+        for (const item of entries) {
+          const name = item.name.slice(prefix.length)
+          if (++actual.entries > limits.entries) throw new Error('Plugin entry limit exceeded')
+          const dest = await safePluginPath(root, name)
           if (item.dir) {
             await mkdir(dest, { recursive: true })
             continue
           }
           await mkdir(dirname(dest), { recursive: true })
-          await pipeline(item.nodeStream(), limiter(actual, item.name), createWriteStream(dest, { flags: 'wx', mode: 0o600 }))
+          await pipeline(item.nodeStream(), limiter(actual, name, limits), createWriteStream(dest, { flags: 'wx', mode: 0o600 }))
         }
       } else await unpackTar(input.path, root)
     }
-    const selected = await safePluginPath(root, input.type === 'folder' ? '.' : (input.subdir ?? '.'))
+    const selected = await safePluginPath(root, input.type === 'tar.gz' ? (input.subdir ?? '.') : '.')
     if (!(await lstat(selected)).isDirectory()) throw new Error('Plugin subdirectory not found')
     return { root: selected, container, cleanup: () => rm(container, { recursive: true, force: true }) }
   } catch (e) {
@@ -226,15 +247,20 @@ export async function inspectPluginFolder(
   await visit(resolve(root))
   return files.sort()
 }
-async function copyFolder(source: string, target: string, actual: Budget = { bytes: 0, entries: 0 }): Promise<void> {
+async function copyFolder(
+  source: string,
+  target: string,
+  actual: Budget = { bytes: 0, entries: 0 },
+  limits: { bytes: number; entries: number; textBytes: number } = PLUGIN_LIMITS
+): Promise<void> {
   // 系统 /tmp 父目录可为别名；源自身和其所有后代都必须是普通文件或目录。
-  const files = await inspectPluginFolder(resolve(source)),
+  const files = await inspectPluginFolder(resolve(source), limits),
     canonical = await realpath(source)
   // inspect 已验证目录类型；显式复制空目录，组件声明可能正好指向空目录。
   const copyDirectories = async (dir: string) => {
     for (const entry of await readdir(dir, { withFileTypes: true }))
       if (entry.isDirectory()) {
-        if (++actual.entries > PLUGIN_LIMITS.entries) throw new Error('Plugin entry limit exceeded')
+        if (++actual.entries > limits.entries) throw new Error('Plugin entry limit exceeded')
         const full = await safePluginPath(canonical, join(dir.slice(canonical.length), entry.name).replace(/^\//, ''))
         await mkdir(join(target, full.slice(canonical.length)), { recursive: true })
         await copyDirectories(full)
@@ -242,13 +268,13 @@ async function copyFolder(source: string, target: string, actual: Budget = { byt
   }
   await copyDirectories(canonical)
   for (const relative of files) {
-    if (++actual.entries > PLUGIN_LIMITS.entries) throw new Error('Plugin entry limit exceeded')
+    if (++actual.entries > limits.entries) throw new Error('Plugin entry limit exceeded')
     const path = await safePluginPath(canonical, relative),
       dest = await safePluginPath(target, relative)
     await mkdir(dirname(dest), { recursive: true })
     const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW)
     try {
-      await pipeline(handle.createReadStream(), limiter(actual, relative), createWriteStream(dest, { flags: 'wx', mode: 0o600 }))
+      await pipeline(handle.createReadStream(), limiter(actual, relative, limits), createWriteStream(dest, { flags: 'wx', mode: 0o600 }))
     } finally {
       await handle.close()
     }

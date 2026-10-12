@@ -26,6 +26,7 @@ import {
 } from '@shared/plugins'
 
 export const OFFICIAL_MARKET = Object.freeze({ name: 'jiwei', bundled: 'resources/marketplace', remote: null as string | null })
+let officialDefinition = OFFICIAL_MARKET
 interface CatalogItem {
   entry: MarketplaceEntry
   source: MarketSource
@@ -39,11 +40,12 @@ interface Catalog {
   name: string
   owner: string
   items: CatalogItem[]
+  officialRemote?: { identity: string; owner: string; items: CatalogItem[] }
 }
 const rowFor = (name: string) => getDb().select().from(pluginMarkets).where(eq(pluginMarkets.name, name)).get()
 const rows = () => getDb().select().from(pluginMarkets).all()
 const identity = (source: MarketSource) => JSON.stringify(source)
-const officialSource = (): MarketSource => ({ kind: 'folder', path: join(app.getAppPath(), OFFICIAL_MARKET.bundled) })
+const officialSource = (): MarketSource => ({ kind: 'folder', path: join(app.getAppPath(), officialDefinition.bundled) })
 const changed = () => emit('plugins:changed', {})
 const record = (action: string, name: string) =>
   audit({ caller: 'app', tool: `plugins.${action}`, level: 'write', status: 'ok', summary: `${action}: ${name}` })
@@ -151,14 +153,16 @@ async function acquireItem(
   )
   return { path: result.prepared.root, type: 'folder', origin, options: { ...options, sha: result.sha }, cleanup: result.prepared.cleanup }
 }
+class CatalogEnrichmentError extends Error {}
 async function enrich(catalog: Catalog, batch: AcquisitionBatch, official: boolean): Promise<void> {
+  const failures: string[] = []
   for (const item of catalog.items) {
     batch.signal.throwIfAborted()
-    if (!pluginSourceSupport(item.entry.source).supported) continue
+    if (!pluginSourceSupport(item.entry.source).supported || (typeof item.entry.source === 'string' && item.source.kind === 'url')) continue
     let acquired: PluginAcquisition | undefined, prepared: Awaited<ReturnType<typeof preparePluginSource>> | undefined
     try {
       acquired = await acquireItem(item, { kind: 'market', market: catalog.name, locator: '', name: item.entry.name }, batch, official)
-      prepared = await preparePluginSource(acquired)
+      prepared = await preparePluginSource({ ...acquired, selection: marketplaceComponentSelection(item.entry) })
       const parsed = await parsePlugin(prepared.root, acquired.options)
       if (parsed.manifest.name !== item.entry.name) throw new Error('Marketplace plugin name mismatch')
       item.version = parsed.version
@@ -174,16 +178,35 @@ async function enrich(catalog: Catalog, batch: AcquisitionBatch, official: boole
       item.connector = Object.keys(parsed.mcpServers).length > 0
     } catch {
       batch.signal.throwIfAborted()
+      failures.push(item.entry.name)
     } finally {
       await prepared?.cleanup()
       await acquired?.cleanup?.()
     }
   }
+  if (failures.length)
+    throw new CatalogEnrichmentError(`插件获取或验证失败 / Plugin acquisition or validation failed: ${failures.join(', ')}`)
 }
-/** 测试可注入 main 常量的候选 remote；renderer 从未暴露这个参数。 */
+/** 只合并已完整校验的远程条目；缓存必须与当前 main 定义的远程来源严格匹配。 */
+function mergeOfficial(bundled: Catalog, remote: Catalog['officialRemote']): Catalog {
+  if (!remote) return bundled
+  const merged = new Map(bundled.items.map((item) => [item.entry.name, item]))
+  for (const item of remote.items) {
+    const local = merged.get(item.entry.name)
+    const compared = local ? comparePluginVersions(item.version ?? item.entry.version ?? '', local.version ?? local.entry.version ?? '') : 1
+    if (!local || (compared !== null && compared >= 0)) merged.set(item.entry.name, { ...item, fallback: local?.source })
+  }
+  return { ...bundled, owner: remote.owner, items: [...merged.values()], officialRemote: remote }
+}
+function verifiedRemoteCache(cached: Catalog | undefined, definition: typeof OFFICIAL_MARKET): Catalog['officialRemote'] {
+  if (!definition.remote || !cached?.officialRemote) return undefined
+  return cached.officialRemote.identity === identity(githubSource(definition.remote)) ? cached.officialRemote : undefined
+}
+/** 参数只供 main 与隔离测试；renderer 无权配置官方来源。 */
 export async function officialCatalog(
   batch: AcquisitionBatch,
-  definition = OFFICIAL_MARKET
+  definition = officialDefinition,
+  cached?: Catalog
 ): Promise<{ catalog: Catalog; error: string | null }> {
   const bundled = await loadCatalog({ kind: 'folder', path: join(app.getAppPath(), definition.bundled) }, batch, true)
   await enrich(bundled, batch, true)
@@ -191,19 +214,20 @@ export async function officialCatalog(
   try {
     const remote = await loadCatalog(githubSource(definition.remote), batch, true)
     await enrich(remote, batch, true)
-    const merged = new Map(bundled.items.map((item) => [item.entry.name, item]))
-    for (const item of remote.items) {
-      const local = merged.get(item.entry.name)
-      const compared = local
-        ? comparePluginVersions(item.version ?? item.entry.version ?? '', local.version ?? local.entry.version ?? '')
-        : 1
-      // 不可排序版本留在随应用审核的版本；remote-only 条目仍可安装。
-      if (!local || (compared !== null && compared >= 0)) merged.set(item.entry.name, { ...item, fallback: local?.source })
+    if (batch.rateLimited) throw new Error('GitHub rate limited')
+    return {
+      catalog: mergeOfficial(bundled, { identity: identity(githubSource(definition.remote)), owner: remote.owner, items: remote.items }),
+      error: null
     }
-    return { catalog: { ...remote, items: [...merged.values()] }, error: null }
-  } catch {
+  } catch (error) {
     batch.signal.throwIfAborted()
-    return { catalog: bundled, error: '线上市场不可用，使用内置版本 / Remote unavailable; using bundled catalog' }
+    return {
+      catalog: mergeOfficial(bundled, verifiedRemoteCache(cached, definition)),
+      error:
+        error instanceof CatalogEnrichmentError
+          ? `${error.message}; 使用缓存及内置版本 / using cached and bundled catalog`
+          : '线上市场不可用，使用缓存及内置版本 / Remote unavailable; using cached and bundled catalog'
+    }
   }
 }
 function publicMarket(row: ReturnType<typeof rows>[number]): PluginMarketInfo {
@@ -258,16 +282,18 @@ async function refreshOne(name: string, batch: AcquisitionBatch): Promise<void> 
   const row = rowFor(name)
   if (!row) throw new Error('Marketplace not found')
   try {
-    const result = row.builtin ? await officialCatalog(batch) : { catalog: await loadCatalog(JSON.parse(row.source), batch), error: null }
+    const result = row.builtin
+      ? await officialCatalog(batch, officialDefinition, row.catalog ? JSON.parse(row.catalog) : undefined)
+      : { catalog: await loadCatalog(JSON.parse(row.source), batch), error: null }
     if (result.catalog.name !== name) throw new Error('Marketplace identity changed')
     if (!row.builtin) await enrich(result.catalog, batch, false)
     if (batch.rateLimited && row.catalog) throw new Error('GitHub rate limited')
     getDb()
       .update(pluginMarkets)
-      .set({ catalog: JSON.stringify(result.catalog), fetchedAt: Date.now(), error: result.error })
+      .set({ catalog: JSON.stringify(result.catalog), fetchedAt: result.error ? row.fetchedAt : Date.now(), error: result.error })
       .where(eq(pluginMarkets.name, name))
       .run()
-  } catch {
+  } catch (error) {
     batch.signal.throwIfAborted()
     // 失败仅更新错误；保留最后一次有效清单和时间，不持久化任意服务器错误正文。
     getDb()
@@ -275,7 +301,9 @@ async function refreshOne(name: string, batch: AcquisitionBatch): Promise<void> 
       .set({
         error: batch.rateLimited
           ? 'GitHub 请求受限，使用缓存，请稍后重试 / GitHub rate limited; using cached catalog'
-          : '无法刷新市场，使用缓存 / Refresh failed; using cached catalog'
+          : error instanceof CatalogEnrichmentError
+            ? error.message
+            : '无法刷新市场，使用缓存 / Refresh failed; using cached catalog'
       })
       .where(eq(pluginMarkets.name, name))
       .run()
@@ -295,7 +323,10 @@ export function refreshMarkets(name?: string, staleOnly = false): Promise<Plugin
     }
   })
 }
-export async function initializeMarkets(): Promise<void> {
+export async function initializeMarkets(definition = OFFICIAL_MARKET): Promise<void> {
+  if (definition.name !== OFFICIAL_MARKET.name) throw new Error('Invalid main official definition')
+  if (definition.remote) githubSource(definition.remote)
+  officialDefinition = definition
   registerPluginSourceAdapter(acquireMarketPlugin)
   const importRoot = join(pluginRoot(), 'market-imports')
   const retained = new Set(
@@ -309,25 +340,33 @@ export async function initializeMarkets(): Promise<void> {
     if (!retained.has(path)) await cleanupImport(path)
   }
   const source = identity(officialSource())
+  const previous = rowFor(OFFICIAL_MARKET.name)
+  const cached: Catalog | undefined = previous?.builtin && previous.catalog ? JSON.parse(previous.catalog) : undefined
+  const remote = verifiedRemoteCache(cached, definition)
   getDb()
     .insert(pluginMarkets)
     .values({ name: OFFICIAL_MARKET.name, source, builtin: true, addedAt: Date.now() })
     .onConflictDoUpdate({ target: pluginMarkets.name, set: { source, builtin: true } })
     .run()
-  // 内置内容随应用发布变化，启动时本地刷新，不在启动时访问第三方网络。
+  // 启动只读取新应用的内置资源，不能冒充远程刷新，也不能丢弃已核查的远程缓存。
   const batch = new AcquisitionBatch(new AbortController().signal, 'official-market')
   try {
-    const catalog = await loadCatalog(officialSource(), batch, true)
-    await enrich(catalog, batch, true)
+    const bundled = await loadCatalog(officialSource(), batch, true)
+    await enrich(bundled, batch, true)
     getDb()
       .update(pluginMarkets)
-      .set({ catalog: JSON.stringify(catalog), fetchedAt: Date.now(), error: null })
+      .set({
+        catalog: JSON.stringify(mergeOfficial(bundled, remote)),
+        fetchedAt: definition.remote ? (remote ? (previous?.fetchedAt ?? null) : null) : Date.now(),
+        error: definition.remote && remote ? (previous?.error ?? null) : null
+      })
       .where(eq(pluginMarkets.name, OFFICIAL_MARKET.name))
       .run()
   } finally {
     await batch.cleanup()
   }
 }
+
 export function addMarket(input: MarketInput): Promise<PluginMarketInfo> {
   return addMarketSource(input.kind === 'github' ? githubSource(input.url) : { kind: 'url', url: httpsUrl(input.url) })
 }
@@ -339,7 +378,14 @@ export function addMarketSource(source: MarketSource, context?: { signal: AbortS
       const catalog = await loadCatalog(source, batch)
       if (rows().some((r) => r.name.toLowerCase() === catalog.name.toLowerCase() || r.source === identity(source)))
         throw new Error('Marketplace name or source already exists / 市场名称或来源已存在')
-      await enrich(catalog, batch, false)
+      let enrichmentError: string | null = null
+      try {
+        await enrich(catalog, batch, false)
+      } catch (error) {
+        batch.signal.throwIfAborted()
+        if (!(error instanceof CatalogEnrichmentError)) throw error
+        enrichmentError = error.message
+      }
       batch.signal.throwIfAborted()
       getDb().transaction(() => {
         getDb()
@@ -349,8 +395,10 @@ export function addMarketSource(source: MarketSource, context?: { signal: AbortS
             source: identity(source),
             builtin: false,
             catalog: JSON.stringify(catalog),
-            fetchedAt: Date.now(),
-            error: batch.rateLimited ? 'GitHub 请求受限，部分版本使用内容摘要 / GitHub rate limited; content versions used' : null,
+            fetchedAt: enrichmentError ? null : Date.now(),
+            error:
+              enrichmentError ??
+              (batch.rateLimited ? 'GitHub 请求受限，部分版本使用内容摘要 / GitHub rate limited; content versions used' : null),
             addedAt: Date.now()
           })
           .run()

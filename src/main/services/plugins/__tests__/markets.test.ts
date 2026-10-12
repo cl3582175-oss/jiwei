@@ -1,5 +1,5 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
-import { mkdtemp, mkdir, writeFile, rm, readdir, readFile } from 'fs/promises'
+import { mkdtemp, mkdir, writeFile, rm, readdir, readFile, symlink } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join, dirname } from 'path'
 import { createServer, type Server } from 'http'
@@ -453,5 +453,212 @@ describe('market acquisition through real HTTP, SQLite, files and token lifecycl
       await confirmPluginInstall(update.token, {})
       expect(await readdir(readState(chosen.preview.id).current.directory)).toEqual(['first'])
     }
+  })
+  it.each(['folder', 'zip'])(
+    'I1 discovers %s markets under repository budgets and only installs the selected small plugin',
+    async (kind) => {
+      const files = {
+        '.claude-plugin/marketplace.json': market('large-local'),
+        'plugins/one/.claude-plugin/plugin.json': { name: 'one' },
+        'plugins/one/skills/read/SKILL.md': skill,
+        'unrelated/large.md': 'x'.repeat(2 * 1024 * 1024)
+      }
+      const path = join(env.root, kind === 'zip' ? 'large.zip' : 'large')
+      if (kind === 'zip') await writeFile(path, await zip(files, ''))
+      else for (const [name, value] of Object.entries(files)) await file(join(path, name), value)
+      const id = beginAcquisition(1),
+        detected = await detectPath(1, id, path)
+      if (detected.kind !== 'market') throw new Error('Expected market')
+      await addDetectedMarket(1, id, detected.token)
+      const preview = await inspectPlugin({ kind: 'market', market: 'large-local', name: 'one' })
+      await confirmPluginInstall(preview.token, {})
+      expect(await readdir(readState(preview.id).current.directory)).toEqual(['.claude-plugin', 'skills'])
+      await cancelAcquisition(1, id)
+      if (kind === 'folder') await symlink(join(path, 'plugins'), join(path, 'unrelated/link'))
+      else {
+        const z = new JSZip()
+        z.file('plugin/ok', 'ok')
+        z.file('unrelated/link', 'target', { unixPermissions: 0o120777 })
+        await writeFile(path, await z.generateAsync({ type: 'nodebuffer', platform: 'UNIX' }))
+      }
+      await expect(detectPath(1, beginAcquisition(1), path)).rejects.toThrow('symlink')
+    }
+  )
+  it.each(['folder', 'zip'])('I1 selects one skill from a %s collection with unselected oversized text', async (kind) => {
+    const files = {
+      'first/SKILL.md': skill.replace('name: read', 'name: first'),
+      'second/SKILL.md': skill.replace('name: read', 'name: second'),
+      'second/large.md': 'x'.repeat(2 * 1024 * 1024)
+    }
+    const path = join(env.root, kind === 'zip' ? 'collection.zip' : 'collection')
+    if (kind === 'zip') await writeFile(path, await zip(files, ''))
+    else for (const [name, value] of Object.entries(files)) await file(join(path, name), value)
+    const id = beginAcquisition(1),
+      detected = await detectPath(1, id, path)
+    if (detected.kind !== 'skills') throw new Error('Expected skills')
+    const chosen = await selectDetectedSkills(1, id, detected.token, ['first'])
+    if (chosen.kind !== 'plugin') throw new Error('Expected plugin')
+    await confirmPluginInstall(chosen.preview.token, {})
+    expect(await readdir(readState(chosen.preview.id).current.directory)).toEqual(['first'])
+  })
+  it.each(['folder', 'zip'])('I2 uses manifest identities before arbitrary %s names and derives stable collection names', async (kind) => {
+    const path = join(env.root, kind === 'zip' ? 'My Plugin (1).zip' : 'My Plugin (1)')
+    const files = { '.claude-plugin/plugin.json': { name: 'formal-name' }, 'skills/read/SKILL.md': skill }
+    if (kind === 'zip') await writeFile(path, await zip(files, ''))
+    else for (const [name, value] of Object.entries(files)) await file(join(path, name), value)
+    let id = beginAcquisition(1),
+      detected = await detectPath(1, id, path)
+    if (detected.kind !== 'plugin') throw new Error('Expected plugin')
+    expect(detected.preview.id).toBe('formal-name@local')
+    await cancelAcquisition(1, id)
+    if (kind === 'zip') await writeFile(path, await zip({ '.claude-plugin/marketplace.json': market('formal-market', []) }, ''))
+    else {
+      await rm(path, { recursive: true })
+      await file(join(path, '.claude-plugin/marketplace.json'), market('formal-market', []))
+    }
+    id = beginAcquisition(1)
+    detected = await detectPath(1, id, path)
+    expect(detected).toMatchObject({ kind: 'market', name: 'formal-market' })
+    await cancelAcquisition(1, id)
+    if (kind === 'zip') await writeFile(path, await zip({ 'first/SKILL.md': skill.replace('name: read', 'name: first') }, ''))
+    else {
+      await rm(path, { recursive: true })
+      await file(join(path, 'first/SKILL.md'), skill.replace('name: read', 'name: first'))
+    }
+    id = beginAcquisition(1)
+    detected = await detectPath(1, id, path)
+    if (detected.kind !== 'skills') throw new Error('Expected skills')
+    expect(detected.name).toMatch(/^[a-zA-Z0-9_-]+$/)
+    const name = detected.name
+    await cancelAcquisition(1, id)
+    expect(await detectPath(1, beginAcquisition(1), path)).toMatchObject({ kind: 'skills', name })
+  })
+  it('I2 accepts a GitHub subdirectory with spaces when it has a manifest', async () => {
+    routes.set('/owner/repo/zip/main', {
+      body: await zip({ 'My Plugin/.claude-plugin/plugin.json': { name: 'formal-name' }, 'My Plugin/skills/read/SKILL.md': skill })
+    })
+    const detected = await detectGithub(1, beginAcquisition(1), {
+      kind: 'github',
+      url: 'https://github.com/owner/repo/tree/main/My%20Plugin'
+    })
+    if (detected.kind !== 'plugin') throw new Error('Expected plugin')
+    expect(detected.preview.id).toBe('formal-name@local')
+  })
+  it.each(['500', 'corrupt'])('I3 retains last-good metadata/time when raw succeeds but archive is %s, then recovers', async (failure) => {
+    const manifest = market('test-market', [{ name: 'one', source: './plugins/one' }])
+    await repository('owner/repo', manifest)
+    await addMarket({ kind: 'github', url: 'owner/repo' })
+    const installed = await inspectPlugin({ kind: 'market', market: 'test-market', name: 'one' })
+    await confirmPluginInstall(installed.token, {})
+    await repository('owner/repo', manifest, {
+      'plugins/one/.claude-plugin/plugin.json': { name: 'one', version: '2.0.0', description: 'Known metadata' },
+      'plugins/one/jiwei/manifest.json': { schema: 1, category: 'role', name: { zh: '角色', en: 'Role' } }
+    })
+    await refreshMarkets('test-market')
+    const old = catalogPlugins(),
+      row = listMarkets().find((m) => m.name === 'test-market')!
+    expect(old[0]).toMatchObject({ version: '2.0.0', installedVersion: '1.0.0', updateAvailable: true, category: 'role' })
+    const healthy = join(env.root, 'healthy')
+    await file(join(healthy, '.claude-plugin/marketplace.json'), market('healthy', []))
+    await addMarketSource({ kind: 'folder', path: healthy })
+    routes.set(`/owner/repo/zip/${'a'.repeat(40)}`, failure === '500' ? { status: 500, body: 'down' } : { body: 'broken zip' })
+    await refreshMarkets()
+    expect(catalogPlugins()).toEqual(old)
+    expect(listMarkets().find((m) => m.name === 'test-market')).toMatchObject({ fetchedAt: row.fetchedAt, error: expect.any(String) })
+    expect(listMarkets().find((m) => m.name === 'healthy')!.error).toBeNull()
+    await repository('owner/repo', manifest, {
+      'plugins/one/.claude-plugin/plugin.json': { name: 'one', version: '3.0.0', description: 'Recovered metadata' }
+    })
+    await refreshMarkets('test-market')
+    expect(listMarkets().find((m) => m.name === 'test-market')!.error).toBeNull()
+    expect(catalogPlugins()[0]).toMatchObject({
+      version: '3.0.0',
+      description: 'Recovered metadata',
+      installedVersion: '1.0.0',
+      updateAvailable: true
+    })
+  })
+  it('I4 updates a wrapped local plugin zip from its persisted selected root', async () => {
+    const path = join(env.root, 'wrapped.zip')
+    const write = (version: string) =>
+      zip({ '.claude-plugin/plugin.json': { name: 'wrapped', version }, 'skills/read/SKILL.md': skill }).then((buffer) =>
+        writeFile(path, buffer)
+      )
+    await write('1.0.0')
+    const detected = await detectPath(1, beginAcquisition(1), path)
+    if (detected.kind !== 'plugin') throw new Error('Expected plugin')
+    await confirmPluginInstall(detected.preview.token, {})
+    await write('2.0.0')
+    const updated = await updatePlugin(detected.preview.id)
+    expect(updated.version).toBe('2.0.0')
+    expect(updated.skills).toHaveLength(1)
+    await confirmPluginInstall(updated.token, {})
+  })
+  it.each(['', 'repo-main/'])(
+    'I4 preserves skill projection on two updates of a %s local zip, retaining old state after unsafe failure',
+    async (prefix) => {
+      const path = join(env.root, 'collection.zip')
+      await writeFile(
+        path,
+        await zip(
+          {
+            'first/SKILL.md': skill.replace('name: read', 'name: first'),
+            'second/SKILL.md': skill.replace('name: read', 'name: second'),
+            'second/never.py': 'raise Exception()'
+          },
+          prefix
+        )
+      )
+      const id = beginAcquisition(1),
+        detected = await detectPath(1, id, path)
+      if (detected.kind !== 'skills') throw new Error('Expected skills')
+      const chosen = await selectDetectedSkills(1, id, detected.token, ['first'])
+      if (chosen.kind !== 'plugin') throw new Error('Expected preview')
+      await confirmPluginInstall(chosen.preview.token, {})
+      for (let i = 0; i < 2; i++) {
+        const updated = await updatePlugin(chosen.preview.id)
+        expect(updated.scripts).toEqual([])
+        expect(updated.skills.map((x) => x.name)).toEqual([`${detected.name}:first`])
+        await confirmPluginInstall(updated.token, {})
+        expect(await readdir(readState(chosen.preview.id).current.directory)).toEqual(['first'])
+      }
+      const old = readState(chosen.preview.id).current
+      await writeFile(path, 'broken zip')
+      await expect(updatePlugin(chosen.preview.id)).rejects.toThrow()
+      expect(readState(chosen.preview.id).current).toEqual(old)
+      expect(await readFile(join(old.directory, 'first/SKILL.md'), 'utf8')).toContain('name: first')
+    }
+  )
+  it('I5 preserves source-checked official remote cache/time across initialization and stale refresh, merging newer bundled', async () => {
+    const definition = { name: 'jiwei', bundled: 'resources/marketplace', remote: 'official/repo' }
+    const initialize = initializeMarkets as (override?: typeof definition) => Promise<void>
+    await repository('official/repo', market('jiwei'), { 'plugins/one/.claude-plugin/plugin.json': { name: 'one', version: '3.0.0' } })
+    await initialize(definition)
+    await refreshMarkets('jiwei')
+    expect(catalogPlugins().find((p) => p.id === 'one@jiwei')?.version).toBe('3.0.0')
+    const oldTime = Date.now() - 86_400_001
+    env.db!.update(schema.pluginMarkets).set({ fetchedAt: oldTime }).where(eq(schema.pluginMarkets.name, 'jiwei')).run()
+    hits = []
+    await initialize(definition)
+    expect(hits).toEqual([])
+    expect(listMarkets()[0].fetchedAt).toBe(oldTime)
+    expect(catalogPlugins()[0].version).toBe('3.0.0')
+    await refreshMarkets('jiwei', true)
+    expect(hits).toContain('/official/repo/develop/.claude-plugin/marketplace.json')
+    const fetched = listMarkets()[0].fetchedAt
+    routes.clear()
+    await initialize(definition)
+    await refreshMarkets('jiwei')
+    expect(catalogPlugins()[0].version).toBe('3.0.0')
+    expect(listMarkets()[0].fetchedAt).toBe(fetched)
+    expect(listMarkets()[0].error).not.toBeNull()
+    await file(join(env.root, 'resources/marketplace/.claude-plugin/marketplace.json'), market('jiwei'))
+    await file(join(env.root, 'resources/marketplace/plugins/one/.claude-plugin/plugin.json'), { name: 'one', version: '4.0.0' })
+    await file(join(env.root, 'resources/marketplace/plugins/one/skills/read/SKILL.md'), skill)
+    await initialize(definition)
+    expect(catalogPlugins()[0].version).toBe('4.0.0')
+    expect(listMarkets()[0].fetchedAt).toBe(fetched)
+    await initialize({ ...definition, remote: 'different/repo' })
+    expect(listMarkets()[0].fetchedAt).toBeNull()
   })
 })

@@ -1,8 +1,8 @@
 import { dialog, type BrowserWindow } from 'electron'
-import { randomBytes } from 'crypto'
+import { randomBytes, createHash } from 'crypto'
 import { basename, dirname, join } from 'path'
 import { mkdir, lstat, readdir } from 'fs/promises'
-import { parseMarketplace, PluginNameSchema, type PluginDetection, type PluginInspectInput, type PluginOrigin } from '@shared/plugins'
+import { parseMarketplace, type PluginDetection, type PluginInspectInput, type PluginOrigin } from '@shared/plugins'
 import { AcquisitionBatch, githubSource, sourceLink, type MarketSource } from './acquisition'
 import {
   REPOSITORY_LIMITS,
@@ -78,6 +78,17 @@ async function run<T>(owner: number, id: string, fn: (item: Operation) => Promis
     }
   }
 }
+function localSourceName(value: string): string {
+  const raw = basename(value).replace(/\.(zip|tgz|tar\.gz)$/i, '')
+  if (/^[a-zA-Z0-9_-]+$/.test(raw)) return raw.slice(0, 128)
+  const slug =
+    raw
+      .normalize('NFKC')
+      .replace(/[^a-zA-Z0-9_-]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 100) || 'local-skills'
+  return `${slug}-${createHash('sha256').update(raw).digest('hex').slice(0, 8)}`
+}
 async function detectPrepared(
   item: Operation,
   prepared: PreparedPluginSource,
@@ -91,7 +102,7 @@ async function detectPrepared(
   const token = randomBytes(32).toString('hex')
   if (files.includes('.claude-plugin/marketplace.json')) {
     const market = parseMarketplace(JSON.parse(await readPluginText(prepared.root, '.claude-plugin/marketplace.json')))
-    item.detection = { token, prepared, source, name, origin }
+    item.detection = { token, prepared, source, name: market.name, origin }
     return { kind: 'market', token, name: market.name, owner: market.owner.name, count: market.plugins.length }
   }
   if (
@@ -108,7 +119,10 @@ async function detectPrepared(
         type: 'folder',
         progressId: item.id,
         origin,
-        options: { sha, ...(!files.includes('.claude-plugin/plugin.json') ? { entry: { name, source: '.', strict: true } } : {}) }
+        options: {
+          sha,
+          ...(!files.includes('.claude-plugin/plugin.json') ? { entry: { name: localSourceName(name), source: '.', strict: true } } : {})
+        }
       },
       undefined,
       item.controller.signal
@@ -118,6 +132,7 @@ async function detectPrepared(
   }
   const skills = files.filter((p) => p.endsWith('/SKILL.md')).map((p) => dirname(p))
   if (!skills.length) throw new Error('No marketplace, plugin or Agent Skills found / 没有找到市场、插件或技能')
+  name = localSourceName(name)
   item.detection = { token, prepared, source, name, origin, skills, sha }
   return { kind: 'skills', token, name, skills: skills.map((path) => ({ path, name: basename(path) })) }
 }
@@ -136,7 +151,7 @@ export function detectGithub(owner: number, id: string, input: PluginInspectInpu
         const source = githubSource(input.url),
           result = await batch.repository(source, undefined, true)
         prepared = result.prepared
-        const name = PluginNameSchema.parse(basename(source.subdir ?? source.repo))
+        const name = basename(source.subdir ?? source.repo)
         return await detectPrepared(
           item,
           prepared,
@@ -165,8 +180,9 @@ export function detectPath(owner: number, id: string, path: string): Promise<Plu
   return run(owner, id, (item) =>
     pluginMutation(async () => {
       if (item.detection || item.preview) throw new Error('Operation already has a result')
-      const prepared = await preparePluginSource({ path, type: sourceType(path) })
+      const prepared = await preparePluginSource({ path, type: sourceType(path), repository: true })
       try {
+        let subdir: string | undefined
         // GitHub 下载的 zip 带单层仓库包装目录；标准插件自己的 skills/ 不剥离。
         if (sourceType(path) !== 'folder') {
           const children = await readdir(prepared.root, { withFileTypes: true })
@@ -174,14 +190,35 @@ export function detectPath(owner: number, id: string, path: string): Promise<Plu
             children.length === 1 &&
             children[0].isDirectory() &&
             !['skills', 'commands', 'jiwei', '.claude-plugin'].includes(children[0].name)
-          )
-            prepared.root = await safePluginPath(prepared.root, children[0].name)
+          ) {
+            const child = await safePluginPath(prepared.root, children[0].name)
+            const nested = await readdir(child, { withFileTypes: true })
+            // 单个技能目录本身不是仓库包装；保留技能选择层级。
+            const wrapped =
+              nested.some((entry) => ['.claude-plugin', 'skills'].includes(entry.name)) ||
+              (
+                await Promise.all(
+                  nested
+                    .filter((entry) => entry.isDirectory())
+                    .map((entry) =>
+                      lstat(join(child, entry.name, 'SKILL.md')).then(
+                        (st) => st.isFile(),
+                        () => false
+                      )
+                    )
+                )
+              ).some(Boolean)
+            if (wrapped) {
+              subdir = children[0].name
+              prepared.root = child
+            }
+          }
         }
-        const name = PluginNameSchema.parse(basename(path).replace(/\.(zip|tgz|tar\.gz)$/i, ''))
+        const name = basename(path)
         return await detectPrepared(
           item,
           prepared,
-          { kind: 'local', market: 'local', locator: path },
+          { kind: 'local', market: 'local', locator: path, ...(subdir ? { subdir } : {}) },
           name,
           sourceType(path) === 'folder' ? { kind: 'folder', path } : undefined
         )
@@ -247,7 +284,7 @@ export function addDetectedMarket(owner: number, id: string, token: string) {
       if (!source) {
         const parent = await safePluginPath(pluginRoot(), 'market-imports')
         await mkdir(parent, { recursive: true })
-        imported = await preparePluginSource({ path: detected.prepared.root, type: 'folder', tempParent: parent })
+        imported = await preparePluginSource({ path: detected.prepared.root, type: 'folder', tempParent: parent, repository: true })
         source = { kind: 'folder', path: imported.root }
       }
       const market = await addMarketSource(source, { signal: item.controller.signal, id })

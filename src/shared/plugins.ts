@@ -325,6 +325,8 @@ export function satisfiesPluginEngine(range: string, version = PLUGIN_API_VERSIO
 
 /** 来源由主进程获取器创建，绝不接受 renderer 自报 official/trustedBuiltin。 */
 export interface PluginOrigin {
+  /** main 识别的本地归档包装目录；更新必须复用此投影。 */
+  subdir?: string
   selection?: string[]
   kind: 'local' | 'market' | 'github'
   market: string
