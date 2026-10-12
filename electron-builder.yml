@@ -2,6 +2,9 @@ appId: io.github.cl3582175-oss.jiwei
 productName: 积微
 artifactName: Jiwei-${version}-${os}-${arch}.${ext}
 copyright: Copyright © 2026 cl3582175-oss
+beforePack: scripts/mac-before-pack.cjs
+afterPack: scripts/mac-after-pack.cjs
+afterSign: scripts/mac-after-sign.cjs
 directories:
   buildResources: build
   output: release/${version}
@@ -12,6 +15,7 @@ files:
   - '!.superpowers/**'
   - '!e2e/**'
   - '!test-results/**'
+  - '!scripts/**'
   - '!playwright-report/**'
   # 本地打包产物与测试数据：不能打进应用（否则每次本地打包都会把旧版本装进去，体积越来越大）
   - '!release/**'
@@ -38,9 +42,30 @@ protocols:
     schemes: [jiwei]
 mac:
   category: public.app-category.education
+  identity: '-'
+  hardenedRuntime: false
+  notarize: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  strictVerify: true
   target:
     - target: dmg
       arch: [arm64, x64]
+    - target: zip
+      arch: [arm64, x64]
+dmg:
+  background: build/dmg-background.png
+  window:
+    width: 680
+    height: 480
+  iconSize: 96
+  contents:
+    - x: 160
+      y: 220
+    - x: 520
+      y: 220
+      type: link
+      path: /Applications
 win:
   target:
     - target: nsis
@@ -49,6 +74,7 @@ nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
   shortcutName: 积微
+  include: build/installer.nsh
 linux:
   category: Education
   target: [AppImage, deb]
