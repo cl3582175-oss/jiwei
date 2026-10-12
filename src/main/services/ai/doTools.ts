@@ -1,5 +1,5 @@
-import { phases, milestones } from '../plan/phases'
-import { ActionListInput, readActions, MistakeListInput, readMistakes, ReadPage, page, readableReferenceIds } from './readData'
+import { GoalListInput, readGoalMetadata } from './goalReadData'
+import { ActionListInput, readActions, MistakeListInput, readMistakes } from './readData'
 import { tool, type ToolSet } from 'ai'
 import { z } from 'zod'
 import { InboxCreateSchema } from '@shared/inbox'
@@ -91,11 +91,11 @@ export function buildDoTools(zh: boolean): { tools: ToolSet; meta: Record<string
       }
     }),
     goals_list: tool({
-      description: zh ? '列出方向：掌握度、剩余天数、关联笔记数。includeMetadata:true 返回已存阶段/里程碑和当前进度；没有历史目标快照，日期仅为计划。limit/offset分页。' : 'List goals with mastery and days left. includeMetadata:true adds stored phases/milestones/current progress; no past goal snapshots. Dates alone are plans. limit/offset pagination.',
-      inputSchema: z.object({ includeMetadata: z.boolean().optional(), ...ReadPage }),
-      execute: async ({ includeMetadata, limit = 50, offset = 0 }) => {
+      description: zh ? '列出方向：掌握度、剩余天数、关联笔记数。includeMetadata:true 返回已存阶段/里程碑和当前进度；没有历史目标快照，日期仅为计划。limit/offset分页；嵌套覆盖量与next为继续读取参数，逐个交回本工具。' : 'List goals with mastery and days left. includeMetadata:true adds stored phases/milestones/current progress; no past goal snapshots. Dates alone are plans. limit/offset pagination; nested coverage and next provide continuation arguments for this same tool.',
+      inputSchema: GoalListInput,
+      execute: async (input) => {
+        if (input.includeMetadata) return JSON.stringify(readGoalMetadata(input))
         const goals = listGoals().filter((g) => g.status === 'active')
-        if (includeMetadata) return JSON.stringify({ ...page(goals.slice(offset, offset + limit + 1).map((g) => ({ ...g, progress: goalProgress(g.id), phases: phases(g.id).map((p) => ({ ...p, noteIds: readableReferenceIds('note', p.noteIds), sourceIds: readableReferenceIds('source', p.sourceIds) })), milestones: milestones(g.id) })), limit, offset), missingHistory: ['past goal snapshots'], guidance: 'Dates are schedules; completion requires stored status/doneAt. Progress is current, not weekly change.' })
         if (!goals.length) return zh ? '还没有进行中的方向。' : 'No active goals.'
         return goals
           .map((g) => {

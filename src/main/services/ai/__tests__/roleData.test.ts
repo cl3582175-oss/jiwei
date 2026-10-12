@@ -347,3 +347,95 @@ it('filters direct private note links before action limit', async () => {
   const result = JSON.parse(await call(buildDoTools(false).tools, 'actions_list', { includeMetadata: true, limit: 1 }))
   expect(result.items[0].id).toBe('public')
 })
+it('continues all oversized goal stages, milestones and permitted references through actual guardTools without JSON truncation', async () => {
+  const { PhaseSave, MilestoneSave } = await import('@shared/plan')
+  const { guardTools } = await import('../../agent/wrap')
+  const noteIds = Array.from({ length: 500 }, (_, i) => `note-${String(i).padStart(5, '0')}-${'n'.repeat(24)}`)
+  const sourceIds = Array.from({ length: 500 }, (_, i) => `source-${String(i).padStart(5, '0')}-${'s'.repeat(24)}`)
+  for (const [i, id] of noteIds.entries()) note(id, { aiExcluded: i < 30 })
+  for (const [i, id] of sourceIds.entries()) source(id, { aiExcluded: i < 30 })
+  env
+    .db!.insert(schema.goals)
+    .values({ id: 'large-goal', title: 'Valid oversized goal', description: '\u0001'.repeat(2000), ...base })
+    .run()
+  for (const id of noteIds)
+    env
+      .db!.insert(schema.links)
+      .values({ id: `goal-link-${id}`, fromType: 'goal', fromId: 'large-goal', toType: 'note', toId: id, origin: 'manual', ...base })
+      .run()
+  const phases = Array.from({ length: 8 }, (_, i) =>
+    PhaseSave.parse({
+      id: `phase-${i}`,
+      goalId: 'large-goal',
+      title: `Stage ${i} ${'\u0001'.repeat(280)}`,
+      startAt: 100 + i,
+      endAt: 300 + i,
+      position: i,
+      noteIds: i === 0 ? noteIds : [],
+      sourceIds: i === 0 ? sourceIds : []
+    })
+  )
+  for (const p of phases)
+    env
+      .db!.insert(schema.goalPhases)
+      .values({ ...p, id: p.id!, noteIds: JSON.stringify(p.noteIds), sourceIds: JSON.stringify(p.sourceIds), ...base })
+      .run()
+  const milestones = Array.from({ length: 75 }, (_, i) =>
+    MilestoneSave.parse({
+      id: `milestone-${i}`,
+      goalId: 'large-goal',
+      title: `Milestone ${i} ${'正文'.repeat(120)}`,
+      at: 100 + i,
+      doneAt: i % 2 ? 200 + i : null
+    })
+  )
+  for (const m of milestones)
+    env
+      .db!.insert(schema.goalMilestones)
+      .values({ ...m, id: m.id!, ...base })
+      .run()
+  const built = buildDoTools(false)
+  const wrapped = guardTools(built.tools, built.meta, { caller: 'test', zh: false })
+  const requests: Record<string, unknown>[] = [{ includeMetadata: true, limit: 1 }]
+  const seenPhases: string[] = [],
+    seenMilestones: string[] = [],
+    seenNotes: string[] = [],
+    seenSources: string[] = [],
+    seenGoalNotes: string[] = []
+  const collectNext = (value: unknown) => {
+    if (!value || typeof value !== 'object') return
+    for (const [key, child] of Object.entries(value)) {
+      if (key === 'next' && child) requests.push(child as Record<string, unknown>)
+      else if (key !== 'next') collectNext(child)
+    }
+  }
+  let calls = 0
+  while (requests.length) {
+    expect(++calls).toBeLessThan(100)
+    const input = requests.shift()!
+    const raw = await call(wrapped, 'goals_list', input)
+    expect(raw).not.toContain('已截断')
+    const body = raw.replace(/^<external-data[^>]*>\n/, '').replace(/\n<\/external-data>$/, '')
+    expect(body.length).toBeLessThanOrEqual(18000)
+    const result = JSON.parse(body)
+    expect(result.missingHistory).toContain('past goal snapshots')
+    const detail = input.details as { kind: string } | undefined
+    if (!detail) {
+      expect(result.items[0].phasesPage.total).toBe(8)
+      expect(result.items[0].milestonesPage.total).toBe(75)
+      seenPhases.push(...result.items[0].phases.map((p: { id: string }) => p.id))
+      seenMilestones.push(...result.items[0].milestones.map((m: { id: string }) => m.id))
+    } else if (detail.kind === 'phases') seenPhases.push(...result.items.map((p: { id: string }) => p.id))
+    else if (detail.kind === 'milestones') seenMilestones.push(...result.items.map((m: { id: string }) => m.id))
+    else if (detail.kind === 'noteIds') seenNotes.push(...result.items)
+    else if (detail.kind === 'sourceIds') seenSources.push(...result.items)
+    else if (detail.kind === 'goalNoteIds') seenGoalNotes.push(...result.items)
+    collectNext(result)
+  }
+  expect(calls).toBeGreaterThan(3)
+  expect(seenPhases).toEqual(phases.map((p) => p.id))
+  expect(seenMilestones).toEqual(milestones.map((m) => m.id))
+  expect(seenNotes).toEqual(noteIds.slice(30))
+  expect(seenSources).toEqual(sourceIds.slice(30))
+  expect(seenGoalNotes).toEqual(noteIds.slice(30))
+})
