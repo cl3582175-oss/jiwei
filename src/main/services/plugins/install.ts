@@ -267,7 +267,10 @@ export function confirmPluginInstall(token: string, input: { feeds?: number[]; c
         parsed = await parsePlugin(pending.prepared.root, pending.options),
         id = `${parsed.manifest.name}@${pending.origin.market}`
       if (parsed.hash !== pending.parsed.hash) throw new Error('Plugin changed after preview; inspect again')
-      const old = getDb().select().from(plugins).where(eq(plugins.id, id)).get(),
+      const rows = getDb().select().from(plugins).all()
+      if (rows.some((r) => r.id !== id && r.id.split('@')[0] === parsed.manifest.name))
+        throw new Error('Plugin namespace already installed from another market')
+      const old = rows.find((r) => r.id === id),
         oldState = old ? readState(id) : undefined
       if ((oldState?.current.directory ?? null) !== pending.expected) throw new Error('Installed plugin changed; inspect again')
       if (opts.feeds.some((i) => !parsed.feeds[i])) throw new Error('Invalid selected subscription')
@@ -413,15 +416,72 @@ interface RemovalJournal {
   id: string
   moves: { from: string; to: string }[]
 }
+/** 不完整或冲突的记录不代表用户数据可删除；移出恢复队列并原样保留供检查。 */
+async function quarantineRemoval(trash: string): Promise<void> {
+  try {
+    const root = await owned(join(pluginRoot(), 'quarantine'))
+    await mkdir(root, { recursive: true })
+    await rename(trash, join(root, randomBytes(16).toString('hex')))
+  } catch {
+    // 隔离失败也保留原目录，不能阻断其余插件初始化或冒险清理。
+  }
+}
+async function recoverRemoval(trash: string): Promise<void> {
+  try {
+    await owned(trash)
+    const journalFile = await owned(join(trash, 'journal.json'))
+    if ((await lstat(journalFile)).size > 16_384) throw new Error('Invalid plugin recovery journal')
+    const value: unknown = JSON.parse(await readFile(journalFile, 'utf8'))
+    if (!value || typeof value !== 'object') throw new Error('Invalid plugin recovery journal')
+    const journal = value as RemovalJournal
+    if (
+      typeof journal.id !== 'string' ||
+      !journal.id.includes('@') ||
+      journal.id.length > 512 ||
+      !Array.isArray(journal.moves) ||
+      !journal.moves.length ||
+      journal.moves.length > 2
+    )
+      throw new Error('Invalid plugin recovery journal')
+    const sources = new Set<string>()
+    const installed = !!getDb().select().from(plugins).where(eq(plugins.id, journal.id)).get()
+    // 先验证整个记录和所有目录；不能恢复到一半才发现后续路径越界或数据冲突。
+    for (const [i, move] of journal.moves.entries()) {
+      if (
+        !move ||
+        ![pluginCache(journal.id), pluginData(journal.id)].includes(move.from) ||
+        move.to !== join(trash, String(i)) ||
+        sources.has(move.from)
+      )
+        throw new Error('Invalid plugin recovery journal')
+      sources.add(move.from)
+      await owned(move.from)
+      await owned(move.to)
+      const fromExists = existsSync(move.from),
+        toExists = existsSync(move.to)
+      if ((installed && fromExists === toExists) || (!installed && fromExists)) throw new Error('Ambiguous plugin recovery directories')
+      for (const path of [move.from, move.to])
+        if (existsSync(path) && !(await lstat(path)).isDirectory()) throw new Error('Invalid plugin recovery directory')
+    }
+    const allowed = new Set(['journal.json', ...journal.moves.map((_, i) => String(i))])
+    if ((await readdir(trash)).some((name) => !allowed.has(name))) throw new Error('Unknown plugin recovery data')
+    if (installed) for (const move of journal.moves) if (existsSync(move.to)) renameSync(move.to, move.from)
+    await rm(trash, { recursive: true, force: true })
+  } catch {
+    await quarantineRemoval(trash)
+  }
+}
 export function uninstallPlugin(id: string, options: { removeFeeds?: boolean; removeTasks?: boolean } = {}): Promise<void> {
   return pluginMutation(async () => {
     pluginRow(id)
     const trash = await owned(join(pluginRoot(), 'trash', randomBytes(16).toString('hex')))
-    await mkdir(trash, { recursive: true })
+    await mkdir(await owned(join(pluginRoot(), 'trash')), { recursive: true })
+    await mkdir(trash)
     const moves = [pluginCache(id), pluginData(id)].filter(existsSync).map((from, i) => ({ from, to: join(trash, String(i)) }))
     for (const move of moves) await owned(move.from)
-    await writeFile(join(trash, 'journal.json'), JSON.stringify({ id, moves }), { flag: 'wx', mode: 0o600 })
-    let committed = false
+    // 专属目录中先写完整临时记录，再原子发布；任何目录移动都必须在发布之后。
+    await writeFile(join(trash, 'journal.tmp'), JSON.stringify({ id, moves }), { flag: 'wx', mode: 0o600 })
+    await rename(join(trash, 'journal.tmp'), join(trash, 'journal.json'))
     const effects: (() => void)[] = []
     const afterCommit = (effect: () => void): void => {
       effects.push(effect)
@@ -446,15 +506,14 @@ export function uninstallPlugin(id: string, options: { removeFeeds?: boolean; re
           .run()
         record('uninstall', id)
       })
-      committed = true
       for (const effect of effects) effect()
       replacePluginRegistry(id)
       for (const [token, pending] of previews)
         if (`${pending.parsed.manifest.name}@${pending.origin.market}` === id) await cancelPluginPreview(token).catch(() => undefined)
       notify()
     } finally {
-      if (!committed) for (const move of moves) if (existsSync(move.to) && !existsSync(move.from)) renameSync(move.to, move.from)
-      await rm(trash, { recursive: true, force: true }).catch(() => undefined)
+      // DB 提交结果决定清理/恢复；遇到冲突保留数据，不盲删隔离目录。
+      await recoverRemoval(trash)
     }
   })
 }
@@ -468,25 +527,7 @@ export async function initializePlugins(): Promise<void> {
     await mkdir(pluginRoot(), { recursive: true })
     await owned(pluginRoot())
     const trashRoot = await owned(join(pluginRoot(), 'trash'))
-    for (const child of await readdir(trashRoot).catch(() => [])) {
-      const trash = await owned(join(trashRoot, child)),
-        journalFile = join(trash, 'journal.json')
-      if (!existsSync(journalFile)) {
-        await rm(trash, { recursive: true, force: true })
-        continue
-      }
-      const journal = JSON.parse(await readFile(await owned(journalFile), 'utf8')) as RemovalJournal
-      if (getDb().select().from(plugins).where(eq(plugins.id, journal.id)).get()) {
-        for (const [i, move] of journal.moves.entries()) {
-          if (![pluginCache(journal.id), pluginData(journal.id)].includes(move.from) || move.to !== join(trash, String(i)))
-            throw new Error('Invalid plugin recovery journal')
-          await owned(move.from)
-          await owned(move.to)
-          if (existsSync(move.to) && !existsSync(move.from)) renameSync(move.to, move.from)
-        }
-      }
-      await rm(trash, { recursive: true, force: true })
-    }
+    for (const child of await readdir(trashRoot).catch(() => [])) await recoverRemoval(join(trashRoot, child))
     for (const [token] of previews) await cancelPluginPreview(token)
     await rm(await owned(join(pluginRoot(), 'previews')), { recursive: true, force: true })
     const installedRows = getDb().select().from(plugins).all()

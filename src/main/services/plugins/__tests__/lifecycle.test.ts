@@ -15,10 +15,31 @@ const env = vi.hoisted(() => ({
   root: '',
   db: null as DB | null,
   failAudit: false,
+  journalFault: '' as '' | 'write' | 'publish',
   transport: {} as Record<string, unknown>,
   attach: undefined as (() => Promise<void>) | undefined,
-  closed: 0
+  closed: 0,
+  audits: [] as unknown[],
+  call: undefined as (() => Promise<unknown>) | undefined
 }))
+vi.mock('fs/promises', async (original) => {
+  const actual = await original<typeof import('fs/promises')>()
+  return {
+    ...actual,
+    writeFile: async (...args: Parameters<typeof actual.writeFile>) => {
+      if (env.journalFault === 'write' && String(args[0]).endsWith('/journal.tmp')) {
+        await actual.writeFile(args[0], '{"id":')
+        throw new Error('Injected journal write interruption')
+      }
+      return actual.writeFile(...args)
+    },
+    rename: async (...args: Parameters<typeof actual.rename>) => {
+      if (env.journalFault === 'publish' && String(args[0]).endsWith('/journal.tmp'))
+        throw new Error('Injected journal publish interruption')
+      return actual.rename(...args)
+    }
+  }
+})
 vi.mock('electron', () => ({
   app: { getPath: () => env.root, getAppPath: () => env.root, getVersion: () => 'test', isPackaged: false },
   dialog: { showOpenDialog: vi.fn() },
@@ -39,7 +60,8 @@ vi.mock('../../settings', () => ({
 vi.mock('../../device', () => ({ deviceId: () => 'fixture-device' }))
 vi.mock('../../memory', () => ({ skillPreferences: () => [] }))
 vi.mock('../../agent/audit', () => ({
-  audit: () => {
+  audit: (entry: unknown) => {
+    env.audits.push(entry)
     if (env.failAudit) throw new Error('Injected audit failure')
   }
 }))
@@ -58,7 +80,10 @@ vi.mock('@modelcontextprotocol/sdk/client/index.js', () => ({
       await env.attach?.()
     }
     async listTools() {
-      return { tools: [] }
+      return { tools: [{ name: 'read', inputSchema: { type: 'object' }, annotations: { readOnlyHint: true, openWorldHint: false } }] }
+    }
+    async callTool() {
+      return env.call?.()
     }
     setNotificationHandler() {}
     async close() {
@@ -89,6 +114,8 @@ vi.mock('@modelcontextprotocol/sdk/client/streamableHttp.js', () => ({
 }))
 import {
   inspectPluginPath,
+  inspectPlugin,
+  registerPluginSourceAdapter,
   confirmPluginInstall,
   initializePlugins,
   updatePlugin,
@@ -102,8 +129,10 @@ import {
 import { listTemplates, listFrameworks, listRecipes, replacePluginRegistry } from '../registry'
 import { pluginCache, pluginData, pluginRoot, readState } from '../state'
 import { listSkills, loadSkill, readSkillFile, skillCatalog, listLenses, saveLens, reloadSkills } from '../../ai/skills'
-import { listServers, saveServer, connectServer, disconnect, pluginFetch } from '../../mcp/client'
+import { listServers, saveServer, connectServer, disconnect, pluginFetch, assistantMcpTools } from '../../mcp/client'
 import { net } from 'electron'
+import log from 'electron-log/main'
+import { guardTools } from '../../agent/wrap'
 import { enqueue, registerJobKind } from '../../jobs'
 
 const serverInput = (s: McpServerInfo) => ({
@@ -178,8 +207,11 @@ async function install(config = {}) {
 beforeEach(async () => {
   vi.useRealTimers()
   env.failAudit = false
+  env.journalFault = ''
   env.attach = undefined
   env.closed = 0
+  env.audits = []
+  env.call = undefined
   env.transport = {}
   root = await mkdtemp(join(tmpdir(), 'jiwei-p1b-'))
   env.root = join(root, 'user-data')
@@ -394,6 +426,112 @@ describe('production plugin lifecycle in isolated SQLite and filesystem', () => 
     expect(listPlugins()[0]).toMatchObject({ enabled: false, available: false })
     expect(listSkills()).toEqual([])
   })
+  it.each(['market-a', 'market-b'])('rechecks namespace at confirm when %s wins', async (winner) => {
+    registerPluginSourceAdapter(async (input) => {
+      if (input.kind !== 'market') throw new Error('Fixture only supports market')
+      return { path: source, type: 'folder', origin: { kind: 'market', market: input.market, locator: source, name: 'sample' } }
+    })
+    const a = await inspectPlugin({ kind: 'market', market: 'market-a', name: 'sample' })
+    const b = await inspectPlugin({ kind: 'market', market: 'market-b', name: 'sample' })
+    const [first, second] = winner === 'market-a' ? [a, b] : [b, a]
+    await confirmPluginInstall(first.token, {})
+    await expect(confirmPluginInstall(second.token, {})).rejects.toThrow('namespace')
+    expect(listPlugins().map((p) => p.id)).toEqual([first.id])
+    expect(listSkills().map((s) => s.name)).toEqual(['sample:check', 'sample:read'])
+    expect(existsSync(pluginCache(second.id))).toBe(false)
+    expect(existsSync(pluginData(second.id))).toBe(false)
+  })
+  it.each(['missing', 'empty', 'truncated', 'unpublished', 'unpublished-complete', 'invalid-schema', 'invalid-path', 'conflict'])(
+    'preserves %s recovery evidence and continues valid journals',
+    async (kind) => {
+      const info = await install()
+      const bad = join(pluginRoot(), 'trash', 'a-invalid')
+      const good = join(pluginRoot(), 'trash', 'z-valid')
+      await file(join(bad, '0/user.txt'), 'irreplaceable synthetic user data')
+      if (kind === 'empty') await file(join(bad, 'journal.json'), '')
+      if (kind === 'truncated') await file(join(bad, 'journal.json'), '{"id":')
+      if (kind === 'unpublished') await file(join(bad, 'journal.tmp'), '{"id":')
+      if (kind === 'unpublished-complete')
+        await file(join(bad, 'journal.tmp'), JSON.stringify({ id: info.id, moves: [{ from: pluginData(info.id), to: join(bad, '0') }] }))
+      if (kind === 'invalid-schema') await file(join(bad, 'journal.json'), JSON.stringify({ id: 42, moves: null }))
+      if (kind === 'invalid-path')
+        await file(join(bad, 'journal.json'), JSON.stringify({ id: 'absent@local', moves: [{ from: source, to: join(bad, '0') }] }))
+      if (kind === 'conflict')
+        await file(join(bad, 'journal.json'), JSON.stringify({ id: info.id, moves: [{ from: pluginData(info.id), to: join(bad, '0') }] }))
+      const moves = [{ from: pluginCache(info.id), to: join(good, '0') }]
+      await file(join(good, 'journal.json'), JSON.stringify({ id: info.id, moves }))
+      await rename(moves[0].from, moves[0].to)
+      await initializePlugins()
+      expect(listPlugins()[0]).toMatchObject({ enabled: true, available: true })
+      expect(listSkills()).toHaveLength(2)
+      expect(existsSync(good)).toBe(false)
+      const quarantine = join(pluginRoot(), 'quarantine')
+      const entries = await readdir(quarantine)
+      expect(entries).toHaveLength(1)
+      expect(await readFile(join(quarantine, entries[0], '0/user.txt'), 'utf8')).toBe('irreplaceable synthetic user data')
+      await initializePlugins()
+      expect(await readdir(quarantine)).toEqual(entries)
+    }
+  )
+  it.each(['write', 'publish'] as const)('keeps source directories intact when journal %s is interrupted', async (fault) => {
+    const info = await install()
+    await file(join(pluginData(info.id), 'user.txt'), 'synthetic user data')
+    env.journalFault = fault
+    await expect(uninstallPlugin(info.id)).rejects.toThrow('Injected journal')
+    env.journalFault = ''
+    expect(existsSync(readState(info.id).current.directory)).toBe(true)
+    expect(await readFile(join(pluginData(info.id), 'user.txt'), 'utf8')).toBe('synthetic user data')
+    const trashRoot = join(pluginRoot(), 'trash')
+    const [entry] = await readdir(trashRoot)
+    expect(await readdir(join(trashRoot, entry))).toEqual(['journal.tmp'])
+    if (fault === 'publish') expect(JSON.parse(await readFile(join(trashRoot, entry, 'journal.tmp'), 'utf8')).moves).toHaveLength(2)
+    await initializePlugins()
+    expect(listPlugins()[0]).toMatchObject({ enabled: true, available: true })
+    expect(await readdir(trashRoot)).toEqual([])
+    expect(await readdir(join(pluginRoot(), 'quarantine'))).toHaveLength(1)
+  })
+  it.each([0, 1, 2])('recovers published removal after %i moves without data loss', async (count) => {
+    const info = await install()
+    await file(join(pluginData(info.id), 'user.txt'), 'synthetic user data')
+    const trash = join(pluginRoot(), 'trash', 'published')
+    const moves = [pluginCache(info.id), pluginData(info.id)].map((from, i) => ({ from, to: join(trash, String(i)) }))
+    await file(join(trash, 'journal.json'), JSON.stringify({ id: info.id, moves }))
+    for (const move of moves.slice(0, count)) await rename(move.from, move.to)
+    await initializePlugins()
+    expect(await readFile(join(pluginData(info.id), 'user.txt'), 'utf8')).toBe('synthetic user data')
+    expect(listPlugins()[0]).toMatchObject({ enabled: true, available: true })
+    expect(existsSync(trash)).toBe(false)
+  })
+  it('validates every recovery move before restoring any directory', async () => {
+    const info = await install()
+    const trash = join(pluginRoot(), 'trash', 'invalid-second-move')
+    const moves = [
+      { from: pluginCache(info.id), to: join(trash, '0') },
+      { from: source, to: join(trash, '1') }
+    ]
+    await file(join(trash, 'journal.json'), JSON.stringify({ id: info.id, moves }))
+    await rename(moves[0].from, moves[0].to)
+    await file(join(trash, '1/user.txt'), 'preserve second move')
+    await initializePlugins()
+    expect(existsSync(pluginCache(info.id))).toBe(false)
+    const [entry] = await readdir(join(pluginRoot(), 'quarantine'))
+    const saved = join(pluginRoot(), 'quarantine', entry)
+    expect(await readdir(join(saved, '0'))).toHaveLength(1)
+    expect(await readFile(join(saved, '1/user.txt'), 'utf8')).toBe('preserve second move')
+    expect(listPlugins()[0].enabled).toBe(false)
+  })
+  it('finishes committed removal from a valid published journal', async () => {
+    const info = await install()
+    const trash = join(pluginRoot(), 'trash', 'committed')
+    const moves = [pluginCache(info.id), pluginData(info.id)].map((from, i) => ({ from, to: join(trash, String(i)) }))
+    await file(join(trash, 'journal.json'), JSON.stringify({ id: info.id, moves }))
+    for (const move of moves) await rename(move.from, move.to)
+    env.db!.delete(schema.plugins).where(eq(schema.plugins.id, info.id)).run()
+    replacePluginRegistry(info.id)
+    await initializePlugins()
+    expect(existsSync(trash)).toBe(false)
+    expect(listPlugins()).toEqual([])
+  })
   it('retains the original version/registry/MCP/config after failed update and rollback', async () => {
     const info = await install({ token: 'synthetic' }),
       state = readState(info.id)
@@ -484,6 +622,56 @@ describe('plugin MCP connection boundary', () => {
     expect(listPlugins()[0].sensitive.token).toBe(false)
     expect(listServers()[0].enabled).toBe(false)
     await expect(saveServer({ ...serverInput(server), enabled: true })).rejects.toThrow('Required')
+  })
+  it.each(['rejection', 'isError'])('sanitizes connected plugin tool %s before guard logging and audit', async (kind) => {
+    await install({ token: 'synthetic-secret-123' })
+    const server = listServers()[0]
+    await saveServer({ ...serverInput(server), enabled: true })
+    await connectServer(server.id)
+    env.call = async () => {
+      if (kind === 'rejection') throw new Error('SDK args contained synthetic-secret-123')
+      return { isError: true, content: [{ type: 'text', text: 'server echoed synthetic-secret-123' }] }
+    }
+    const warn = vi.spyOn(log, 'warn').mockImplementation(() => undefined)
+    try {
+      const { tools, meta } = await assistantMcpTools(false)
+      const guarded = guardTools(tools, meta, { zh: false, caller: 'fixture' })
+      const execute = Object.values(guarded)[0].execute!
+      const error = await Promise.resolve(execute({}, { toolCallId: 'fixture', messages: [], context: {} })).catch((e: unknown) => e)
+      expect(error).toBeInstanceOf(Error)
+      expect((error as Error).message).toContain('Plugin tool call failed')
+      expect((error as Error).cause).toBeUndefined()
+      expect(String(error)).not.toContain('synthetic-secret-123')
+      expect(warn).toHaveBeenCalled()
+      expect(JSON.stringify(warn.mock.calls)).not.toContain('synthetic-secret-123')
+      expect(env.audits).toContainEqual(
+        expect.objectContaining({ status: 'error', detail: expect.stringContaining('Plugin tool call failed') })
+      )
+      expect(JSON.stringify(env.audits)).not.toContain('synthetic-secret-123')
+    } finally {
+      warn.mockRestore()
+    }
+  })
+  it.each(['rejection', 'isError'])('preserves ordinary MCP tool %s details', async (kind) => {
+    const server = await saveServer({ name: 'ordinary', transport: 'stdio', command: 'fixture-never-executed', enabled: true })
+    await connectServer(server.id)
+    const original = new Error('ordinary failure details')
+    env.call = async () => {
+      if (kind === 'rejection') throw original
+      return { isError: true, content: [{ type: 'text', text: original.message }] }
+    }
+    const warn = vi.spyOn(log, 'warn').mockImplementation(() => undefined)
+    try {
+      const { tools, meta } = await assistantMcpTools(false)
+      const guarded = guardTools(tools, meta, { zh: false, caller: 'fixture' })
+      const error = await Promise.resolve(
+        Object.values(guarded)[0].execute!({}, { toolCallId: 'fixture', messages: [], context: {} })
+      ).catch((e: unknown) => e)
+      expect((error as Error).message).toBe(original.message)
+      if (kind === 'rejection') expect(error).toBe(original)
+    } finally {
+      warn.mockRestore()
+    }
   })
   it('cannot revive an in-flight connection after plugin disable', async () => {
     const info = await install({ token: 'synthetic' }),

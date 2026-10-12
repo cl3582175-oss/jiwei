@@ -491,10 +491,20 @@ async function callTool(
     )
       throw new Error(tr('工具权限已改变，后台调用已跳过', 'Tool permissions changed; background call skipped'))
   }
-  const r = await conn.client.callTool({ name, arguments: args }, undefined, { timeout: 110_000, signal })
-  const text = resultText(r as never, zh)
-  if (r.isError) throw new Error(text)
-  return text
+  // 在调用前保留来源，停用/卸载并发也不能让 SDK 的含密文错误越过 guard/audit 边界。
+  const pluginOrigin = !!row(serverId).pluginId
+  try {
+    const r = await conn.client.callTool({ name, arguments: args }, undefined, { timeout: 110_000, signal })
+    const text = resultText(r as never, zh)
+    if (r.isError) throw new Error(text)
+    return text
+  } catch (error) {
+    if (!pluginOrigin) throw error
+    // eslint-disable-next-line preserve-caught-error -- 插件 SDK 错误可能包含注入的凭证，不能通过 cause 泄漏。
+    throw new Error(
+      zh ? '插件工具调用失败，请检查插件配置和服务状态' : 'Plugin tool call failed; check plugin configuration and server status'
+    )
+  }
 }
 
 /** 参数给用户看：每行“名称：值”，不显示原始 JSON */
