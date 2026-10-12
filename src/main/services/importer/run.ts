@@ -1,9 +1,9 @@
 import { app, dialog, type BrowserWindow } from 'electron'
-import { mkdir, writeFile, rm } from 'fs/promises'
+import { mkdir, writeFile, rm, readdir } from 'fs/promises'
 import { join, posix, basename } from 'path'
-import { and, eq, isNull } from 'drizzle-orm'
+import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { getDb, getSqlite } from '../../db'
-import { sources, assets } from '../../db/schema'
+import { sources, assets, importScans } from '../../db/schema'
 import { newId } from '../../lib/ids'
 import { decodeImportText, type ConvertedMarkdown } from '../../lib/importMarkdown'
 import { readChecked, matchAttachment, type ScannedLibrary } from './scan'
@@ -156,6 +156,24 @@ export function beginImport(id: string, input: ImportOptions): ImportRun {
     saveRecord(`run.${runId}`, run)
   })
   return getRun(runId)
+}
+const SCAN_TTL = 7 * 86_400_000
+/** 维护：一周前的扫描清单和它解压出来的副本（Notion zip）不再保留；正在导入的除外。 */
+export async function pruneImportScans(now = Date.now()): Promise<number> {
+  const busy = new Set(listRuns().flatMap((r) => (['queued', 'running', 'canceling'].includes(r.status) ? [r.scanId] : [])))
+  const keep = new Set<string>()
+  const stale: string[] = []
+  for (const row of getDb().select().from(importScans).all()) {
+    const status = (JSON.parse(row.data) as ScanRecord).state.status
+    if (busy.has(row.id) || status === 'queued' || status === 'scanning' || now - row.createdAt < SCAN_TTL) keep.add(row.id)
+    else stale.push(row.id)
+  }
+  if (stale.length) getDb().delete(importScans).where(inArray(importScans.id, stale)).run()
+  const root = join(app.getPath('userData'), 'import-cache')
+  const dirs = await readdir(root).catch(() => [] as string[])
+  for (const d of dirs)
+    if (!(d.startsWith('scan-') && keep.has(d.slice(5))) && !active.has(d)) await rm(join(root, d), { recursive: true, force: true })
+  return stale.length
 }
 export function cancelScan(id: string): void {
   cancelJob(getScan(id).jobId)

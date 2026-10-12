@@ -1261,3 +1261,38 @@ export const plugins = sqliteTable('plugins', {
   installedAt: integer('installed_at').notNull(),
   updatedAt: integer('updated_at').notNull()
 })
+
+/** 笔记库导入（v0.11）：扫描是可续传的预览清单，运行与条目用于去重和整体撤销。 */
+export const importScans = sqliteTable('import_scans', {
+  id: text('id').primaryKey(),
+  data: text('data').notNull(),
+  createdAt: integer('created_at').notNull()
+})
+export const importRuns = sqliteTable(
+  'import_runs',
+  {
+    id: text('id').primaryKey(),
+    kind: text('kind').notNull(),
+    rootLabel: text('root_label').notNull(),
+    rootHash: text('root_hash').notNull(),
+    options: text('options').notNull(),
+    data: text('data').notNull(),
+    createdAt: integer('created_at').notNull(),
+    undoneAt: integer('undone_at')
+  },
+  (t) => [index('import_runs_root_idx').on(t.rootHash)]
+)
+export const importItems = sqliteTable(
+  'import_items',
+  {
+    runId: text('run_id').notNull(),
+    sourceKey: text('source_key').notNull(),
+    contentHash: text('content_hash').notNull(),
+    noteId: text('note_id'),
+    status: text('status').notNull(),
+    message: text('message'),
+    complete: integer('complete', { mode: 'boolean' }).notNull().default(false),
+    data: text('data').notNull()
+  },
+  (t) => [primaryKey({ columns: [t.runId, t.sourceKey] }), index('import_items_note_idx').on(t.noteId)]
+)

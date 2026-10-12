@@ -66,5 +66,8 @@ export {
   mcpServers,
   pluginMarkets,
   plugins,
+  importScans,
+  importRuns,
+  importItems,
   mcpClients
 } from './schema'

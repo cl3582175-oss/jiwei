@@ -2,7 +2,7 @@ import { getMainWindow, setMainWindow } from './mainWindow'
 import { initializePlugins } from './services/plugins/install'
 import { initializeMarkets } from './services/plugins/markets'
 import { registerCapture, stopCapture } from './services/capture'
-import { registerImporterJobs } from './services/importer/run'
+import { registerImporterJobs, pruneImportScans } from './services/importer/run'
 import { registerImportCueJob } from './services/importer/cues'
 import { shutdown as stopPhoneUpload } from './services/phoneUpload'
 import { registerInboxJobs } from './services/inbox'
@@ -244,6 +244,7 @@ app.whenReady().then(async () => {
       pruneRevisions()
       pruneJobs()
       pruneAudit()
+      await pruneImportScans()
       await collectGarbage()
     } catch (e) {
       log.error('[maintenance] failed', e)
