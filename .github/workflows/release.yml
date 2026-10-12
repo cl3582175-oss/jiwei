@@ -85,13 +85,13 @@ jobs:
           name: packages-${{ runner.os }}
           if-no-files-found: error
           path: |
-            release/**/*.dmg
-            release/**/*.zip
-            release/**/*.exe
-            release/**/*.AppImage
-            release/**/*.deb
-            release/**/*.yml
-            release/**/*.blockmap
+            release/*/Jiwei-*.dmg
+            release/*/Jiwei-*.zip
+            release/*/Jiwei-*.exe
+            release/*/Jiwei-*.AppImage
+            release/*/Jiwei-*.deb
+            release/*/latest*.yml
+            release/*/Jiwei-*.blockmap
 
   draft:
     needs: build
