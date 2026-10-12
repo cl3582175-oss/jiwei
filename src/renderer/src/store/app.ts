@@ -4,7 +4,7 @@ import type { NoteSort, WorkspaceContext } from '@shared/types'
 import { toast } from 'sonner'
 
 export type StarterIntent =
-  | { kind: 'chat'; text: string }
+  | { kind: 'chat'; text: string; skill?: string }
   | { kind: 'advisor'; framework: string; question: string }
   | { kind: 'work'; template: string }
   | { kind: 'recipe'; recipe: string }

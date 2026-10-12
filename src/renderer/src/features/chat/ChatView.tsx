@@ -211,10 +211,13 @@ function ChatPanel() {
       return
     }
     stick.current = true
+    const skill = starterSkill.current
+    starterSkill.current = undefined
     try {
       const { conversation, userMessage, assistant } = await sendChat({
         conversationId,
         text,
+        ...(skill ? { skill } : {}),
         providerId: choice.providerId,
         model: choice.model,
         effort,
@@ -248,9 +251,13 @@ function ChatPanel() {
   // 「今日」输入框与晨报回复：进入助手页后自动发送（模型就绪后发送一次）
   const draftSent = useRef(false)
   const [prefill, setPrefill] = useState('')
+  // 起步卡指定的技能：第一条消息直接用它，不靠模型从技能目录里匹配
+  const starterSkill = useRef<string | undefined>(undefined)
   useEffect(() => {
     const intent = useApp.getState().takeStarterIntent('chat')
-    if (intent) setPrefill(intent.text)
+    if (!intent) return
+    setPrefill(intent.text)
+    starterSkill.current = intent.skill
   }, [])
   useEffect(() => {
     if (draftSent.current || !choice.providerId || !choice.model || !useApp.getState().assistantDraft) return

@@ -611,6 +611,19 @@ describe('plugin MCP connection boundary', () => {
     expect(JSON.stringify(listServers())).not.toContain('synthetic-secret-123')
     expect(env.db!.select().from(schema.mcpServers).get()?.args).toBe('["${user_config.token}"]')
   })
+  it('paid or data-leaving connectors ask before every tool by default; others keep per-tool defaults', async () => {
+    await fixture()
+    await install()
+    expect(env.db!.select().from(schema.mcpServers).get()?.toolPolicies).toBe('{}')
+    await uninstallPlugin('sample@local')
+    await fixture()
+    await file(
+      join(source, 'jiwei/manifest.json'),
+      JSON.stringify({ schema: 1, category: 'connector', dataLeavesDevice: true, cost: { zh: '按调用计费', en: 'Paid per call' } })
+    )
+    await install()
+    expect(env.db!.select().from(schema.mcpServers).get()?.toolPolicies).toBe('{"*":"ask"}')
+  })
   it('does not block an unrelated MCP server on another server’s required field', async () => {
     await fixture('one', {
       mcpServers: { secure: { command: 'fixture', args: ['${user_config.token}'] }, public: { command: 'fixture', args: [] } }

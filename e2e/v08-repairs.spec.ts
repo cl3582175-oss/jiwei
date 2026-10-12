@@ -144,11 +144,12 @@ test.beforeAll(async () => {
       const done = input.messages.flatMap(
         (m: { tool_calls?: { function: { name: string } }[] }) => m.tool_calls?.map((c) => c.function.name) ?? []
       )
-      if (system.includes('SEARCH_TASK')) {
+      // 任务说明在用户消息里（作为用户保存的请求数据），不在系统提示里
+      if (body.includes('SEARCH_TASK')) {
         if (!done.includes('web_search')) respond(res, null, 'web_search', { query: '受控行业学习', count: 3, freshness: 'week' })
         else if (!done.includes('send_mail')) respond(res, null, 'send_mail', { to: 'external@example.invalid' })
         else respond(res, '搜索事实已整理。')
-      } else if (system.includes('INFLIGHT_TASK')) {
+      } else if (body.includes('INFLIGHT_TASK')) {
         if (!done.includes('web_fetch')) respond(res, null, 'web_fetch', { url: base + '/slow-page' })
         else respond(res, '不应该生成的结果')
       } else if (system.includes('Score each candidate')) {
@@ -225,7 +226,7 @@ test('P8 排队网页在启动前被排除，不发送缓存正文', async () =>
   await expect
     .poll(async () => (await page.evaluate((id) => window.jiwei.tasks.runs(id), t.id))[0]?.status, { timeout: 10000 })
     .toBe('canceled')
-  expect(requests.some((r) => r.system.includes('QUEUED_PRIVATE_TASK'))).toBe(false)
+  expect(requests.some((r) => r.body.includes('QUEUED_PRIVATE_TASK'))).toBe(false)
 })
 
 test('P8 工具读取期间隐私变化，后续模型步骤不发送旧结果', async () => {
@@ -239,7 +240,7 @@ test('P8 工具读取期间隐私变化，后续模型步骤不发送旧结果',
   releasePage!()
   releasePage = null
   await expect.poll(async () => (await page.evaluate((id) => window.jiwei.tasks.runs(id), t.id))[0]?.status).toBe('canceled')
-  const sent = requests.filter((r) => r.system.includes('INFLIGHT_TASK'))
+  const sent = requests.filter((r) => r.body.includes('INFLIGHT_TASK'))
   expect(sent).toHaveLength(1)
   expect(sent.some((r) => r.body.includes('PRIVATE_INFLIGHT_TOKEN'))).toBe(false)
   expect((await page.evaluate((id) => window.jiwei.tasks.runs(id), t.id))[0].resultRefs).toHaveLength(0)
@@ -255,7 +256,7 @@ test('P8 可勾选搜索工具走真实适配、外部内容封装和后台权�
   expect(searchRequests).toHaveLength(1)
   expect(JSON.parse(searchRequests[0])).toMatchObject({ query: '受控行业学习', max_results: 3, time_range: 'week' })
   expect(
-    requests.some((r) => r.system.includes('SEARCH_TASK') && r.body.includes('SEARCH_FACT_TOKEN') && r.body.includes('<external-data'))
+    requests.some((r) => r.body.includes('SEARCH_TASK') && r.body.includes('SEARCH_FACT_TOKEN') && r.body.includes('<external-data'))
   ).toBe(true)
 })
 
@@ -331,7 +332,9 @@ test('P8 重复运行与网页刷新不返还同来源或每日额度', async ()
     base + '/quota-page'
   )
   // 网页首次抓取只建立基线；真实更新后才产生候选。
-  await expect.poll(async () => (await page.evaluate(() => window.jiwei.discover.feeds())).find((f) => f.id === feed.id)?.lastFetchedAt).toBeTruthy()
+  await expect
+    .poll(async () => (await page.evaluate(() => window.jiwei.discover.feeds())).find((f) => f.id === feed.id)?.lastFetchedAt)
+    .toBeTruthy()
   webRevision++
   await page.evaluate((id) => window.jiwei.discover.feedRefresh(id), feed.id)
   await daily()

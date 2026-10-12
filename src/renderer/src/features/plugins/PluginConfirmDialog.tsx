@@ -295,7 +295,9 @@ export function PluginConfirmDialog({
             )}
             <section className="space-y-2 text-xs text-muted">
               <D.Description className="whitespace-pre-wrap">{preview.manifest.description ?? t('plugins.contents')}</D.Description>
-              <p>{typeof preview.manifest.author === 'string' ? preview.manifest.author : preview.manifest.author?.name}</p>
+              {preview.origin.market !== 'jiwei' && (
+                <p>{typeof preview.manifest.author === 'string' ? preview.manifest.author : preview.manifest.author?.name}</p>
+              )}
             </section>
             <section className="space-y-2">
               <h3 className="text-sm font-medium">{t('plugins.contents')}</h3>

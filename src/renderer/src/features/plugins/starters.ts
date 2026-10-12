@@ -12,7 +12,10 @@ export async function runStarter(pluginId: string, starterId: string): Promise<v
   const app = useApp.getState()
   app.setSettingsOpen(false)
   if (action.kind === 'chat') {
-    useApp.setState({ starterIntent: { kind: 'chat', text: zh ? action.prompt.zh : action.prompt.en }, conversationId: null })
+    useApp.setState({
+      starterIntent: { kind: 'chat', text: zh ? action.prompt.zh : action.prompt.en, skill: qualify(pluginId, action.skill) },
+      conversationId: null
+    })
     app.setView('chat')
   } else if (action.kind === 'advisor') {
     useApp.setState({
