@@ -447,6 +447,53 @@ describe('safe staging', () => {
     await expect(preparePluginSource({ path, type: 'tar.gz', tempParent: parent })).rejects.toThrow('conflicting tar size')
     expect((await readdir(parent)).filter((name) => name.startsWith('jiwei-plugin-'))).toEqual([])
   })
+  it.each(
+    (['NextFileHasLongPath', 'OldGnuLongPath', 'NextFileHasLongLinkpath'] as const).flatMap((type) =>
+      ['\u2028', '\u2029'].map((separator) => ({ type, separator }))
+    )
+  )('rejects GNU NUL suffix framing for $type / $separator and cleans staging', async ({ type, separator }) => {
+    const parent = await temp(),
+      path = join(parent, 'gnu-nul-suffix.tar.gz')
+    const encode = (value: ConstructorParameters<typeof tar.Header>[0]) => {
+      const header = new tar.Header(value)
+      header.encode()
+      return header.block!
+    }
+    const value = `placeholder.png\0${separator}/`,
+      body = Buffer.alloc(512)
+    body.write(value)
+    const metadata = encode({ path: 'metadata', size: 0, type: 'ExtendedHeader', mode: 0o600 })
+    await writeFile(
+      path,
+      gzipSync(
+        Buffer.concat([
+          encode({ path: 'long-name', size: Buffer.byteLength(value), type, mode: 0o600 }),
+          body,
+          encode({ path: 'placeholder.png', size: (PLUGIN_LIMITS.entries + 2) * 512, type: 'File', mode: 0o600 }),
+          ...Array.from({ length: PLUGIN_LIMITS.entries + 1 }, () => metadata),
+          encode({ path: 'valid.txt', size: 0, type: 'File', mode: 0o600 }),
+          Buffer.alloc(1024)
+        ])
+      )
+    )
+    await expect(preparePluginSource({ path, type: 'tar.gz', tempParent: parent })).rejects.toThrow('GNU metadata after NUL')
+    expect((await readdir(parent)).filter((name) => name.startsWith('jiwei-plugin-'))).toEqual([])
+  })
+  it.each(['NextFileHasLongPath', 'OldGnuLongPath'] as const)('accepts NUL-only GNU padding for %s', async (type) => {
+    const parent = await temp(),
+      path = join(parent, 'gnu-padding.tar.gz')
+    const metadata = new tar.Header({ path: 'long-name', size: 512, type, mode: 0o600 })
+    metadata.encode()
+    const value = Buffer.alloc(512)
+    value.write('valid.txt\0')
+    const fileHeader = new tar.Header({ path: 'placeholder.txt', size: 0, type: 'File', mode: 0o600 })
+    fileHeader.encode()
+    await writeFile(path, gzipSync(Buffer.concat([metadata.block!, value, fileHeader.block!, Buffer.alloc(1024)])))
+    const source = await preparePluginSource({ path, type: 'tar.gz', tempParent: parent })
+    expect(await readdir(source.root)).toEqual(['valid.txt'])
+    await source.cleanup()
+    expect((await readdir(parent)).filter((name) => name.startsWith('jiwei-plugin-'))).toEqual([])
+  })
   it('rejects manifest references through a symlink before component reads', async () => {
     const parent = await temp(),
       root = join(parent, 'plugin'),

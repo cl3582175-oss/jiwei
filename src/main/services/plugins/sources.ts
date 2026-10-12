@@ -207,6 +207,15 @@ async function readArchive(path: string): Promise<Buffer> {
     await handle.close()
   }
 }
+function gnuMetadataName(value: string): string {
+  const end = value.indexOf('\0')
+  if (end < 0) return value
+  // NUL 后仅允许 NUL 填充，避免依赖的非 dotAll 截断正则留下 Unicode 换行和尾斜杠。
+  for (let i = end + 1; i < value.length; i++) {
+    if (value.charCodeAt(i) !== 0) throw new Error('Unsupported GNU metadata after NUL')
+  }
+  return value.slice(0, end)
+}
 /** entry 事件看不到 PAX/GNU/ignored headers；原始 framing 层必须独立计数。 */
 function tarHeaderBudget(): (chunk: Buffer) => void {
   const budget = { bytes: 0, entries: 0 },
@@ -244,10 +253,10 @@ function tarHeaderBudget(): (chunk: Buffer) => void {
           else if (metadataType === 'GlobalExtendedHeader') globalExtended = tar.Pax.parse(value, globalExtended, true)
           else if (metadataType === 'NextFileHasLongPath' || metadataType === 'OldGnuLongPath') {
             extended ??= new tar.Pax({})
-            extended.path = value.split('\0', 1)[0]
+            extended.path = gnuMetadataName(value)
           } else if (metadataType === 'NextFileHasLongLinkpath') {
             extended ??= new tar.Pax({})
-            extended.linkpath = value.split('\0', 1)[0]
+            extended.linkpath = gnuMetadataName(value)
           }
           metadata = []
         }
