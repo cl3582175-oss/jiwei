@@ -5,6 +5,7 @@ import { join, dirname, basename } from 'path'
 import { createServer, type Server } from 'http'
 import JSZip from 'jszip'
 import { navTo } from './fixtures/nav'
+import { pluginResponseGateHarness } from './fixtures/plugin-response-gates'
 
 // These assertions catch bypassed trust/token confirmation, missing registry consumers,
 // unsafe README requests, lost source state, and cancellation that only hides the UI.
@@ -52,6 +53,18 @@ async function packages() {
   direct.file('direct-main/.claude-plugin/plugin.json', JSON.stringify({ name: 'p2-direct', version: '1.0.0' }))
   direct.file('direct-main/skills/read/SKILL.md', '---\nname: read\ndescription: Direct fixture\n---\nRead direct evidence.')
   archives.set('direct', await direct.generateAsync({ type: 'nodebuffer' }))
+  archives.set('race-skills', archives.get('skills')!)
+  const raceMarket = new JSZip()
+  raceMarket.file(
+    'race-main/.claude-plugin/marketplace.json',
+    JSON.stringify({ name: 'p2-race-market', owner: { name: 'Self-authored race' }, plugins: [] })
+  )
+  archives.set('race-market', await raceMarket.generateAsync({ type: 'nodebuffer' }))
+  for (const branch of ['skills', 'market']) {
+    const next = await JSZip.loadAsync(archives.get('direct')!)
+    next.file('direct-main/.claude-plugin/plugin.json', JSON.stringify({ name: `p2-race-${branch}`, version: '1.0.0' }))
+    archives.set(`race-new-${branch}`, await next.generateAsync({ type: 'nodebuffer' }))
+  }
 }
 async function settings() {
   await page.keyboard.press('ControlOrMeta+,')
@@ -121,6 +134,10 @@ test.beforeAll(async () => {
       res.end(JSON.stringify(manifest))
       return
     }
+    if (repo === 'race-market' && url.endsWith('/.claude-plugin/marketplace.json')) {
+      res.end(JSON.stringify({ name: 'p2-race-market', owner: { name: 'Self-authored race' }, plugins: [] }))
+      return
+    }
     if (repo === 'reserved' && url.endsWith('/.claude-plugin/marketplace.json')) {
       res.end(JSON.stringify({ ...manifest, name: 'jiwei-fake' }))
       return
@@ -160,7 +177,7 @@ test.beforeAll(async () => {
   const harness = join(root, 'main.cjs')
   writeFileSync(
     harness,
-    `const {app}=require('electron');app.setPath('userData',${JSON.stringify(userData)});app.setPath('appData',${JSON.stringify(appData)});app.getAppPath=()=>${JSON.stringify(process.cwd())};require(${JSON.stringify(join(process.cwd(), 'out/main/index.js'))});`
+    `const {app}=require('electron');app.setPath('userData',${JSON.stringify(userData)});app.setPath('appData',${JSON.stringify(appData)});app.getAppPath=()=>${JSON.stringify(process.cwd())};${pluginResponseGateHarness};require(${JSON.stringify(join(process.cwd(), 'out/main/index.js'))});`
   )
   const env = {
     ...process.env,
@@ -512,3 +529,61 @@ test('download cancel before preview aborts real stream; corruption leaves no st
   await expect.poll(() => readdirSync(join(userData, 'plugins/previews'))).toEqual([])
   await expect.poll(() => readdirSync(tmpdir()).filter((n) => n.startsWith('jiwei-plugin-') && !tempBefore.has(n))).toEqual([])
 })
+
+// A late response from choose must not overwrite or close the next acquisition.
+// Gates delay real IPC results after the original main handler has completed.
+for (const branch of ['skills', 'market'] as const) {
+  test(`P2B-I1 canceled ${branch} response cannot replace or close the next acquisition`, async () => {
+    const previews = () => (existsSync(join(userData, 'plugins/previews')) ? readdirSync(join(userData, 'plugins/previews')) : [])
+    type Gate = { waiting?: boolean; released?: boolean; release?: () => void }
+    type GateHost = typeof globalThis & { p2ResponseGates: Record<string, Gate>; p2HeldResponses: Record<string, Gate> }
+    const arm = async (channel: string) => {
+      await app.evaluate((_, channel) => {
+        const host = globalThis as GateHost
+        host.p2HeldResponses ??= {}
+        host.p2ResponseGates[channel] = host.p2HeldResponses[channel] = {}
+      }, channel)
+    }
+    const waiting = async (channel: string) => {
+      await expect.poll(() => app.evaluate((_, channel) => (globalThis as GateHost).p2HeldResponses[channel]?.waiting, channel)).toBe(true)
+    }
+    const release = async (channel: string) => {
+      await app.evaluate((_, channel) => (globalThis as GateHost).p2HeldResponses[channel].release!(), channel)
+      await expect.poll(() => app.evaluate((_, channel) => (globalThis as GateHost).p2HeldResponses[channel].released, channel)).toBe(true)
+      // Allow the delivered IPC promise and React render to settle before asserting
+      // absence; an immediate absence assertion could miss the stale callback.
+      await page.waitForTimeout(100)
+    }
+    await page.keyboard.press('Escape')
+    await settings()
+    await github(`fixture/race-${branch}`)
+    const acquisition = page.getByTestId('plugin-acquisition')
+    await expect(acquisition).toContainText(branch === 'skills' ? '选择要安装的技能' : 'Self-authored race')
+    const oldChannel = branch === 'skills' ? 'plugins:list' : 'plugins:addDetectedMarket'
+    await arm(oldChannel)
+    await acquisition.getByRole('button', { name: branch === 'skills' ? '继续' : '我信任这个来源，添加市场', exact: true }).click()
+    await waiting(oldChannel)
+    if (branch === 'skills') expect(previews()).toHaveLength(1)
+    else expect((await page.evaluate(() => window.jiwei.plugins.markets())).some((m) => m.name === 'p2-race-market')).toBe(true)
+    await acquisition.getByRole('button', { name: '取消', exact: true }).click()
+    await expect(acquisition).toHaveCount(0)
+    await expect.poll(() => previews()).toEqual([])
+    await arm('plugins:acquire')
+    await github(`fixture/race-new-${branch}`)
+    await waiting('plugins:acquire')
+    const nextPreviews = previews()
+    expect(nextPreviews).toHaveLength(1)
+    await release(oldChannel)
+    await expect(page.getByTestId('plugin-confirm')).toHaveCount(0)
+    await expect(acquisition.getByRole('status')).toBeVisible()
+    expect(previews()).toEqual(nextPreviews)
+    await release('plugins:acquire')
+    const confirmation = page.getByTestId('plugin-confirm')
+    await expect(confirmation).toContainText(`p2-race-${branch}`)
+    await confirmation.getByRole('button', { name: '安装', exact: true }).click()
+    await expect(confirmation).toHaveCount(0)
+    expect((await page.evaluate(() => window.jiwei.plugins.list())).some((p) => p.id === `p2-race-${branch}@local`)).toBe(true)
+    expect((await page.evaluate(() => window.jiwei.skills.list())).some((s) => s.name === `p2-race-${branch}:read`)).toBe(true)
+    await expect.poll(() => previews()).toEqual([])
+  })
+}

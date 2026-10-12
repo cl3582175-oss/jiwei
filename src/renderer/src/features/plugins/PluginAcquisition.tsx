@@ -72,7 +72,11 @@ export function usePluginAcquisition() {
         await close()
         return
       }
-      if (result.kind === 'plugin') setCurrent((await api.plugins.list()).find((p) => p.id === result.preview.id))
+      if (result.kind === 'plugin') {
+        const installed = await api.plugins.list()
+        if (run !== generation.current) return
+        setCurrent(installed.find((p) => p.id === result.preview.id))
+      }
       if (run !== generation.current) return
       if (result.kind === 'skills') setSelected(result.skills.map((s) => s.path))
       setDetection(result)
@@ -94,14 +98,20 @@ export function usePluginAcquisition() {
     try {
       if (detection.kind === 'market') {
         await api.plugins.addDetectedMarket(operation.current, detection.token)
-        await close()
-        toast.success(t('plugins.marketAdded'))
+        if (run !== generation.current) return
+        const closing = close()
+        const closedRun = generation.current
+        await closing
+        if (closedRun === generation.current) toast.success(t('plugins.marketAdded'))
       } else {
         const result = await api.plugins.selectSkills(operation.current, detection.token, selected)
-        if (run === generation.current) {
-          if (result.kind === 'plugin') setCurrent((await api.plugins.list()).find((p) => p.id === result.preview.id))
-          setDetection(result)
+        if (run !== generation.current) return
+        if (result.kind === 'plugin') {
+          const installed = await api.plugins.list()
+          if (run !== generation.current) return
+          setCurrent(installed.find((p) => p.id === result.preview.id))
         }
+        setDetection(result)
       }
     } catch (e) {
       if (run === generation.current) setError(pluginError(e))
