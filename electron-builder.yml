@@ -82,5 +82,5 @@ linux:
 publish:
   provider: github
   owner: cl3582175-oss
-  repo: jiwei
-  private: true
+  repo: jiwei-releases
+  releaseType: draft

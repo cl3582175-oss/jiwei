@@ -1,18 +1,19 @@
 name: Release
 
-# 在三个平台构建安装包并上传到 GitHub Releases。
-# 快速迭代阶段：推送标签不再自动打包（节省 Actions 额度），需要发安装包时在 Actions 页面手动运行，选择要发布的标签。
-# 稳定后恢复为：push 标签 v* 时自动运行。
+# 用户审查后手动触发；代码仓库私有，产物仅发布到公开仓库的草稿。
 on:
   workflow_dispatch:
     inputs:
       tag:
-        description: '要发布的标签（如 v0.6.1）'
+        description: '已审查的版本标签（如 v0.11.0）'
         required: true
 
-# 上传到 GitHub Releases 需要写权限（默认的 GITHUB_TOKEN 只读）
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.tag }}
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -22,15 +23,108 @@ jobs:
         os: [macos-latest, windows-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
     steps:
+      - name: 检查发布令牌与标签
+        shell: bash
+        env:
+          RELEASES_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          if [[ -z "$RELEASES_TOKEN" ]]; then
+            echo '::error::缺少 RELEASES_TOKEN。请创建仅授权 jiwei-releases Contents 读写的 fine-grained token，并存入此仓库 Secrets。'
+            exit 1
+          fi
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo '::error::标签必须为 v 开头的语义版本。'
+            exit 1
+          fi
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.tag }}
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
+      - name: 核对标签与 package 版本
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: node -e "if ('v' + require('./package.json').version !== process.env.RELEASE_TAG) throw new Error('标签与 package.json 版本不一致')"
       - run: npm ci
       - run: npm run build
-      - run: npx electron-builder --publish always
+      - name: 打包所有目标（只生成本地文件）
+        run: npx electron-builder --publish never
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+      - name: Windows 静默安装和启动烟测
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem release -Recurse -Filter 'Jiwei-*-win-x64.exe' | Select-Object -First 1
+          if (!$installer) { throw 'NSIS 安装包未生成' }
+          $installDir = Join-Path $env:RUNNER_TEMP 'jiwei-install'
+          $dataDir = Join-Path $env:RUNNER_TEMP 'jiwei-smoke-data'
+          $install = Start-Process -FilePath $installer.FullName -ArgumentList '/S', "/D=$installDir" -Wait -PassThru
+          if ($install.ExitCode -ne 0) { throw 'NSIS 静默安装失败' }
+          $application = Join-Path $installDir '积微.exe'
+          if (!(Test-Path $application)) { throw '未找到已安装应用' }
+          $process = Start-Process -FilePath $application -ArgumentList "--user-data-dir=$dataDir" -PassThru
+          Start-Sleep -Seconds 8
+          $process.Refresh()
+          if ($process.HasExited) { throw '应用启动后提前退出' }
+          Stop-Process -Id $process.Id
+      - name: 计算平台安装包 SHA-256
+        run: node scripts/release-checksums.mjs release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packages-${{ runner.os }}
+          if-no-files-found: error
+          path: |
+            release/**/*.dmg
+            release/**/*.zip
+            release/**/*.exe
+            release/**/*.AppImage
+            release/**/*.deb
+            release/**/*.yml
+            release/**/*.blockmap
+
+  draft:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: packages-*
+          path: release-assets
+          merge-multiple: true
+      - name: 合并安装包校验和与双语说明
+        run: node scripts/release-checksums.mjs release-assets
+      - name: 创建或更新公开仓库草稿
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          RELEASES_REPO: cl3582175-oss/jiwei-releases
+        run: |
+          if gh release view "$RELEASE_TAG" --repo "$RELEASES_REPO" --json isDraft --jq '.isDraft' > draft-state.txt; then
+            if [[ "$(cat draft-state.txt)" != true ]]; then
+              echo '::error::该版本已发布，拒绝覆盖；请创建新版本标签。'
+              exit 1
+            fi
+            gh release edit "$RELEASE_TAG" --repo "$RELEASES_REPO" --draft --notes-file release-assets/RELEASE_NOTES.md
+          else
+            gh release create "$RELEASE_TAG" --repo "$RELEASES_REPO" --draft --title "积微 $RELEASE_TAG" --notes-file release-assets/RELEASE_NOTES.md
+          fi
+          mapfile -d '' assets < <(find release-assets -type f \( -name 'Jiwei-*' -o -name 'latest*.yml' -o -name 'SHA256SUMS.txt' \) -print0)
+          gh release upload "$RELEASE_TAG" "${assets[@]}" --repo "$RELEASES_REPO" --clobber

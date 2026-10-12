@@ -32,7 +32,7 @@ spctl --assess --type execute -vv release/<version>/mac-arm64/积微.app
 
 ## 手动发布步骤
 
-1. 用户创建公开制品仓库 `jiwei-releases`；创建仅有该仓库 Contents 读写的 fine-grained token，设置代码仓库 Secret `RELEASES_TOKEN`。
+1. 用户创建公开制品仓库 `jiwei-releases`（初始化 README，避免空 Git 仓库无法建立 Release）；创建仅有该仓库 Contents 读写的 fine-grained token，设置代码仓库 Secret `RELEASES_TOKEN`。
 2. Claude 完成联合审查与真实下载安装/更新验收，按发版约定修改版本号及 CHANGELOG、打标签。
 3. 在代码仓库 Actions 的 Release 手动输入标签触发。三平台构建，macOS arm64/x64，产生安装包、`latest*.yml`、blockmap；所有目标发布到公开制品仓库草稿。
 4. 检查草稿资产完整、版本一致及 Release 说明里的 SHA-256，复做首次安装与旧版本升级；最后由用户手动发布草稿。更新检查只会发现已发布版本。

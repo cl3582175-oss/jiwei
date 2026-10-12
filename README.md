@@ -13,6 +13,23 @@ AI 驱动的学习笔记与个人知识库 — 你记下的每一条笔记，都
 
 ---
 
+## 下载与安装
+
+安装包在公开的 [积微发布仓库](https://github.com/cl3582175-oss/jiwei-releases/releases)，下载无需登录。代码仓库保持私有。请核对 Release 说明或 `SHA256SUMS.txt` 中的 SHA-256 后再安装。
+
+| 系统 | 安装文件 | 安装方式 |
+| --- | --- | --- |
+| Apple Silicon Mac（M 系列） | `Jiwei-<版本>-mac-arm64.dmg` | 打开后拖到 Applications |
+| Intel Mac | `Jiwei-<版本>-mac-x64.dmg` | 打开后拖到 Applications |
+| Windows 64 位 | `Jiwei-<版本>-win-x64.exe` | 运行安装器，可选择目录 |
+| Linux | `.AppImage` / `.deb` | AppImage 加执行权限；deb 用系统包管理器安装 |
+
+当前默认使用免费签名方案，尚未购买 Apple Developer ID / Windows 代码签名证书，因此系统可能在首次打开时提示无法验证来源。macOS 若提示 **Apple 无法验证 / 无法验证开发者**，先尝试打开，再进入 **系统设置 → 隐私与安全性 → 安全性 → 仍要打开**。Windows 若提示 **Windows 已保护你的电脑**，选择 **更多信息 → 仍要运行**。只对来自官方发布仓库、SHA-256 一致的安装包放行；签名提示与哈希不能替代来源审查。macOS 替换新版本后可能需要再次放行。
+
+> 真实系统截图待 Claude 发布审查补入：macOS 隐私与安全性“仍要打开”；Windows SmartScreen“更多信息”。本地 P0/P1 技术截图保存在实施审查证据目录。
+
+**English:** Download from [official releases](https://github.com/cl3582175-oss/jiwei-releases/releases) and verify SHA-256. Choose `mac-arm64.dmg` for Apple Silicon, `mac-x64.dmg` for Intel, `win-x64.exe` for Windows, or AppImage/deb for Linux. With the free signing mode, macOS may require **System Settings → Privacy & Security → Open Anyway** after the first open attempt; Windows SmartScreen may require **More info → Run anyway**. Allow only verified official downloads. See [release instructions](docs/release.md) for signing and update details.
+
 ## 简介
 
 积微是一款本地优先的桌面学习软件。它把**康奈尔笔记法**、**原始资料管理**和**大模型能力**结合在一起：
