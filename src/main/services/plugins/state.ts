@@ -24,6 +24,8 @@ export interface PluginState {
   starterProgress?: { dismissed: boolean; completed: string[] }
 }
 export const pluginRoot = (): string => join(app.getPath('userData'), 'plugins')
+/** 自制插件（自定义副本、新建角色包）的可编辑目录 */
+export const authoringRoot = (): string => join(pluginRoot(), 'authoring')
 export const pathKey = (id: string): string => createHash('sha256').update(id).digest('hex')
 export const pluginCache = (id: string): string => join(pluginRoot(), 'cache', pathKey(id))
 export const pluginData = (id: string): string => join(pluginRoot(), 'data', pathKey(id))

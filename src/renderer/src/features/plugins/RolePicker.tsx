@@ -6,7 +6,8 @@ import { Check } from 'lucide-react'
 import type { PluginContributionCounts, RoleBatchPreview, RoleCatalogCard } from '@shared/plugins'
 import { api, cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-import { PlanDialog } from '../plan/ui'
+import { PlanDialog, field } from '../plan/ui'
+import { usePluginAcquisition } from './PluginAcquisition'
 import { PluginIcon } from './PluginDetailsDialog'
 import { pluginError } from './PluginConfirmDialog'
 
@@ -275,15 +276,114 @@ export function RoleBatchDialog({ ids, onClose, onDone }: { ids: string[]; onClo
   )
 }
 
+/** 从已有的技能、视角、AI 任务、订阅源组装一个角色包：生成文件后走普通的预览确认安装 */
+function NewRoleDialog({ onClose, onCreated }: { onClose: () => void; onCreated: (name: string) => void }) {
+  const { t } = useTranslation()
+  const skills = useQuery({ queryKey: ['skills'], queryFn: () => api.skills.list() })
+  const lenses = useQuery({ queryKey: ['lenses'], queryFn: () => api.lenses.list() })
+  const tasks = useQuery({ queryKey: ['tasks'], queryFn: () => api.tasks.list() })
+  const feeds = useQuery({ queryKey: ['discover', 'feeds'], queryFn: () => api.discover.feeds() })
+  const [name, setName] = useState(''),
+    [description, setDescription] = useState('')
+  const [picked, setPicked] = useState<{ skills: string[]; tasks: string[]; feeds: string[] }>({ skills: [], tasks: [], feeds: [] })
+  const [busy, setBusy] = useState(false),
+    [error, setError] = useState('')
+  const toggle = (k: keyof typeof picked, id: string): void =>
+    setPicked((p) => ({ ...p, [k]: p[k].includes(id) ? p[k].filter((x) => x !== id) : [...p[k], id] }))
+  const groups: { key: keyof typeof picked; label: string; items: { id: string; label: string }[] }[] = [
+    {
+      key: 'skills',
+      label: t('plugins.pickSkills'),
+      items: [
+        ...(skills.data ?? []).map((x) => ({ id: x.name, label: x.title })),
+        ...(lenses.data ?? []).map((x) => ({ id: x.id, label: `${x.title} · ${t('plugins.lenses')}` }))
+      ]
+    },
+    { key: 'tasks', label: t('plugins.pickTasks'), items: (tasks.data ?? []).map((x) => ({ id: x.id, label: x.name })) },
+    { key: 'feeds', label: t('plugins.pickFeeds'), items: (feeds.data ?? []).map((x) => ({ id: x.id, label: x.title })) }
+  ]
+  const create = async (): Promise<void> => {
+    setBusy(true)
+    setError('')
+    try {
+      const r = await api.plugins.createRolePack({ name: name.trim(), description: description.trim(), ...picked })
+      if (r.skipped.length) toast.warning(t('plugins.skippedItems', { names: r.skipped.join('、') }))
+      onCreated(r.name)
+    } catch (e) {
+      setError(pluginError(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <PlanDialog
+      title={t('plugins.newRole')}
+      description={t('plugins.newRoleHint')}
+      size="lg"
+      onClose={() => !busy && onClose()}
+      testId="new-role-pack"
+      footer={
+        <div className="ml-auto flex gap-2">
+          <Button variant="ghost" disabled={busy} onClick={onClose}>
+            {t('plugins.cancel')}
+          </Button>
+          <Button
+            variant="primary"
+            disabled={busy || !name.trim() || !Object.values(picked).some((x) => x.length)}
+            onClick={() => void create()}
+          >
+            {t('plugins.create')}
+          </Button>
+        </div>
+      }
+    >
+      <label className="block text-xs text-muted">
+        {t('plugins.roleName')}
+        <input className={field} value={name} maxLength={40} onChange={(e) => setName(e.target.value)} />
+      </label>
+      <label className="block text-xs text-muted">
+        {t('plugins.roleDescription')}
+        <input className={field} value={description} maxLength={200} onChange={(e) => setDescription(e.target.value)} />
+      </label>
+      {groups.map((g) => (
+        <fieldset key={g.key} className="space-y-1.5">
+          <legend className="mb-1 text-xs font-medium text-muted">{g.label}</legend>
+          {!g.items.length && <p className="text-xs text-subtle">{t('plugins.nothingToPick')}</p>}
+          <div className="grid max-h-40 grid-cols-1 gap-x-4 gap-y-1 overflow-y-auto sm:grid-cols-2">
+            {g.items.map((it) => (
+              <label key={it.id} className="flex min-w-0 items-center gap-2 text-sm">
+                <input type="checkbox" checked={picked[g.key].includes(it.id)} onChange={() => toggle(g.key, it.id)} />
+                <span className="truncate" title={it.label}>
+                  {it.label}
+                </span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+      ))}
+      {error && (
+        <p role="alert" className="text-sm text-danger">
+          {error}
+        </p>
+      )}
+    </PlanDialog>
+  )
+}
+
 /** 设置 → 插件 → 角色 */
 export function RolesPanel({ onInstalledDetails }: { onInstalledDetails: (id: string) => void }) {
   const { t } = useTranslation()
   const [selected, setSelected] = useState<string[]>([]),
-    [confirming, setConfirming] = useState(false)
+    [confirming, setConfirming] = useState(false),
+    [creating, setCreating] = useState(false)
+  const acquisition = usePluginAcquisition()
   return (
     <div className="space-y-4" data-testid="roles-panel">
       <div className="flex items-center gap-3">
         <p className="min-w-0 flex-1 text-xs text-muted">{t('plugins.rolesHint')}</p>
+        <Button size="sm" variant="ghost" onClick={() => setCreating(true)}>
+          {t('plugins.newRole')}
+        </Button>
         <Button variant="primary" size="sm" disabled={!selected.length} onClick={() => setConfirming(true)}>
           {selected.length ? t('plugins.installSelected', { count: selected.length }) : t('plugins.pickRoles')}
         </Button>
@@ -303,6 +403,16 @@ export function RolesPanel({ onInstalledDetails }: { onInstalledDetails: (id: st
           }}
         />
       )}
+      {creating && (
+        <NewRoleDialog
+          onClose={() => setCreating(false)}
+          onCreated={(name) => {
+            setCreating(false)
+            void acquisition.start({ authored: name })
+          }}
+        />
+      )}
+      {acquisition.dialog}
     </div>
   )
 }

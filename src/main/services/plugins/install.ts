@@ -5,7 +5,7 @@ import { dialog, shell, type BrowserWindow } from 'electron'
 import { randomBytes } from 'crypto'
 import { mkdir, readdir, rm, rename, writeFile, readFile, lstat } from 'fs/promises'
 import { existsSync, renameSync } from 'fs'
-import { join, relative } from 'path'
+import { basename, dirname, join, relative } from 'path'
 import { eq } from 'drizzle-orm'
 import { getDb } from '../../db'
 import { plugins, pluginMarkets, feeds, aiTasks, mcpServers, meta } from '../../db/schema'
@@ -20,6 +20,7 @@ import { preparePluginSource, safePluginPath, sourceType } from './sources'
 import { registeredPlugin, replacePluginRegistry } from './registry'
 import {
   pluginRoot,
+  authoringRoot,
   pluginCache,
   pluginData,
   pluginRow,
@@ -105,7 +106,10 @@ export function getPlugin(id: string): PluginInfo {
   const row = pluginRow(id),
     state = readState(id),
     parsed = registeredPlugin(id)
+  const authored =
+    state.origin.kind === 'local' && dirname(state.origin.locator) === authoringRoot() ? basename(state.origin.locator) : undefined
   return {
+    ...(authored ? { authored } : {}),
     id,
     version: row.version,
     previousVersion: row.previousVersion,
@@ -298,6 +302,14 @@ async function cleanupVersions(id: string): Promise<void> {
   }
 }
 export async function confirmPluginInstall(token: string, input: { feeds?: number[]; config?: PluginConfig }): Promise<PluginInfo> {
+  const info = await confirmInstall(token, input)
+  // 自定义副本装好后停用原来的包，避免技能和起步卡重复出现（原包保留，随时可以切回）
+  const from = info.manifest.metadata?.['jiwei.customizedFrom']
+  if (typeof from === 'string' && from !== info.id && listPlugins().some((p) => p.id === from && p.enabled))
+    await setPluginEnabled(from, false).catch(() => undefined)
+  return info
+}
+async function confirmInstall(token: string, input: { feeds?: number[]; config?: PluginConfig }): Promise<PluginInfo> {
   const recovery: { pluginId: string; directory: string; serverId: string }[] = []
   try {
     return await pluginMutation(async () => {

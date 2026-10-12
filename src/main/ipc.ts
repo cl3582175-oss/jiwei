@@ -1,5 +1,6 @@
 import * as pluginMarkets from './services/plugins/markets'
 import * as pluginDirect from './services/plugins/direct'
+import * as pluginAuthoring from './services/plugins/authoring'
 import * as plugins from './services/plugins/install'
 import * as pluginRoles from './services/plugins/roles'
 import * as pluginStarters from './services/plugins/starters'
@@ -851,6 +852,14 @@ const handlers: Handlers = {
     setConfig: (_, id, values) => plugins.setPluginConfig(id, values),
     uninstall: (_, id, options) => plugins.uninstallPlugin(id, options),
     openFolder: (_, id) => plugins.openPluginFolder(id),
+    customize: (_, id) => pluginAuthoring.customizePlugin(id),
+    createRolePack: (_, input) => pluginAuthoring.createRolePack(input),
+    acquireAuthored: ({ win }, id, name) => pluginDirect.detectPath(win?.webContents.id ?? -1, id, pluginAuthoring.authoredPath(name)),
+    openAuthored: async (_, name) => {
+      await shell.openPath(pluginAuthoring.authoredPath(name))
+    },
+    exportPlugin: ({ win }, id, withMarketplace) =>
+      pluginAuthoring.exportPlugin(id, win, withMarketplace, app.isPackaged ? undefined : process.env.JIWEI_TEST_EXPORT_DIR),
     templates: () => pluginRegistry.listTemplates(),
     frameworks: () => pluginRegistry.listFrameworks(),
     recipes: () => pluginRegistry.listRecipes()

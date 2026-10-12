@@ -87,6 +87,14 @@ function all(): Map<string, Loaded> {
   return m
 }
 
+/** 技能（含视角）的目录和文件夹名（插件技能的名字带“插件:”前缀，文件夹用本地名）。自制角色包复制时用。 */
+export function skillSource(name: string): { dir: string; folder: string; kind: string } | undefined {
+  const s = all().get(name)
+  if (!s) return undefined
+  const local = (s as Loaded & { localName?: string }).localName
+  return { dir: s.dir, folder: local ?? s.name, kind: s.metadata.kind ?? 'skill' }
+}
+
 export function reloadSkills(): void {
   cache = null
 }

@@ -1300,6 +1300,54 @@ export const capabilities = {
       ]
     }),
     openFolder: cap<void>()({ description: '打开已安装插件文件夹', params: [['id', z.string().max(257)]] }),
+    customize: cap<string>()({ description: '把已装插件复制成可编辑的本地副本，返回副本名', params: [['id', z.string().max(257)]] }),
+    createRolePack: cap<{ name: string; skipped: string[] }>()({
+      description: '从现有技能、视角、任务和订阅源组装角色包（只生成文件，安装另需预览确认）',
+      params: [
+        [
+          'input',
+          z.object({
+            name: z.string().trim().min(1).max(40),
+            description: z.string().trim().max(200).optional(),
+            skills: z.array(z.string().min(1).max(257)).max(30).optional(),
+            tasks: z.array(z.string().min(1).max(64)).max(10).optional(),
+            feeds: z.array(z.string().min(1).max(64)).max(30).optional()
+          })
+        ]
+      ]
+    }),
+    acquireAuthored: cap<PluginDetection>()({
+      description: '识别积微自制目录里的插件（路径由主进程决定）',
+      params: [
+        ['operation', z.string().length(64)],
+        [
+          'name',
+          z
+            .string()
+            .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
+            .max(64)
+        ]
+      ]
+    }),
+    openAuthored: cap<void>()({
+      description: '打开自制插件的可编辑文件夹',
+      params: [
+        [
+          'name',
+          z
+            .string()
+            .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
+            .max(64)
+        ]
+      ]
+    }),
+    exportPlugin: cap<string | null>()({
+      description: '导出为 Claude Code 格式的插件文件夹和 zip，可选附带市场文件',
+      params: [
+        ['id', z.string().max(257)],
+        ['withMarketplace', z.boolean()]
+      ]
+    }),
     templates: cap<PluginRegistryItem<PluginTemplate>[]>()({ description: '启用的作品模板', params: none }),
     frameworks: cap<PluginRegistryItem<PluginFramework>[]>()({ description: '启用的参谋框架', params: none }),
     recipes: cap<PluginRegistryItem<TaskRecipe | PluginRecipe>[]>()({ description: '启用的任务配方', params: none })

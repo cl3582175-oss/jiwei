@@ -126,6 +126,8 @@ export const PluginManifestSchema = z.object({
   repository: z.string().optional(),
   license: z.string().optional(),
   keywords: z.array(z.string()).optional(),
+  /** Claude Code 的自由字段；积微只读 jiwei.customizedFrom（自定义副本的来源插件） */
+  metadata: z.record(z.string(), z.unknown()).optional(),
   ...components,
   userConfig: z.record(key, UserConfigOptionSchema).optional()
 })
@@ -386,6 +388,8 @@ export const PluginConfirmOptions = z.object({
 })
 export const PluginUninstallOptions = z.object({ removeFeeds: z.boolean().default(false), removeTasks: z.boolean().default(false) })
 export interface PluginInfo {
+  /** 积微自制目录里的插件（可直接编辑文件夹，改完“更新”重新载入）：目录名 */
+  authored?: string
   available: boolean
   id: string
   version: string

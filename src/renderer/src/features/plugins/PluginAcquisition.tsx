@@ -8,7 +8,7 @@ import { PlanDialog, field } from '../plan/ui'
 import { PluginConfirmDialog, pluginError } from './PluginConfirmDialog'
 import { PluginDetailsDialog } from './PluginDetailsDialog'
 
-type Request = { file: true } | { update: string } | { source: PluginInspectInput; details?: boolean }
+type Request = { file: true } | { update: string } | { authored: string } | { source: PluginInspectInput; details?: boolean }
 /** 下载前先取得 main 所有的 operation；关闭和卸载组件都撤销它，包括尚未返回 token 的请求。 */
 export function usePluginAcquisition() {
   const { t } = useTranslation()
@@ -64,9 +64,11 @@ export function usePluginAcquisition() {
       const result: PluginDetection | null =
         'file' in input
           ? await api.plugins.acquireFile(id)
-          : 'update' in input
-            ? { kind: 'plugin', preview: await api.plugins.acquireUpdate(id, input.update) }
-            : await api.plugins.acquire(id, input.source)
+          : 'authored' in input
+            ? await api.plugins.acquireAuthored(id, input.authored)
+            : 'update' in input
+              ? { kind: 'plugin', preview: await api.plugins.acquireUpdate(id, input.update) }
+              : await api.plugins.acquire(id, input.source)
       if (run !== generation.current) return
       if (!result) {
         await close()

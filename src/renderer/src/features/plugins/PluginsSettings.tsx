@@ -1,3 +1,4 @@
+import { toast } from 'sonner'
 import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
@@ -5,6 +6,7 @@ import type { PluginInfo } from '@shared/plugins'
 import { api } from '@/lib/utils'
 import { useApp } from '@/store/app'
 import { Button } from '@/components/ui/button'
+import { Tip } from '@/components/ui/primitives'
 import { PlanDialog, Segmented } from '../plan/ui'
 import { PluginInstallButtons, usePluginAcquisition } from './PluginAcquisition'
 import { PluginDetailsDialog, PluginIcon } from './PluginDetailsDialog'
@@ -39,6 +41,8 @@ function InstalledPlugin({
     [removeFeeds, setRemoveFeeds] = useState(false),
     [removeTasks, setRemoveTasks] = useState(false)
   const [clearKey, setClearKey] = useState<string | null>(null)
+  const [exporting, setExporting] = useState(false),
+    [withMarket, setWithMarket] = useState(false)
   const [fields, setFields] = useState<Record<string, string>>({})
   useEffect(() => {
     if (selected === p.id) ref.current?.scrollIntoView({ block: 'nearest' })
@@ -186,7 +190,32 @@ function InstalledPlugin({
                 {t('plugins.rollback')} · {p.previousVersion}
               </Button>
             )}
-            <Button onClick={() => void run(() => api.plugins.openFolder(p.id))}>{t('plugins.openFolder')}</Button>
+            {p.authored ? (
+              <Tip label={t('plugins.editFolderHint')}>
+                <Button onClick={() => void run(() => api.plugins.openAuthored(p.authored!))}>{t('plugins.editFolder')}</Button>
+              </Tip>
+            ) : (
+              <>
+                <Button onClick={() => void run(() => api.plugins.openFolder(p.id))}>{t('plugins.openFolder')}</Button>
+                <Tip label={t('plugins.customizeHint')}>
+                  <Button
+                    disabled={busy || !p.available}
+                    onClick={() =>
+                      void run(async () => {
+                        const name = await api.plugins.customize(p.id)
+                        setDetails(false)
+                        void acquisition.start({ authored: name })
+                      })
+                    }
+                  >
+                    {t('plugins.customize')}
+                  </Button>
+                </Tip>
+              </>
+            )}
+            <Button disabled={busy || !p.available} onClick={() => setExporting(true)}>
+              {t('plugins.export')}
+            </Button>
             <Button
               onClick={() => {
                 setDetails(false)
@@ -199,6 +228,51 @@ function InstalledPlugin({
             </Button>
           </div>
         </PluginDetailsDialog>
+      )}
+      {exporting && (
+        <PlanDialog
+          title={t('plugins.export')}
+          description={t('plugins.exportHint')}
+          onClose={() => {
+            if (!busy) setExporting(false)
+          }}
+          testId="plugin-export"
+          footer={
+            <div className="ml-auto flex gap-2">
+              <Button variant="ghost" disabled={busy} onClick={() => setExporting(false)}>
+                {t('plugins.cancel')}
+              </Button>
+              <Button
+                variant="primary"
+                disabled={busy}
+                onClick={() =>
+                  void run(async () => {
+                    const path = await api.plugins.exportPlugin(p.id, withMarket)
+                    if (path) {
+                      toast.success(t('plugins.exported'))
+                      setExporting(false)
+                    }
+                  })
+                }
+              >
+                {t('plugins.chooseFolder')}
+              </Button>
+            </div>
+          }
+        >
+          <label className="flex items-start gap-2 text-sm">
+            <input type="checkbox" className="mt-1" checked={withMarket} onChange={(e) => setWithMarket(e.target.checked)} />
+            <span>
+              {t('plugins.exportMarket')}
+              <span className="mt-0.5 block text-xs text-muted">{t('plugins.exportMarketHint')}</span>
+            </span>
+          </label>
+          {error && (
+            <p role="alert" className="text-sm text-danger">
+              {error}
+            </p>
+          )}
+        </PlanDialog>
       )}
       {removing && (
         <PlanDialog
