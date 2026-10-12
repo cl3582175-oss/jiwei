@@ -1,10 +1,34 @@
-import { PluginInspectSource, PluginConfigValues, PluginConfirmOptions, PluginUninstallOptions, type PluginInfo, type PluginPreview, type PluginRegistryItem, type PluginTemplate, type PluginFramework, type PluginRecipe } from './plugins'
+import {
+  PluginInspectSource,
+  PluginConfigValues,
+  PluginConfirmOptions,
+  PluginUninstallOptions,
+  type PluginInfo,
+  type PluginPreview,
+  type PluginRegistryItem,
+  type PluginTemplate,
+  type PluginFramework,
+  type PluginRecipe
+} from './plugins'
 import { CaptureRectSchema, BrowserCaptureEntriesSchema, type BrowserCaptureFrame, type BrowserCaptureResult } from './browserCapture'
 import { CaptureActionSchema } from './capture'
 import { TaskSave, type AiTask, type TaskRun, type TaskToolInfo, type TaskInput } from './tasks'
 import type { TaskRecipe } from './taskRecipes'
 import { MailSave, type MailAccount } from './mail'
-import { FeedSave, DiscoverAct, SearchSave, SearchProvider, type Feed, type FeedItem, type DiscoveryStatus, type LearningPath, type SearchConnection, type PodcastState, type TtsProvider, type LocalSpeechStatus } from './discover'
+import {
+  FeedSave,
+  DiscoverAct,
+  SearchSave,
+  SearchProvider,
+  type Feed,
+  type FeedItem,
+  type DiscoveryStatus,
+  type LearningPath,
+  type SearchConnection,
+  type PodcastState,
+  type TtsProvider,
+  type LocalSpeechStatus
+} from './discover'
 import type { CaptureState, PhoneStatus } from './capture'
 import type { InboxItem } from './inbox'
 import {
@@ -38,7 +62,20 @@ import { z } from 'zod'
 import type { Insights } from './insights'
 import { WorkCreateSchema, WorkUpdateSchema, type VideoRender, type Work } from './works'
 import { AdvisorAskSchema, DecideSchema, ReviewDecisionSchema, type Decision } from './advisor'
-import { EventRange, EventSave, PhaseSave, MilestoneSave, IcsSave, ScheduleOptions, type SchedulePreview, type GoalPhase, type GoalMilestone, type IcsFeed, type PlanEvent, type ReviewForecast } from './plan'
+import {
+  EventRange,
+  EventSave,
+  PhaseSave,
+  MilestoneSave,
+  IcsSave,
+  ScheduleOptions,
+  type SchedulePreview,
+  type GoalPhase,
+  type GoalMilestone,
+  type IcsFeed,
+  type PlanEvent,
+  type ReviewForecast
+} from './plan'
 import { ActivityBatchSchema, type TodayBriefing, type TodaySummary } from './activity'
 import {
   ApprovalDecisionSchema,
@@ -657,22 +694,34 @@ export const capabilities = {
     commit: cap<Reflection>()({ description: '保存确认的洞见、修正与行动项，复盘完成', params: [id(), ['input', S.HarvestCommitSchema]] })
   },
   learningInsights: {
-    get: cap<Insights>()({ description: '洞察看板：一段时间的投入、内化、产出、成本与知识漏斗（只读统计）', params: [['range', z.union([z.literal(7), z.literal(30), z.literal(90)])]] })
+    get: cap<Insights>()({
+      description: '洞察看板：一段时间的投入、内化、产出、成本与知识漏斗（只读统计）',
+      params: [['range', z.union([z.literal(7), z.literal(30), z.literal(90)])]]
+    })
   },
   works: {
     list: cap<Work[]>()({ description: '创作工坊：全部作品', params: none }),
     get: cap<Work>()({ description: '读取一个作品（含素材与正文）', params: [id('id')] }),
     create: cap<Work>()({ description: '新建作品（图文长文、课件 PPT、讲解视频）', params: [['input', WorkCreateSchema]] }),
-    update: cap<Work>()({ description: '修改作品：标题、选题、受众、模式、阶段、正文、发布记录、复盘', params: [['input', WorkUpdateSchema]] }),
+    update: cap<Work>()({
+      description: '修改作品：标题、选题、受众、模式、阶段、正文、发布记录、复盘',
+      params: [['input', WorkUpdateSchema]]
+    }),
     remove: cap<void>()({ description: '删除作品', params: [id('id')] }),
     topics: cap<{ title: string; angle: string; audience: string; why: string }[]>()({
       description: '根据掌握得好的知识与方向推荐选题（花费 AI 费用）',
       params: [id('id')]
     }),
-    gather: cap<Work>()({ description: '按选题从知识库收集素材（只含允许给 AI 的内容）', params: [id('id'), ['query', z.string().max(500).optional()]] }),
+    gather: cap<Work>()({
+      description: '按选题从知识库收集素材（只含允许给 AI 的内容）',
+      params: [id('id'), ['query', z.string().max(500).optional()]]
+    }),
     dropMaterial: cap<Work>()({ description: '移除一条素材', params: [id('id'), id('materialId')] }),
     outline: cap<Work>()({ description: '生成结构：长文为章节、课件为逐页（花费 AI 费用）', params: [id('id')] }),
-    draft: cap<Work>()({ description: '起草：长文逐节（教练模式只给提示问题）、课件补全所有页（花费 AI 费用）', params: [id('id'), ['partId', z.string().max(40).optional()]] }),
+    draft: cap<Work>()({
+      description: '起草：长文逐节（教练模式只给提示问题）、课件补全所有页（花费 AI 费用）',
+      params: [id('id'), ['partId', z.string().max(40).optional()]]
+    }),
     polish: cap<Work>()({ description: '打磨：受众视角挑刺、核对事实依据、标出讲不清的地方（花费 AI 费用）', params: [id('id')] }),
     unclearToCards: cap<{ noteId: string; count: number }>()({
       description: '把讲不清的地方写成复习卡片',
@@ -685,20 +734,29 @@ export const capabilities = {
     render: cap<string>()({ description: '渲染讲解视频（配音、逐帧录制、编码；云端配音按字数计费）', params: [id('id')] }),
     renderStatus: cap<VideoRender>()({ description: '讲解视频的渲染进度', params: [id('id')] }),
     cancelRender: cap<void>()({ description: '取消正在渲染的视频', params: [id('id')] }),
-    exportVideo: cap<string | null>()({ description: '另存渲染好的视频、字幕或分镜表', params: [id('id'), ['format', z.enum(['mp4', 'srt', 'json'])]] })
+    exportVideo: cap<string | null>()({
+      description: '另存渲染好的视频、字幕或分镜表',
+      params: [id('id'), ['format', z.enum(['mp4', 'srt', 'json'])]]
+    })
   },
   advisor: {
     list: cap<Decision[]>()({ description: '决策日志：全部决策（未删除）', params: none }),
     get: cap<Decision>()({ description: '读取一条决策及其备忘录（依据会复核是否仍可用）', params: [id('id')] }),
     due: cap<Decision[]>()({ description: '已到回看日期、尚未回看的决策', params: none }),
-    ask: cap<Decision>()({ description: '提出一个问题：检索知识库依据并生成决策备忘录（花费 AI 费用）', params: [['input', AdvisorAskSchema]] }),
+    ask: cap<Decision>()({
+      description: '提出一个问题：检索知识库依据并生成决策备忘录（花费 AI 费用）',
+      params: [['input', AdvisorAskSchema]]
+    }),
     regenerate: cap<Decision>()({ description: '重新生成决策备忘录（花费 AI 费用）', params: [id('id')] }),
     weights: cap<Decision>()({
       description: '调整决策矩阵的准则权重（null 恢复建议权重）',
       params: [id('id'), ['weights', z.record(z.string().max(40), z.number().int().min(0).max(5)).nullable()]]
     }),
     decide: cap<Decision>()({ description: '记录选定的选项、当时的预期与回看日期', params: [['input', DecideSchema]] }),
-    review: cap<Decision>()({ description: '回看：记录实际结果、预期准确度与教训，可生成复习卡片', params: [['input', ReviewDecisionSchema]] }),
+    review: cap<Decision>()({
+      description: '回看：记录实际结果、预期准确度与教训，可生成复习卡片',
+      params: [['input', ReviewDecisionSchema]]
+    }),
     status: cap<Decision>()({ description: '把决策设为草稿或放弃', params: [id('id'), ['status', z.enum(['draft', 'dropped'])]] }),
     remove: cap<void>()({ description: '删除一条决策', params: [id('id')] })
   },
@@ -708,15 +766,24 @@ export const capabilities = {
     feedRemove: cap<void>()({ description: '移除订阅源，保留已保存内容', params: [id()] }),
     feedRefresh: cap<void>()({ description: '刷新一个启用的订阅源', params: [id()] }),
     items: cap<FeedItem[]>()({ description: '精选条目；可选读取全部状态用于管理', params: [['all', z.boolean().optional()]] }),
-    act: cap<{ url: string; sourceId?: string; target?: { type: 'note' | 'source'; id: string } }>()({ description: '记录读、存、稍后或不感兴趣；存为资料走真实抓取与分段', params: [['input', DiscoverAct]] }),
+    act: cap<{ url: string; sourceId?: string; target?: { type: 'note' | 'source'; id: string } }>()({
+      description: '记录读、存、稍后或不感兴趣；存为资料走真实抓取与分段',
+      params: [['input', DiscoverAct]]
+    }),
     runNow: cap<string>()({ description: '排队运行每日精选，遵守每日名额和费用上限', params: none }),
     status: cap<DiscoveryStatus>()({ description: '当日精选运行状态、费用与去重可用性', params: none }),
     searchProviders: cap<SearchConnection[]>()({ description: '搜索连接状态，只返回凭证是否设置', params: none }),
     searchSave: cap<void>()({ description: '用系统加密保存搜索 Key，启用一个服务', params: [['input', SearchSave]] }),
-    searchTest: cap<{ ok: boolean; message: string }>()({ description: '测试所选搜索服务，错误不包含凭证', params: [['service', SearchProvider]] }),
+    searchTest: cap<{ ok: boolean; message: string }>()({
+      description: '测试所选搜索服务，错误不包含凭证',
+      params: [['service', SearchProvider]]
+    }),
     path: cap<LearningPath>()({ description: '结合知识库与搜索生成学习路径提案，正文待用户接受', params: [['goalId', z.string().min(1)]] }),
     pathPhases: cap<SchedulePreview>()({ description: '把主进程持有的学习路径转为仅追加阶段的排期预览', params: [id()] }),
-    remedy: cap<string[]>()({ description: '为允许 AI 的错题找讲解与练习，写入不占每日名额的精选', params: [['mistakeId', z.string().min(1)]] }),
+    remedy: cap<string[]>()({
+      description: '为允许 AI 的错题找讲解与练习，写入不占每日名额的精选',
+      params: [['mistakeId', z.string().min(1)]]
+    }),
     podcast: cap<PodcastState>()({ description: '读取当日学习播客讲稿与状态，素材隐私变化时旧稿失效', params: none }),
     podcastGenerate: cap<string>()({ description: '排队生成或覆盖当日播客讲稿，遵守发现预算与隐私，仅朗读问题不含答案', params: none }),
     ttsProviders: cap<TtsProvider[]>()({ description: '可用于播客 AI 语音合成的服务商（已配置 Key 的通义、OpenAI）', params: none }),
@@ -737,7 +804,10 @@ export const capabilities = {
     accounts: cap<MailAccount[]>()({ description: '列出邮箱账号与凭证已设置状态，不返回凭证明文', params: none }),
     save: cap<MailAccount>()({ description: '加密保存只读邮箱连接', params: [['input', MailSave]] }),
     test: cap<{ ok: boolean; message: string }>()({ description: '测试只读邮箱连接，错误不包含凭证', params: [id()] }),
-    help: cap<void>()({ description: '在系统浏览器打开所选邮箱官方授权码帮助', params: [['preset', z.enum(['qq', '163', '126', 'gmail', 'icloud'])]] }),
+    help: cap<void>()({
+      description: '在系统浏览器打开所选邮箱官方授权码帮助',
+      params: [['preset', z.enum(['qq', '163', '126', 'gmail', 'icloud'])]]
+    }),
     remove: cap<void>()({ description: '移除邮箱并清除本地加密凭证与增量游标', params: [id()] })
   },
   tasks: {
@@ -746,14 +816,20 @@ export const capabilities = {
     remove: cap<void>()({ description: '删除任务并取消待运行任务', params: [id()] }),
     run: cap<string>()({ description: '运行一次已启用的任务；全局暂停时不执行', params: [id()] }),
     runs: cap<TaskRun[]>()({ description: '任务最近一百条运行记录', params: [id('taskId')] }),
-    parse: cap<TaskInput>()({ description: '一句话解析为可编辑任务预览，不保存', params: [['description', z.string().trim().min(1).max(4000)]] }),
-    recipes: cap<TaskRecipe[]>()({ description: '当前可用的任务配方', params: none }),
+    parse: cap<TaskInput>()({
+      description: '一句话解析为可编辑任务预览，不保存',
+      params: [['description', z.string().trim().min(1).max(4000)]]
+    }),
+    recipes: cap<PluginRegistryItem<TaskRecipe>[]>()({ description: '当前可用的任务配方', params: none }),
     tools: cap<TaskToolInfo[]>()({ description: '可勾选的只读工具，外部写入不可选', params: none }),
     pauseAll: cap<void>()({ description: '暂停或恢复所有 AI 任务', params: [['paused', z.boolean()]] }),
     chooseFolder: cap<string | null>()({ description: '选择非递归监听的任务文件夹', params: none })
   },
   plan: {
-    schedulePreview: cap<SchedulePreview>()({ description: '生成经时间与投入校验的排期预览；不写入', params: [['input', ScheduleOptions]] }),
+    schedulePreview: cap<SchedulePreview>()({
+      description: '生成经时间与投入校验的排期预览；不写入',
+      params: [['input', ScheduleOptions]]
+    }),
     scheduleApply: cap<void>()({ description: '确认主进程持有的预览并事务写入；变化后须重新生成', params: [id('previewId')] }),
     phases: cap<GoalPhase[]>()({ description: '方向的阶段与完成进度', params: [id('goalId')] }),
     phaseSave: cap<GoalPhase>()({ description: '创建或修改阶段及挂接的笔记与资料', params: [['input', PhaseSave]] }),
@@ -769,7 +845,10 @@ export const capabilities = {
     events: cap<PlanEvent[]>()({ description: '查询日历日程（含行动项与方向截止标记）', params: [['range', EventRange]] }),
     eventSave: cap<PlanEvent>()({ description: '新建或修改日程；订阅事件只读', params: [['input', EventSave]] }),
     eventRemove: cap<void>()({ description: '删除自己创建的日程', params: [id()] }),
-    forecast: cap<ReviewForecast[]>()({ description: '未来复习负荷的已排期下限', params: [['days', z.number().int().min(1).max(366).default(42)]] })
+    forecast: cap<ReviewForecast[]>()({
+      description: '未来复习负荷的已排期下限',
+      params: [['days', z.number().int().min(1).max(366).default(42)]]
+    })
   },
   goals: {
     list: cap<Goal[]>()({ description: '列出方向', params: none }),
@@ -832,7 +911,10 @@ export const capabilities = {
     })
   },
   review: {
-    forecast: cap<ReviewForecast[]>()({ description: '未来每天的到期与新卡负荷（不模拟 FSRS）', params: [['days', z.number().int().min(1).max(366).default(42)]] }),
+    forecast: cap<ReviewForecast[]>()({
+      description: '未来每天的到期与新卡负荷（不模拟 FSRS）',
+      params: [['days', z.number().int().min(1).max(366).default(42)]]
+    }),
     next: cap<ReviewCard | null>()({
       description: '下一张要复习的卡片（exclude：本轮刚复习过的）',
       params: [['exclude', z.array(S.Id).max(500)]]
@@ -1082,13 +1164,37 @@ export const capabilities = {
     inspect: cap<PluginPreview>()({ description: '获取来源并预览插件', params: [['source', PluginInspectSource]] }),
     installFromFile: cap<PluginPreview | null>()({ description: '选择本地插件并预览', params: none }),
     inspectPath: cap<PluginPreview>()({ description: '开发测试：从路径预览', params: [['path', z.string().max(4096)]] }),
-    confirmInstall: cap<PluginInfo>()({ description: '确认安装已预览的插件', params: [['token', z.string().length(64)], ['options', PluginConfirmOptions]] }),
+    confirmInstall: cap<PluginInfo>()({
+      description: '确认安装已预览的插件',
+      params: [
+        ['token', z.string().length(64)],
+        ['options', PluginConfirmOptions]
+      ]
+    }),
     cancel: cap<void>()({ description: '取消安装预览', params: [['token', z.string().length(64)]] }),
     update: cap<PluginPreview>()({ description: '预览来源更新及新增能力', params: [['id', z.string().max(257)]] }),
     rollback: cap<PluginInfo>()({ description: '回滚已确认的上个版本', params: [['id', z.string().max(257)]] }),
-    setEnabled: cap<PluginInfo>()({ description: '启停插件文字内容；启用不会开启 MCP', params: [['id', z.string().max(257)], ['enabled', z.boolean()]] }),
-    setConfig: cap<PluginInfo>()({ description: '保存插件配置并停用需重新启用的 MCP', params: [['id', z.string().max(257)], ['values', PluginConfigValues]] }),
-    uninstall: cap<void>()({ description: '卸载插件，默认保留订阅源与任务', params: [['id', z.string().max(257)], ['options', PluginUninstallOptions]] }),
+    setEnabled: cap<PluginInfo>()({
+      description: '启停插件文字内容；启用不会开启 MCP',
+      params: [
+        ['id', z.string().max(257)],
+        ['enabled', z.boolean()]
+      ]
+    }),
+    setConfig: cap<PluginInfo>()({
+      description: '保存插件配置并停用需重新启用的 MCP',
+      params: [
+        ['id', z.string().max(257)],
+        ['values', PluginConfigValues]
+      ]
+    }),
+    uninstall: cap<void>()({
+      description: '卸载插件，默认保留订阅源与任务',
+      params: [
+        ['id', z.string().max(257)],
+        ['options', PluginUninstallOptions]
+      ]
+    }),
     openFolder: cap<void>()({ description: '打开已安装插件文件夹', params: [['id', z.string().max(257)]] }),
     templates: cap<PluginRegistryItem<PluginTemplate>[]>()({ description: '启用的作品模板', params: none }),
     frameworks: cap<PluginRegistryItem<PluginFramework>[]>()({ description: '启用的参谋框架', params: none }),

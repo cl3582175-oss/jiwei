@@ -11,7 +11,7 @@ import { emit } from '../../events'
 import { audit } from '../agent/audit'
 import { saveFeed, removeFeed } from '../discover/feeds'
 import { removeTask } from '../tasks/service'
-import { disconnect } from '../mcp/client'
+import { disconnect, connectServer, listServers } from '../mcp/client'
 import { parsePlugin, type ParsedPlugin, type ParsePluginOptions } from './components'
 import { preparePluginSource, safePluginPath, sourceType } from './sources'
 import { registeredPlugin, replacePluginRegistry } from './registry'
@@ -60,6 +60,7 @@ interface Pending {
   timer: ReturnType<typeof setTimeout>
 }
 const previews = new Map<string, Pending>()
+const installing = new Map<string, { canceled: boolean; committed: boolean }>()
 const PREVIEW_MS = 10 * 60_000
 const notify = (): void => {
   for (const event of ['plugins:changed', 'mcp:changed', 'discover:changed', 'tasks:changed'] as const) {
@@ -208,6 +209,11 @@ export async function installPluginFromFile(win: BrowserWindow | null): Promise<
   return result.canceled || !result.filePaths[0] ? null : inspectPluginPath(result.filePaths[0])
 }
 export async function cancelPluginPreview(token: string): Promise<void> {
+  const active = installing.get(token)
+  if (active && !active.committed) {
+    active.canceled = true
+    return
+  }
   const pending = previews.get(token)
   if (!pending) return
   previews.delete(token)
@@ -258,6 +264,12 @@ export function confirmPluginInstall(token: string, input: { feeds?: number[]; c
     if (!pending) throw new Error('Invalid or already used plugin preview')
     previews.delete(token)
     clearTimeout(pending.timer)
+    const active = { canceled: false, committed: false }
+    installing.set(token, active)
+    const checkCanceled = (): void => {
+      if (active.canceled) throw new Error('Plugin installation canceled / 插件安装已取消')
+    }
+    let reconnect: string[] = []
     let target: string | undefined,
       newIdForCleanup: string | undefined,
       committed = false
@@ -266,6 +278,7 @@ export function confirmPluginInstall(token: string, input: { feeds?: number[]; c
       const opts = PluginConfirmOptions.parse(input),
         parsed = await parsePlugin(pending.prepared.root, pending.options),
         id = `${parsed.manifest.name}@${pending.origin.market}`
+      checkCanceled()
       if (parsed.hash !== pending.parsed.hash) throw new Error('Plugin changed after preview; inspect again')
       const rows = getDb().select().from(plugins).all()
       if (rows.some((r) => r.id !== id && r.id.split('@')[0] === parsed.manifest.name))
@@ -284,7 +297,12 @@ export function confirmPluginInstall(token: string, input: { feeds?: number[]; c
       const installed = await parsePlugin(target, pending.options)
       if (installed.hash !== parsed.hash) throw new Error('Plugin changed during installation')
       await mkdir(await owned(pluginData(id)), { recursive: true })
+      checkCanceled()
+      reconnect = listServers()
+        .filter((s) => s.pluginId === id && s.enabled && s.state === 'ready')
+        .map((s) => s.id)
       await disconnectPlugin(id)
+      checkCanceled()
       const version: InstalledVersion = {
         hash: parsed.hash,
         version: parsed.version,
@@ -328,12 +346,15 @@ export function confirmPluginInstall(token: string, input: { feeds?: number[]; c
         record(old ? 'update' : 'install', id)
       })
       committed = true
+      active.committed = true
       replacePluginRegistry(id, installed)
       notify()
       // 提交后清理失败不回报安装失败；重启会继续回收，仅操作插件自有目录。
       await cleanupVersions(id).catch(() => undefined)
       return getPlugin(id)
     } finally {
+      installing.delete(token)
+      if (!committed && active.canceled) for (const id of reconnect) await connectServer(id).catch(() => undefined)
       if (!committed && target) await rm(target, { recursive: true, force: true })
       if (!committed && newIdForCleanup) {
         await rm(await owned(pluginData(newIdForCleanup)), { recursive: true, force: true })

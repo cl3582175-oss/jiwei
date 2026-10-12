@@ -1,3 +1,5 @@
+import { Puzzle } from 'lucide-react'
+import { PluginsSettings } from '../plugins/PluginsSettings'
 import { DiscoverSettings } from '../discover/DiscoverSettings'
 import { TasksSettings } from '../tasks/TasksSettings'
 import { BackupSettings } from './BackupSettings'
@@ -46,7 +48,21 @@ import { Switch } from '@/components/ui/switch'
 import { Logo } from '@/components/Logo'
 
 type Tab =
-  'discover' | 'tasks' | 'general' | 'me' | 'learning' | 'ai' | 'skills' | 'lenses' | 'appearance' | 'usage' | 'connections' | 'data' | 'browser' | 'about'
+  | 'plugins'
+  | 'discover'
+  | 'tasks'
+  | 'general'
+  | 'me'
+  | 'learning'
+  | 'ai'
+  | 'skills'
+  | 'lenses'
+  | 'appearance'
+  | 'usage'
+  | 'connections'
+  | 'data'
+  | 'browser'
+  | 'about'
 
 const PALETTES: PaletteId[] = ['qinglu', 'celadon', 'dunhuang']
 
@@ -277,6 +293,7 @@ export function SettingsDialog() {
     { id: 'learning', icon: <Layers /> },
     { id: 'ai', icon: <Sparkles /> },
     { id: 'skills', icon: <Wand2 /> },
+    { id: 'plugins', icon: <Puzzle /> },
     { id: 'lenses', icon: <Glasses /> },
     { id: 'appearance', icon: <Palette /> },
     { id: 'usage', icon: <Gauge /> },
@@ -300,24 +317,34 @@ export function SettingsDialog() {
             {tabs.map((it) => (
               <button
                 key={it.id}
-                onClick={() => setTab(it.id)}
+                onClick={() => {
+                  setTab(it.id)
+                  useApp.setState({ settingsTab: it.id })
+                }}
                 className={cn(
                   'mb-0.5 flex h-8 w-full items-center gap-2.5 rounded-md px-3 text-sm transition-colors [&_svg]:size-4',
                   tab === it.id ? 'bg-surface text-fg shadow-card [&_svg]:text-accent' : 'text-muted hover:bg-surface-hover hover:text-fg'
                 )}
               >
                 {it.icon}
-                {it.id === 'discover' ? t('discover.title') : it.id === 'tasks' ? t('tasks.title') : it.id === 'browser'
-                  ? t('settings.browserTab')
-                  : it.id === 'usage' || it.id === 'connections'
-                    ? t(`agent.tabs.${it.id}`)
-                    : t(`settings.${it.id}`)}
+                {it.id === 'plugins'
+                  ? t('plugins.title')
+                  : it.id === 'discover'
+                    ? t('discover.title')
+                    : it.id === 'tasks'
+                      ? t('tasks.title')
+                      : it.id === 'browser'
+                        ? t('settings.browserTab')
+                        : it.id === 'usage' || it.id === 'connections'
+                          ? t(`agent.tabs.${it.id}`)
+                          : t(`settings.${it.id}`)}
               </button>
             ))}
           </nav>
           <div className="min-w-0 flex-1 overflow-y-auto px-8 py-4">
             {tab === 'discover' && <DiscoverSettings />}
             {tab === 'tasks' && <TasksSettings />}
+            {tab === 'plugins' && <PluginsSettings />}
             {tab === 'browser' && <BrowserSafetySettings />}
             {tab === 'general' && <ProfileRow />}
             {tab === 'general' && (
@@ -335,10 +362,16 @@ export function SettingsDialog() {
             {tab === 'general' && (
               <>
                 <Row label={t('tasks.login')}>
-                  <Switch checked={s.tasks.launchAtLogin} onCheckedChange={(launchAtLogin) => update.mutate({ tasks: { ...s.tasks, launchAtLogin } })} />
+                  <Switch
+                    checked={s.tasks.launchAtLogin}
+                    onCheckedChange={(launchAtLogin) => update.mutate({ tasks: { ...s.tasks, launchAtLogin } })}
+                  />
                 </Row>
                 <Row label={t('tasks.keepRunning')}>
-                  <Switch checked={s.tasks.keepRunning} onCheckedChange={(keepRunning) => update.mutate({ tasks: { ...s.tasks, keepRunning } })} />
+                  <Switch
+                    checked={s.tasks.keepRunning}
+                    onCheckedChange={(keepRunning) => update.mutate({ tasks: { ...s.tasks, keepRunning } })}
+                  />
                 </Row>
               </>
             )}

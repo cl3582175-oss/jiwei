@@ -1,3 +1,4 @@
+import { PluginSourceLabel } from '../plugins/PluginSourceLabel'
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
@@ -122,6 +123,7 @@ export function FeedsDrawer({ close }: { close: () => void }) {
                   <div className="min-w-0 flex-1">
                     <h3 className="truncate text-sm font-medium" title={f.title}>
                       {f.title}
+                      <PluginSourceLabel pluginId={f.pluginId} onNavigate={close} />
                     </h3>
                     <p className="mt-0.5 truncate text-2xs text-subtle" title={f.url}>
                       {f.url}

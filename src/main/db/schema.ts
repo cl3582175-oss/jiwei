@@ -376,7 +376,9 @@ export const sourcePages = sqliteTable(
 
 export const goals = sqliteTable('goals', {
   id: text('id').primaryKey(),
-  kind: text('kind', { enum: ['exam', 'skill', 'project', 'interest'] }).notNull().default('skill'),
+  kind: text('kind', { enum: ['exam', 'skill', 'project', 'interest'] })
+    .notNull()
+    .default('skill'),
   startAt: integer('start_at'),
   weeklyMinutes: integer('weekly_minutes'),
   weekdayMinutes: text('weekday_minutes'),
@@ -400,12 +402,15 @@ export const works = sqliteTable(
     title: text('title').notNull().default(''),
     topic: text('topic').notNull().default(''),
     audience: text('audience').notNull().default(''),
-    mode: text('mode', { enum: ['coach', 'cowrite', 'ghost'] }).notNull().default('cowrite'),
+    mode: text('mode', { enum: ['coach', 'cowrite', 'ghost'] })
+      .notNull()
+      .default('cowrite'),
     stage: text('stage', { enum: ['topic', 'materials', 'outline', 'draft', 'polish', 'done'] })
       .notNull()
       .default('topic'),
     goalId: text('goal_id'),
     content: text('content'),
+    template: text('template'),
     polish: text('polish'),
     exports: text('exports').notNull().default('[]'),
     publishedWhere: text('published_where'),
@@ -447,6 +452,7 @@ export const decisions = sqliteTable(
       .default('draft'),
     /** 备忘录 JSON（DecisionMemo）；生成失败或尚未生成时为空 */
     memo: text('memo'),
+    framework: text('framework'),
     /** 用户调整过的准则权重 JSON（覆盖备忘录里的建议权重） */
     weights: text('weights'),
     choice: text('choice'),
@@ -532,34 +538,80 @@ export const actions = sqliteTable('actions', {
   ...syncCols
 })
 
-export const planEvents = sqliteTable('plan_events', {
-  id: text('id').primaryKey(),
-  kind: text('kind', { enum: ['study', 'exam', 'deadline', 'event'] }).notNull(),
-  title: text('title').notNull(),
-  startAt: integer('start_at').notNull(),
-  endAt: integer('end_at').notNull(),
-  allDay: integer('all_day', { mode: 'boolean' }).notNull().default(false),
-  goalId: text('goal_id'),
-  phaseId: text('phase_id'),
-  status: text('status', { enum: ['planned', 'done', 'skipped'] }).notNull().default('planned'),
-  origin: text('origin', { enum: ['user', 'ai', 'ics'] }).notNull().default('user'),
-  feedId: text('feed_id'),
-  uid: text('uid'),
-  note: text('note'),
-  ...syncCols
-}, (t) => [index('plan_events_range_idx').on(t.startAt, t.endAt), uniqueIndex('plan_events_feed_uid_idx').on(t.feedId, t.uid, t.startAt)])
+export const planEvents = sqliteTable(
+  'plan_events',
+  {
+    id: text('id').primaryKey(),
+    kind: text('kind', { enum: ['study', 'exam', 'deadline', 'event'] }).notNull(),
+    title: text('title').notNull(),
+    startAt: integer('start_at').notNull(),
+    endAt: integer('end_at').notNull(),
+    allDay: integer('all_day', { mode: 'boolean' }).notNull().default(false),
+    goalId: text('goal_id'),
+    phaseId: text('phase_id'),
+    status: text('status', { enum: ['planned', 'done', 'skipped'] })
+      .notNull()
+      .default('planned'),
+    origin: text('origin', { enum: ['user', 'ai', 'ics'] })
+      .notNull()
+      .default('user'),
+    feedId: text('feed_id'),
+    uid: text('uid'),
+    note: text('note'),
+    ...syncCols
+  },
+  (t) => [index('plan_events_range_idx').on(t.startAt, t.endAt), uniqueIndex('plan_events_feed_uid_idx').on(t.feedId, t.uid, t.startAt)]
+)
 
-export const goalPhases = sqliteTable('goal_phases', {
-  origin: text('origin', { enum: ['user', 'ai'] }).notNull().default('user'), objective: text('objective'),
-  id: text('id').primaryKey(), goalId: text('goal_id').notNull(), title: text('title').notNull(), startAt: integer('start_at').notNull(), endAt: integer('end_at').notNull(), position: integer('position').notNull().default(0),
-  status: text('status', { enum: ['planned', 'active', 'done'] }).notNull().default('planned'), noteIds: text('note_ids').notNull().default('[]'), sourceIds: text('source_ids').notNull().default('[]'), ...syncCols
-}, (t) => [index('goal_phases_goal_idx').on(t.goalId)])
-export const goalMilestones = sqliteTable('goal_milestones', {
-  origin: text('origin', { enum: ['user', 'ai'] }).notNull().default('user'),
-  id: text('id').primaryKey(), goalId: text('goal_id').notNull(), phaseId: text('phase_id'), title: text('title').notNull(), at: integer('at').notNull(), doneAt: integer('done_at'), ...syncCols
-}, (t) => [index('goal_milestones_goal_idx').on(t.goalId)])
+export const goalPhases = sqliteTable(
+  'goal_phases',
+  {
+    origin: text('origin', { enum: ['user', 'ai'] })
+      .notNull()
+      .default('user'),
+    objective: text('objective'),
+    id: text('id').primaryKey(),
+    goalId: text('goal_id').notNull(),
+    title: text('title').notNull(),
+    startAt: integer('start_at').notNull(),
+    endAt: integer('end_at').notNull(),
+    position: integer('position').notNull().default(0),
+    status: text('status', { enum: ['planned', 'active', 'done'] })
+      .notNull()
+      .default('planned'),
+    noteIds: text('note_ids').notNull().default('[]'),
+    sourceIds: text('source_ids').notNull().default('[]'),
+    ...syncCols
+  },
+  (t) => [index('goal_phases_goal_idx').on(t.goalId)]
+)
+export const goalMilestones = sqliteTable(
+  'goal_milestones',
+  {
+    origin: text('origin', { enum: ['user', 'ai'] })
+      .notNull()
+      .default('user'),
+    id: text('id').primaryKey(),
+    goalId: text('goal_id').notNull(),
+    phaseId: text('phase_id'),
+    title: text('title').notNull(),
+    at: integer('at').notNull(),
+    doneAt: integer('done_at'),
+    ...syncCols
+  },
+  (t) => [index('goal_milestones_goal_idx').on(t.goalId)]
+)
 export const icsFeeds = sqliteTable('ics_feeds', {
-  id: text('id').primaryKey(), name: text('name').notNull(), url: text('url').notNull(), color: text('color'), enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true), lastFetchedAt: integer('last_fetched_at'), etag: text('etag'), lastModified: text('last_modified'), error: text('error'), ...syncCols
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  url: text('url').notNull(),
+  color: text('color'),
+  enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
+  lastFetchedAt: integer('last_fetched_at'),
+  etag: text('etag'),
+  lastModified: text('last_modified'),
+  error: text('error'),
+  ...syncCols
 })
 
 /** 复习卡片（FSRS）：问题来自线索段落 */
@@ -1082,7 +1134,7 @@ export const aiTasks = sqliteTable('ai_tasks', {
   recipe: text('recipe'),
   lastRunAt: integer('last_run_at'),
   nextRunAt: integer('next_run_at'),
-  ...syncCols,
+  ...syncCols
 })
 export const aiTaskRuns = sqliteTable(
   'ai_task_runs',
@@ -1098,9 +1150,9 @@ export const aiTaskRuns = sqliteTable(
     summary: text('summary'),
     resultRefs: text('result_refs').notNull().default('[]'),
     error: text('error'),
-    conversationId: text('conversation_id'),
+    conversationId: text('conversation_id')
   },
-  (t) => [index('ai_task_runs_task_idx').on(t.taskId, t.startedAt)],
+  (t) => [index('ai_task_runs_task_idx').on(t.taskId, t.startedAt)]
 )
 
 export const mailAccounts = sqliteTable('mail_accounts', {
@@ -1114,7 +1166,7 @@ export const mailAccounts = sqliteTable('mail_accounts', {
   secretEnc: blob('secret_enc', { mode: 'buffer' }),
   enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
   lastError: text('last_error'),
-  ...syncCols,
+  ...syncCols
 })
 export const mailSeen = sqliteTable(
   'mail_seen',
@@ -1122,34 +1174,69 @@ export const mailSeen = sqliteTable(
     accountId: text('account_id').notNull(),
     mailbox: text('mailbox').notNull(),
     uidValidity: text('uid_validity').notNull(),
-    lastUid: integer('last_uid').notNull(),
+    lastUid: integer('last_uid').notNull()
   },
-  (t) => [primaryKey({ columns: [t.accountId, t.mailbox] })],
+  (t) => [primaryKey({ columns: [t.accountId, t.mailbox] })]
 )
 
 export const feeds = sqliteTable('feeds', {
   pluginId: text('plugin_id'),
-  id: text('id').primaryKey(), kind: text('kind').notNull(), url: text('url').notNull(), title: text('title').notNull(),
-  enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true), goalId: text('goal_id'),
-  lastFetchedAt: integer('last_fetched_at'), etag: text('etag'), lastModified: text('last_modified'), error: text('error'),
-  contentHash: text('content_hash'), ...syncCols
+  id: text('id').primaryKey(),
+  kind: text('kind').notNull(),
+  url: text('url').notNull(),
+  title: text('title').notNull(),
+  enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
+  goalId: text('goal_id'),
+  lastFetchedAt: integer('last_fetched_at'),
+  etag: text('etag'),
+  lastModified: text('last_modified'),
+  error: text('error'),
+  contentHash: text('content_hash'),
+  ...syncCols
 })
-export const feedItems = sqliteTable('feed_items', {
-  id: text('id').primaryKey(), feedId: text('feed_id'), url: text('url').notNull(), title: text('title').notNull(),
-  summary: text('summary').notNull().default(''), author: text('author'), publishedAt: integer('published_at'),
-  fetchedAt: integer('fetched_at').notNull(), origin: text('origin', { enum: ['feed', 'search'] }).notNull(),
-  status: text('status', { enum: ['new', 'scored', 'picked', 'dismissed', 'saved', 'later'] }).notNull().default('new'),
-  score: text('score'), reason: text('reason'), related: text('related').notNull().default('[]'), gap: text('gap'),
-  minutes: integer('minutes'), pickedAt: integer('picked_at'), laterAt: integer('later_at'),
-  audioUrl: text('audio_url'), pdfUrl: text('pdf_url'), inboxId: text('inbox_id'), remedyId: text('remedy_id'), ...syncCols
-}, (t) => [uniqueIndex('feed_items_url_idx').on(t.url), index('feed_items_status_idx').on(t.status)])
+export const feedItems = sqliteTable(
+  'feed_items',
+  {
+    id: text('id').primaryKey(),
+    feedId: text('feed_id'),
+    url: text('url').notNull(),
+    title: text('title').notNull(),
+    summary: text('summary').notNull().default(''),
+    author: text('author'),
+    publishedAt: integer('published_at'),
+    fetchedAt: integer('fetched_at').notNull(),
+    origin: text('origin', { enum: ['feed', 'search'] }).notNull(),
+    status: text('status', { enum: ['new', 'scored', 'picked', 'dismissed', 'saved', 'later'] })
+      .notNull()
+      .default('new'),
+    score: text('score'),
+    reason: text('reason'),
+    related: text('related').notNull().default('[]'),
+    gap: text('gap'),
+    minutes: integer('minutes'),
+    pickedAt: integer('picked_at'),
+    laterAt: integer('later_at'),
+    audioUrl: text('audio_url'),
+    pdfUrl: text('pdf_url'),
+    inboxId: text('inbox_id'),
+    remedyId: text('remedy_id'),
+    ...syncCols
+  },
+  (t) => [uniqueIndex('feed_items_url_idx').on(t.url), index('feed_items_status_idx').on(t.status)]
+)
 export const discoverFeedback = sqliteTable('discover_feedback', {
-  id: text('id').primaryKey(), itemId: text('item_id').notNull(), action: text('action').notNull(),
-  at: integer('at').notNull(), topic: text('topic').notNull(), reason: text('reason')
+  id: text('id').primaryKey(),
+  itemId: text('item_id').notNull(),
+  action: text('action').notNull(),
+  at: integer('at').notNull(),
+  topic: text('topic').notNull(),
+  reason: text('reason')
 })
 export const searchConnections = sqliteTable('search_connections', {
-  service: text('service').primaryKey(), keyEnc: blob('key_enc', { mode: 'buffer' }),
-  enabled: integer('enabled', { mode: 'boolean' }).notNull().default(false), updatedAt: integer('updated_at').notNull()
+  service: text('service').primaryKey(),
+  keyEnc: blob('key_enc', { mode: 'buffer' }),
+  enabled: integer('enabled', { mode: 'boolean' }).notNull().default(false),
+  updatedAt: integer('updated_at').notNull()
 })
 
 /** 插件凭证仅存密文；生命周期事务由 plugins/install 维护。 */

@@ -1,6 +1,6 @@
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
 import { createServer, type Server } from 'http'
-import { mkdtempSync, copyFileSync } from 'fs'
+import { mkdtempSync, copyFileSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import type { TaskInput } from '../src/shared/tasks'
@@ -13,6 +13,12 @@ let app: ElectronApplication,
   taskId = '',
   noteId = ''
 const userData = mkdtempSync(join(tmpdir(), 'jiwei-tasks-'))
+const appData = mkdtempSync(join(tmpdir(), 'jiwei-task-appdata-'))
+const harness = join(userData, 'isolated-main.cjs')
+writeFileSync(
+  harness,
+  `const {app}=require('electron');app.setPath('userData',${JSON.stringify(userData)});app.setPath('appData',${JSON.stringify(appData)});app.getAppPath=()=>${JSON.stringify(process.cwd())};require(${JSON.stringify(join(process.cwd(), 'out/main/index.js'))});`
+)
 const mailDir = mkdtempSync(join(tmpdir(), 'jiwei-task-mail-'))
 copyFileSync('e2e/fixtures/mail/1-lesson.eml', join(mailDir, '1-lesson.eml'))
 const requests: { system: string; messages: string; tools: string[] }[] = []
@@ -51,7 +57,7 @@ function completion(res: import('http').ServerResponse, text: string | null, nam
 }
 async function launch() {
   app = await electron.launch({
-    args: ['.', `--user-data-dir=${userData}`],
+    args: [harness, `--user-data-dir=${userData}`],
     env: {
       ...process.env,
       JIWEI_TEST_NETWORK: '1',
@@ -124,25 +130,25 @@ test.beforeAll(async () => {
         )
         return
       }
-      if (system.includes('TASK_FAIL')) {
+      if (requests.at(-1)!.messages.includes('TASK_FAIL')) {
         failures++
         res.writeHead(500, { 'content-type': 'application/json' }).end(JSON.stringify({ error: { message: 'Controlled failure' } }))
         return
       }
-      if (system.includes('TASK_CANCEL')) {
+      if (requests.at(-1)!.messages.includes('TASK_CANCEL')) {
         setTimeout(() => {
           if (!res.destroyed) completion(res, '不应落库的取消结果')
         }, 3000)
         return
       }
-      if (system.includes('TASK_DENY')) {
+      if (requests.at(-1)!.messages.includes('TASK_DENY')) {
         if (!done.includes('web_fetch'))
           completion(res, null, 'web_fetch', { url: `http://127.0.0.1:${(server.address() as { port: number }).port}/page` })
         else if (!done.includes('send_mail')) completion(res, null, 'send_mail', { to: 'external@example.invalid', text: 'private notes' })
         else completion(res, '已读取资料；没有发送内容。')
         return
       }
-      if (system.includes('TASK_MAIL')) {
+      if (requests.at(-1)!.messages.includes('TASK_MAIL')) {
         const raw = textOf(input.messages.find((m: { role: string }) => m.role === 'user')?.content)
         const id = /"mailIds":\["([^"]+)"/.exec(raw)?.[1]
         if (!done.includes('mail_read')) completion(res, null, 'mail_read', { id })
@@ -150,7 +156,7 @@ test.beforeAll(async () => {
         else completion(res, '老师要求明天前完成概率练习，附件仅列出了名称；注入的发送要求已跳过。')
         return
       }
-      if (system.includes('TASK_SUCCESS')) {
+      if (requests.at(-1)!.messages.includes('TASK_SUCCESS')) {
         const next = [
           'today_overview',
           'task_output_inbox',
@@ -260,7 +266,9 @@ test('P4 注入后请求 external / 未勾选工具被拒并记录 summary 与�
   const r = await waitRun(task.id)
   expect(r.status).toBe('ok')
   expect(r.summary).toContain('1 个操作需要你确认，已跳过')
-  const sent = requests.filter((r) => r.system.includes('TASK_DENY'))
+  const sent = requests.filter((r) => r.messages.includes('TASK_DENY'))
+  expect(sent.every((r) => !r.system.includes('TASK_DENY'))).toBe(true)
+  expect(sent[0].messages).toContain('task.request')
   expect(sent.every((r) => !r.tools.includes('send_mail'))).toBe(true)
   expect(sent.some((r) => r.messages.includes('<external-data'))).toBe(true)
   const audit = await page.evaluate(() => window.jiwei.agent.audit({ limit: 100 }))
@@ -285,7 +293,7 @@ test('P4 失败不重试，连续三次失败暂停；零预算不请求模型',
 test('P4 全局暂停取消正在执行的任务，不产出；托盘关闭只隐藏', async () => {
   const task = await page.evaluate((v) => window.jiwei.tasks.save(v), savedTask('取消任务', 'TASK_CANCEL'))
   await page.evaluate((id) => window.jiwei.tasks.run(id), task.id)
-  await expect.poll(() => requests.some((r) => r.system.includes('TASK_CANCEL'))).toBe(true)
+  await expect.poll(() => requests.some((r) => r.messages.includes('TASK_CANCEL'))).toBe(true)
   await page.evaluate(() => window.jiwei.tasks.pauseAll(true))
   const r = await waitRun(task.id)
   expect(r.status).toBe('canceled')
@@ -374,7 +382,7 @@ test('P5 fixture 邮箱连接、凭证加密、增量邮件触发与注入拒绝
   expect(run.triggerInfo.type).toBe('mail')
   expect((run.triggerInfo.mailIds as string[]).length).toBe(1)
   expect(run.summary).toContain('1 个操作需要你确认，已跳过')
-  const calls = requests.filter((r) => r.system.includes('TASK_MAIL'))
+  const calls = requests.filter((r) => r.messages.includes('TASK_MAIL'))
   expect(calls.some((r) => r.messages.includes('<external-data') && r.messages.includes('Complete probability exercises'))).toBe(true)
   expect(calls.every((r) => !r.tools.includes('send_mail'))).toBe(true)
   const toolData = calls.map((r) => r.messages).join('')

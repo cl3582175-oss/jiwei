@@ -1,8 +1,9 @@
+import { PluginSourceLabel } from '../plugins/PluginSourceLabel'
+import { PluginFileInstallButton } from '../plugins/PluginsSettings'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { toast } from 'sonner'
-import { FolderOpen, Import, RefreshCw, ChevronRight, Zap } from 'lucide-react'
+import { FolderOpen, RefreshCw, ChevronRight, Zap } from 'lucide-react'
 import type { SkillInfo } from '@shared/types'
 import { useSkills } from '@/lib/queries'
 import { api, cn } from '@/lib/utils'
@@ -10,9 +11,6 @@ import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 
 // 「技能」：查看、启用 / 停用、导入（Agent Skills 标准 SKILL.md），打开技能文件夹自行编辑。
-
-const errText = (e: unknown): string =>
-  String(e instanceof Error ? e.message : e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
 
 function SkillCard({ s }: { s: SkillInfo }) {
   const { t } = useTranslation()
@@ -30,7 +28,7 @@ function SkillCard({ s }: { s: SkillInfo }) {
             <span
               className={cn('rounded px-1.5 py-px text-2xs', s.source === 'user' ? 'bg-accent-soft text-accent' : 'bg-sunken text-muted')}
             >
-              {t(`skills.source.${s.source}`)}
+              {s.source === 'plugin' ? t('plugins.title') : t(`skills.source.${s.source}`)}
             </span>
             {s.minModel === 'strong' && (
               <span className="inline-flex items-center gap-0.5 rounded bg-sunken px-1.5 py-px text-2xs text-muted">
@@ -40,7 +38,9 @@ function SkillCard({ s }: { s: SkillInfo }) {
             )}
           </span>
           <span className="mt-1 block pl-5.5 text-xs leading-relaxed text-muted">{s.description}</span>
+          {s.hasScripts && <span className="mt-1 block pl-5.5 text-2xs text-muted">{t('plugins.scripts')}</span>}
         </button>
+        <PluginSourceLabel pluginId={s.pluginId} />
         <Switch
           checked={s.enabled}
           aria-label={s.title}
@@ -60,17 +60,6 @@ export function SkillsSettingsTab() {
   const { t } = useTranslation()
   const qc = useQueryClient()
   const { data: list = [] } = useSkills()
-  const doImport = async (): Promise<void> => {
-    try {
-      const s = await api.skills.import()
-      if (s) {
-        toast.success(t('skills.imported', { name: s.title }))
-        void qc.invalidateQueries({ queryKey: ['skills'] })
-      }
-    } catch (e) {
-      toast.error(errText(e))
-    }
-  }
   return (
     <div className="py-4">
       <div className="flex items-start justify-between gap-6">
@@ -79,10 +68,7 @@ export function SkillsSettingsTab() {
           <p className="mt-1 max-w-[440px] text-xs leading-relaxed text-muted">{t('skills.desc')}</p>
         </div>
         <div className="flex shrink-0 gap-1.5">
-          <Button size="sm" variant="outline" onClick={() => void doImport()}>
-            <Import />
-            {t('skills.import')}
-          </Button>
+          <PluginFileInstallButton />
           <Button size="sm" variant="ghost" onClick={() => void api.skills.openDir()} aria-label={t('skills.openDir')}>
             <FolderOpen />
           </Button>

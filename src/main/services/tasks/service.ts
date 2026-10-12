@@ -2,7 +2,7 @@ import { and, desc, eq, isNull, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { app } from 'electron'
 import { TaskSave, type AiTask, type TaskInput, type TaskRun, type TodayTaskResult } from '@shared/tasks'
-import { taskRecipes } from '@shared/taskRecipes'
+import { listRecipes } from '../plugins/registry'
 import { getDb } from '../../db'
 import { aiTaskRuns, aiTasks, jobs, notes, meta } from '../../db/schema'
 import { newId } from '../../lib/ids'
@@ -77,8 +77,17 @@ export async function saveTask(input: TaskInput): Promise<AiTask> {
   const v = TaskSave.parse(input),
     old = v.id ? getTask(v.id) : undefined
   if (v.id && !old) throw new Error('Task not found')
+  // 已创建的任务属于用户；停用或卸载插件不能阻止继续编辑。新来源只能由注册表确定。
+  const recipe = v.recipe ? listRecipes().find((r) => r.id === v.recipe) : undefined
+  if (v.recipe && !recipe && (!old || old.recipe !== v.recipe))
+    throw new Error(getSettings().language.startsWith('zh') ? '配方已不可用，请重新选择' : 'Recipe unavailable; choose another recipe')
+
   if (v.enabled && v.recipe === 'daily-picks' && (!v.outputs.inbox || v.outputs.noteId || v.outputs.actions || v.tools.length))
-    throw new Error(getSettings().language.startsWith('zh') ? '每日精选配方需要收件箱输出，工具与其他写入由固定发现流程管理' : 'Daily picks requires inbox output; its fixed discovery workflow manages tools and writes')
+    throw new Error(
+      getSettings().language.startsWith('zh')
+        ? '每日精选配方需要收件箱输出，工具与其他写入由固定发现流程管理'
+        : 'Daily picks requires inbox output; its fixed discovery workflow manages tools and writes'
+    )
   // 停用必须始终可用；失效的账号、工具或目标只能阻止启用，不能阻止撤回执行许可。
   if (v.enabled) {
     const { taskToolCatalog } = await import('./tools')
@@ -97,6 +106,14 @@ export async function saveTask(input: TaskInput): Promise<AiTask> {
     now = Date.now(),
     triggerChanged = !old || JSON.stringify(old.trigger) !== JSON.stringify(v.trigger)
   if (v.enabled && (triggerChanged || !old?.enabled)) await initializeTrigger(id, v.trigger)
+  // 工具/触发器验证会 await；期间插件可能被卸载，不能把旧来源写回用户任务。
+  const currentOld = old ? getTask(old.id) : undefined
+  if (old && !currentOld) throw new Error('Task not found')
+  const currentRecipe = v.recipe ? listRecipes().find((r) => r.id === v.recipe) : undefined
+  if (v.recipe && !currentRecipe && (!currentOld || currentOld.recipe !== v.recipe)) {
+    if (!old) clearTriggerState(id)
+    throw new Error(getSettings().language.startsWith('zh') ? '配方已不可用，请重新选择' : 'Recipe unavailable; choose another recipe')
+  }
   const row = {
     name: v.name,
     instruction: v.instruction,
@@ -105,6 +122,7 @@ export async function saveTask(input: TaskInput): Promise<AiTask> {
     outputs: JSON.stringify(v.outputs),
     budgetPerRun: v.budgetPerRun,
     recipe: v.recipe,
+    pluginId: currentOld?.recipe === v.recipe ? currentOld.pluginId : (currentRecipe?.pluginId ?? null),
     enabled: v.enabled,
     nextRunAt: triggerChanged || (!old?.enabled && v.enabled) ? nextTriggerAt(v.trigger, now) : old?.nextRunAt,
     updatedAt: now,
@@ -186,8 +204,10 @@ export async function parseTask(description: string): Promise<TaskInput> {
 }
 export function recipes() {
   const zh = getSettings().language.startsWith('zh')
-  return taskRecipes
-    .map((r) => ({ ...r, task: { ...r.task, name: zh ? r.name.zh : r.name.en, instruction: zh ? r.task.instruction : r.instructionEn } }))
+  return listRecipes().map((r) => ({
+    ...r,
+    task: { ...r.task, name: zh ? r.name.zh : r.name.en, instruction: zh ? r.task.instruction : r.instructionEn }
+  }))
 }
 export function todayTaskResults(): TodayTaskResult[] {
   const start = new Date()

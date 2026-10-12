@@ -90,10 +90,11 @@ export const TaskSave = z.object({
   outputs: TaskOutputs,
   budgetPerRun: z.number().min(0).max(10000).nullable().default(null),
   enabled: z.boolean().default(true),
-  recipe: z.string().max(100).nullable().default(null)
+  recipe: z.string().max(257).nullable().default(null)
 })
 export type TaskInput = z.input<typeof TaskSave>
 export interface AiTask extends Omit<z.infer<typeof TaskSave>, 'id'> {
+  pluginId?: string | null
   id: string
   lastRunAt: number | null
   nextRunAt: number | null

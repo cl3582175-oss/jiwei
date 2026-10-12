@@ -1,3 +1,4 @@
+import { PluginSourceLabel } from '../plugins/PluginSourceLabel'
 import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
@@ -286,60 +287,71 @@ function TaskEditor({ input, onClose }: { input: TaskInput; onClose: () => void 
         />
       </label>
       <TriggerEditor value={v.trigger} onChange={(trigger) => setV({ ...v, trigger })} />
-      {v.recipe !== 'daily-picks' && <fieldset className="space-y-2">
-        <legend className="text-sm text-fg">{t('tasks.tools')}</legend>
-        {(['knowledge', 'plan', 'mail', 'web', 'mcp'] as const).map((group) => (
-          <div key={group}>
-            {!!tools.filter((tool) => tool.group === group).length && (
-              <p className="mt-3 text-xs text-muted">{t(`tasks.groups.${group}`)}</p>
-            )}
-            <div className="mt-1 grid grid-cols-2 gap-2">
-              {tools
-                .filter((tool) => tool.group === group)
-                .map((tool) => (
-                  <label key={tool.name} title={tool.label} className="flex min-w-0 items-start gap-2 text-xs text-fg">
-                    <input
-                      type="checkbox"
-                      disabled={!tool.available}
-                      checked={v.tools.includes(tool.name)}
-                      onChange={(e) =>
-                        setV({ ...v, tools: e.target.checked ? [...v.tools, tool.name] : v.tools.filter((name) => name !== tool.name) })
-                      }
-                    />
-                    <span className="min-w-0 break-words">
-                      {t(`tasks.toolLabels.${tool.name}`, { defaultValue: tool.name })}
-                      {tool.reason && <span className="block text-subtle">{tool.reason}</span>}
-                    </span>
-                  </label>
-                ))}
+      {v.recipe !== 'daily-picks' && (
+        <fieldset className="space-y-2">
+          <legend className="text-sm text-fg">{t('tasks.tools')}</legend>
+          {(['knowledge', 'plan', 'mail', 'web', 'mcp'] as const).map((group) => (
+            <div key={group}>
+              {!!tools.filter((tool) => tool.group === group).length && (
+                <p className="mt-3 text-xs text-muted">{t(`tasks.groups.${group}`)}</p>
+              )}
+              <div className="mt-1 grid grid-cols-2 gap-2">
+                {tools
+                  .filter((tool) => tool.group === group)
+                  .map((tool) => (
+                    <label key={tool.name} title={tool.label} className="flex min-w-0 items-start gap-2 text-xs text-fg">
+                      <input
+                        type="checkbox"
+                        disabled={!tool.available}
+                        checked={v.tools.includes(tool.name)}
+                        onChange={(e) =>
+                          setV({ ...v, tools: e.target.checked ? [...v.tools, tool.name] : v.tools.filter((name) => name !== tool.name) })
+                        }
+                      />
+                      <span className="min-w-0 break-words">
+                        {t(`tasks.toolLabels.${tool.name}`, { defaultValue: tool.name })}
+                        {tool.reason && <span className="block text-subtle">{tool.reason}</span>}
+                      </span>
+                    </label>
+                  ))}
+              </div>
             </div>
-          </div>
-        ))}
-        <p className="text-2xs text-subtle">{t('tasks.toolHint')}</p>
-      </fieldset>}
+          ))}
+          <p className="text-2xs text-subtle">{t('tasks.toolHint')}</p>
+        </fieldset>
+      )}
       <fieldset>
         <legend className="text-sm text-fg">{t('tasks.outputs')}</legend>
         <div className="mt-2 flex flex-wrap gap-3">
-          {(['inbox', 'briefing', 'notify', 'actions'] as const).filter((key) => v.recipe !== 'daily-picks' || key !== 'actions').map((key) => (
-            <label key={key} className="flex gap-1 text-xs text-fg">
-              <input type="checkbox" disabled={v.recipe === 'daily-picks' && key === 'inbox'} checked={!!v.outputs[key]} onChange={(e) => output(key, e.target.checked)} />
-              {t(`tasks.output.${key}`)}
-            </label>
-          ))}
+          {(['inbox', 'briefing', 'notify', 'actions'] as const)
+            .filter((key) => v.recipe !== 'daily-picks' || key !== 'actions')
+            .map((key) => (
+              <label key={key} className="flex gap-1 text-xs text-fg">
+                <input
+                  type="checkbox"
+                  disabled={v.recipe === 'daily-picks' && key === 'inbox'}
+                  checked={!!v.outputs[key]}
+                  onChange={(e) => output(key, e.target.checked)}
+                />
+                {t(`tasks.output.${key}`)}
+              </label>
+            ))}
         </div>
-        {v.recipe !== 'daily-picks' && <div className="mt-3 flex items-center gap-2">
-          <Button size="sm" onClick={() => setPicker(true)}>
-            {t('tasks.note')}
-          </Button>
-          {v.outputs.noteId && (
-            <>
-              <span className="min-w-0 truncate text-xs text-fg">{note?.title ?? v.outputs.noteId}</span>
-              <Button size="sm" variant="ghost" onClick={() => setV({ ...v, outputs: { ...v.outputs, noteId: undefined } })}>
-                {t('plan.unlink')}
-              </Button>
-            </>
-          )}
-        </div>}
+        {v.recipe !== 'daily-picks' && (
+          <div className="mt-3 flex items-center gap-2">
+            <Button size="sm" onClick={() => setPicker(true)}>
+              {t('tasks.note')}
+            </Button>
+            {v.outputs.noteId && (
+              <>
+                <span className="min-w-0 truncate text-xs text-fg">{note?.title ?? v.outputs.noteId}</span>
+                <Button size="sm" variant="ghost" onClick={() => setV({ ...v, outputs: { ...v.outputs, noteId: undefined } })}>
+                  {t('plan.unlink')}
+                </Button>
+              </>
+            )}
+          </div>
+        )}
       </fieldset>
       <label className="block text-xs text-muted">
         {t('tasks.budget')} ({settings?.budget.currency ?? settings?.money.currency})
@@ -474,13 +486,15 @@ export function TasksSettings() {
         <p className="mb-2 text-xs text-muted">{t('tasks.fromRecipe')}</p>
         <div className="flex flex-wrap gap-1.5">
           {recipes.map((r) => (
-            <button
-              key={r.id}
-              onClick={() => setEditing({ ...r.task })}
-              className="rounded-full border border-border bg-surface px-3 py-1 text-xs text-fg transition-colors hover:border-accent/50 hover:bg-accent-soft/40"
-            >
-              {i18n.language.startsWith('zh') ? r.name.zh : r.name.en}
-            </button>
+            <span key={r.id} className="inline-flex items-center gap-1">
+              <button
+                onClick={() => setEditing({ ...r.task })}
+                className="rounded-full border border-border bg-surface px-3 py-1 text-xs text-fg transition-colors hover:border-accent/50 hover:bg-accent-soft/40"
+              >
+                {i18n.language.startsWith('zh') ? r.name.zh : r.name.en}
+              </button>
+              <PluginSourceLabel pluginId={r.pluginId} />
+            </span>
           ))}
           <button
             onClick={() => setEditing({ ...initial })}
@@ -504,27 +518,45 @@ export function TasksSettings() {
           </label>
         </div>
         {list.length === 0 && (
-          <p className="rounded-xl border border-dashed border-border px-4 py-8 text-center text-xs leading-relaxed text-muted">{t('tasks.empty')}</p>
+          <p className="rounded-xl border border-dashed border-border px-4 py-8 text-center text-xs leading-relaxed text-muted">
+            {t('tasks.empty')}
+          </p>
         )}
         <div className="space-y-2">
           {list.map((task) => {
             const status = task.lastResult?.status
             return (
-              <article key={task.id} className={cn('rounded-xl border border-border/80 bg-surface px-4 py-3', !task.enabled && 'opacity-70')} data-task-id={task.id}>
+              <article
+                key={task.id}
+                className={cn('rounded-xl border border-border/80 bg-surface px-4 py-3', !task.enabled && 'opacity-70')}
+                data-task-id={task.id}
+              >
                 <div className="flex items-start gap-3">
+                  <PluginSourceLabel pluginId={task.pluginId} />
                   <span
                     className={cn(
                       'mt-1.5 size-2 shrink-0 rounded-full',
-                      !task.enabled ? 'bg-subtle' : status === 'error' || status === 'budget' ? 'bg-danger' : status === 'running' ? 'animate-pulse bg-accent' : 'bg-accent'
+                      !task.enabled
+                        ? 'bg-subtle'
+                        : status === 'error' || status === 'budget'
+                          ? 'bg-danger'
+                          : status === 'running'
+                            ? 'animate-pulse bg-accent'
+                            : 'bg-accent'
                     )}
                   />
                   <div className="min-w-0 flex-1">
-                    <button className="block max-w-full truncate text-left text-sm font-medium text-fg hover:text-accent" onClick={() => setSelected(selected === task.id ? null : task.id)}>
+                    <button
+                      className="block max-w-full truncate text-left text-sm font-medium text-fg hover:text-accent"
+                      onClick={() => setSelected(selected === task.id ? null : task.id)}
+                    >
                       {task.name}
                     </button>
                     <p className="mt-0.5 text-xs text-muted">
                       {triggerLabel(task.trigger, t)}
-                      {task.enabled && task.nextRunAt ? ` · ${t('tasks.next')} ${new Date(task.nextRunAt).toLocaleString(i18n.language, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}` : ''}
+                      {task.enabled && task.nextRunAt
+                        ? ` · ${t('tasks.next')} ${new Date(task.nextRunAt).toLocaleString(i18n.language, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`
+                        : ''}
                       {` · ${t('tasks.month')} ${money.format(task.monthCost)}`}
                     </p>
                     {task.lastResult?.summary && (
@@ -560,7 +592,13 @@ export function TasksSettings() {
                     {t('tasks.records')}
                   </Button>
                   <Tip label={t('common.delete')}>
-                    <Button size="icon-sm" variant="ghost" className="ml-auto" aria-label={t('common.delete')} onClick={() => void remove(task)}>
+                    <Button
+                      size="icon-sm"
+                      variant="ghost"
+                      className="ml-auto"
+                      aria-label={t('common.delete')}
+                      onClick={() => void remove(task)}
+                    >
                       <Trash2 />
                     </Button>
                   </Tip>

@@ -1,3 +1,4 @@
+import { PluginSourceLabel } from '../plugins/PluginSourceLabel'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
@@ -79,6 +80,9 @@ function Home({ onOpen }: { onOpen: (id: string) => void }) {
   const money = useMoney()
   const { data: list = [] } = useQuery({ queryKey: ['advisor', 'list'], queryFn: () => api.advisor.list() })
   const { data: goals = [] } = useQuery({ queryKey: ['goals'], queryFn: () => api.goals.list() })
+  const { data: frameworks = [] } = useQuery({ queryKey: ['frameworks'], queryFn: () => api.plugins.frameworks() })
+  const [frameworkId, setFrameworkId] = useState('')
+  const selected = frameworks.find((x) => x.id === frameworkId)
   const [question, setQuestion] = useState(''),
     [context, setContext] = useState(''),
     [showContext, setShowContext] = useState(false),
@@ -99,7 +103,12 @@ function Home({ onOpen }: { onOpen: (id: string) => void }) {
     if (question.trim().length < 4 || busy) return
     setBusy(true)
     try {
-      const d = await api.advisor.ask({ question: question.trim(), context: context.trim(), goalId: goalId || null })
+      const d = await api.advisor.ask({
+        question: question.trim(),
+        context: context.trim(),
+        goalId: goalId || null,
+        frameworkId: frameworkId || undefined
+      })
       setQuestion('')
       setContext('')
       onOpen(d.id)
@@ -132,6 +141,42 @@ function Home({ onOpen }: { onOpen: (id: string) => void }) {
               if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) void submit()
             }}
           />
+          <label className="mt-3 block text-xs text-muted">
+            {t('plugins.framework')}
+            <select
+              aria-label={t('plugins.framework')}
+              className={field}
+              value={frameworkId}
+              disabled={busy}
+              onChange={(e) => setFrameworkId(e.target.value)}
+            >
+              <option value="">{t('plugins.none')}</option>
+              {frameworks.map((x) => (
+                <option key={x.id} value={x.id}>
+                  {i18n.language.startsWith('zh') ? x.title.zh : x.title.en}
+                  {x.pluginId ? ` · ${x.pluginId.split('@')[0]}` : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+          {selected && (
+            <div className="mt-2 space-y-1 text-xs text-muted">
+              <PluginSourceLabel pluginId={selected.pluginId} />
+              <p>{i18n.language.startsWith('zh') ? selected.description.zh : selected.description.en}</p>
+              <ul>
+                {selected.criteria.map((c, i) => (
+                  <li key={i}>
+                    {c.name} · {c.weight} · {c.hint}
+                  </li>
+                ))}
+              </ul>
+              <ul>
+                {selected.questions.map((q, i) => (
+                  <li key={i}>{q}</li>
+                ))}
+              </ul>
+            </div>
+          )}
           {showContext && (
             <textarea
               aria-label={t('advisor.context')}
@@ -168,7 +213,12 @@ function Home({ onOpen }: { onOpen: (id: string) => void }) {
             <span className="ml-auto text-2xs text-subtle">
               {model ? t('advisor.costHint', { model, cost: cost === null ? '—' : money.format(cost) }) : t('advisor.noModel')}
             </span>
-            <Button variant="primary" size="sm" disabled={busy || question.trim().length < 4 || !model} onClick={() => void submit()}>
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={busy || question.trim().length < 4 || !model || (!!frameworkId && !selected)}
+              onClick={() => void submit()}
+            >
               {busy ? <Loader2 className="animate-spin" /> : <Scale />}
               {t('advisor.ask')}
             </Button>
@@ -231,6 +281,9 @@ function Home({ onOpen }: { onOpen: (id: string) => void }) {
                         )}
                         {d.status === 'reviewed' && d.accuracy && <Accuracy n={d.accuracy} />}
                       </button>
+                      <div className="px-4 pb-2">
+                        <PluginSourceLabel pluginId={d.framework?.pluginId} />
+                      </div>
                     </li>
                   ))}
                 </ul>

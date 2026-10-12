@@ -1,3 +1,4 @@
+import { PluginSourceLabel } from '../plugins/PluginSourceLabel'
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
@@ -37,7 +38,8 @@ export function LensSettings() {
           <article key={lens.id} className="rounded-xl border border-border p-3">
             <div className="flex flex-wrap items-center gap-2">
               <strong className="mr-auto text-sm">{lensTitle(lens, t)}</strong>
-              {lens.source === 'builtin' ? (
+              <PluginSourceLabel pluginId={lens.pluginId} />
+              {lens.source !== 'user' ? (
                 <Button variant="ghost" size="sm" onClick={() => edit(lens, true)}>
                   {t('lens.clone')}
                 </Button>

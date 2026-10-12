@@ -24,7 +24,7 @@ export function enabledPlugins(): { id: string; parsed: ParsedPlugin }[] {
     .filter((r) => r.enabled && loaded.has(r.id))
     .map((r) => ({ id: r.id, parsed: loaded.get(r.id)! }))
 }
-// 目前内置作品/参谋没有独立模板表；B2 在同一注册表补入产品内置项，勿另建平行目录。
+// 现有作品/参谋以空白创作和通用分析为默认入口，没有静态内置目录；未来内置定义也应汇入此注册表。
 export function listTemplates(): PluginRegistryItem<PluginTemplate>[] {
   return enabledPlugins().flatMap(({ id, parsed }) =>
     parsed.templates.map((t) => ({ ...t, id: `${parsed.manifest.name}:${t.id}`, pluginId: id, source: 'plugin' as const }))

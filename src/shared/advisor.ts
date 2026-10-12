@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import type { PluginRegistryItem, PluginFramework } from './plugins'
 
 // 参谋与决策日志（v0.9）：备忘录由模型按此结构生成；依据只能引用所供素材的编号。
 
@@ -12,15 +13,15 @@ export const DecisionMemoDraft = z.object({
     .min(2)
     .max(5),
   criteria: z
-    .array(z.object({ name: text(40), weight: z.number().int().min(1).max(5), why: z.string().max(200).default('') }))
+    .array(z.object({ name: text(200), weight: z.number().int().min(1).max(5), why: z.string().max(200).default('') }))
     .min(2)
-    .max(6),
+    .max(8),
   /** 每个选项在每条准则上的评分 1–5 */
   scores: z
     .array(
       z.object({ option: z.string(), criterion: z.string(), score: z.number().int().min(1).max(5), why: z.string().max(240).default('') })
     )
-    .max(30),
+    .max(40),
   evidence: z
     .array(z.object({ source: z.string().regex(/^S\d{1,2}$/), claim: text(300), supports: z.string().max(10).optional() }))
     .max(12),
@@ -55,6 +56,7 @@ export interface Decision {
   id: string
   question: string
   context: string
+  framework?: PluginRegistryItem<PluginFramework> | null
   status: DecisionStatus
   memo: DecisionMemo | null
   weights: Record<string, number> | null
@@ -71,6 +73,7 @@ export interface Decision {
 }
 
 export const AdvisorAskSchema = z.object({
+  frameworkId: z.string().max(257).optional(),
   question: z.string().trim().min(4).max(500),
   context: z.string().max(3000).default(''),
   goalId: z.string().max(64).nullable().default(null)

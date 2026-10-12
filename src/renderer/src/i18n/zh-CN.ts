@@ -1,3 +1,4 @@
+import { pluginsZh } from '../features/plugins/pluginMessages'
 import { discoverZh } from '../features/discover/messages'
 import { advisorZh } from '../features/advisor/messages'
 import { worksZh } from '../features/works/messages'
@@ -16,6 +17,7 @@ const zhCN = {
   discover: discoverZh,
   advisor: advisorZh,
   works: worksZh,
+  plugins: pluginsZh,
   learningInsights: learningInsightsZh,
   tasks: tasksZh,
   mail: mailZh,

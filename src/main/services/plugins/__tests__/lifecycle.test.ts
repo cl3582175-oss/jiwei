@@ -13,6 +13,7 @@ import type { McpServerInfo } from '@shared/agent'
 import type { DB } from '../../../db'
 const env = vi.hoisted(() => ({
   root: '',
+  installGate: undefined as (() => Promise<void>) | undefined,
   db: null as DB | null,
   failAudit: false,
   journalFault: '' as '' | 'write' | 'publish',
@@ -36,6 +37,7 @@ vi.mock('fs/promises', async (original) => {
     rename: async (...args: Parameters<typeof actual.rename>) => {
       if (env.journalFault === 'publish' && String(args[0]).endsWith('/journal.tmp'))
         throw new Error('Injected journal publish interruption')
+      if (String(args[1]).includes('/plugins/cache/')) await env.installGate?.()
       return actual.rename(...args)
     }
   }
@@ -206,6 +208,7 @@ async function install(config = {}) {
 }
 beforeEach(async () => {
   vi.useRealTimers()
+  env.installGate = undefined
   env.failAudit = false
   env.journalFault = ''
   env.attach = undefined
@@ -292,6 +295,7 @@ describe('production plugin lifecycle in isolated SQLite and filesystem', () => 
     const preview = await inspectPluginPath(source)
     env.failAudit = true
     await expect(confirmPluginInstall(preview.token, { feeds: [0] })).rejects.toThrow('Injected')
+    env.installGate = undefined
     env.failAudit = false
     expect(env.db!.select().from(schema.plugins).all()).toEqual([])
     expect(env.db!.select().from(schema.mcpServers).all()).toEqual([])
@@ -369,6 +373,7 @@ describe('production plugin lifecycle in isolated SQLite and filesystem', () => 
       taskJob = enqueue('ai.task', { taskId: 'fixture-task' }, { runAfter: Date.now() + 3600000 })
     env.failAudit = true
     await expect(uninstallPlugin(info.id)).rejects.toThrow('Injected')
+    env.installGate = undefined
     env.failAudit = false
     expect(existsSync(readState(info.id).current.directory)).toBe(true)
     expect(listSkills()).toHaveLength(2)
@@ -398,6 +403,7 @@ describe('production plugin lifecycle in isolated SQLite and filesystem', () => 
     await vi.waitFor(() => expect(release).toBeTypeOf('function'))
     env.failAudit = true
     await expect(uninstallPlugin(info.id, { removeFeeds: true })).rejects.toThrow('Injected')
+    env.installGate = undefined
     env.failAudit = false
     expect(aborted).toBe(false)
     expect(env.db!.select().from(schema.jobs).where(eq(schema.jobs.id, id)).get()?.status).toBe('running')
@@ -539,6 +545,7 @@ describe('production plugin lifecycle in isolated SQLite and filesystem', () => 
     const preview = await updatePlugin(info.id)
     env.failAudit = true
     await expect(confirmPluginInstall(preview.token, {})).rejects.toThrow('Injected')
+    env.installGate = undefined
     env.failAudit = false
     expect(readState(info.id).current).toEqual(state.current)
     expect(listPlugins()[0].version).toBe('one')
@@ -547,6 +554,7 @@ describe('production plugin lifecycle in isolated SQLite and filesystem', () => 
     await confirmPluginInstall((await updatePlugin(info.id)).token, {})
     env.failAudit = true
     await expect(rollbackPlugin(info.id)).rejects.toThrow('Injected')
+    env.installGate = undefined
     env.failAudit = false
     expect(listPlugins()[0]).toMatchObject({ version: 'two', sensitive: { token: true } })
     const a = await updatePlugin(info.id),
@@ -701,5 +709,46 @@ describe('plugin MCP connection boundary', () => {
     expect(mocked).toHaveBeenCalledTimes(1)
     await expect(fetcher('https://elsewhere.example/steal')).rejects.toThrow('not confirmed')
     expect(mocked).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('in-flight preview cancellation', () => {
+  for (const update of [false, true])
+    it(`cancels ${update ? 'update' : 'install'} before commit and restores the prior state`, async () => {
+      if (update) {
+        await install()
+        await fixture('two')
+      }
+      const preview = update ? await updatePlugin('sample@local') : await inspectPluginPath(source)
+      let release!: () => void, reached!: () => void
+      const gate = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      const ready = new Promise<void>((resolve) => {
+        reached = resolve
+      })
+      env.installGate = async () => {
+        reached()
+        await gate
+      }
+      const result = confirmPluginInstall(preview.token, { feeds: [0], config: {} })
+      const rejection = expect(result).rejects.toThrow('Plugin installation canceled')
+      await ready
+      await cancelPluginPreview(preview.token)
+      release()
+      await rejection
+      env.installGate = undefined
+      expect(listPlugins().map((p) => p.version)).toEqual(update ? ['one'] : [])
+      expect(env.db!.select().from(schema.feeds).all()).toHaveLength(update ? 1 : 0)
+      expect(env.db!.select().from(schema.mcpServers).all()).toHaveLength(update ? 1 : 0)
+      if (update) expect((await readdir(pluginCache('sample@local'))).length).toBe(1)
+      else expect(existsSync(pluginCache('sample@local'))).toBe(false)
+      await expect(confirmPluginInstall(preview.token, {})).rejects.toThrow('already used')
+    })
+  it('reports committed installation unchanged when cancel arrives after commit', async () => {
+    const preview = await inspectPluginPath(source)
+    const installed = await confirmPluginInstall(preview.token, { feeds: [] })
+    await cancelPluginPreview(preview.token)
+    expect(listPlugins()[0].id).toBe(installed.id)
   })
 })

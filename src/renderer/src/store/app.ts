@@ -3,14 +3,44 @@ import { canonicalUrl } from '@shared/browserUrl'
 import type { NoteSort, WorkspaceContext } from '@shared/types'
 import { toast } from 'sonner'
 
-export type View = 'today' | 'recording' | 'inbox' | 'notes' | 'library' | 'chat' | 'review' | 'calendar' | 'goals' | 'reflect' | 'graph' | 'feynman' | 'trash' | 'usage' | 'advisor' | 'works'
+export type View =
+  | 'today'
+  | 'recording'
+  | 'inbox'
+  | 'notes'
+  | 'library'
+  | 'chat'
+  | 'review'
+  | 'calendar'
+  | 'goals'
+  | 'reflect'
+  | 'graph'
+  | 'feynman'
+  | 'trash'
+  | 'usage'
+  | 'advisor'
+  | 'works'
 
 /**
  * 导航五组（v0.6.7，设计见 docs/design/v0.7-platform-and-loop.md §2.1）：今日 · 收集 · 学习 · 创作（v0.9）· 计划。
  * 积微助手（'chat'）不属于任何一组，常驻导航顶部。
  */
 export type NavGroup = 'today' | 'collect' | 'learn' | 'create' | 'plan'
-export type NavItem = 'today' | 'inbox' | 'library' | 'browser' | 'recording' | 'notes' | 'review' | 'feynman' | 'graph' | 'calendar' | 'goals' | 'reflect' | 'advisor' | 'works'
+export type NavItem =
+  | 'today'
+  | 'inbox'
+  | 'library'
+  | 'browser'
+  | 'recording'
+  | 'notes'
+  | 'review'
+  | 'feynman'
+  | 'graph'
+  | 'calendar'
+  | 'goals'
+  | 'reflect'
+  | 'advisor'
+  | 'works'
 export const NAV_GROUPS: Record<NavGroup, NavItem[]> = {
   today: ['today'],
   collect: ['inbox', 'library', 'browser', 'recording'],
@@ -144,6 +174,7 @@ interface AppState extends Location {
   settingsOpen: boolean
   setSettingsOpen: (o: boolean) => void
   /** 打开设置时定位的标签页 */
+  settingsPluginId?: string | null
   settingsTab: string | null
   openSettings: (tab?: string) => void
   paletteOpen: boolean
@@ -171,7 +202,10 @@ export const useApp = create<AppState>((set, get) => {
     scheduleGoal: false,
     decisionId: null,
     workId: null,
-    openGoal: (id, schedule = false) => { get().goNav('goals'); set({ goalId: id, scheduleGoal: schedule }) },
+    openGoal: (id, schedule = false) => {
+      get().goNav('goals')
+      set({ goalId: id, scheduleGoal: schedule })
+    },
     noteId: null,
     sourceId: null,
     history: [{ view: 'today', noteId: null, sourceId: null }],

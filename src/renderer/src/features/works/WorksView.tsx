@@ -1,3 +1,4 @@
+import { PluginSourceLabel } from '../plugins/PluginSourceLabel'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
@@ -125,31 +126,38 @@ function WorkList({ onCreate }: { onCreate: (t: WorkType) => void }) {
   return (
     <div className="grid gap-3 sm:grid-cols-2" data-testid="works-list">
       {list.map((w) => (
-        <button
-          key={w.id}
-          data-work={w.title || w.topic}
-          className="rounded-2xl border border-border bg-surface p-4 text-left shadow-[var(--shadow-1)] transition-[border-color,transform] hover:-translate-y-0.5 hover:border-accent/40"
-          onClick={() => useApp.setState({ workId: w.id })}
-        >
-          <div className="flex items-center gap-2 text-2xs text-subtle">
-            <span className="text-accent [&_svg]:size-3.5">{TYPE_ICON[w.type]}</span>
-            {t(`works.types.${w.type}`)}
-            <span className="ml-auto">{t('works.updated', { date: new Date(w.updatedAt).toLocaleDateString(i18n.language) })}</span>
+        <article key={w.id}>
+          <button
+            data-work={w.title || w.topic}
+            className="w-full rounded-2xl border border-border bg-surface p-4 text-left shadow-[var(--shadow-1)] transition-[border-color,transform] hover:-translate-y-0.5 hover:border-accent/40"
+            onClick={() => useApp.setState({ workId: w.id })}
+          >
+            <div className="flex items-center gap-2 text-2xs text-subtle">
+              <span className="text-accent [&_svg]:size-3.5">{TYPE_ICON[w.type]}</span>
+              {t(`works.types.${w.type}`)}
+              <span className="ml-auto">{t('works.updated', { date: new Date(w.updatedAt).toLocaleDateString(i18n.language) })}</span>
+            </div>
+            <p className="mt-2 line-clamp-2 font-serif text-base leading-snug font-semibold text-fg">{w.title || w.topic || '—'}</p>
+            <div className="mt-3 flex items-center gap-2">
+              <StageDots stage={w.stage} />
+              <span className="text-2xs text-muted">{t(`works.steps.${w.stage}`)}</span>
+            </div>
+          </button>
+          <div className="mt-1 px-2">
+            <PluginSourceLabel pluginId={w.template?.pluginId} />
           </div>
-          <p className="mt-2 line-clamp-2 font-serif text-base leading-snug font-semibold text-fg">{w.title || w.topic || '—'}</p>
-          <div className="mt-3 flex items-center gap-2">
-            <StageDots stage={w.stage} />
-            <span className="text-2xs text-muted">{t(`works.steps.${w.stage}`)}</span>
-          </div>
-        </button>
+        </article>
       ))}
     </div>
   )
 }
 
 function NewWorkDialog({ initial, onClose }: { initial: WorkType; onClose: () => void }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const { data: goals = [] } = useQuery({ queryKey: ['goals'], queryFn: () => api.goals.list() })
+  const { data: templates = [] } = useQuery({ queryKey: ['templates'], queryFn: () => api.plugins.templates() })
+  const [templateId, setTemplateId] = useState('')
+  const selected = templates.find((x) => x.id === templateId)
   const [type, setType] = useState<WorkType>(initial),
     [topic, setTopic] = useState(''),
     [audience, setAudience] = useState(''),
@@ -162,6 +170,7 @@ function NewWorkDialog({ initial, onClose }: { initial: WorkType; onClose: () =>
     try {
       const w = await api.works.create({
         type,
+        templateId: templateId || undefined,
         title: topic.trim().slice(0, 120),
         topic: topic.trim(),
         audience: audience.trim(),
@@ -186,12 +195,50 @@ function NewWorkDialog({ initial, onClose }: { initial: WorkType; onClose: () =>
           <Button variant="ghost" onClick={onClose}>
             {t('common.cancel')}
           </Button>
-          <Button variant="primary" disabled={busy} onClick={() => void start()}>
+          <Button variant="primary" disabled={busy || (!!templateId && !selected)} onClick={() => void start()}>
             {t('works.start')}
           </Button>
         </div>
       }
     >
+      <label className="block text-xs text-muted">
+        {t('plugins.template')}
+        <select
+          aria-label={t('plugins.template')}
+          className={field}
+          value={templateId}
+          onChange={(e) => {
+            setTemplateId(e.target.value)
+            const item = templates.find((x) => x.id === e.target.value)
+            if (item) {
+              setType(item.type)
+              setTopic((i18n.language.startsWith('zh') ? item.title.zh : item.title.en).slice(0, 120))
+              setAudience((item.audience ?? '').slice(0, 60))
+              setMode(item.mode === 'coach' || item.mode === 'ghost' ? item.mode : 'cowrite')
+            }
+          }}
+        >
+          <option value="">{t('plugins.none')}</option>
+          {templates.map((x) => (
+            <option key={x.id} value={x.id}>
+              {i18n.language.startsWith('zh') ? x.title.zh : x.title.en}
+              {x.pluginId ? ` · ${x.pluginId.split('@')[0]}` : ''}
+            </option>
+          ))}
+        </select>
+      </label>
+      {selected && (
+        <div className="space-y-2 text-xs text-muted">
+          <PluginSourceLabel pluginId={selected.pluginId} onNavigate={onClose} />
+          <p>{i18n.language.startsWith('zh') ? selected.description.zh : selected.description.en}</p>
+          <ol className="list-inside list-decimal">
+            {selected.outline.map((line, i) => (
+              <li key={i}>{line}</li>
+            ))}
+          </ol>
+          <p className="whitespace-pre-wrap">{selected.guidance}</p>
+        </div>
+      )}
       <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label={t('works.title')}>
         {CREATABLE.map((k) => (
           <button
@@ -202,7 +249,10 @@ function NewWorkDialog({ initial, onClose }: { initial: WorkType; onClose: () =>
               'flex items-start gap-2.5 rounded-xl border p-3 text-left transition-colors',
               type === k ? 'border-accent bg-accent-soft/30' : 'border-border hover:bg-surface-hover'
             )}
-            onClick={() => setType(k)}
+            onClick={() => {
+              setType(k)
+              if (selected?.type !== k) setTemplateId('')
+            }}
           >
             <span className="mt-0.5 text-accent [&_svg]:size-4">{TYPE_ICON[k]}</span>
             <span>
@@ -689,7 +739,8 @@ function PartsOutline({ w, next }: { w: Work; next: () => void }) {
     if (!content) return
     if (content.kind === 'article')
       update({ kind: 'article', parts: [...content.parts, { id: newPartId(), title: '', points: [], sources: [], body: '' }] })
-    else if (content.kind === 'slides') update({ kind: 'slides', parts: [...content.parts, { id: newPartId(), title: '', bullets: [], notes: '', sources: [] }] })
+    else if (content.kind === 'slides')
+      update({ kind: 'slides', parts: [...content.parts, { id: newPartId(), title: '', bullets: [], notes: '', sources: [] }] })
   }
   return (
     <div className="space-y-4">

@@ -11,6 +11,7 @@ export const FeedSave = z.object({
 })
 export type FeedInput = z.input<typeof FeedSave>
 export interface Feed {
+  pluginId?: string | null
   id: string
   kind: z.infer<typeof FeedKind>
   url: string

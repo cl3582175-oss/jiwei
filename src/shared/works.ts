@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import type { PluginRegistryItem, PluginTemplate } from './plugins'
 import { checkGraph } from './embeds/graph'
 
 // 创作工坊（v0.9）：选题 → 素材 → 结构 → 起草 → 打磨 → 成品与回流。
@@ -113,7 +114,10 @@ export const SceneDraft = z.discriminatedUnion('template', [
     template: z.literal('chart'),
     kind: z.enum(['bar', 'line', 'pie']),
     categories: z.array(text(20)).min(2).max(10),
-    series: z.array(z.object({ name: text(20), data: z.array(z.number()).min(2).max(10) })).min(1).max(3),
+    series: z
+      .array(z.object({ name: text(20), data: z.array(z.number()).min(2).max(10) }))
+      .min(1)
+      .max(3),
     ...sceneBase
   }),
   /** 函数图：一个或几个 y = f(x)，语法同 graph 嵌入块 */
@@ -164,11 +168,15 @@ export function checkScene(s: SceneData): string | null {
 export function sceneCaptions(narration: string, start: number, spoken: number): { start: number; end: number; text: string }[] {
   const sentences = (narration.match(/[^。！？!?；;\n]+[。！？!?；;]?/g) ?? [narration]).map((s) => s.trim()).filter(Boolean)
   // 太长的句子再按逗号切，避免一行字幕过长
-  const pieces = sentences.flatMap((s) => (s.length <= 28 ? [s] : s.split(/(?<=[，,、])/).reduce<string[]>((acc, x) => {
-    if (acc.length && (acc[acc.length - 1] + x).length <= 28) acc[acc.length - 1] += x
-    else acc.push(x)
-    return acc
-  }, [])))
+  const pieces = sentences.flatMap((s) =>
+    s.length <= 28
+      ? [s]
+      : s.split(/(?<=[，,、])/).reduce<string[]>((acc, x) => {
+          if (acc.length && (acc[acc.length - 1] + x).length <= 28) acc[acc.length - 1] += x
+          else acc.push(x)
+          return acc
+        }, [])
+  )
   const total = pieces.reduce((n, p) => n + p.length, 0) || 1
   let at = start
   return pieces.map((text) => {
@@ -216,6 +224,7 @@ export interface Work {
   mode: WorkMode
   stage: WorkStage
   goalId: string | null
+  template?: PluginRegistryItem<PluginTemplate> | null
   content: WorkParts | null
   polish: PolishResult | null
   exports: WorkExport[]
@@ -228,6 +237,7 @@ export interface Work {
 }
 
 export const WorkCreateSchema = z.object({
+  templateId: z.string().max(257).optional(),
   type: z.enum(WORK_TYPES),
   title: z.string().trim().max(120).default(''),
   topic: z.string().trim().max(500).default(''),

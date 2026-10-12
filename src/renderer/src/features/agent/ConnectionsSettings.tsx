@@ -1,3 +1,4 @@
+import { PluginSourceLabel } from '../plugins/PluginSourceLabel'
 import { SearchSettings } from '../discover/DiscoverSettings'
 import { useEffect, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -278,6 +279,7 @@ function ServerCard({ s, onEdit }: { s: McpServerInfo; onEdit: () => void }) {
         <Server className="size-4 shrink-0 text-muted" />
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium text-fg">{s.name}</p>
+          <PluginSourceLabel pluginId={s.pluginId} />
           <p className="mt-0.5 flex items-center gap-1.5 text-xs whitespace-nowrap text-muted">
             <span className={cn('inline-block size-2 shrink-0 rounded-full', STATE_DOT[s.state])} />
             <span data-testid="mcp-server-state">{t(`agent.conn.state.${s.state}`)}</span>
@@ -330,7 +332,7 @@ function ServerCard({ s, onEdit }: { s: McpServerInfo; onEdit: () => void }) {
             {s.state === 'ready' ? t('agent.conn.reconnect') : t('agent.conn.connect')}
           </Button>
         )}
-        <Button size="sm" variant="ghost" onClick={onEdit}>
+        <Button size="sm" variant="ghost" disabled={!!s.pluginId} title={s.pluginId ? t('plugins.manage') : undefined} onClick={onEdit}>
           <Pencil />
           {t('agent.conn.edit')}
         </Button>
@@ -340,7 +342,14 @@ function ServerCard({ s, onEdit }: { s: McpServerInfo; onEdit: () => void }) {
             {t('agent.conn.logout')}
           </Button>
         )}
-        <Button size="sm" variant="ghost" className="ml-auto text-danger hover:text-danger" onClick={() => void remove()}>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="ml-auto text-danger hover:text-danger"
+          disabled={!!s.pluginId}
+          title={s.pluginId ? t('plugins.manage') : undefined}
+          onClick={() => void remove()}
+        >
           <Trash2 />
           {t('agent.conn.remove')}
         </Button>
