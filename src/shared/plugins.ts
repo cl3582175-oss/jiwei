@@ -277,6 +277,8 @@ export interface PluginCapabilities {
   dataLeavesDevice: boolean
   cost: JiweiExt['cost']
   unsupported: string[]
+  /** 积微官方渲染器（如 manim）：按需下载运行环境、在本机沙箱里运行。旧记录没有这一项 */
+  renderers?: string[]
 }
 export function inferCapabilities(plugin: {
   manifest: PluginManifest
@@ -308,7 +310,8 @@ export function inferCapabilities(plugin: {
     feeds: unique(plugin.feeds.map((f) => f.url)),
     dataLeavesDevice: plugin.extension?.dataLeavesDevice ?? false,
     cost: plugin.extension?.cost,
-    unsupported: unique(plugin.unsupported)
+    unsupported: unique(plugin.unsupported),
+    renderers: unique(plugin.extension?.renderers ?? [])
   }
 }
 export function addedCapabilities(before: PluginCapabilities, after: PluginCapabilities): Partial<PluginCapabilities> {

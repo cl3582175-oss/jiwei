@@ -256,7 +256,8 @@ export function PluginConfirmDialog({
               )}
               {c.dataLeavesDevice && <p className="text-sm text-warning">{t('plugins.leaves')}</p>}
               {c.cost && <p className="text-sm text-warning">{local(c.cost)}</p>}
-              {!c.servers.length && !c.dataLeavesDevice && !c.cost && (
+              {!!c.renderers?.length && <p className="text-sm text-warning">{t('plugins.rendererRisk')}</p>}
+              {!c.servers.length && !c.dataLeavesDevice && !c.cost && !c.renderers?.length && (
                 <p data-tint="bamboo" className="text-sm text-[var(--tint-ink)]">
                   {t('plugins.textOnly')}
                 </p>

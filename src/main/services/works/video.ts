@@ -6,7 +6,16 @@ import { basename, join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import log from 'electron-log/main'
 import { LOCAL_VOICES, TTS_VOICES } from '@shared/discover'
-import { checkScene, sceneCaptions, type VideoRender, type VideoScene, type VideoVoice, type Work, type WorkExport } from '@shared/works'
+import {
+  animationFallback,
+  checkScene,
+  sceneCaptions,
+  type VideoRender,
+  type VideoScene,
+  type VideoVoice,
+  type Work,
+  type WorkExport
+} from '@shared/works'
 import { dataDir } from '../../db'
 import { tr } from '../../lib/messages'
 import { speechChunks, speechText } from '../../lib/podcast'
@@ -20,6 +29,7 @@ import { recordUsage } from '../agent/usage'
 import { withRun } from '../agent/context'
 import { perRunLimit } from '../agent/usage'
 import { getWork, recordExport } from './index'
+import { manimReady, renderAnimation } from '../plugins/manim'
 
 // 讲解视频渲染（v0.9 第 1 层视频引擎）：
 //   分镜 → 每镜配音（本机 ZipVoice / 云端语音 / 不配音）→ 按旁白定时长与字幕 →
@@ -265,10 +275,32 @@ export async function renderVideo(id: string): Promise<string> {
       ),
       'utf8'
     )
-    // 3. 逐帧录制并编码
+    // 3. 数学动画片段：按旁白定好的时长渲染；没装 Manim 或渲染失败时换成画面最接近的普通场景
+    const shown: (VideoScene & { clip?: string })[] = []
+    let fallbacks = 0
+    const ready = scenes.some((s) => s.template === 'animation') && (await manimReady())
+    for (const [i, s] of scenes.entries()) {
+      if (s.template !== 'animation') {
+        shown.push(s)
+        continue
+      }
+      signal.throwIfAborted()
+      try {
+        if (!ready) throw new Error('Manim unavailable')
+        const file = await renderAnimation(s.animation, { duration: timings[i].duration })
+        const clip = `data:video/webm;base64,${(await readFile(file)).toString('base64')}`
+        await rm(file, { force: true })
+        shown.push({ ...s, clip })
+      } catch (e) {
+        log.warn('[video] animation fallback', s.title, e instanceof Error ? e.message : e)
+        shown.push({ ...animationFallback(s), id: s.id })
+        fallbacks++
+      }
+    }
+    // 4. 逐帧录制并编码
     set(id, { stage: 'frames' })
     win = await sceneWindow()
-    await win.webContents.executeJavaScript(`window.jiweiScene.load(${JSON.stringify({ scenes, timings })})`)
+    await win.webContents.executeJavaScript(`window.jiweiScene.load(${JSON.stringify({ scenes: shown, timings })})`)
     const out = join(dir, 'video.mp4')
     const ff = spawn(
       ffmpegPath(),
@@ -328,7 +360,24 @@ export async function renderVideo(id: string): Promise<string> {
     ff.stdin.end()
     const code = await closed
     if (code !== 0) throw new Error(`ffmpeg ${code}: ${ffErr.split('\n').slice(-3).join(' ')}`)
-    set(id, { status: 'done', progress: 1, stage: null, file: out })
+    set(id, {
+      status: 'done',
+      progress: 1,
+      stage: null,
+      file: out,
+      // 完成但有动画退回成普通场景时告诉用户原因
+      message: fallbacks
+        ? (await manimReady())
+          ? tr(
+              `有 ${fallbacks} 段数学动画没能生成，已换成普通场景`,
+              `${fallbacks} math animation(s) could not be generated and were replaced with regular scenes`
+            )
+          : tr(
+              `有 ${fallbacks} 段数学动画换成了普通场景：下载“数学动画”插件的运行环境后重新渲染即可`,
+              `${fallbacks} math animation(s) were replaced with regular scenes. Install the Math animation runtime and render again.`
+            )
+        : null
+    })
     log.info('[video] rendered', id, `${total.toFixed(1)}s`, `${frames} frames`)
     return out
   } catch (e) {

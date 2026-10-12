@@ -1,3 +1,4 @@
+import { AnimationSchema } from './manim'
 import {
   MarketInputSchema,
   MarketNameSchema,
@@ -1171,6 +1172,16 @@ export const capabilities = {
     auditCallers: cap<string[]>()({ description: '审计日志中出现过的调用方', params: none }),
     exportAudit: cap<string | null>()({ description: '导出审计日志（JSON）', params: none }),
     clearAudit: cap<void>()({ description: '清除审计日志', params: none })
+  },
+  manim: {
+    status: cap<import('./manim').ManimStatus>()({ description: '数学动画运行环境的状态', params: none }),
+    install: cap<void>()({
+      description: '下载并安装数学动画运行环境（可复用本机 LaTeX）',
+      params: [['options', z.object({ useSystemTex: z.boolean().optional() })]]
+    }),
+    cancel: cap<void>()({ description: '取消安装', params: none }),
+    remove: cap<number>()({ description: '删除运行环境，返回释放的字节数', params: none }),
+    clip: cap<string>()({ description: '生成（或取缓存的）笔记数学动画，返回 jiwei:// 地址', params: [['animation', AnimationSchema]] })
   },
   plugins: {
     roleCatalog: cap<RoleCatalogCard[]>()({ description: '实际角色目录、内容数量与安装启用状态', params: none }),

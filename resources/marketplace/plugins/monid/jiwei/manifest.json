@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "category": "connector",
+  "name": { "zh": "monid 工具集", "en": "monid tools" },
+  "description": {
+    "zh": "让助手使用 monid 提供的上千个外部工具（搜索、网页抓取、语音合成、视频生成等）",
+    "en": "Let the assistant use thousands of external tools from monid (search, scraping, speech, video and more)"
+  },
+  "engines": { "jiwei": ">=0.10.0" },
+  "dataLeavesDevice": true,
+  "cost": {
+    "zh": "monid 是第三方服务：使用前在 monid 预存余额，每次调用按该工具的价格扣费（有的按次，有的按返回条数），以 monid 账单为准。积微对它的每个工具都会先问你再调用。",
+    "en": "monid is a third-party service: you prepay a balance and each call is charged at that tool's price (per call or per result), as shown on your monid bill. Jiwei asks you before every monid tool call."
+  }
+}

@@ -46,7 +46,31 @@ function render(T: number): Promise<void> {
     )
   )
   // 异步内容（Mermaid、ECharts、JSXGraph）最多等 8 秒，避免一处失败卡住整段录制
-  return (readyAt === index ? Promise.resolve() : Promise.race([ready, new Promise<void>((r) => setTimeout(r, 8000))])).then(frame)
+  return (readyAt === index ? Promise.resolve() : Promise.race([ready, new Promise<void>((r) => setTimeout(r, 8000))]))
+    .then(() => seekClip(t))
+    .then(frame)
+}
+
+/** 数学动画片段：每一帧把视频定位到场景内的时间 t，等解码完成再截图；超过片段长度就停在最后一帧 */
+async function seekClip(t: number): Promise<void> {
+  const v = document.querySelector<HTMLVideoElement>('video[data-clip]')
+  if (!v) return
+  // 片段加载不出来时（不应发生）最多等 3 秒，不能卡住整段录制
+  if (v.readyState < 1)
+    await Promise.race([
+      new Promise((r) => v.addEventListener('loadedmetadata', r, { once: true })),
+      new Promise((r) => setTimeout(r, 3000))
+    ])
+  if (v.readyState < 1) return
+  const target = Math.min(t, Math.max(0, v.duration - 0.02))
+  if (Math.abs(v.currentTime - target) < 0.004 && v.readyState >= 2) return
+  await Promise.race([
+    new Promise((r) => {
+      v.addEventListener('seeked', r, { once: true })
+      v.currentTime = target
+    }),
+    new Promise((r) => setTimeout(r, 2000))
+  ])
 }
 
 declare global {

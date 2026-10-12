@@ -12,6 +12,7 @@ import { PluginInstallButtons, usePluginAcquisition } from './PluginAcquisition'
 import { PluginDetailsDialog, PluginIcon } from './PluginDetailsDialog'
 import { PluginMarketplace } from './PluginMarketplace'
 import { RolesPanel } from './RolePicker'
+import { MANIM_ID, ManimRowHint, ManimRuntime } from './ManimRuntime'
 import { Switch } from '@/components/ui/switch'
 import { PluginConfigFields, PluginOriginLabel, pluginConfigPatch, pluginError } from './PluginConfirmDialog'
 
@@ -145,6 +146,7 @@ function InstalledPlugin({
             {card?.updateAvailable && <span className="text-accent">{t('plugins.hasUpdate')}</span>}
             {!p.available && <span className="text-danger">{t('plugins.unavailable')}</span>}
             {retained && <span className="text-warning">{t('plugins.noUpdates')}</span>}
+            {p.id === MANIM_ID && p.enabled && <ManimRowHint />}
           </span>
         </button>
         <Switch
@@ -165,6 +167,7 @@ function InstalledPlugin({
       {acquisition.dialog}
       {details && (
         <PluginDetailsDialog plugin={p} onClose={() => setDetails(false)}>
+          {p.id === MANIM_ID && <ManimRuntime />}
           <p className="text-xs text-muted">{t('plugins.retained', { feeds: p.feeds, tasks: p.tasks })}</p>
           {configSection}
           {error && (

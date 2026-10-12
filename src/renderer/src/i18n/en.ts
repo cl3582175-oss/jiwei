@@ -565,6 +565,9 @@ const en: Messages = {
     keyDelete: 'delete',
     graph: 'Function / geometry graph',
     graphReset: 'Reset positions',
+    animation: 'Math animation',
+    animationRendering: 'Generating animation…',
+    animationInstall: 'Download the math animation runtime to see the animation here (Settings → Plugins → Math animation)',
     graphDragPoints: 'Drag the points and watch which relations hold',
     graphDragSliders: 'Drag the sliders to see how parameters change the graph'
   },

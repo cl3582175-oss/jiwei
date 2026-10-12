@@ -552,6 +552,9 @@ const zhCN = {
     keyDelete: '删除',
     graph: '函数图 / 几何图',
     graphReset: '恢复初始位置',
+    animation: '数学动画',
+    animationRendering: '正在生成动画…',
+    animationInstall: '下载数学动画的运行环境后，这里会显示动画（设置 → 插件 → 数学动画）',
     graphDragPoints: '拖动点，观察图形关系如何保持',
     graphDragSliders: '拖动滑块，观察参数如何改变图像'
   },

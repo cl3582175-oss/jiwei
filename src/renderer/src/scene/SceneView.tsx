@@ -40,7 +40,7 @@ interface Props {
 export function SceneView({ scene, t, duration, caption, onReady }: Props) {
   const ready = useRef(onReady)
   ready.current = onReady
-  const sync = !['diagram', 'chart', 'graph'].includes(scene.template)
+  const sync = !['diagram', 'chart', 'graph', 'animation'].includes(scene.template)
   useEffect(() => {
     if (sync) ready.current?.()
   }, [scene, sync])
@@ -296,9 +296,52 @@ function Body({ scene, t, duration, onReady }: { scene: VideoScene; t: number; d
           <FunctionGraph scene={scene} onReady={onReady} />
         </Wipe>
       )
+    case 'animation':
+      return <AnimationClip scene={scene} onReady={onReady} />
     default:
       return null
   }
+}
+
+const ANIMATION_NAME = { derivation: '公式推导', 'function-transform': '函数变换', 'number-line': '数轴与区间', geometry: '几何作图' }
+/** 数学动画（v0.10）：录制时由主进程渲染好片段（data URI），录制页逐帧定位到 t；应用内预览还没有片段时显示占位 */
+function AnimationClip({ scene, onReady }: { scene: Extract<VideoScene, { template: 'animation' }>; onReady: () => void }) {
+  const clip = (scene as { clip?: string }).clip
+  useEffect(() => {
+    if (!clip) onReady()
+  }, [clip, onReady])
+  if (!clip)
+    return (
+      <div
+        style={{
+          height: '100%',
+          borderRadius: 18,
+          border: `2px dashed ${C.line}`,
+          display: 'grid',
+          placeItems: 'center',
+          textAlign: 'center',
+          color: C.muted,
+          fontSize: 30,
+          lineHeight: 1.6
+        }}
+      >
+        <div>
+          <div style={{ color: C.accent, fontSize: 38 }}>{ANIMATION_NAME[scene.animation.kind]}</div>
+          数学动画在渲染视频时生成
+        </div>
+      </div>
+    )
+  return (
+    <video
+      data-clip
+      src={clip}
+      muted
+      playsInline
+      preload="auto"
+      onLoadedData={onReady}
+      style={{ width: '100%', height: '100%', objectFit: 'contain', background: C.paper }}
+    />
+  )
 }
 
 /** 从左到右擦出（图示、图表、函数图） */

@@ -1,0 +1,9 @@
+{
+  "name": "manim",
+  "displayName": "数学动画（Manim）",
+  "version": "1.0.0",
+  "description": "公式逐步推导、函数平移伸缩、几何作图、数轴区间的动画，用在讲解视频和笔记里 / Animated derivations, function transforms, geometry and number lines for videos and notes",
+  "author": { "name": "积微 / Jiwei" },
+  "license": "MIT",
+  "keywords": ["数学动画", "Manim", "公式", "函数", "几何", "animation", "math"]
+}

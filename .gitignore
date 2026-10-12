@@ -18,3 +18,4 @@ playwright-report/
 
 # 测试运行时生成的错题图
 e2e/fixtures/mistakes-*.png
+__pycache__/

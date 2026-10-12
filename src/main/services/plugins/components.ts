@@ -395,7 +395,8 @@ export async function parsePlugin(root: string, options: ParsePluginOptions = {}
     feeds,
     mcpServers,
     unsupported: unsupportedList,
-    scripts: files.filter(script),
+    // 官方渲染器自带的模板由积微在沙箱里运行，不算“只读取不运行”的脚本
+    scripts: files.filter((f) => script(f) && !(extension?.renderers.includes('manim') && f.startsWith('jiwei/manim/'))),
     issues,
     hash: digest,
     version: resolvePluginVersion({ manifest: manifest.version, entry: entry?.version, sha: options.sha, hash: digest })

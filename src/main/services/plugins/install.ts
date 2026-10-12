@@ -285,7 +285,8 @@ function writeMcp(id: string, parsed: ParsedPlugin): void {
         cwd: server.cwd ?? null,
         url: server.url ?? null,
         enabled: false,
-        toolPolicies: previous?.toolPolicies ?? '{}',
+        // 收费或会把数据发给第三方的插件：所有工具默认每次询问（包括只读工具）
+        toolPolicies: previous?.toolPolicies ?? (parsed.extension?.cost || parsed.extension?.dataLeavesDevice ? '{"*":"ask"}' : '{}'),
         createdAt: previous?.createdAt ?? Date.now(),
         updatedAt: Date.now()
       })

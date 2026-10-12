@@ -1,3 +1,5 @@
+import { manimAvailable } from '../plugins/manim'
+import { ANIMATION_GUIDE, AnimationSchema, checkAnimation } from '@shared/manim'
 import { GraphDataSchema, checkGraph } from '@shared/embeds/graph'
 import { todayOverviewText } from '../today'
 import { tool, type ToolSet } from 'ai'
@@ -251,7 +253,16 @@ export function buildTools(s: AgentSession): ToolSet {
         description: zh
           ? '在用户的知识库（笔记 + 资料）中检索。结果带编号，回答时用 [编号] 引用。已提供的片段不够时再用。importedRange 按实际导入创建时间枚举资料，返回 JSON 引用元数据（非相关度排序）；时间戳毫秒、endAt不含；可省略关键词、分页后用 source_read 阅读。'
           : "Search the user's knowledge base (notes + sources). Results are numbered; cite as [n]. importedRange enumerates sources by import creation time as JSON references; optional query, paginated, endAt exclusive epoch ms. Use source_read for content.",
-        inputSchema: RecordingFiltersSchema.extend({ query: z.string().trim().max(500).optional(), importedRange: ReadDateRange.optional(), ...ReadPage }).refine((v) => !!v.query || !!v.importedRange, 'Provide query or importedRange').refine((v) => !v.importedRange || !Object.keys(RecordingFiltersSchema.shape).some((k) => v[k as keyof typeof v] !== undefined), 'importedRange cannot be combined with recording filters'),
+        inputSchema: RecordingFiltersSchema.extend({
+          query: z.string().trim().max(500).optional(),
+          importedRange: ReadDateRange.optional(),
+          ...ReadPage
+        })
+          .refine((v) => !!v.query || !!v.importedRange, 'Provide query or importedRange')
+          .refine(
+            (v) => !v.importedRange || !Object.keys(RecordingFiltersSchema.shape).some((k) => v[k as keyof typeof v] !== undefined),
+            'importedRange cannot be combined with recording filters'
+          ),
         execute: async ({ query, importedRange, limit, offset, ...filters }) => {
           if (importedRange) return JSON.stringify(importedSources(importedRange, s.scope, query, limit, offset))
           const hits = await retrieve(query!, s.scope, 6, filters, s.preferSource)
@@ -259,7 +270,9 @@ export function buildTools(s: AgentSession): ToolSet {
         }
       }),
       note_find: tool({
-        description: zh ? '按关键词或实际 dateRange 查笔记；dateField 选 createdAt/editedAt，毫秒半开区间。可开启 includeMetadata/includeExcerpt（3000字有界正文）、limit/offset分页。默认ID与标题。' : 'Find notes by keyword or dateRange (epoch ms, endAt exclusive); dateField createdAt/editedAt. Optional includeMetadata/includeExcerpt (3000 chars), limit/offset. Default IDs and titles.',
+        description: zh
+          ? '按关键词或实际 dateRange 查笔记；dateField 选 createdAt/editedAt，毫秒半开区间。可开启 includeMetadata/includeExcerpt（3000字有界正文）、limit/offset分页。默认ID与标题。'
+          : 'Find notes by keyword or dateRange (epoch ms, endAt exclusive); dateField createdAt/editedAt. Optional includeMetadata/includeExcerpt (3000 chars), limit/offset. Default IDs and titles.',
         inputSchema: NoteFindInput,
         execute: async (input) => {
           const result = findNotes(input, s.scope)
@@ -293,7 +306,20 @@ export function buildTools(s: AgentSession): ToolSet {
           const segs = listSegments(sourceId)
           const part = segs.slice(from, from + count)
           const loc = (l: Record<string, unknown>): string => (l.value ? ` · ${String(l.value)}` : '')
-          const metadata = includeMetadata ? getDb().select({ sourceId: sources.id, createdAt: sources.createdAt, accessedAt: sources.accessedAt, publishedAt: sources.publishedAt, url: sources.url, author: sources.author }).from(sources).where(eq(sources.id, sourceId)).get() : null
+          const metadata = includeMetadata
+            ? getDb()
+                .select({
+                  sourceId: sources.id,
+                  createdAt: sources.createdAt,
+                  accessedAt: sources.accessedAt,
+                  publishedAt: sources.publishedAt,
+                  url: sources.url,
+                  author: sources.author
+                })
+                .from(sources)
+                .where(eq(sources.id, sourceId))
+                .get()
+            : null
           return [
             ...(metadata ? [JSON.stringify({ ...metadata, totalSegments: segs.length, from, count: part.length })] : []),
             `《${src.title}》${zh ? `共 ${segs.length} 段，当前 ${from}–${from + part.length - 1}` : ` ${segs.length} segments`}`,
@@ -462,6 +488,30 @@ export function buildTools(s: AgentSession): ToolSet {
         return visual(noteId, title, 'graph', graph, cue, afterBlockId)
       }
     }),
+    // 数学动画（v0.10）：装好 Manim 插件和运行环境才提供
+    ...(manimAvailable()
+      ? {
+          note_add_animation: tool({
+            description: zh
+              ? `在笔记中插入一段数学动画（提案），用 Manim 生成。只填参数，不写代码。\n${ANIMATION_GUIDE}`
+              : `Insert a math animation into the note (proposal), generated with Manim. Parameters only, no code.\n${ANIMATION_GUIDE}`,
+            inputSchema: z.object({ ...PLACE, animationTitle: z.string().max(120).optional(), animation: AnimationSchema }),
+            execute: async ({ noteId, title, cue, afterBlockId, animationTitle, animation }) => {
+              mustNote(noteId, zh)
+              const err = checkAnimation(animation)
+              if (err) throw new Error(`${zh ? '动画参数有误，请修正后重试' : 'Invalid animation parameters, fix and retry'}：${err}`)
+              return visual(
+                noteId,
+                title,
+                'animation',
+                { ...(animationTitle ? { title: animationTitle } : {}), animation },
+                cue,
+                afterBlockId
+              )
+            }
+          })
+        }
+      : {}),
     note_add_timeline: tool({
       description: zh ? '在笔记中插入时间线（提案）：按时间顺序排列的事件。' : 'Insert a timeline (proposal).',
       inputSchema: z.object({
@@ -708,6 +758,7 @@ export function stepLabel(name: string, input: unknown, zh: boolean): Pick<Agent
     note_add_chart: [`提案：${q('title')}`, `Proposal: ${q('title')}`],
     note_add_diagram: [`提案：${q('title')}`, `Proposal: ${q('title')}`],
     note_add_graph: [`提案：${q('title')}`, `Proposal: ${q('title')}`],
+    note_add_animation: [`提案：${q('title')}`, `Proposal: ${q('title')}`],
     note_add_timeline: [`提案：${q('title')}`, `Proposal: ${q('title')}`],
     note_add_code_steps: [`提案：${q('title')}`, `Proposal: ${q('title')}`],
     note_add_interactive: [`提案：${q('title')}`, `Proposal: ${q('title')}`],

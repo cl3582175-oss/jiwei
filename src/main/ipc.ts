@@ -1,6 +1,7 @@
 import * as pluginMarkets from './services/plugins/markets'
 import * as pluginDirect from './services/plugins/direct'
 import * as pluginAuthoring from './services/plugins/authoring'
+import * as pluginManim from './services/plugins/manim'
 import * as plugins from './services/plugins/install'
 import * as pluginRoles from './services/plugins/roles'
 import * as pluginStarters from './services/plugins/starters'
@@ -786,6 +787,16 @@ const handlers: Handlers = {
       return file
     },
     clearAudit: () => auditLog.clearAudit()
+  },
+  manim: {
+    status: () => pluginManim.manimStatus(),
+    install: (_, options) => {
+      // 安装要几分钟：后台进行，进度通过 plugins:changed 通知
+      void pluginManim.installManim(options).catch(() => undefined)
+    },
+    cancel: () => pluginManim.cancelManim(),
+    remove: () => pluginManim.removeManim(),
+    clip: (_, animation) => pluginManim.animationClip(animation)
   },
   plugins: {
     roleCatalog: () => pluginRoles.roleCatalog(),

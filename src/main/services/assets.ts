@@ -132,7 +132,11 @@ export async function importBytes(name: string, mime: string, bytes: Uint8Array)
 export async function collectGarbage(): Promise<number> {
   const db = getDb()
   const used = new Set<string>([
-    ...db.select({ assetId: mistakes.assetId, cropAssetId: mistakes.cropAssetId }).from(mistakes).all().flatMap((r) => [r.assetId, r.cropAssetId].filter((id): id is string => !!id)),
+    ...db
+      .select({ assetId: mistakes.assetId, cropAssetId: mistakes.cropAssetId })
+      .from(mistakes)
+      .all()
+      .flatMap((r) => [r.assetId, r.cropAssetId].filter((id): id is string => !!id)),
     ...db
       .select({ id: inboxItems.assetId })
       .from(inboxItems)
@@ -197,7 +201,13 @@ export function registerProtocol(): void {
       if (!/^[0-9a-f-]{36}$/.test(id)) return new Response('Bad request', { status: 400 })
       const file = recordingAudio(id)
       if (!file) return new Response('Not found', { status: 404 })
-      if (file.endsWith('.enc')) { try { recordingKey() } catch { return new Response('请先输入恢复码解锁录音', { status: 423 }) } }
+      if (file.endsWith('.enc')) {
+        try {
+          recordingKey()
+        } catch {
+          return new Response('请先输入恢复码解锁录音', { status: 423 })
+        }
+      }
       const size = await recordingPlainSize(file)
       const headers = new Headers({
         'Content-Type': 'audio/webm',
@@ -221,6 +231,15 @@ export function registerProtocol(): void {
       const stream = file.endsWith('.enc') ? Readable.from(await recordingStream(file, start, end)) : createReadStream(file, { start, end })
       const body = Readable.toWeb(stream) as ReadableStream<Uint8Array>
       return new Response(body, { status: range ? 206 : 200, headers })
+    }
+    if (url.hostname === 'animations') {
+      // jiwei://animations/<哈希>.webm：笔记里数学动画的缓存（v0.10）
+      const m = /^\/([0-9a-f]{32})\.webm$/.exec(url.pathname)
+      if (!m) return new Response('Bad request', { status: 400 })
+      const res = await net.fetch(pathToFileURL(join(dataDir(), 'animations', `${m[1]}.webm`)).toString(), { headers: req.headers })
+      const headers = new Headers(res.headers)
+      headers.set('Content-Type', 'video/webm')
+      return new Response(res.body, { status: res.status, headers })
     }
     if (url.hostname === 'works') {
       // jiwei://works/<作品 ID>/video.mp4：渲染好的讲解视频（v0.9）

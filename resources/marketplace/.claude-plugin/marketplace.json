@@ -110,6 +110,29 @@
         "角色",
         "role"
       ]
+    },
+    {
+      "name": "manim",
+      "source": "./plugins/manim",
+      "displayName": "数学动画（Manim）",
+      "description": "公式推导、函数变换、几何作图、数轴区间的动画 / Math animations for videos and notes",
+      "keywords": [
+        "数学动画",
+        "Manim",
+        "animation",
+        "math"
+      ]
+    },
+    {
+      "name": "monid",
+      "source": "./plugins/monid",
+      "displayName": "monid 工具集",
+      "description": "上千个外部工具（第三方，按调用计费）/ Thousands of external tools (third-party, pay per call)",
+      "keywords": [
+        "monid",
+        "connector",
+        "MCP"
+      ]
     }
   ]
 }

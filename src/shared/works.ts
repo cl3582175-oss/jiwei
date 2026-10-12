@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { AnimationSchema, checkAnimation } from './manim'
 import type { PluginRegistryItem, PluginTemplate } from './plugins'
 import { checkGraph } from './embeds/graph'
 
@@ -94,7 +95,18 @@ export interface SlidePart {
 }
 /* ——— 讲解视频（P4）：分镜 = 场景模板 + 参数 + 旁白；渲染器按时间驱动动画，逐帧录制 ——— */
 
-export const SCENE_TEMPLATES = ['title', 'bullets', 'formula', 'diagram', 'chart', 'graph', 'compare', 'quote', 'summary'] as const
+export const SCENE_TEMPLATES = [
+  'title',
+  'bullets',
+  'formula',
+  'diagram',
+  'chart',
+  'graph',
+  'compare',
+  'quote',
+  'summary',
+  'animation'
+] as const
 export type SceneTemplate = (typeof SCENE_TEMPLATES)[number]
 
 const sceneBase = {
@@ -134,7 +146,9 @@ export const SceneDraft = z.discriminatedUnion('template', [
     ...sceneBase
   }),
   z.object({ template: z.literal('quote'), quote: text(160), by: z.string().max(60).default(''), ...sceneBase }),
-  z.object({ template: z.literal('summary'), items: z.array(text(60)).min(1).max(5), ...sceneBase })
+  z.object({ template: z.literal('summary'), items: z.array(text(60)).min(1).max(5), ...sceneBase }),
+  /** 数学动画（v0.10，需要 Manim 插件）：渲染视频时生成片段；没装或失败时换成普通场景 */
+  z.object({ template: z.literal('animation'), animation: AnimationSchema, ...sceneBase })
 ])
 export type SceneData = z.infer<typeof SceneDraft>
 export type VideoScene = SceneData & { id: string }
@@ -155,6 +169,7 @@ export type WorkParts =
 
 /** 分镜的语义校验：函数图表达式可解析、图表数据与类别对齐；返回错误说明或 null */
 export function checkScene(s: SceneData): string | null {
+  if (s.template === 'animation') return checkAnimation(s.animation)
   if (s.template === 'graph')
     for (const expr of s.functions) {
       const err = checkGraph({ graph: { type: 'function', functions: [{ expr }], params: [], view: s.view } })
@@ -162,6 +177,23 @@ export function checkScene(s: SceneData): string | null {
     }
   if (s.template === 'chart' && s.series.some((x) => x.data.length !== s.categories.length)) return 'chart data must match categories'
   return null
+}
+
+/** 数学动画用不了时（没装 Manim、渲染失败）换成画面最接近的普通场景，旁白不变 */
+export function animationFallback(s: Extract<SceneData, { template: 'animation' }>): SceneData {
+  const base = { title: s.title, narration: s.narration, sources: s.sources }
+  const a = s.animation
+  if (a.kind === 'derivation') return { ...base, template: 'formula', steps: a.steps.slice(0, 6).map((x) => x.tex) }
+  if (a.kind === 'function-transform')
+    return { ...base, template: 'graph', functions: [a.base], view: [a.xRange[0], a.xRange[1], a.yRange[0], a.yRange[1]] }
+  if (a.kind === 'number-line') {
+    const items = [
+      ...a.intervals.map((iv) => iv.label || `${iv.closedFrom ? '[' : '('}${iv.from ?? '-∞'}, ${iv.to ?? '+∞'}${iv.closedTo ? ']' : ')'}`),
+      ...a.points.flatMap((p) => (p.label ? [`${p.label}：${p.x}`] : []))
+    ].slice(0, 5)
+    if (items.length) return { ...base, template: 'bullets', items }
+  }
+  return { ...base, template: 'title', subtitle: '' }
 }
 
 /** 旁白按句切分，按字数比例分配到配音时长内 */

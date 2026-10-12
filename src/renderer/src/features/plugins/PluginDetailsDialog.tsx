@@ -129,7 +129,8 @@ export function PluginDetailsDialog({
         {c.commands.length > 0 && <p className="text-warning">{t('plugins.commandsRisk')}</p>}
         {c.dataLeavesDevice && <p className="text-warning">{t('plugins.leaves')}</p>}
         {c.cost && <p className="text-warning">{i18n.language.startsWith('zh') ? c.cost.zh : c.cost.en}</p>}
-        {!c.servers.length && !c.dataLeavesDevice && !c.cost && (
+        {!!c.renderers?.length && <p className="text-warning">{t('plugins.rendererRisk')}</p>}
+        {!c.servers.length && !c.dataLeavesDevice && !c.cost && !c.renderers?.length && (
           <p data-tint="bamboo" className="text-[var(--tint-ink)]">
             {t('plugins.textOnly')}
           </p>
