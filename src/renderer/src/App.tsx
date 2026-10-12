@@ -163,6 +163,9 @@ function useMainEvents(): void {
           action: { label: i18n.t('workspace.digest.open'), onClick: () => useApp.getState().openNote(noteId) }
         })
       }),
+      window.jiweiEvents.on('plugins:changed', () => {
+        for (const key of ['plugins', 'skills', 'skill', 'lenses', 'templates', 'frameworks', 'recipes', 'task-recipes', 'tasks', 'mcp', 'discover']) void qc.invalidateQueries({ queryKey: [key] })
+      }),
       window.jiweiEvents.on('mcp:changed', () => {
         void qc.invalidateQueries({ queryKey: ['mcp'] })
       }),

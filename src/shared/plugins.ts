@@ -322,3 +322,64 @@ export function satisfiesPluginEngine(range: string, version = PLUGIN_API_VERSIO
     )
   })
 }
+
+/** 来源由主进程获取器创建，绝不接受 renderer 自报 official/trustedBuiltin。 */
+export interface PluginOrigin {
+  kind: 'local' | 'market' | 'github'
+  market: string
+  locator: string
+  name?: string
+}
+export const PluginInspectSource = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('market'), market: MarketNameSchema, name: PluginNameSchema }),
+  z.object({ kind: z.literal('github'), url: z.string().max(4096) })
+])
+export type PluginInspectInput = z.infer<typeof PluginInspectSource>
+export const PluginConfigValues = z.record(
+  PluginNameSchema,
+  z.union([
+    z.string().max(16000),
+    z.number().finite(),
+    z.boolean(),
+    z.array(z.union([z.string().max(16000), z.number().finite()])).max(200),
+    z.null()
+  ])
+)
+export type PluginConfig = z.infer<typeof PluginConfigValues>
+export const PluginConfirmOptions = z.object({
+  feeds: z.array(z.number().int().min(0)).max(30).default([]),
+  config: PluginConfigValues.default({})
+})
+export const PluginUninstallOptions = z.object({ removeFeeds: z.boolean().default(false), removeTasks: z.boolean().default(false) })
+export interface PluginInfo {
+  available: boolean
+  id: string
+  version: string
+  previousVersion: string | null
+  enabled: boolean
+  origin: PluginOrigin
+  manifest: PluginManifest
+  capabilities: PluginCapabilities
+  config: PluginConfig
+  sensitive: Record<string, boolean>
+  feeds: number
+  tasks: number
+}
+export interface PluginPreview {
+  token: string
+  expiresAt: number
+  id: string
+  version: string
+  origin: PluginOrigin
+  manifest: PluginManifest
+  capabilities: PluginCapabilities
+  added: Partial<PluginCapabilities>
+  skills: { name: string; kind: string; hasScripts: boolean }[]
+  templates: PluginTemplate[]
+  frameworks: PluginFramework[]
+  recipes: PluginRecipe[]
+  feeds: PluginFeed[]
+  scripts: string[]
+  issues: { path: string; code: string; message: string }[]
+}
+export type PluginRegistryItem<T> = T & { pluginId?: string; source: 'builtin' | 'plugin' }

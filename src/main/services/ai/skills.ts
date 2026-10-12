@@ -1,5 +1,19 @@
 import { app, dialog, shell, type BrowserWindow } from 'electron'
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, lstatSync, writeFileSync, rmSync } from 'fs'
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  lstatSync,
+  writeFileSync,
+  rmSync,
+  constants,
+  openSync,
+  closeSync,
+  fstatSync
+} from 'fs'
 import { createHash, randomBytes } from 'crypto'
 import { z } from 'zod'
 import { LensSave, type LensInfo } from '@shared/lens'
@@ -10,6 +24,8 @@ import type { SkillInfo } from '@shared/types'
 import { parseSkill, type ParsedSkill as Parsed } from '../../lib/skillFormat'
 import type { ModelTier } from '@shared/ai'
 import { getSettings, setSettings } from '../settings'
+import { enabledPlugins, pluginRegistryRevision } from '../plugins/registry'
+import { asExternalData } from '../agent/wrap'
 import { skillPreferences } from '../memory'
 
 // 技能：采用 Agent Skills 开放标准（https://agentskills.io）——每个技能一个文件夹，核心是 SKILL.md
@@ -24,7 +40,11 @@ export const userSkillsDir = (): string => join(app.getPath('userData'), 'skills
 interface Loaded extends Parsed {
   dir: string
   source: SkillInfo['source']
+  pluginId?: string
+  hash?: string
+  hasScripts?: boolean
 }
+let cachedRevision = -1
 
 let cache: Map<string, Loaded> | null = null
 const isSymlink = (path: string): boolean => {
@@ -55,11 +75,15 @@ function scan(root: string, source: SkillInfo['source'], into: Map<string, Loade
 }
 
 function all(): Map<string, Loaded> {
-  if (cache) return cache
+  const revision = pluginRegistryRevision()
+  if (cache && cachedRevision === revision) return cache
   const m = new Map<string, Loaded>()
   scan(builtinSkillsDir(), 'builtin', m)
+  for (const { id, parsed } of enabledPlugins())
+    for (const skill of parsed.skills) m.set(skill.name, { ...skill, source: 'plugin', pluginId: id })
   scan(userSkillsDir(), 'user', m)
   cache = m
+  cachedRevision = revision
   return m
 }
 
@@ -74,6 +98,8 @@ const toInfo = (s: Loaded, off: Set<string>): SkillInfo => ({
   description: s.description,
   title: s.metadata.title || s.name,
   source: s.source,
+  pluginId: s.pluginId,
+  hasScripts: s.hasScripts,
   enabled: !off.has(s.name),
   minModel: s.metadata['min-model'] === 'strong' ? 'strong' : 'basic',
   surfaces: (s.metadata.surfaces ?? 'chat,workspace')
@@ -105,7 +131,9 @@ export function skillCatalog(tier: ModelTier, zh: boolean): string | null {
     zh
       ? '可用技能（任务与某个技能相符时，先调用 skills_load 读取它的完整流程，再严格照做）：'
       : 'Available skills (when a task matches one, call skills_load first and follow it exactly):',
-    ...list.map((s) => `- ${s.name}：${s.description}`)
+    ...list.map((s) =>
+      s.source === 'plugin' ? asExternalData(`plugin:${s.pluginId}`, `- ${s.name}：${s.description}`) : `- ${s.name}：${s.description}`
+    )
   ].join('\n')
 }
 
@@ -115,9 +143,9 @@ export function loadSkill(name: string, zh: boolean): string {
   if (!s || s.metadata.kind === 'lens' || disabled().has(name)) throw new Error(`没有名为 ${name} 的可用技能`)
   const files = readdirSync(s.dir, { recursive: true })
     .map(String)
-    .filter((f) => f !== 'SKILL.md' && statSync(join(s.dir, f)).isFile())
+    .filter((f) => f !== 'SKILL.md' && !isSymlink(join(s.dir, f)) && statSync(join(s.dir, f)).isFile())
   const prefs = skillPreferences(name)
-  return [
+  const content = [
     `# ${zh ? '技能' : 'Skill'}：${s.metadata.title || s.name}`,
     s.body,
     files.length
@@ -129,15 +157,31 @@ export function loadSkill(name: string, zh: boolean): string {
   ]
     .filter(Boolean)
     .join('\n\n')
+  return s.source === 'plugin' ? asExternalData(`plugin:${s.pluginId}`, content) : content
 }
 
 /** 读取技能附带的文件（限制在技能目录内） */
 export function readSkillFile(name: string, path: string): string {
   const s = all().get(name)
-  if (!s) throw new Error(`没有名为 ${name} 的技能`)
+  if (!s || disabled().has(name)) throw new Error(`没有名为 ${name} 的可用技能`)
+  if (s.source === 'plugin' && path === 'SKILL.md') return asExternalData(`plugin:${s.pluginId}`, s.body)
   const full = resolve(s.dir, path)
   if (relative(s.dir, full).startsWith('..') || !full.startsWith(s.dir + sep)) throw new Error('路径必须在技能目录内')
-  return readFileSync(full, 'utf8').slice(0, 40_000)
+  // 每个分量均拒绝 symlink，最后使用 O_NOFOLLOW；不允许插件换链接后逃出目录。
+  let current = s.dir
+  if (isSymlink(current)) throw new Error('Unsafe skill path')
+  for (const part of relative(s.dir, full).split(sep)) {
+    current = join(current, part)
+    if (isSymlink(current)) throw new Error('Unsafe skill path')
+  }
+  const fd = openSync(full, constants.O_RDONLY | constants.O_NOFOLLOW)
+  try {
+    if (!fstatSync(fd).isFile() || fstatSync(fd).size > 1024 * 1024) throw new Error('Skill file limit exceeded')
+    const content = readFileSync(fd, 'utf8').slice(0, 40_000)
+    return s.source === 'plugin' ? asExternalData(`plugin:${s.pluginId}`, content) : content
+  } finally {
+    closeSync(fd)
+  }
 }
 
 export function setSkillEnabled(name: string, enabled: boolean): SkillInfo[] {
@@ -180,16 +224,19 @@ export function listLenses(): LensInfo[] {
       instruction: s.body,
       ...validateLensMetadata(s.metadata),
       source: s.source,
-      hash: createHash('sha256')
-        .update(readFileSync(join(s.dir, 'SKILL.md')))
-        .digest('hex')
+      pluginId: s.pluginId,
+      hash:
+        s.hash ??
+        createHash('sha256')
+          .update(readFileSync(join(s.dir, 'SKILL.md')))
+          .digest('hex')
     }))
 }
 export function saveLens(input: z.infer<typeof LensSave>, id?: string): LensInfo {
   input = LensSave.parse(input)
   const original = id || input.copyFrom ? listLenses().find((s) => s.id === (id ?? input.copyFrom)) : undefined
   if ((id || input.copyFrom) && (!original || (id && original.source !== 'user'))) throw new Error('Invalid lens identity')
-  const name = original?.id ?? `lens-${randomBytes(4).toString('hex')}`
+  const name = original && original.source !== 'plugin' ? original.id : `lens-${randomBytes(4).toString('hex')}`
   const contents = createLensSkill(name, input.title, input.instruction, original)
   if (isSymlink(userSkillsDir())) throw new Error('Invalid lens root')
   const folder = join(userSkillsDir(), name)

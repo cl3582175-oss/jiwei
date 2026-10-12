@@ -1,3 +1,4 @@
+import { asExternalData } from './agent/wrap'
 import { and, desc, eq, inArray, isNull } from 'drizzle-orm'
 import { costOf, hasOffPeak } from './agent/pricing'
 import { createHash } from 'crypto'
@@ -224,7 +225,7 @@ export function runLens(raw: z.infer<typeof LensRun>): Derivation {
         model: modelId,
         transcriptRevision: transcriptRevision(input.sourceId),
         status: 'queued',
-        input: JSON.stringify({ providerId, instruction: lens.instruction, output: lens.output }),
+        input: JSON.stringify({ providerId, instruction: lens.source === 'plugin' ? asExternalData(`plugin:${lens.pluginId}`, lens.instruction) : lens.instruction, output: lens.output }),
         runAfter,
         createdAt: now,
         updatedAt: now,

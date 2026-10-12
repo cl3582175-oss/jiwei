@@ -211,6 +211,7 @@ export type Palette = 'qinglu' | 'celadon' | 'dunhuang'
 export type SidebarPage = 'notes' | 'library' | 'chat'
 
 export interface Settings {
+  plugins: { recommendedDismissed: boolean }
   discover: { dailyLimit: number; dailyBudget: number; budgetCurrency: string; useSearch: boolean; podcast: boolean; podcastVoice: import('./discover').PodcastVoice }
   tasks: { paused: boolean; launchAtLogin: boolean; keepRunning: boolean }
   plan: { autoComplete: boolean }
@@ -933,7 +934,9 @@ export interface SkillInfo {
   description: string
   /** 中文显示名（metadata.title） */
   title: string
-  source: 'builtin' | 'user'
+  source: 'builtin' | 'plugin' | 'user'
+  pluginId?: string
+  hasScripts?: boolean
   enabled: boolean
   /** 最低模型能力：basic 任何模型；strong 仅强模型 */
   minModel: 'basic' | 'strong'
@@ -1115,6 +1118,8 @@ export interface JiweiEvents {
   'agent:approval-done': { id: string; messageId: string; allow: boolean }
   'agent:audit': Record<string, never>
   'mcp:changed': Record<string, never>
+  'plugins:changed': Record<string, never>
+  'plugins:progress': { id: string; phase: 'download' | 'verify' | 'install'; received?: number; total?: number }
   'mistakes:changed': Record<string, never>
   'mistakes:open': Record<string, never>
   'reading:word': import('./reading').ReadingWord

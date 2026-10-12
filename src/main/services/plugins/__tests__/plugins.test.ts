@@ -98,6 +98,16 @@ describe('plugin contracts', () => {
   })
 })
 describe('plugin components', () => {
+  it('marks scripts beside a root skill and inline command as read-only attachments', async () => {
+    const root = await temp()
+    await json(root, '.claude-plugin/plugin.json', { name: 'root-sample', commands: { check: { content: 'Read only' } } })
+    await file(root, 'SKILL.md', skill('root-sample'))
+    await file(root, 'helper.py', 'raise RuntimeError("must never execute")')
+    const parsed = await parsePlugin(root)
+    expect(parsed.skills.find((s) => s.name === 'root-sample:root-sample')?.hasScripts).toBe(true)
+    expect(parsed.skills.find((s) => s.name === 'root-sample:check')?.hasScripts).toBe(true)
+  })
+
   it('maps skills, commands, MCP override, unsupported components and runtime placeholders', async () => {
     const root = await temp()
     await json(root, '.claude-plugin/plugin.json', {

@@ -78,6 +78,7 @@ export const CategoryPatchSchema = z.object({
 })
 
 export const SettingsPatchSchema = z.object({
+  plugins: z.object({ recommendedDismissed: z.boolean().optional() }).optional(),
   tasks: z.object({ paused: z.boolean().optional(), launchAtLogin: z.boolean().optional(), keepRunning: z.boolean().optional() }).optional(),
   plan: z.object({ autoComplete: z.boolean() }).optional(),
   discover: z.object({ dailyLimit: z.number().int().min(0).max(5).optional(), dailyBudget: z.number().min(0).max(1000).optional(), budgetCurrency: z.string().regex(/^[A-Z]{3}$/).optional(), useSearch: z.boolean().optional(), podcast: z.boolean().optional(), podcastVoice: PodcastVoiceSchema.optional() }).optional(),

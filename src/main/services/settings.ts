@@ -15,6 +15,7 @@ function defaults(): Settings {
   const language: Settings['language'] =
     (process.env.JIWEI_LANG as Settings['language']) || (app.getLocale().toLowerCase().startsWith('zh') ? 'zh-CN' : 'en')
   return {
+    plugins: { recommendedDismissed: false },
     discover: { dailyLimit: 5, dailyBudget: fromUsd(0.5 / (rateOf('CNY') ?? 7), defaultMoney(language).currency), budgetCurrency: defaultMoney(language).currency, useSearch: true, podcast: false, podcastVoice: DEFAULT_PODCAST_VOICE },
     tasks: { paused: false, launchAtLogin: false, keepRunning: false },
     plan: { autoComplete: true },
@@ -47,6 +48,7 @@ export function getSettings(): Settings {
     ...stored,
     capture: mergeCaptureSettings(stored.capture, process.platform === 'darwin'),
     money: { ...base.money, ...stored.money },
+    plugins: { ...base.plugins, ...stored.plugins },
     tasks: { ...base.tasks, ...stored.tasks },
     discover: { ...base.discover, ...stored.discover }
   }
@@ -55,6 +57,7 @@ export function getSettings(): Settings {
 }
 
 export function setSettings(patch: SettingsPatch): Settings {
+  if (patch.plugins) patch = { ...patch, plugins: { ...getSettings().plugins, ...patch.plugins } }
   if (patch.discover) patch = { ...patch, discover: { ...getSettings().discover, ...patch.discover } }
   if (patch.tasks) patch = { ...patch, tasks: { ...getSettings().tasks, ...patch.tasks } }
   const db = getDb()

@@ -1,9 +1,9 @@
-import { and, eq, isNull } from 'drizzle-orm'
+import { and, eq, isNull, sql } from 'drizzle-orm'
 import { createHash } from 'node:crypto'
 import { parseHTML } from 'linkedom'
 import { FeedSave, type Feed, type FeedInput } from '@shared/discover'
 import { getDb } from '../../db'
-import { feeds, feedItems, goals, inboxItems } from '../../db/schema'
+import { feeds, feedItems, goals, inboxItems, jobs } from '../../db/schema'
 import { emit } from '../../events'
 import { newId } from '../../lib/ids'
 import { normalizeFeed, parseFeed, type ParsedItem } from '../../lib/feedParser'
@@ -13,7 +13,7 @@ import { fetchWebText } from '../webText'
 import { getSettings } from '../settings'
 import { isSensitiveUrl } from '../../lib/browserPolicy'
 import { audit } from '../agent/audit'
-import { enqueue, registerJobKind } from '../jobs'
+import { enqueue, registerJobKind, cancelJob } from '../jobs'
 import { tr } from '../../lib/messages'
 
 export const discoverChanged = (): void => emit('discover:changed', {})
@@ -63,7 +63,10 @@ export function saveFeed(input: FeedInput): Feed {
   discoverChanged()
   return listFeeds().find((f) => f.id === id)!
 }
-export function removeFeed(id: string): void {
+export function removeFeed(id: string, options: { clearCache?: boolean; afterCommit?: (effect: () => void) => void } = {}): void {
+  for (const job of getDb().select().from(jobs).where(and(eq(jobs.kind, 'discover.feed'), sql`${jobs.status} IN ('running','queued')`)).all())
+    if (JSON.parse(job.payload).id === id) cancelJob(job.id, options.afterCommit)
+  if (options.clearCache) getDb().delete(feedItems).where(and(eq(feedItems.feedId, id), isNull(feedItems.inboxId), sql`${feedItems.status} NOT IN ('saved','later')`)).run()
   getDb()
     .update(feeds)
     .set({ deletedAt: Date.now(), updatedAt: Date.now(), updatedBy: deviceId(), enabled: false })

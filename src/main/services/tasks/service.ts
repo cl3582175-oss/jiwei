@@ -120,16 +120,16 @@ export async function saveTask(input: TaskInput): Promise<AiTask> {
   changed()
   return getTask(id)!
 }
-function cancelTaskJobs(id: string): void {
+function cancelTaskJobs(id: string, afterCommit?: (effect: () => void) => void): void {
   for (const j of getDb()
     .select()
     .from(jobs)
     .where(and(eq(jobs.kind, 'ai.task'), sql`${jobs.status} IN ('running','queued')`))
     .all())
-    if (JSON.parse(j.payload).taskId === id) cancelJob(j.id)
+    if (JSON.parse(j.payload).taskId === id) cancelJob(j.id, afterCommit)
 }
-export function removeTask(id: string): void {
-  cancelTaskJobs(id)
+export function removeTask(id: string, afterCommit?: (effect: () => void) => void): void {
+  cancelTaskJobs(id, afterCommit)
   getDb().update(aiTasks).set({ deletedAt: Date.now(), updatedAt: Date.now(), updatedBy: deviceId() }).where(eq(aiTasks.id, id)).run()
   clearTriggerState(id)
   changed()

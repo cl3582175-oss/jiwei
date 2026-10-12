@@ -224,7 +224,7 @@ export function buildTools(s: AgentSession): ToolSet {
   const tools: ToolSet = {
     skills_load: tool({
       description: zh ? '加载一个技能的完整流程（技能目录见系统提示）' : 'Load the full instructions of a skill',
-      inputSchema: z.object({ name: z.string().max(64) }),
+      inputSchema: z.object({ name: z.string().max(257) }),
       execute: async ({ name }) => {
         const body = loadSkill(name, zh)
         if (!s.skills.includes(name)) s.skills.push(name)
@@ -233,7 +233,7 @@ export function buildTools(s: AgentSession): ToolSet {
     }),
     skills_read_file: tool({
       description: zh ? '读取技能附带的参考文件' : 'Read a file bundled with a skill',
-      inputSchema: z.object({ name: z.string().max(64), path: z.string().max(200) }),
+      inputSchema: z.object({ name: z.string().max(257), path: z.string().max(200) }),
       execute: async ({ name, path }) => readSkillFile(name, path)
     })
   }

@@ -278,7 +278,7 @@ export function listJobs(): Job[] {
   return getDb().select().from(jobs).orderBy(desc(jobs.createdAt)).limit(200).all().map(toJob)
 }
 
-export function cancelJob(id: string): void {
+export function cancelJob(id: string, afterCommit?: (effect: () => void) => void): void {
   const db = getDb()
   const job = db.select().from(jobs).where(eq(jobs.id, id)).get()
   if (!job || (job.status !== 'queued' && job.status !== 'running')) return
@@ -286,8 +286,10 @@ export function cancelJob(id: string): void {
     setStatus(id, { status: 'canceled' })
     kinds.get(job.kind)?.onCancel?.(JSON.parse(job.payload))
   })
-  canceled.add(id)
-  controllers.get(id)?.abort()
+  // 外层生命周期事务可能回滚，不能提前中断仍属于用户的工作。
+  const effect = (): void => { canceled.add(id); controllers.get(id)?.abort() }
+  if (afterCommit) afterCommit(effect)
+  else effect()
 }
 
 export function retryJob(id: string): void {

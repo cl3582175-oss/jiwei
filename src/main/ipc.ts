@@ -1,3 +1,5 @@
+import * as plugins from './services/plugins/install'
+import * as pluginRegistry from './services/plugins/registry'
 import { tr } from './lib/messages'
 import * as plan from './services/plan/calendar'
 import * as planPhases from './services/plan/phases'
@@ -750,6 +752,27 @@ const handlers: Handlers = {
       return file
     },
     clearAudit: () => auditLog.clearAudit()
+  },
+  plugins: {
+    list: () => plugins.listPlugins(),
+    get: (_, id) => plugins.getPlugin(id),
+    inspect: (_, source) => plugins.inspectPlugin(source),
+    installFromFile: ({ win }) => plugins.installPluginFromFile(win),
+    inspectPath: (_, path) => {
+      if (app.isPackaged || process.env.JIWEI_TEST_PLUGINS !== '1') throw new Error('Test-only plugin path inspector is disabled')
+      return plugins.inspectPluginPath(path)
+    },
+    confirmInstall: (_, token, options) => plugins.confirmPluginInstall(token, options),
+    cancel: (_, token) => plugins.cancelPluginPreview(token),
+    update: (_, id) => plugins.updatePlugin(id),
+    rollback: (_, id) => plugins.rollbackPlugin(id),
+    setEnabled: (_, id, enabled) => plugins.setPluginEnabled(id, enabled),
+    setConfig: (_, id, values) => plugins.setPluginConfig(id, values),
+    uninstall: (_, id, options) => plugins.uninstallPlugin(id, options),
+    openFolder: (_, id) => plugins.openPluginFolder(id),
+    templates: () => pluginRegistry.listTemplates(),
+    frameworks: () => pluginRegistry.listFrameworks(),
+    recipes: () => pluginRegistry.listRecipes()
   },
   mcp: {
     servers: () => mcpClient.listServers(),

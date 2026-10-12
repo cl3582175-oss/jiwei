@@ -114,7 +114,8 @@ export class JiweiOAuthProvider implements OAuthClientProvider {
   constructor(
     private serverId: string,
     /** 测试时不打开系统浏览器，而是交给调用方 */
-    private open: (url: URL) => Promise<void> | void = openAuthorization
+    private open: (url: URL) => Promise<void> | void = openAuthorization,
+    private validateAuthorization?: (url: URL) => void
   ) {}
 
   get redirectUrl(): string {
@@ -161,6 +162,7 @@ export class JiweiOAuthProvider implements OAuthClientProvider {
     else if (scope === 'verifier') save(this.serverId, { ...s, verifier: undefined })
   }
   async redirectToAuthorization(url: URL): Promise<void> {
+    this.validateAuthorization?.(url)
     await ensureCallbackServer()
     const state = url.searchParams.get('state') ?? this.pendingState
     this.codePromise = new Promise<string>((resolve, reject) => {

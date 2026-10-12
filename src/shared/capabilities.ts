@@ -1,3 +1,4 @@
+import { PluginInspectSource, PluginConfigValues, PluginConfirmOptions, PluginUninstallOptions, type PluginInfo, type PluginPreview, type PluginRegistryItem, type PluginTemplate, type PluginFramework, type PluginRecipe } from './plugins'
 import { CaptureRectSchema, BrowserCaptureEntriesSchema, type BrowserCaptureFrame, type BrowserCaptureResult } from './browserCapture'
 import { CaptureActionSchema } from './capture'
 import { TaskSave, type AiTask, type TaskRun, type TaskToolInfo, type TaskInput } from './tasks'
@@ -876,11 +877,11 @@ export const capabilities = {
   },
   skills: {
     list: cap<SkillInfo[]>()({ description: '列出技能', params: none }),
-    read: cap<string>()({ description: '读取技能正文（SKILL.md）', params: [['name', z.string().max(64)]] }),
+    read: cap<string>()({ description: '读取技能正文（SKILL.md）', params: [['name', z.string().max(257)]] }),
     setEnabled: cap<SkillInfo[]>()({
       description: '启用或停用技能',
       params: [
-        ['name', z.string().max(64)],
+        ['name', z.string().max(257)],
         ['enabled', z.boolean()]
       ]
     }),
@@ -1074,6 +1075,24 @@ export const capabilities = {
     auditCallers: cap<string[]>()({ description: '审计日志中出现过的调用方', params: none }),
     exportAudit: cap<string | null>()({ description: '导出审计日志（JSON）', params: none }),
     clearAudit: cap<void>()({ description: '清除审计日志', params: none })
+  },
+  plugins: {
+    list: cap<PluginInfo[]>()({ description: '已安装插件', params: none }),
+    get: cap<PluginInfo>()({ description: '插件详情（无明文敏感值）', params: [['id', z.string().max(257)]] }),
+    inspect: cap<PluginPreview>()({ description: '获取来源并预览插件', params: [['source', PluginInspectSource]] }),
+    installFromFile: cap<PluginPreview | null>()({ description: '选择本地插件并预览', params: none }),
+    inspectPath: cap<PluginPreview>()({ description: '开发测试：从路径预览', params: [['path', z.string().max(4096)]] }),
+    confirmInstall: cap<PluginInfo>()({ description: '确认安装已预览的插件', params: [['token', z.string().length(64)], ['options', PluginConfirmOptions]] }),
+    cancel: cap<void>()({ description: '取消安装预览', params: [['token', z.string().length(64)]] }),
+    update: cap<PluginPreview>()({ description: '预览来源更新及新增能力', params: [['id', z.string().max(257)]] }),
+    rollback: cap<PluginInfo>()({ description: '回滚已确认的上个版本', params: [['id', z.string().max(257)]] }),
+    setEnabled: cap<PluginInfo>()({ description: '启停插件文字内容；启用不会开启 MCP', params: [['id', z.string().max(257)], ['enabled', z.boolean()]] }),
+    setConfig: cap<PluginInfo>()({ description: '保存插件配置并停用需重新启用的 MCP', params: [['id', z.string().max(257)], ['values', PluginConfigValues]] }),
+    uninstall: cap<void>()({ description: '卸载插件，默认保留订阅源与任务', params: [['id', z.string().max(257)], ['options', PluginUninstallOptions]] }),
+    openFolder: cap<void>()({ description: '打开已安装插件文件夹', params: [['id', z.string().max(257)]] }),
+    templates: cap<PluginRegistryItem<PluginTemplate>[]>()({ description: '启用的作品模板', params: none }),
+    frameworks: cap<PluginRegistryItem<PluginFramework>[]>()({ description: '启用的参谋框架', params: none }),
+    recipes: cap<PluginRegistryItem<TaskRecipe | PluginRecipe>[]>()({ description: '启用的任务配方', params: none })
   },
   mcp: {
     servers: cap<McpServerInfo[]>()({ description: '接入的外部 MCP 服务器', params: none }),

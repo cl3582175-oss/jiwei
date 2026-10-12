@@ -161,7 +161,7 @@ export async function parsePlugin(root: string, options: ParsePluginOptions = {}
         dir,
         file: await safePluginPath(root, file),
         hash: hashText(text),
-        hasScripts: files.some((p) => p.startsWith(dirname(file) + '/') && script(p))
+        hasScripts: files.some((p) => (dirname(file) === '.' || p.startsWith(dirname(file) + '/')) && script(p))
       })
     })
   }
@@ -213,7 +213,7 @@ export async function parsePlugin(root: string, options: ParsePluginOptions = {}
       dir: file ? dirname(await safePluginPath(root, file)) : root,
       file: file ? await safePluginPath(root, file) : null,
       hash: hashText(text),
-      hasScripts: false
+      hasScripts: files.some((p) => (file === null || dirname(file) === '.' || p.startsWith(dirname(file) + '/')) && script(p))
     })
   }
   const commands = manifest.commands ?? 'commands'
@@ -250,6 +250,7 @@ export async function parsePlugin(root: string, options: ParsePluginOptions = {}
   if (files.includes('.mcp.json')) await attempt('.mcp.json', () => mergeMcp('.mcp.json'))
   for (const part of Array.isArray(manifest.mcpServers) ? manifest.mcpServers : manifest.mcpServers ? [manifest.mcpServers] : [])
     await attempt(typeof part === 'string' ? part : 'mcpServers', () => mergeMcp(part))
+  for (const [name, server] of Object.entries(mcpServers)) if (server.type === 'sse') unsupported.add(`mcp:sse:${name}`)
   const components = async <T>(folder: string, schema: z.ZodType<T>): Promise<T[]> => {
     const result: T[] = [],
       ids = new Set<string>()

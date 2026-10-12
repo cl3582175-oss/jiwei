@@ -257,6 +257,7 @@ export interface McpToolInfo {
 }
 export type McpServerState = 'off' | 'idle' | 'connecting' | 'ready' | 'auth' | 'error'
 export interface McpServerInfo {
+  pluginId?: string
   id: string
   name: string
   transport: 'stdio' | 'http'

@@ -139,7 +139,8 @@ export interface LensInfo {
   output: LensOutputId
   landing: LandingRule
   scenes: string[]
-  source: 'builtin' | 'user'
+  source: 'builtin' | 'plugin' | 'user'
+  pluginId?: string
   hash: string
 }
 export interface Derivation {
@@ -168,14 +169,14 @@ export const LensParamsSchema = z.object({
 export type LensParams = z.infer<typeof LensParamsSchema>
 export const LensRun = z.object({
   sourceId: z.string().max(128),
-  lens: z.string().max(64),
+  lens: z.string().max(257),
   params: LensParamsSchema.default({}),
   offPeak: z.boolean().default(false)
 })
 export const LensSave = z.object({
   title: z.string().min(1).max(40),
   instruction: z.string().trim().min(1).max(2000),
-  copyFrom: z.string().max(64).optional()
+  copyFrom: z.string().max(257).optional()
 })
 export const LensReviewed = z.object({
   id: z.string().max(128),
