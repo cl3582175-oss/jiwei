@@ -24,14 +24,22 @@ export function ImportPreview({ value }: { value: Preview }) {
     [t, ydoc]
   )
   const editor = useEditor(
-    { extensions, content: value.doc, editable: false, editorProps: { attributes: { class: 'cornell-editor' }, handleClick: () => true } },
+    {
+      extensions,
+      content: value.doc,
+      editable: false,
+      editorProps: {
+        attributes: { class: 'cornell-editor prose-jiwei' },
+        handleClick: (_view, _pos, event) => {
+          event.preventDefault()
+          return true
+        }
+      }
+    },
     [value, extensions]
   )
   return (
-    <div
-      data-testid="import-preview"
-      className="pointer-events-none min-w-0 overflow-x-auto rounded-lg border border-border bg-surface p-3"
-    >
+    <div data-testid="import-preview" className="min-w-0 overflow-x-auto rounded-lg border border-border bg-surface p-3">
       <EditorContent editor={editor} />
     </div>
   )

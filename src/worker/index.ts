@@ -7,6 +7,11 @@ import { extractVoiceprints, type VoiceprintInput } from './voiceprint'
 import { synthesizeLocal, type SpeechInput } from './speech'
 import { scanLibrary, type ImportHistory } from '../main/services/importer/scan'
 import { importMarkdown } from '../main/lib/importMarkdown'
+import { convertNotion } from '../main/services/importer/notion'
+import { extractSafeZip } from '../main/services/importer/zip'
+import { mkdir, realpath, rm, lstat } from 'fs/promises'
+import { basename, dirname, extname } from 'path'
+import { createHash } from 'crypto'
 
 // 后台工作进程（Electron utilityProcess）：执行 CPU / IO 密集任务，不阻塞主进程与界面。
 // 协议：{ id, task, payload } 启动，{ cancel: id } 取消单项；只在任务实际退出后回复终态。
@@ -57,13 +62,33 @@ const tasks: Record<string, Task> = {
     }
     return { slept: ms }
   },
-  'import.scan': (payload, progress, signal) => {
-    const input = payload as { paths: string[]; history: ImportHistory[] }
+  async 'import.scan'(payload, progress, signal) {
+    const input = payload as { paths: string[]; history: ImportHistory[]; format?: 'notion'; destination: string }
+    if (input.format === 'notion') {
+      if ((await lstat(input.paths[0])).isSymbolicLink()) throw new Error('zip-link')
+      const original = await realpath(input.paths[0]),
+        rootHash = createHash('sha256').update(original).digest('hex')
+      if (extname(original).toLowerCase() === '.zip') {
+        await mkdir(dirname(input.destination), { recursive: true, mode: 0o700 })
+        await rm(input.destination, { recursive: true, force: true })
+        const skipped = await extractSafeZip(original, input.destination, signal, (p) => progress(p * 0.4))
+        const library = await scanLibrary([input.destination], input.history, (p) => progress(0.4 + 0.6 * p), signal, {
+          kind: 'notion',
+          rootHash,
+          label: basename(original, extname(original))
+        })
+        library.issues.push(...skipped.map((path) => ({ path, code: 'too-large' as const })))
+        return library
+      }
+      return scanLibrary(input.paths, input.history, progress, signal, { kind: 'notion', rootHash })
+    }
     return scanLibrary(input.paths, input.history, progress, signal)
   },
   async 'import.convert'(payload) {
-    const input = payload as { text: string; filename: string }
-    return importMarkdown(input.text, input.filename)
+    const input = payload as { text: string; filename: string; kind?: string; pages?: string[] }
+    return input.kind === 'notion'
+      ? convertNotion(input.text, input.filename, input.pages ?? [])
+      : importMarkdown(input.text, input.filename)
   }
 }
 

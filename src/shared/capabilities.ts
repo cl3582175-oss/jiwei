@@ -1301,7 +1301,7 @@ export const capabilities = {
     openLink: cap<void>()({ description: '在系统浏览器打开更新说明', params: [['url', z.string().max(2000).optional()]] })
   },
   importer: {
-    choose: cap<import('./importer').ImportScan | null>()({ description: '选择并扫描笔记库', params: [['mode', z.enum(['folder', 'files'])]] }),
+    choose: cap<import('./importer').ImportScan | null>()({ description: '选择并扫描笔记库', params: [['mode', z.enum(['folder', 'files', 'notion', 'notion-folder'])]] }),
     inspect: cap<import('./importer').ImportScan>()({ description: '开发测试：扫描本地笔记库', params: [['paths', z.array(z.string().max(4096)).min(1).max(5000)]] }),
     scan: cap<import('./importer').ImportScan>()({ description: '扫描进度与预览清单', params: [['id', z.string().max(64)]] }),
     cancelScan: cap<void>()({ description: '取消扫描', params: [['id', z.string().max(64)]] }),

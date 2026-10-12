@@ -1,7 +1,7 @@
 import { utilityProcess, type UtilityProcess } from 'electron'
 import { withRun } from './agent/context'
 import { join } from 'path'
-import { and, asc, desc, eq, inArray, lte } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, lte, sql } from 'drizzle-orm'
 import log from 'electron-log/main'
 import { getDb } from '../db'
 import { jobs } from '../db/schema'
@@ -25,6 +25,8 @@ export interface JobContext {
   /** 在工作进程中执行任务 */
   worker<T>(task: string, payload: unknown, signal?: AbortSignal): Promise<T>
   isCanceled(): boolean
+  /** System shutdown/pause aborts execution but keeps checkpoints resumable. */
+  isInterrupted?(): boolean
 }
 
 export interface JobKind<P = unknown> {
@@ -38,13 +40,16 @@ export interface JobKind<P = unknown> {
   onRetry?(payload: P): void
   /** 耗时较长、可以等到低谷时段再跑（v0.7.5，用户开启“低谷时段运行”后生效） */
   offPeak?: boolean
+  /** 低优先任务在其他到期任务之后调度，不抢占已经运行的任务。 */
+  priority?: 'low'
 }
 
 const kinds = new Map<string, JobKind>()
 const running = new Set<string>()
 const canceled = new Set<string>()
+const interrupted = new Set<string>()
 const controllers = new Map<string, AbortController>()
-const executions = new Set<Promise<void>>()
+const executions = new Map<Promise<void>, string>()
 let timer: NodeJS.Timeout | null = null
 /** 退出时置位：之后不再调度任何任务、不再写库 */
 let stopped = false
@@ -204,7 +209,8 @@ async function execute(r: Row): Promise<void> {
     },
     worker: (task, payload, signal) =>
       runInWorker(task, payload, ctx.progress, signal ? AbortSignal.any([abort.signal, signal]) : abort.signal),
-    isCanceled: () => canceled.has(r.id)
+    isCanceled: () => canceled.has(r.id),
+    isInterrupted: () => interrupted.has(r.id)
   }
   try {
     const result = await withRun({ purpose: r.kind, caller: 'job' }, () => kind.run(JSON.parse(r.payload), ctx))
@@ -215,12 +221,14 @@ async function execute(r: Row): Promise<void> {
     const attempts = r.attempts + 1
     const msg = voiceErrorText(e)
     log.warn('[jobs]', r.kind, r.id, 'failed', attempts, msg)
-    if (attempts < (kind.maxAttempts ?? MAX_ATTEMPTS)) setStatus(r.id, { status: 'queued', error: msg, runAfter: Date.now() + 5000 * 2 ** attempts })
+    if (attempts < (kind.maxAttempts ?? MAX_ATTEMPTS))
+      setStatus(r.id, { status: 'queued', error: msg, runAfter: Date.now() + 5000 * 2 ** attempts })
     else setStatus(r.id, { status: 'failed', error: msg })
   } finally {
     running.delete(r.id)
     controllers.delete(r.id)
     canceled.delete(r.id)
+    interrupted.delete(r.id)
     setImmediate(tick)
   }
 }
@@ -229,17 +237,26 @@ function tick(): void {
   if (stopped) return
   const free = CONCURRENCY - running.size
   if (free <= 0) return
+  const low = [...kinds].filter(([, kind]) => kind.priority === 'low').map(([name]) => name)
+  const priority = low.length
+    ? [
+        sql`CASE WHEN ${jobs.kind} IN (${sql.join(
+          low.map((name) => sql`${name}`),
+          sql`, `
+        )}) THEN 1 ELSE 0 END`
+      ]
+    : []
   const due = getDb()
     .select()
     .from(jobs)
     .where(and(eq(jobs.status, 'queued'), lte(jobs.runAfter, Date.now())))
-    .orderBy(asc(jobs.createdAt))
+    .orderBy(...priority, asc(jobs.createdAt))
     .limit(free)
     .all()
     .filter((r) => !running.has(r.id))
   for (const r of due) {
     const run = execute(r)
-    executions.add(run)
+    executions.set(run, r.kind)
     void run.finally(() => executions.delete(run))
   }
 }
@@ -248,9 +265,11 @@ export function startJobs(): void {
   stopped = false
   for (const row of getDb().select().from(jobs).where(eq(jobs.status, 'running')).all()) {
     if (kinds.get(row.kind)?.retryOnRestart === false)
-      getDb().update(jobs)
+      getDb()
+        .update(jobs)
         .set({ status: 'failed', error: 'Interrupted; automatic retry is disabled', updatedAt: Date.now() })
-        .where(eq(jobs.id, row.id)).run()
+        .where(eq(jobs.id, row.id))
+        .run()
   }
   // 上次退出时仍在运行的任务重新排队
   getDb().update(jobs).set({ status: 'queued', updatedAt: Date.now() }).where(eq(jobs.status, 'running')).run()
@@ -261,7 +280,10 @@ export function startJobs(): void {
 export function stopJobs(): void {
   stopped = true
   // 正在运行的任务标记为取消：它们的后续结果不会再写入
-  running.forEach((id) => canceled.add(id))
+  running.forEach((id) => {
+    if (!canceled.has(id)) interrupted.add(id)
+    canceled.add(id)
+  })
   for (const abort of controllers.values()) abort.abort()
   if (timer) clearInterval(timer)
   timer = null
@@ -269,9 +291,9 @@ export function stopJobs(): void {
   child = null
 }
 /** 替换数据库或个人档案前，等待工作进程与临时明文清理完成。 */
-export async function stopJobsAndWait(): Promise<void> {
+export async function stopJobsAndWait(kindsToWait?: readonly string[]): Promise<void> {
   stopJobs()
-  await Promise.allSettled([...executions])
+  await Promise.allSettled([...executions].filter(([, kind]) => !kindsToWait || kindsToWait.includes(kind)).map(([run]) => run))
 }
 
 export function listJobs(): Job[] {
@@ -287,7 +309,11 @@ export function cancelJob(id: string, afterCommit?: (effect: () => void) => void
     kinds.get(job.kind)?.onCancel?.(JSON.parse(job.payload))
   })
   // 外层生命周期事务可能回滚，不能提前中断仍属于用户的工作。
-  const effect = (): void => { canceled.add(id); controllers.get(id)?.abort() }
+  const effect = (): void => {
+    interrupted.delete(id)
+    canceled.add(id)
+    controllers.get(id)?.abort()
+  }
   if (afterCommit) afterCommit(effect)
   else effect()
 }

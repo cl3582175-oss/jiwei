@@ -5,12 +5,13 @@ export interface MatchEntry {
 }
 import { posix } from 'path'
 export function matchNote<T extends MatchEntry>(target: string, from: string, entries: T[], wiki = true): T | null {
+  target = target.replace(/#.*$/, '')
   try {
     target = decodeURIComponent(target)
   } catch {
     return null
   }
-  target = target.normalize('NFC').replace(/\\/g, '/').replace(/#.*$/, '')
+  target = target.normalize('NFC').replace(/\\/g, '/')
   if (!target || target.startsWith('/') || /^[a-z]:/i.test(target)) return null
   const noExt = (p: string): string => p.replace(/\.(md|markdown|txt|csv)$/i, '').normalize('NFC')
   const local = posix.normalize(posix.join(posix.dirname(from), target))

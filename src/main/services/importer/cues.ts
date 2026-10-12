@@ -39,6 +39,7 @@ export function registerImportCueJob(): void {
   registerJobKind<{ runId: string; noteId: string }>(KIND, {
     title: () => 'Suggest imported note cues',
     offPeak: true,
+    priority: 'low',
     maxAttempts: 1,
     async run({ runId, noteId }, ctx) {
       const guard = (): void => {

@@ -106,6 +106,8 @@ export function getNote(id: string): Note | null {
 }
 
 export function createNote(init?: {
+  /** Main-process import checkpoint; the renderer cannot supply an ID. */
+  id?: string
   categoryId?: string | null
   title?: string
   kind?: NoteKind
@@ -116,7 +118,7 @@ export function createNote(init?: {
   // 复盘笔记（review）沿用康奈尔结构：线索栏是引导问题，笔记栏是回答；其他类型在对应版本实现
   if (kind !== 'cornell' && kind !== 'review') throw new Error(`Note kind "${kind}" is not available yet`)
   const now = Date.now()
-  const id = newId()
+  const id = init?.id ?? newId()
   getDb()
     .insert(notes)
     .values({

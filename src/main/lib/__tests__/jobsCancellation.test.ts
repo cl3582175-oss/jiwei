@@ -50,7 +50,7 @@ vi.mock('../../db', () => ({
 vi.mock('../../events', () => ({ emit: vi.fn() }))
 vi.mock('electron', () => ({ utilityProcess: { fork: vi.fn() } }))
 vi.mock('electron-log/main', () => ({ default: { warn: vi.fn() } }))
-import { cancelJob, registerJobKind, retryJob, retryOrEnqueue, startJobs, stopJobs } from '../../services/jobs'
+import { cancelJob, registerJobKind, retryJob, retryOrEnqueue, startJobs, stopJobs, stopJobsAndWait } from '../../services/jobs'
 let counter = 0
 const job = (): Row => ({
   id: `job-${++counter}`,
@@ -76,6 +76,69 @@ afterEach(() => {
   vi.useRealTimers()
 })
 describe('job cancellation coordination', () => {
+  it('can drain import checkpoints on quit without waiting for unrelated uninterruptible work', async () => {
+    let release!: () => void,
+      checkpoint = false,
+      drained = false
+    const pending = new Promise<void>((r) => {
+      release = r
+    })
+    registerJobKind('test-stalled', {
+      title: () => '',
+      run: async () => {
+        await pending
+      }
+    })
+    registerJobKind('import.run', {
+      title: () => '',
+      run: async (_payload: unknown, ctx: JobContext) => {
+        await new Promise<void>((resolve) => ctx.signal!.addEventListener('abort', () => resolve(), { once: true }))
+        checkpoint = true
+      }
+    })
+    state.rows = [
+      { ...job(), kind: 'test-stalled' },
+      { ...job(), kind: 'import.run' }
+    ]
+    startJobs()
+    const stopping = stopJobsAndWait(['import.run']).then(() => {
+      drained = true
+    })
+    try {
+      for (let i = 0; i < 20; i++) await Promise.resolve()
+      expect(checkpoint).toBe(true)
+      expect(drained).toBe(true)
+    } finally {
+      release()
+      await stopping
+      await Promise.resolve()
+    }
+  })
+  it('distinguishes system suspension from explicit cancellation and restarts the interrupted job', async () => {
+    let systemInterrupted: boolean | undefined
+    const cancel = vi.fn()
+    const run = vi
+      .fn()
+      .mockImplementationOnce(async (_payload: unknown, ctx: JobContext) => {
+        await new Promise<void>((resolve) => ctx.signal!.addEventListener('abort', () => resolve(), { once: true }))
+        systemInterrupted = (ctx as JobContext & { isInterrupted?: () => boolean }).isInterrupted?.()
+      })
+      .mockImplementationOnce(async (_payload: unknown, ctx: JobContext) => {
+        expect(ctx.isCanceled()).toBe(false)
+      })
+    registerJobKind('test-cancel', { title: () => '', onCancel: cancel, run })
+    const row = job()
+    state.rows = [row]
+    startJobs()
+    await stopJobsAndWait()
+    expect(systemInterrupted).toBe(true)
+    expect(cancel).not.toHaveBeenCalled()
+    expect(row.status).toBe('running')
+    startJobs()
+    await vi.advanceTimersByTimeAsync(1)
+    expect(run).toHaveBeenCalledTimes(2)
+    expect(row.status).toBe('done')
+  })
   it('notifies queued cancellation without invoking run, and explicit retry clears its cancellation marker', async () => {
     const row = job()
     // 先启动空队列，再加入待取消的任务，确保 handler 尚未执行。

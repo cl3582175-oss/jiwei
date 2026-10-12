@@ -20,6 +20,9 @@ export type ImportIssueCode =
   | 'interrupted'
   | 'notion-missing'
   | 'extra-columns'
+  | 'csv-columns'
+  | 'long-title'
+  | 'tag-limit'
 export interface ImportIssue {
   path: string
   code: ImportIssueCode

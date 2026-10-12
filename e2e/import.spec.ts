@@ -9,6 +9,7 @@ import { createServer, type Server } from 'http'
 import type { ImportOptions, ImportScan } from '../src/shared/importer'
 import * as Y from 'yjs'
 import { yDocToProsemirrorJSON } from '@tiptap/y-tiptap'
+import JSZip from 'jszip'
 let env: SafetyApp
 test.afterEach(async () => {
   await env?.close()
@@ -95,6 +96,8 @@ test('Obsidian user import preserves structure, privacy, links and resources; du
   )
   await env.page.evaluate((id) => window.jiwei.trash.restore('note', id), main.id)
   expect((await env.page.evaluate((id) => window.jiwei.notes.get(id), main.id))?.deletedAt).toBeNull()
+  const restoredScan = await scanAt(d)
+  expect(restoredScan.entries.find((e) => e.path === '记忆.md')?.status).toBe('unchanged')
 })
 test('Markdown folder import renders a dark English result', async () => {
   env = await startSafetyApp()
@@ -119,9 +122,9 @@ test('Markdown folder import renders a dark English result', async () => {
   await env.page.screenshot({ path: join(shots, 'markdown-result-dark-en.png') })
 })
 
-async function scanAt(path: string): Promise<ImportScan> {
+async function scanAt(path: string, mode: 'folder' | 'notion' | 'notion-folder' = 'folder'): Promise<ImportScan> {
   await pickOpen(env, path)
-  const start = await env.page.evaluate(() => window.jiwei.importer.choose('folder'))
+  const start = await env.page.evaluate((mode) => window.jiwei.importer.choose(mode), mode)
   expect(start).toBeTruthy()
   await expect.poll(() => env.page.evaluate((id) => window.jiwei.importer.scan(id).then((s) => s.status), start!.id)).toBe('ready')
   return env.page.evaluate((id) => window.jiwei.importer.scan(id), start!.id)
@@ -136,6 +139,93 @@ const importOptions = (scan: ImportScan, extra: Partial<ImportOptions> = {}): Im
   aiCues: false,
   importChanged: false,
   ...extra
+})
+
+test('Markdown file picker imports referenced local images and PDFs while leaving adjacent notes unselected', async () => {
+  env = await startSafetyApp()
+  const d = mkdtempSync(join(tmpdir(), 'jiwei-import-files-'))
+  mkdirSync(join(d, '附件'))
+  writeFileSync(join(d, 'A.md'), '# 文件选择样例\n\n![](附件/示意.png) [阅读材料](附件/材料.pdf) [根目录材料](材料.pdf)')
+  writeFileSync(join(d, 'B.md'), '# 未选择的邻居')
+  writeFileSync(
+    join(d, '附件/示意.png'),
+    Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==', 'base64')
+  )
+  writeFileSync(join(d, '附件/材料.pdf'), makePdf([['Original file-selection fixture.']]))
+  writeFileSync(join(d, '材料.pdf'), makePdf([['Different root material in the file-selection fixture.']]))
+  await entry()
+  await pickOpen(env, join(d, 'A.md'))
+  const wizard = env.page.getByTestId('import-wizard')
+  await wizard.getByRole('button', { name: '选择 Markdown 文件', exact: true }).click()
+  await expect(wizard.getByTestId('import-tree')).toBeVisible()
+  await expect(wizard).toContainText('1 篇笔记')
+  await expect(wizard).toContainText('3 个附件')
+  await wizard.getByRole('button', { name: '预览：文件选择样例', exact: true }).click()
+  await expect(wizard.getByTestId('import-preview').locator('img')).toBeVisible()
+  await wizard.getByRole('button', { name: '下一步：导入选项' }).click()
+  await wizard.getByRole('button', { name: '开始导入', exact: true }).click()
+  await expect(wizard.getByTestId('import-result')).toBeVisible()
+  expect((await env.page.evaluate(() => window.jiwei.notes.list({}))).some((n) => n.title === '未选择的邻居')).toBe(false)
+  expect((await env.page.evaluate(() => window.jiwei.sources.list({}))).filter((s) => s.originalName === '材料.pdf')).toHaveLength(2)
+  await wizard.getByRole('button', { name: '查看：文件选择样例', exact: true }).click()
+  await expect(env.page.locator('.tiptap img[src^="jiwei://asset/"]')).toBeVisible()
+  await expect(env.page.getByRole('link', { name: '阅读材料', exact: true })).toHaveAttribute('href', /^jiwei:\/\/source\//)
+  const nested = await env.page.getByRole('link', { name: '阅读材料', exact: true }).getAttribute('href'),
+    root = await env.page.getByRole('link', { name: '根目录材料', exact: true }).getAttribute('href')
+  expect(root).toMatch(/^jiwei:\/\/source\//)
+  expect(root).not.toBe(nested)
+})
+
+test('Notion ZIP and extracted folder create linked database tables, readable hierarchy and reversible notes', async () => {
+  env = await startSafetyApp()
+  await entry()
+  await pickOpen(env, resolve('e2e/fixtures/import/notion-export.zip'))
+  const wizard = env.page.getByTestId('import-wizard')
+  await wizard.getByRole('button', { name: '选择 Notion ZIP', exact: true }).click({ timeout: 5000 })
+  await expect(wizard.getByTestId('import-tree')).toBeVisible()
+  await expect(wizard).toContainText('4 篇笔记')
+  await wizard.getByRole('button', { name: '预览：阅读库', exact: true }).click()
+  await expect(wizard.getByTestId('import-preview').locator('table')).toContainText('第二行含"引号"')
+  const p5shots = resolve('.superpowers/sdd/v0.11-update-sign-import/evidence/P5/shots')
+  mkdirSync(p5shots, { recursive: true })
+  await env.page.screenshot({ path: join(p5shots, 'notion-light.png') })
+  await wizard.getByRole('button', { name: '下一步：导入选项' }).click()
+  await wizard.getByRole('button', { name: '开始导入', exact: true }).click()
+  await expect(wizard.getByTestId('import-result')).toBeVisible()
+  await expect(wizard).toContainText('成功 4')
+  const runId = await wizard.getByTestId('import-result').getAttribute('data-run-id')
+  const notes = await env.page.evaluate(() => window.jiwei.notes.list({}))
+  expect(notes.map((n) => n.title)).toEqual(expect.arrayContaining(['欢迎', '观察记录', '阅读库', '晨读']))
+  const categories = await env.page.evaluate(() => window.jiwei.categories.list('note'))
+  expect(categories.map((c) => c.name)).toEqual(expect.arrayContaining(['欢迎', '阅读库']))
+  expect(categories.some((c) => /[a-f\d]{32}/i.test(c.name))).toBe(false)
+  await wizard.getByRole('button', { name: '查看：阅读库', exact: true }).click()
+  const morning = notes.find((n) => n.title === '晨读')!
+  await expect(env.page.getByRole('link', { name: '晨读', exact: true })).toHaveAttribute('href', `jiwei://note/${morning.id}`)
+  await env.page.getByRole('link', { name: '晨读', exact: true }).click()
+  await expect(env.page.getByRole('textbox', { name: '笔记标题' })).toHaveValue('晨读')
+  const repeated = await scanAt(resolve('e2e/fixtures/import/notion-export.zip'), 'notion')
+  expect(repeated.entries.every((e) => e.status === 'unchanged')).toBe(true)
+  await env.page.evaluate((id) => window.jiwei.importer.undo(id!), runId)
+  const trash = await env.page.evaluate(() => window.jiwei.trash.list())
+  expect(trash.filter((i) => notes.some((n) => n.id === i.id))).toHaveLength(4)
+  const folder = mkdtempSync(join(tmpdir(), 'jiwei-notion-folder-'))
+  cpSync(resolve('e2e/fixtures/import/notion-format'), folder, { recursive: true })
+  const folderRun = await runImport(await scanAt(folder, 'notion-folder'))
+  expect(folderRun.items.filter((i) => i.status === 'imported')).toHaveLength(4)
+})
+
+test('unsafe Notion ZIP is rejected with a readable reason and creates no notes', async () => {
+  env = await startSafetyApp()
+  const d = mkdtempSync(join(tmpdir(), 'jiwei-notion-unsafe-')),
+    file = join(d, 'unsafe.zip')
+  writeFileSync(file, await new JSZip().file('../escape.md', '# Escape').generateAsync({ type: 'nodebuffer' }))
+  await entry()
+  await pickOpen(env, file)
+  const wizard = env.page.getByTestId('import-wizard')
+  await wizard.getByRole('button', { name: '选择 Notion ZIP', exact: true }).click({ timeout: 5000 })
+  await expect(wizard).toContainText('压缩包包含不安全的路径')
+  expect(await env.page.evaluate(() => window.jiwei.notes.list({}))).toEqual([])
 })
 async function runImport(scan: ImportScan, extra: Partial<ImportOptions> = {}) {
   const result = await env.page.evaluate(({ id, options }) => window.jiwei.importer.start(id, options), {
@@ -252,7 +342,15 @@ test('optional AI cues use metered proposals and block a note excluded before it
     })
     expect(estimate.calls).toBe(1)
     expect(estimate.cost).toBeGreaterThan(0)
-    const result = await runImport(scan, { aiCues: true })
+    await entry()
+    await choose(d)
+    const wizard = env.page.getByTestId('import-wizard')
+    await wizard.getByRole('button', { name: '下一步：导入选项' }).click()
+    await wizard.getByRole('checkbox', { name: '用 AI 为导入的笔记补线索问题', exact: true }).check()
+    await wizard.getByRole('button', { name: '开始导入', exact: true }).click()
+    await expect(wizard.getByTestId('import-result')).toBeVisible()
+    const id = await wizard.getByTestId('import-result').getAttribute('data-run-id')
+    const result = await env.page.evaluate((id) => window.jiwei.importer.run(id!), id)
     expect(result.cueJobIds).toHaveLength(1)
     await env.page.evaluate((id) => window.jiwei.jobs.runNow(id), result.cueJobIds[0])
     const noteId = result.items[0].noteId!
@@ -266,6 +364,11 @@ test('optional AI cues use metered proposals and block a note excluded before it
     const usage = await env.page.evaluate(() => window.jiwei.usage.summary())
     expect(usage.byPurpose.find((p) => p.key === 'import.cues')?.calls).toBe(1)
     writeFileSync(join(d, '另一个.md'), '# 另一个\n\n待撤回的文本。')
+    await wizard.getByRole('button', { name: '导入笔记库', exact: true }).click()
+    await choose(d)
+    await wizard.getByRole('button', { name: '下一步：导入选项' }).click()
+    await expect(wizard.getByRole('checkbox', { name: '用 AI 为导入的笔记补线索问题', exact: true })).not.toBeChecked()
+    await wizard.getByRole('button', { name: '关闭', exact: true }).click()
     const next = await runImport(await scanAt(d), { aiCues: true })
     const privateId = next.items.find((i) => i.status === 'imported')!.noteId!
     await env.page.evaluate((id) => window.jiwei.notes.update(id, { aiExcluded: true }), privateId)
@@ -327,4 +430,63 @@ test('a process crash during import resumes from persisted checkpoints without c
   const completed = await env.page.evaluate((id) => window.jiwei.importer.run(id), run.id)
   expect(completed.items.filter((i) => i.status === 'imported')).toHaveLength(300)
   expect((await env.page.evaluate(() => window.jiwei.notes.list({}))).filter((n) => n.title.startsWith('恢复样例'))).toHaveLength(300)
+  writeFileSync(
+    resolve('.superpowers/sdd/v0.11-update-sign-import/evidence/P5/crash-shutdown-diagnostic.json'),
+    JSON.stringify({ userData, jobs: await env.page.evaluate(() => window.jiwei.jobs.list()) }, null, 2)
+  )
+})
+
+test('normal quit resumes a mixed unchanged and new import, preserves user edits and restores links to skipped notes', async () => {
+  env = await startSafetyApp()
+  const d = mkdtempSync(join(tmpdir(), 'jiwei-import-quit-'))
+  writeFileSync(join(d, '0.md'), '# 已有目标\n\n先前导入的笔记。')
+  const first = await scanAt(d)
+  const earlier = await env.page.evaluate(({ id, options }) => window.jiwei.importer.start(id, options), {
+    id: first.id,
+    options: importOptions(first)
+  })
+  await expect.poll(() => env.page.evaluate((id) => window.jiwei.importer.run(id).then((r) => r.status), earlier.id)).toBe('done')
+  const old = (await env.page.evaluate((id) => window.jiwei.importer.run(id), earlier.id)).items[0].noteId!
+  for (let i = 1; i <= 300; i++) writeFileSync(join(d, `${i}.md`), `# 退出续传 ${i}\n\n[[0|已有目标]]\n\n${'保留完整正文。'.repeat(500)}`)
+  const scan = await scanAt(d)
+  const run = await env.page.evaluate(({ id, options }) => window.jiwei.importer.start(id, options), {
+    id: scan.id,
+    options: importOptions(scan)
+  })
+  await expect
+    .poll(() => env.page.evaluate((id) => window.jiwei.importer.run(id).then((r) => r.progress > 0 && r.progress < 1), run.id))
+    .toBe(true)
+  const during = await env.page.evaluate(() => window.jiwei.notes.list({}))
+  const live = during.filter((n) => n.title.startsWith('退出续传'))
+  expect(live.length).toBeGreaterThan(0)
+  expect(live.every((n) => n.wordCount > 0 && n.excerpt.includes('保留完整正文'))).toBe(true)
+  const editing = live[0].id
+  await env.page.evaluate((id) => window.jiwei.notes.update(id, { title: '用户编辑保留' }), editing)
+  const userDoc = new Y.Doc()
+  Y.applyUpdate(userDoc, new Uint8Array(await env.page.evaluate(async (id) => Array.from(await window.jiwei.notes.loadDoc(id)), editing)))
+  const row = userDoc.getXmlFragment('default').toArray()[0] as Y.XmlElement,
+    body = row.toArray()[1] as Y.XmlElement,
+    paragraph = new Y.XmlElement('paragraph'),
+    text = new Y.XmlText()
+  text.insert(0, 'USER EDIT DURING IMPORT')
+  paragraph.insert(0, [text])
+  body.insert(body.length, [paragraph])
+  await env.page.evaluate(({ id, bytes }) => window.jiwei.notes.pushUpdate(id, new Uint8Array(bytes)), {
+    id: editing,
+    bytes: [...Y.encodeStateAsUpdate(userDoc)]
+  })
+  userDoc.destroy()
+  const userData = env.userData
+  await env.close()
+  env = await startSafetyApp({ userData })
+  await expect.poll(() => env.page.evaluate((id) => window.jiwei.importer.run(id).then((r) => r.status), run.id)).toBe('done')
+  const completed = await env.page.evaluate((id) => window.jiwei.importer.run(id), run.id)
+  expect(completed.items.filter((i) => i.status === 'imported')).toHaveLength(300)
+  expect(completed.items.filter((i) => i.status === 'skipped')).toHaveLength(1)
+  expect((await env.page.evaluate((id) => window.jiwei.notes.get(id), editing))?.title).toBe('用户编辑保留')
+  expect(JSON.stringify(await storedDoc(editing))).toContain('USER EDIT DURING IMPORT')
+  for (const item of completed.items.filter((i) => i.status === 'imported'))
+    expect(JSON.stringify(await storedDoc(item.noteId!))).toContain(`jiwei://note/${old}`)
+  await env.page.evaluate((id) => window.jiwei.importer.undo(id), run.id)
+  expect((await env.page.evaluate((id) => window.jiwei.notes.get(id), old))?.deletedAt).toBeNull()
 })

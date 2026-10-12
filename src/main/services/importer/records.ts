@@ -12,16 +12,22 @@ export interface ScanRecord {
   state: ImportScan
   paths: string[]
   library?: ScannedLibrary
+  format?: 'notion'
 }
 export interface RunRecord {
   state: Omit<ImportRun, 'items'>
   options: ImportOptions
   rootHash: string
+  folders?: Record<string, string>
 }
 export interface ItemRecord extends ImportItem {
   rootHash: string
   hash: string
   complete: boolean
+  /** UUID checkpoint only; the note is created atomically with its completed body. */
+  reservedNoteId?: string
+  /** An earlier run owns this note, so undo must never trash it. */
+  reusedNoteId?: string
 }
 export function readRecord<T>(key: string): T | null {
   const row = getDb()
@@ -55,8 +61,9 @@ export function getRun(id: string): ImportRun {
   return {
     ...run.state,
     items: items(id)
+      .filter((i) => i.complete)
       .sort((a, b) => a.path.localeCompare(b.path))
-      .map(({ rootHash: _root, hash: _hash, complete: _complete, ...item }) => item)
+      .map(({ rootHash: _root, hash: _hash, complete: _complete, reservedNoteId: _reserved, reusedNoteId: _reused, ...item }) => item)
   }
 }
 export function listRuns(): ImportRun[] {
@@ -66,16 +73,15 @@ export function listRuns(): ImportRun[] {
     .map((r) => getRun(r.state.id))
 }
 export function importHistory(): ImportHistory[] {
-  const active = new Set(
-    records<RunRecord>('run.')
-      .filter((r) => !r.state.undoneAt)
-      .map((r) => r.state.id)
-  )
+  const runs = records<RunRecord>('run.')
+  const active = new Set(runs.map((r) => r.state.id))
+  const at = new Map(runs.map((r) => [r.state.id, r.state.createdAt]))
   const rows = getDb()
     .select()
     .from(meta)
     .where(like(meta.key, `${PREFIX}item.%`))
     .all()
+    .sort((a, b) => (at.get(a.key.split('.')[3]) ?? 0) - (at.get(b.key.split('.')[3]) ?? 0) || a.key.localeCompare(b.key))
   return rows.flatMap((r) => {
     const i = JSON.parse(r.value) as ItemRecord
     if (!active.has(r.key.split('.')[3]) || !i.complete || i.status !== 'imported' || !i.noteId) return []

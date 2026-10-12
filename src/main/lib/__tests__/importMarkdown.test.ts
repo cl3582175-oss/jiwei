@@ -79,6 +79,20 @@ describe('Markdown library conversion', () => {
     expect(r.rows).toBeGreaterThan(1)
     expect((text(r.doc).match(/字/g) ?? []).length).toBe(9500)
   })
+  it('reports existing title and tag limits and retains overflow data in the document', () => {
+    const title = '原始标题'.repeat(140)
+    const tags = Array.from({ length: 120 }, (_, i) => `tag${i}`)
+    const r = importMarkdown(`---\ntitle: ${title}\ntags: [${tags.join(',')}]\n---\n原文`, '限制.md')
+    expect(r.title.length).toBeLessThanOrEqual(500)
+    expect(text(r.doc)).toContain(title)
+    expect(r.tags).toHaveLength(100)
+    expect(text(r.doc)).toContain('#tag119')
+    expect(r.issues).toEqual(expect.arrayContaining(['long-title', 'tag-limit']))
+  })
+  it('preserves URL-encoded hash characters in file names', () => {
+    const entry = { path: 'C# 11111111111111111111111111111111.md', title: 'C#', aliases: [] }
+    expect(matchNote('C%23%2011111111111111111111111111111111.md', 'source.md', [entry], false)?.path).toBe(entry.path)
+  })
 })
 describe('Obsidian shortest unique path matching', () => {
   const entries = [
@@ -97,4 +111,18 @@ describe('Obsidian shortest unique path matching', () => {
     expect(matchNote('不存在', '根.md', entries)).toBeNull()
     expect(matchNote('../../独立.md', '甲/来源.md', entries, false)).toBeNull()
   })
+})
+it('preserves literal reference markers even alongside actual links and code', () => {
+  const result = importMarkdown('Literal JIWEIIMPORTREF0END and JIWEIIMPORT0REF0END.\n\n[[A]] `JIWEIIMPORTREF0END`', 'Markers.md')
+  const text = JSON.stringify(result.doc)
+  expect(text).toContain('Literal JIWEIIMPORTREF0END and JIWEIIMPORT0REF0END.')
+  expect(result.refs).toHaveLength(1)
+  expect(text.match(/jiwei:\/\/import\/0/g)).toHaveLength(1)
+})
+
+it('keeps markers assembled by HTML stripping and entity decoding as literal source text', () => {
+  const result = importMarkdown('Literal JIWEIIMPORT0<span></span>REF0END. JIWEIIMPORT1&#82;EF0END. [[A]]', 'HTML-markers.md')
+  const text = JSON.stringify(result.doc)
+  expect(text).toContain('Literal JIWEIIMPORT0REF0END. JIWEIIMPORT1REF0END.')
+  expect(text.match(/jiwei:\/\/import\/0/g)).toHaveLength(1)
 })

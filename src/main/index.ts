@@ -31,7 +31,7 @@ import { registerRecording } from './services/recording'
 import { registerLensJobs } from './services/lenses'
 import { registerDigestJob } from './services/digest'
 import { stopVoiceprint } from './services/voiceprint'
-import { pruneJobs, setOffPeakPolicy, startJobs, stopJobs } from './services/jobs'
+import { pruneJobs, setOffPeakPolicy, startJobs, stopJobsAndWait } from './services/jobs'
 import { hasOffPeak } from './services/agent/pricing'
 import { startRateUpdates } from './services/agent/rates'
 import { isDeepSeekPeak } from '@shared/ai'
@@ -288,7 +288,9 @@ app.on('before-quit', (e) => {
       stopMemoryLearning()
       stopReminders()
       shutdownEmbedding()
-      stopJobs()
+      // Import checkpoints must settle before closing the database. Other legacy
+      // handlers may await noncancelable network work; they retain stopJobs semantics.
+      await stopJobsAndWait(['import.scan', 'import.run'])
       stopMoss()
       stopVoiceprint()
       await Promise.all([backupOperation.stop(), cryptoOperation.stop()])

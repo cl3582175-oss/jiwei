@@ -170,7 +170,7 @@ export async function importPaths(
     recordActivity('source_add')
     out.imported.push(getSource(id)!)
     if (canSegment(row.ext)) enqueueSegment(id)
-    else if (isMedia(row.ext)) {
+    else if (isMedia(row.ext) && !init?.aiExcluded) {
       // 视频 / 音频：同名字幕优先；否则转写引擎已安装时自动转写
       const sub = findSidecarSubtitles(p)
       if (sub) {

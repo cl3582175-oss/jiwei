@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
 export async function updateFixture(
-  options: { platform?: 'darwin' | 'win32'; corrupt?: boolean; offline?: boolean; userData?: string; delay?: number } = {}
+  options: { platform?: 'darwin' | 'win32' | 'linux'; corrupt?: boolean; offline?: boolean; userData?: string; delay?: number } = {}
 ) {
   const root = mkdtempSync(join(tmpdir(), 'jiwei-update-e2e-'))
   const userData = options.userData ?? join(root, 'user-data'),

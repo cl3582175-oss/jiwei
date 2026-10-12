@@ -6,6 +6,8 @@ import { createHash } from 'crypto'
 import { importMarkdown, decodeImportText, type ImportReference } from '../../lib/importMarkdown'
 import { matchNote } from './obsidian'
 import { cueBodies } from './cuePlan'
+import { convertNotion } from './notion'
+import type { ImportKind } from '@shared/importer'
 export interface ScannedFile {
   relative: string
   absolute: string
@@ -88,7 +90,8 @@ export async function scanLibrary(
   paths: string[],
   history: ImportHistory[],
   progress: (n: number) => void,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  options?: { kind?: ImportKind; rootHash?: string; label?: string }
 ): Promise<ScannedLibrary> {
   const selected: string[] = []
   for (const p of paths) {
@@ -100,15 +103,15 @@ export async function scanLibrary(
   while (!selected.every((p) => inside(root, p))) root = dirname(root)
   const r: ScannedLibrary = {
     root,
-    rootHash: hash(root),
-    label: basename(root),
-    kind: 'markdown',
+    rootHash: options?.rootHash ?? hash(root),
+    label: options?.label ?? basename(root),
+    kind: options?.kind ?? 'markdown',
     entries: [],
     files: [],
     issues: [],
     stats: { notes: 0, attachments: 0, tags: 0, links: 0, tasks: 0 }
   }
-  if (firstStat.isDirectory()) {
+  if (firstStat.isDirectory() && !options?.kind) {
     try {
       const obs = await lstat(join(root, '.obsidian'))
       if (obs.isDirectory() && !obs.isSymbolicLink()) {
@@ -165,6 +168,7 @@ export async function scanLibrary(
     }
   }
   for (const p of selected) await visit(p)
+  const pages = [...new Set(candidates)].filter((p) => /\.(md|markdown|txt)$/i.test(p)).map((p) => relative(root, p).split(sep).join('/'))
   const parsed = new Map<string, ImportReference[]>()
   for (const [index, p] of [...new Set(candidates)].sort().entries()) {
     signal?.throwIfAborted()
@@ -172,7 +176,7 @@ export async function scanLibrary(
     try {
       const bytes = await safeBytes(root, p),
         file = { absolute: p, relative: key, hash: hash(bytes), size: bytes.byteLength }
-      if (!/\.(md|markdown|txt)$/i.test(extname(p))) {
+      if (!/\.(md|markdown|txt)$/i.test(extname(p)) && !(r.kind === 'notion' && /\.csv$/i.test(p))) {
         r.files.push(file)
         continue
       }
@@ -181,9 +185,14 @@ export async function scanLibrary(
         continue
       }
       const decoded = decodeImportText(bytes),
-        converted = importMarkdown(decoded.text, key)
+        converted = r.kind === 'notion' ? convertNotion(decoded.text, key, pages) : importMarkdown(decoded.text, key)
       if (decoded.encoding === 'GBK') r.issues.push({ path: key, code: 'encoding' })
-      for (const code of converted.issues) r.issues.push({ path: key, code: code as 'invalid-frontmatter' })
+      for (const code of converted.issues)
+        r.issues.push({
+          path: key,
+          code: code as 'invalid-frontmatter',
+          ...(converted.issueCounts?.[code] ? { count: converted.issueCounts[code] } : {})
+        })
       if (converted.ignored.length) r.issues.push({ path: key, code: 'ignored', count: converted.ignored.length })
       const prior = history.filter((h) => h.rootHash === r.rootHash && h.path === key).at(-1)
       const cues = cueBodies(converted.doc)
@@ -208,6 +217,39 @@ export async function scanLibrary(
     progress(0.2 + (0.8 * (index + 1)) / candidates.length)
     await new Promise<void>((done) => setImmediate(done))
   }
+  // A file selection authorizes its explicit relative resources, not every
+  // neighboring note. Keep the same root/hidden/symlink/size limits as folders.
+  if (!firstStat.isDirectory()) {
+    const attempted = new Set<string>()
+    for (const [from, refs] of parsed)
+      for (const ref of refs) {
+        signal?.throwIfAborted()
+        if (ref.kind === 'note') continue
+        let target: string
+        try {
+          target = decodeURIComponent(ref.target).replace(/\\/g, '/').normalize('NFC')
+        } catch {
+          continue
+        }
+        if (isAbsolute(target) || /^[a-z]:/i.test(target)) continue
+        const key = posix.normalize(posix.join(posix.dirname(from), target)),
+          path = join(root, ...key.split('/'))
+        if (!inside(root, path) || hidden(key) || attempted.has(key) || r.files.some((f) => f.relative.normalize('NFC') === key)) continue
+        attempted.add(key)
+        try {
+          const stat = await lstat(path)
+          if (!stat.isFile() && !stat.isSymbolicLink()) continue
+          await visit(path)
+          if (!candidates.includes(path)) continue
+          const bytes = await safeBytes(root, path)
+          r.files.push({ absolute: path, relative: key, hash: hash(bytes), size: bytes.byteLength })
+        } catch (error) {
+          if (signal?.aborted || (error instanceof Error && error.message === 'library-limit')) throw error
+          if ((error as NodeJS.ErrnoException).code !== 'ENOENT')
+            r.issues.push({ path: key, code: error instanceof Error && error.message === 'symlink' ? 'symlink' : 'unreadable' })
+        }
+      }
+  }
   const assets = new Set<string>()
   for (const [key, refs] of parsed) {
     let broken = 0
@@ -224,6 +266,7 @@ export async function scanLibrary(
     if (broken) r.issues.push({ path: key, code: 'broken-link', count: broken })
   }
   r.stats.notes = r.entries.length
+  if (r.kind === 'notion') r.issues.push({ path: '', code: 'notion-missing' })
   r.stats.attachments = assets.size
   r.stats.tags = new Set(r.entries.flatMap((e) => e.tags)).size
   r.stats.tasks = r.entries.reduce((n, e) => n + e.tasks, 0)

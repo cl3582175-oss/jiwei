@@ -5,6 +5,23 @@ import { updateFixture } from './fixtures/updateApp'
 
 const shots = '.superpowers/sdd/v0.11-update-sign-import/evidence/P3/shots'
 
+for (const platform of ['darwin', 'linux'] as const) {
+  test(`${platform} automatic check announces available updates outside settings and supports later`, async () => {
+    const env = await updateFixture({ platform, delay: 500 })
+    try {
+      await expect(env.page.getByTestId('update-available-notice')).toContainText('发现新版本 1.0.0')
+      await env.page.getByTestId('update-available-notice').getByRole('button', { name: '查看更新', exact: true }).click()
+      await expect(env.page.getByTestId('update-settings')).toContainText('发现新版本 1.0.0')
+      await env.page.keyboard.press('Escape')
+      await env.page.getByTestId('update-available-notice').getByRole('button', { name: '稍后', exact: true }).click()
+      await expect(env.page.getByTestId('update-available-notice')).toHaveCount(0)
+      expect(env.requests.some((path) => /\.(dmg|exe)$/.test(path))).toBe(false)
+    } finally {
+      await env.close()
+    }
+  })
+}
+
 test('macOS manual: real feed check, progress, verified dmg and replacement guide', async () => {
   const env = await updateFixture()
   try {

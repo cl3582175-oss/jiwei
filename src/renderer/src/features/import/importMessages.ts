@@ -4,6 +4,18 @@ export const importerZh = {
   intro: '导入 Markdown、Obsidian 或 Notion 导出。先预览，再创建笔记；可以整体撤销。',
   folder: '选择文件夹',
   files: '选择 Markdown 文件',
+  notion: '选择 Notion ZIP',
+  notionFolder: '选择 Notion 文件夹',
+  scanErrors: {
+    'scan-failed': '无法扫描所选来源。请检查权限、可用空间或重新选择。',
+    'zip-path': '压缩包包含不安全的路径，已拒绝解包。',
+    'zip-link': '压缩包包含符号链接或特殊文件，已拒绝解包。',
+    'zip-limit': '压缩包超过 2 GB 或 50000 个文件上限。请分批导出。',
+    'zip-format': '此 ZIP 格式不支持或元数据损坏。可先解压，再选择 Notion 文件夹。',
+    'zip-size': '压缩内容与声明的大小不一致，已停止解包。',
+    'zip-integrity': '压缩包校验失败，请重新导出。',
+    'zip-extract': '无法写入解压目录，请检查空间与权限。'
+  },
   history: '导入历史',
   close: '关闭',
   cancel: '取消任务',
@@ -45,7 +57,10 @@ export const importerZh = {
     'excluded-target': '链接目标未选择，保留为文字',
     interrupted: '导入中断',
     'notion-missing': 'Notion 导出时未包含嵌入的数据库视图、同步块等内容',
-    'extra-columns': '数据库超过 12 列，额外列未导入'
+    'extra-columns': '数据库超过 12 列，额外列未导入',
+    'csv-columns': 'CSV 行与表头列数不一致，已补空或忽略多余单元格',
+    'long-title': '标题超过现有 500 字上限，完整标题保留在正文',
+    'tag-limit': '标签超过现有 100 个或名称 100 字上限，超出内容保留在正文'
   },
   destination: '导入到',
   newCategory: '新分类',
@@ -86,6 +101,18 @@ export const importerEn = {
   intro: 'Import Markdown, Obsidian or a Notion export. Preview before creating notes; undo an entire import later.',
   folder: 'Choose folder',
   files: 'Choose Markdown files',
+  notion: 'Choose Notion ZIP',
+  notionFolder: 'Choose Notion folder',
+  scanErrors: {
+    'scan-failed': 'Unable to scan this source. Check permissions and available space, or choose it again.',
+    'zip-path': 'The archive contains unsafe paths; extraction was rejected.',
+    'zip-link': 'The archive contains symbolic links or special files; extraction was rejected.',
+    'zip-limit': 'The archive exceeds 2 GB or 50,000 files. Export in batches.',
+    'zip-format': 'Unsupported ZIP format or damaged metadata. Extract it first, then choose the Notion folder.',
+    'zip-size': 'Inflated data exceeds its declared size; extraction stopped.',
+    'zip-integrity': 'Archive integrity check failed. Export it again.',
+    'zip-extract': 'Unable to write extracted files. Check available space and permissions.'
+  },
   history: 'Import history',
   close: 'Close',
   cancel: 'Cancel task',
@@ -127,7 +154,10 @@ export const importerEn = {
     'excluded-target': 'Target was not selected; kept as text',
     interrupted: 'Import interrupted',
     'notion-missing': 'Notion did not export embedded database views, synced blocks and similar content',
-    'extra-columns': 'Columns beyond the first 12 were omitted'
+    'extra-columns': 'Columns beyond the first 12 were omitted',
+    'csv-columns': 'CSV row width differs from the header; missing cells were padded and extra cells omitted',
+    'long-title': 'Title exceeds the existing 500-character limit; the full title is kept in the body',
+    'tag-limit': 'Tags exceed the existing 100-tag or 100-character name limit; overflow is kept in the body'
   },
   destination: 'Destination',
   newCategory: 'New category',

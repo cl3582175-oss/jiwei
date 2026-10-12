@@ -33,6 +33,7 @@ import { audit } from '../agent/audit'
 import { estimateCues, enqueueCues } from './cues'
 import { ImportOptionsSchema, type ImportOptions, type ImportPreview, type ImportRun, type ImportScan } from '@shared/importer'
 import type { DocNode } from '@shared/types'
+import { stripNotionId } from './notion'
 
 export { getRun, listRuns }
 const SCAN = 'import.scan',
@@ -43,11 +44,11 @@ export function getScan(id: string): ImportScan {
   if (!row) throw new Error('Import scan not found')
   return row.state
 }
-export function beginScan(paths: string[]): ImportScan {
+export function beginScan(paths: string[], format?: 'notion'): ImportScan {
   const id = newId()
   const state: ImportScan = {
     id,
-    kind: 'markdown',
+    kind: format ?? 'markdown',
     label: basename(paths[0]),
     status: 'queued',
     jobId: '',
@@ -58,17 +59,29 @@ export function beginScan(paths: string[]): ImportScan {
   }
   getDb().transaction(() => {
     state.jobId = enqueue(SCAN, { id })
-    saveRecord(`scan.${id}`, { state, paths } satisfies ScanRecord)
+    saveRecord(`scan.${id}`, { state, paths, format } satisfies ScanRecord)
   })
   return state
 }
-export async function chooseLibrary(win: BrowserWindow | null, mode: 'folder' | 'files'): Promise<ImportScan | null> {
+export async function chooseLibrary(
+  win: BrowserWindow | null,
+  mode: 'folder' | 'files' | 'notion' | 'notion-folder'
+): Promise<ImportScan | null> {
   const options: Electron.OpenDialogOptions = {
-    properties: mode === 'folder' ? ['openDirectory'] : ['openFile', 'multiSelections'],
-    ...(mode === 'files' ? { filters: [{ name: 'Markdown', extensions: ['md', 'markdown', 'txt'] }] } : {})
+    properties:
+      mode === 'folder' || mode === 'notion-folder'
+        ? ['openDirectory']
+        : mode === 'notion'
+          ? ['openFile']
+          : ['openFile', 'multiSelections'],
+    ...(mode === 'files'
+      ? { filters: [{ name: 'Markdown', extensions: ['md', 'markdown', 'txt'] }] }
+      : mode === 'notion'
+        ? { filters: [{ name: 'Notion ZIP', extensions: ['zip'] }] }
+        : {})
   }
   const result = await (win ? dialog.showOpenDialog(win, options) : dialog.showOpenDialog(options))
-  return result.canceled || !result.filePaths.length ? null : beginScan(result.filePaths)
+  return result.canceled || !result.filePaths.length ? null : beginScan(result.filePaths, mode.startsWith('notion') ? 'notion' : undefined)
 }
 function scanRecord(id: string): ScanRecord & { library: ScannedLibrary } {
   const row = readRecord<ScanRecord>(`scan.${id}`)
@@ -78,7 +91,12 @@ function scanRecord(id: string): ScanRecord & { library: ScannedLibrary } {
 async function conversion(library: ScannedLibrary, path: string, ctx?: JobContext): Promise<ConvertedMarkdown> {
   const file = library.files.find((f) => f.relative === path)
   if (!file) throw new Error('Unknown source')
-  const input = { text: decodeImportText(await readChecked(library, file)).text, filename: path }
+  const input = {
+    text: decodeImportText(await readChecked(library, file)).text,
+    filename: path,
+    kind: library.kind,
+    pages: library.entries.filter((e) => !/\.csv$/i.test(e.path)).map((e) => e.path)
+  }
   return ctx ? ctx.worker<ConvertedMarkdown>('import.convert', input) : runInWorker<ConvertedMarkdown>('import.convert', input)
 }
 export async function preview(id: string, path: string): Promise<ImportPreview> {
@@ -206,17 +224,20 @@ async function importRun(id: string, ctx: JobContext): Promise<void> {
       continue
     }
     const saved = readRecord<ItemRecord>(itemKey(id, entry.path))
+    const existing = past.filter((h) => h.rootHash === library.rootHash && h.path === entry.path).at(-1)
     if (saved?.complete) {
-      if (saved.noteId && saved.status === 'imported') noteIds.set(entry.path, saved.noteId)
+      const targetId =
+        saved.status === 'imported' ? saved.noteId : saved.status === 'skipped' ? (saved.reusedNoteId ?? existing?.noteId) : undefined
+      if (targetId && getNote(targetId)?.deletedAt === null) noteIds.set(entry.path, targetId)
       continue
     }
-    const existing = past.filter((h) => h.rootHash === library.rootHash && h.path === entry.path).at(-1)
     if (!saved?.noteId && (existing?.hash === entry.hash || (existing && !options.importChanged))) {
       saveRecord(itemKey(id, entry.path), {
         path: entry.path,
         rootHash: library.rootHash,
         hash: entry.hash,
         status: 'skipped',
+        reusedNoteId: existing.noteId,
         message: existing.hash === entry.hash ? 'unchanged' : 'changed',
         complete: true
       } satisfies ItemRecord)
@@ -230,7 +251,6 @@ async function importRun(id: string, ctx: JobContext): Promise<void> {
       guard()
     } catch (e) {
       if (ctx.isCanceled() || ctx.signal?.aborted) throw e
-      if (saved?.noteId) trashNote(saved.noteId)
       saveRecord(itemKey(id, entry.path), {
         path: entry.path,
         rootHash: library.rootHash,
@@ -241,7 +261,7 @@ async function importRun(id: string, ctx: JobContext): Promise<void> {
       } satisfies ItemRecord)
     }
   }
-  const folders = new Map<string, string>()
+  const folders = new Map<string, string>(Object.entries(record.folders ?? {}))
   const existingRoot = options.categoryId ?? record.state.categoryIds[0]
   if (existingRoot && listCategories('note').some((c) => c.id === existingRoot)) folders.set('', existingRoot)
   const category = (path: string): string | null => {
@@ -259,28 +279,36 @@ async function importRun(id: string, ctx: JobContext): Promise<void> {
       .filter((p) => p && p !== '.')) {
       key = key ? `${key}/${part}` : part
       if (!folders.has(key)) {
-        const c = listCategories('note').find((c) => c.name === part && c.parentId === parent) ?? createCategory('note', part, parent)
+        const label = library.kind === 'notion' ? stripNotionId(part) : part
+        let name = label,
+          n = 2
+        if (library.kind === 'notion')
+          while (listCategories('note').some((c) => c.name === name && c.parentId === parent)) name = `${label} (${n++})`
+        const c =
+          (library.kind !== 'notion' ? listCategories('note').find((c) => c.name === part && c.parentId === parent) : undefined) ??
+          createCategory('note', name, parent)
         folders.set(key, c.id)
         if (!record.state.categoryIds.includes(c.id)) record.state.categoryIds.push(c.id)
       }
       parent = folders.get(key)!
     }
+    record.folders = Object.fromEntries(folders)
     return parent
   }
-  for (const [path, converted] of parsed) {
+  for (const [path] of parsed) {
     guard()
     getDb().transaction(() => {
       const saved = readRecord<ItemRecord>(itemKey(id, path))
-      const noteId =
-        saved?.noteId ??
-        createNote({ title: converted.title, categoryId: category(path), aiExcluded: options.aiExcluded, createdAt: converted.createdAt })
-          .id
+      // Legacy incomplete rows could already be open in an editor. Preserve them
+      // rather than ever replacing a document that a user may have edited.
+      if (saved?.noteId && getNote(saved.noteId)) record.state.issues.push({ path, code: 'interrupted' })
+      const noteId = saved?.reservedNoteId ?? newId()
       noteIds.set(path, noteId)
       saveRecord(itemKey(id, path), {
         path,
         rootHash: library.rootHash,
         hash: library.entries.find((e) => e.path === path)!.hash,
-        noteId,
+        reservedNoteId: noteId,
         status: 'imported',
         complete: false
       } satisfies ItemRecord)
@@ -298,7 +326,6 @@ async function importRun(id: string, ctx: JobContext): Promise<void> {
       } catch (e) {
         if (ctx.isCanceled() || ctx.signal?.aborted) throw e
         const item = readRecord<ItemRecord>(itemKey(id, path))!
-        trashNote(item.noteId!)
         noteIds.delete(path)
         saveRecord(itemKey(id, path), { ...item, status: 'failed', message: 'changed-or-unreadable', complete: true })
         record.state.issues.push({ path, code: 'changed' })
@@ -396,6 +423,13 @@ async function importRun(id: string, ctx: JobContext): Promise<void> {
       }
       guard()
       getDb().transaction(() => {
+        createNote({
+          id: noteId,
+          title: converted.title,
+          categoryId: category(path),
+          aiExcluded: options.aiExcluded,
+          createdAt: converted.createdAt
+        })
         replaceDoc(noteId, { ...converted.doc, content: converted.doc.content?.map(walk) }, embeds)
         if (options.tags)
           setTags(
@@ -405,6 +439,8 @@ async function importRun(id: string, ctx: JobContext): Promise<void> {
           )
         for (const sourceId of sourceLinks) relate(noteId, 'source', sourceId)
         const item = readRecord<ItemRecord>(itemKey(id, path))!
+        item.noteId = noteId
+        delete item.reservedNoteId
         item.complete = true
         saveRecord(itemKey(id, path), item)
         record.state.tasks += converted.tasks
@@ -432,10 +468,9 @@ async function importRun(id: string, ctx: JobContext): Promise<void> {
     })
   } finally {
     await rm(cache, { recursive: true, force: true })
-    if (ctx.isCanceled() || ctx.signal?.aborted) {
+    if ((ctx.isCanceled() || ctx.signal?.aborted) && !ctx.isInterrupted?.()) {
       for (const item of items(id))
-        if (!item.complete && item.noteId) {
-          trashNote(item.noteId)
+        if (!item.complete) {
           saveRecord(itemKey(id, item.path), { ...item, status: 'failed', message: 'canceled', complete: true })
         }
     }
@@ -464,7 +499,12 @@ export function registerImporterJobs(): void {
         let savedProgress = 0
         r.library = await runInWorker<ScannedLibrary>(
           'import.scan',
-          { paths: r.paths, history: importHistory() },
+          {
+            paths: r.paths,
+            history: importHistory(),
+            format: r.format,
+            destination: join(app.getPath('userData'), 'import-cache', `scan-${id}`)
+          },
           (p) => {
             if (ctx.isCanceled()) return
             r.state.progress = p
@@ -482,10 +522,16 @@ export function registerImporterJobs(): void {
         r.state = { ...r.state, ...summary, progress: 1, status: 'ready' }
         saveRecord(`scan.${id}`, r)
         publish()
-      } catch {
-        if (!ctx.isCanceled()) {
+      } catch (error) {
+        if (ctx.isInterrupted?.()) {
+          r.state.status = 'queued'
+          saveRecord(`scan.${id}`, r)
+        } else if (!ctx.isCanceled()) {
           r.state.status = 'failed'
-          r.state.error = 'scan-failed'
+          r.state.error =
+            error instanceof Error && /^zip-(path|link|format|limit|size|integrity|extract)$/.test(error.message)
+              ? error.message
+              : 'scan-failed'
           saveRecord(`scan.${id}`, r)
           publish()
         }
@@ -512,20 +558,20 @@ export function registerImporterJobs(): void {
         } catch {
           const r = readRecord<RunRecord>(`run.${id}`)
           if (r) {
-            for (const item of items(id))
-              if (!item.complete && item.noteId) {
-                trashNote(item.noteId)
-                saveRecord(itemKey(id, item.path), { ...item, status: 'failed', message: 'interrupted', complete: true })
-              }
-            r.state.status = ctx.isCanceled() ? 'canceled' : 'failed'
-            if (!ctx.isCanceled()) r.state.error = 'import-failed'
+            if (!ctx.isInterrupted?.())
+              for (const item of items(id))
+                if (!item.complete) {
+                  saveRecord(itemKey(id, item.path), { ...item, status: 'failed', message: 'interrupted', complete: true })
+                }
+            r.state.status = ctx.isInterrupted?.() ? 'queued' : ctx.isCanceled() ? 'canceled' : 'failed'
+            if (!ctx.isCanceled() && !ctx.isInterrupted?.()) r.state.error = 'import-failed'
             saveRecord(`run.${id}`, r)
             publish()
           }
         } finally {
           active.delete(id)
           const r = readRecord<RunRecord>(`run.${id}`)
-          if (r && ctx.isCanceled()) {
+          if (r && ctx.isCanceled() && !ctx.isInterrupted?.()) {
             r.state.status = 'canceled'
             saveRecord(`run.${id}`, r)
             publish()

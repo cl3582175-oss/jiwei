@@ -23,6 +23,7 @@ export interface ConvertedMarkdown {
   doc: DocJSON
   embeds: Record<string, { kind: string; data: unknown }>
   issues: string[]
+  issueCounts?: Record<string, number>
 }
 const lexer = new Marked({ gfm: true })
 const strings = (value: unknown): string[] =>
@@ -90,14 +91,26 @@ export function importMarkdown(input: string, filename: string): ConvertedMarkdo
     result.title = (tokens[h1] as Tokens.Heading).text
     tokens.splice(h1, 1)
   }
-  result.title = result.title.slice(0, 500) || filename
+  const originalTitle = result.title
+  if (originalTitle.length > 500) result.issues.push('long-title')
+  result.title = result.title.slice(0, 500).replace(/[\uD800-\uDBFF]$/, '') || filename
 
+  // The Markdown parser decodes entities after prose strips HTML tags. Include
+  // that normalized text when selecting markers, so normalization cannot turn
+  // an ordinary source literal into one of our generated references.
+  const normalizedText = plainHTML(input.replace(/<[^>]+>/g, (tag) => plainHTML(tag)))
+  const usedPrefixes = new Set(`${input}\n${plainHTML(input)}\n${normalizedText}`.match(/JIWEIIMPORT\d+REF/g) ?? [])
+  let salt = 0
+  while (usedPrefixes.has(`JIWEIIMPORT${salt}REF`)) salt++
+  const refPrefix = `JIWEIIMPORT${salt}REF`,
+    refParts = new RegExp(`(${refPrefix}\\d+END)`),
+    refMatch = new RegExp(`^${refPrefix}(\\d+)END$`)
   const reference = (kind: ImportReference['kind'], target: string, label: string, wiki: boolean): string => {
     const split = target.indexOf('#')
     const anchor = split >= 0 ? target.slice(split + 1) : undefined
     if (split >= 0) target = target.slice(0, split)
     const index = result.refs.push({ kind, target, label, ...(anchor ? { anchor } : {}), wiki }) - 1
-    return `JIWEIIMPORTREF${index}END`
+    return `${refPrefix}${index}END`
   }
   // Process only prose, shielding literal inline code and LaTeX from tags/wiki syntax.
   const prose = (raw: string): string =>
@@ -154,13 +167,14 @@ export function importMarkdown(input: string, filename: string): ConvertedMarkdo
   const replaceRefs = (node: DocNode): DocNode[] => {
     if (node.type === 'text') {
       return (node.text ?? '')
-        .split(/(JIWEIIMPORTREF\d+END)/)
+        .split(refParts)
         .filter(Boolean)
         .map((part) => {
-          const m = /^JIWEIIMPORTREF(\d+)END$/.exec(part)
+          const m = refMatch.exec(part)
           if (!m) return { ...node, text: part }
           const idx = Number(m[1]),
             ref = result.refs[idx]
+          if (!ref) return { ...node, text: part }
           if (ref.kind === 'image') return { type: 'image', attrs: { importRef: idx, alt: ref.label } }
           return {
             type: 'text',
@@ -251,9 +265,18 @@ export function importMarkdown(input: string, filename: string): ConvertedMarkdo
       rows.push({ cue: '', nodes: group })
     } else rows.push({ cue: s.cue, nodes })
   }
-  result.tags = [...new Set(result.tags)].slice(0, 500)
+  const allTags = [...new Set(result.tags)]
+  result.tags = allTags.filter((t) => t.length <= 100).slice(0, 100)
+  const selectedTags = new Set(result.tags)
+  const overflowTags = allTags.filter((t) => !selectedTags.has(t))
+  if (overflowTags.length) {
+    result.issues.push('tag-limit')
+    result.issueCounts = { 'tag-limit': overflowTags.length }
+  }
   result.rows = rows.length
   const paragraph = (value: string): DocNode => ({ type: 'paragraph', ...(value ? { content: [{ type: 'text', text: value }] } : {}) })
+  if (originalTitle.length > 500) rows[0].nodes.unshift(paragraph(originalTitle))
+  if (overflowTags.length) rows[0].nodes.unshift(paragraph(overflowTags.map((tag) => `#${tag}`).join(' ')))
   result.doc.content = [
     ...rows.map((r) => ({
       type: 'cornellRow',

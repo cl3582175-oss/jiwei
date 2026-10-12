@@ -192,7 +192,7 @@ export function ImportLibraryButton() {
       setBusy(false)
     }
   }
-  const choose = (mode: 'folder' | 'files'): Promise<void> =>
+  const choose = (mode: 'folder' | 'files' | 'notion' | 'notion-folder'): Promise<void> =>
     attempt(async () => {
       const result = await api.importer.choose(mode)
       if (!result) return
@@ -223,6 +223,16 @@ export function ImportLibraryButton() {
     })
   const running = run && ['queued', 'running', 'canceling'].includes(run.status)
   const reset = (): void => {
+    setOptions({
+      paths: [],
+      categoryId: null,
+      newCategoryName: '',
+      preserveFolders: true,
+      tags: true,
+      aiExcluded: false,
+      aiCues: false,
+      importChanged: false
+    })
     setStep('choose')
     setScanId(null)
     setRunId(null)
@@ -272,6 +282,12 @@ export function ImportLibraryButton() {
                 </Button>
                 <Button disabled={busy} variant="outline" onClick={() => void choose('files')}>
                   {t('importer.files')}
+                </Button>
+                <Button disabled={busy} variant="outline" onClick={() => void choose('notion')}>
+                  {t('importer.notion')}
+                </Button>
+                <Button disabled={busy} variant="outline" onClick={() => void choose('notion-folder')}>
+                  {t('importer.notionFolder')}
                 </Button>
                 <Button variant="ghost" onClick={() => setStep('history')}>
                   {t('importer.history')}
@@ -338,7 +354,9 @@ export function ImportLibraryButton() {
                   </>
                 )}
                 {['failed', 'canceled'].includes(scan.status) && (
-                  <p role="alert">{t(scan.status === 'failed' ? 'importer.errors' : 'importer.canceled')}</p>
+                  <p role="alert">
+                    {scan.status === 'failed' ? t(`importer.scanErrors.${scan.error ?? 'scan-failed'}`) : t('importer.canceled')}
+                  </p>
                 )}
                 <Button size="sm" variant="ghost" onClick={reset}>
                   {t('importer.folder')}
