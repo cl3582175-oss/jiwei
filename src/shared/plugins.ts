@@ -325,6 +325,7 @@ export function satisfiesPluginEngine(range: string, version = PLUGIN_API_VERSIO
 
 /** 来源由主进程获取器创建，绝不接受 renderer 自报 official/trustedBuiltin。 */
 export interface PluginOrigin {
+  selection?: string[]
   kind: 'local' | 'market' | 'github'
   market: string
   locator: string
@@ -383,3 +384,59 @@ export interface PluginPreview {
   issues: { path: string; code: string; message: string }[]
 }
 export type PluginRegistryItem<T> = T & { pluginId?: string; source: 'builtin' | 'plugin' }
+
+export const MarketInputSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('github'), url: z.string().min(1).max(4096) }).strict(),
+  z.object({ kind: z.literal('url'), url: z.string().url().max(4096).startsWith('https://') }).strict()
+])
+export type MarketInput = z.infer<typeof MarketInputSchema>
+export interface PluginMarketInfo {
+  name: string
+  owner: string
+  source: string
+  builtin: boolean
+  fetchedAt: number | null
+  error: string | null
+  count: number
+}
+export interface PluginCatalogCard {
+  id: string
+  name: string
+  displayName: string
+  description: string
+  keywords: string[]
+  author?: PluginManifest['author']
+  category: NonNullable<JiweiExt['category']>
+  localizedName?: JiweiExt['name']
+  localizedDescription?: JiweiExt['description']
+  origin: PluginOrigin
+  sourceUrl?: string
+  version?: string
+  supported: boolean
+  unsupportedReason?: string
+  installedVersion?: string
+  updateAvailable: boolean
+}
+export interface PluginDetails {
+  preview?: PluginPreview
+  installed?: PluginInfo
+  readme: string
+  unsupported: string[]
+  contents: { skills: string[]; templates: string[]; frameworks: string[]; recipes: string[]; feeds: string[]; mcp: string[] }
+}
+export type PluginDetection =
+  | { kind: 'plugin'; preview: PluginPreview }
+  | { kind: 'market'; token: string; name: string; owner: string; count: number }
+  | { kind: 'skills'; token: string; name: string; skills: { path: string; name: string }[] }
+
+/** strict:false 的显式技能集合是内容投影；同时保留显式命令与 MCP 文件。 */
+export function marketplaceComponentSelection(entry?: MarketplaceEntry): string[] | undefined {
+  if (entry?.strict !== false || !entry.skills) return undefined
+  const paths = Array.isArray(entry.skills) ? [...entry.skills] : [entry.skills]
+  if (typeof entry.commands === 'string') paths.push(entry.commands)
+  else if (Array.isArray(entry.commands)) paths.push(...entry.commands)
+  else if (entry.commands) for (const command of Object.values(entry.commands)) if (command.source) paths.push(command.source)
+  for (const mcp of Array.isArray(entry.mcpServers) ? entry.mcpServers : [entry.mcpServers]) if (typeof mcp === 'string') paths.push(mcp)
+  const normalized = [...new Set(paths.map(safeRelativePath))]
+  return normalized.filter((p) => !normalized.some((parent) => parent !== p && (parent === '.' || p.startsWith(parent + '/'))))
+}

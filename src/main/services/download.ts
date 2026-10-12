@@ -154,7 +154,8 @@ async function fetchParallel(
   const out = createWriteStream(part, { flags: 'w' })
   try {
     for (let i = 0; i < n; i++)
-      for await (const chunk of createReadStream(`${part}.${n}-${i}`)) if (!out.write(chunk)) await new Promise<void>((r) => out.once('drain', () => r()))
+      for await (const chunk of createReadStream(`${part}.${n}-${i}`))
+        if (!out.write(chunk)) await new Promise<void>((r) => out.once('drain', () => r()))
   } finally {
     await new Promise<void>((r) => out.end(() => r()))
   }
@@ -249,4 +250,57 @@ export async function download(
     }
   }
   throw new Error(`下载失败：${errors.slice(-3).join('；')}`)
+}
+
+/** 未提供可信尺寸/摘要的插件来源：流式硬上限、超时和重试，不做断点拼接或信任远端摘要。 */
+export async function downloadBounded(
+  input: { url: string; dest: string; maxBytes: number; headers?: Record<string, string> },
+  signal: AbortSignal,
+  progress: (received: number, total?: number) => void = () => undefined
+): Promise<void> {
+  await mkdir(dirname(input.dest), { recursive: true })
+  const part = `${input.dest}.part`
+  try {
+    for (let attempt = 0; ; attempt++) {
+      signal.throwIfAborted()
+      const timeout = AbortSignal.timeout(30_000),
+        combined = AbortSignal.any([signal, timeout])
+      let reader: ReadableStreamDefaultReader<Uint8Array> | undefined
+      try {
+        const response = await net.fetch(input.url, { signal: combined, headers: input.headers, redirect: 'error' })
+        if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`)
+        reader = response.body.getReader()
+        const total = Number(response.headers.get('content-length')) || undefined
+        if (total && total > input.maxBytes) throw new Error('Download size limit exceeded')
+        // fs/promises FileHandle 避免流写入错误时等待 drain 永远不返回。
+        const { open } = await import('fs/promises'),
+          file = await open(part, 'w', 0o600)
+        let received = 0
+        try {
+          for (;;) {
+            combined.throwIfAborted()
+            const { done, value } = await reader.read()
+            if (done) break
+            received += value.length
+            if (received > input.maxBytes) throw new Error('Download size limit exceeded')
+            await file.writeFile(value)
+            progress(received, total)
+          }
+          if (total && received !== total) throw new Error('Incomplete source download')
+        } finally {
+          await file.close()
+        }
+        await rename(part, input.dest)
+        return
+      } catch (error) {
+        await rm(part, { force: true })
+        if (signal.aborted || attempt >= 1 || (error instanceof Error && /limit exceeded/.test(error.message))) throw error
+      } finally {
+        await reader?.cancel().catch(() => undefined)
+      }
+    }
+  } catch (error) {
+    await rm(part, { force: true })
+    throw error
+  }
 }

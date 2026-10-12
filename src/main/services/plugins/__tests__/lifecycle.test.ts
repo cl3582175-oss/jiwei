@@ -436,6 +436,7 @@ describe('production plugin lifecycle in isolated SQLite and filesystem', () => 
     expect(listSkills()).toEqual([])
   })
   it.each(['market-a', 'market-b'])('rechecks namespace at confirm when %s wins', async (winner) => {
+    for (const name of ['market-a', 'market-b']) env.db!.insert(schema.pluginMarkets).values({ name, source, addedAt: Date.now() }).run()
     registerPluginSourceAdapter(async (input) => {
       if (input.kind !== 'market') throw new Error('Fixture only supports market')
       return { path: source, type: 'folder', origin: { kind: 'market', market: input.market, locator: source, name: 'sample' } }

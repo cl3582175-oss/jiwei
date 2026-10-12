@@ -31,25 +31,30 @@ interface Budget {
   bytes: number
   entries: number
 }
-function declared(budget: Budget, name: string, size: number): void {
+function declared(
+  budget: Budget,
+  name: string,
+  size: number,
+  limits: { bytes: number; entries: number; textBytes: number } = PLUGIN_LIMITS
+): void {
   safeRelativePath(name)
   if (
     !Number.isSafeInteger(size) ||
     size < 0 ||
-    ++budget.entries > PLUGIN_LIMITS.entries ||
-    (budget.bytes += size) > PLUGIN_LIMITS.bytes ||
-    (isText(name) && size > PLUGIN_LIMITS.textBytes)
+    ++budget.entries > limits.entries ||
+    (budget.bytes += size) > limits.bytes ||
+    (isText(name) && size > limits.textBytes)
   )
     throw new Error('Plugin size or entry limit exceeded')
 }
-function limiter(budget: Budget, name: string): Transform {
+function limiter(budget: Budget, name: string, limits: { bytes: number; textBytes: number } = PLUGIN_LIMITS): Transform {
   let size = 0
   return new Transform({
     transform(chunk: Buffer, _encoding, callback) {
       size += chunk.length
       budget.bytes += chunk.length
       callback(
-        size > (isText(name) ? PLUGIN_LIMITS.textBytes : PLUGIN_LIMITS.bytes) || budget.bytes > PLUGIN_LIMITS.bytes
+        size > (isText(name) ? limits.textBytes : limits.bytes) || budget.bytes > limits.bytes
           ? new Error('Plugin actual size limit exceeded')
           : null,
         chunk
@@ -58,7 +63,14 @@ function limiter(budget: Budget, name: string): Transform {
   })
 }
 /** 先查中央目录中的原名和尺寸，不能让 JSZip 的路径清洗、同名覆盖隐藏恶意条目。 */
-export function inspectZip(buffer: Buffer): void {
+export const REPOSITORY_LIMITS = {
+  bytes: 200 * 1024 * 1024,
+  entries: 20000,
+  textBytes: 200 * 1024 * 1024,
+  metadataBytes: 4 * 1024 * 1024
+} as const
+export function inspectZip(buffer: Buffer, repository = false): void {
+  const limits = repository ? REPOSITORY_LIMITS : PLUGIN_LIMITS
   let end = -1
   for (let i = buffer.length - 22; i >= Math.max(0, buffer.length - 65557); i--)
     if (buffer.readUInt32LE(i) === 0x06054b50 && i + 22 + buffer.readUInt16LE(i + 20) === buffer.length) {
@@ -78,7 +90,8 @@ export function inspectZip(buffer: Buffer): void {
     offset + bytes !== end
   )
     throw new Error('Unsupported zip layout')
-  if (count > PLUGIN_LIMITS.entries) throw new Error('Plugin entry limit exceeded')
+  if (repository && bytes > REPOSITORY_LIMITS.metadataBytes) throw new Error('Repository metadata limit exceeded')
+  if (count > limits.entries) throw new Error('Plugin entry limit exceeded')
   const seen = new Set<string>(),
     budget = { bytes: 0, entries: 0 }
   let cursor = offset
@@ -101,7 +114,7 @@ export function inspectZip(buffer: Buffer): void {
       throw new Error('Plugin symlink or special file rejected')
     if (seen.has(clean)) throw new Error('Duplicate zip path')
     seen.add(clean)
-    declared(budget, name, size)
+    declared(budget, name, size, limits)
     if (local + 30 > offset || buffer.readUInt32LE(local) !== 0x04034b50) throw new Error('Invalid zip local header')
     const ln = buffer.readUInt16LE(local + 26),
       le = buffer.readUInt16LE(local + 28)
@@ -121,14 +134,50 @@ export interface PreparePluginSourceInput {
   type: 'folder' | 'zip' | 'tar.gz'
   subdir?: string
   tempParent?: string
+  selection?: string[]
 }
 export async function preparePluginSource(input: PreparePluginSourceInput): Promise<PreparedPluginSource> {
   const container = await mkdtemp(join(input.tempParent ?? tmpdir(), 'jiwei-plugin-')),
     root = join(container, 'content')
   try {
     await mkdir(root)
-    if (input.type === 'folder') await copyFolder(input.path, root)
-    else {
+    if (input.type === 'folder') {
+      const selectedRoot = await safePluginPath(input.path, input.subdir ?? '.')
+      if (!input.selection) await copyFolder(selectedRoot, root)
+      else {
+        const actual = { bytes: 0, entries: 0 }
+        const paths = [...new Set([...input.selection, '.claude-plugin/plugin.json', 'README.md'].map(safeRelativePath))].filter(
+          (p, _, all) => !all.some((parent) => parent !== p && (parent === '.' || p.startsWith(parent + '/')))
+        )
+        for (const relative of paths) {
+          const source = await safePluginPath(selectedRoot, relative),
+            target = await safePluginPath(root, relative)
+          let stat
+          try {
+            stat = await lstat(source)
+          } catch (error) {
+            if (!input.selection.includes(relative) && (error as NodeJS.ErrnoException).code === 'ENOENT') continue
+            throw error
+          }
+          if (stat.isDirectory()) {
+            await mkdir(target, { recursive: true })
+            if (++actual.entries > PLUGIN_LIMITS.entries) throw new Error('Plugin entry limit exceeded')
+            await copyFolder(source, target, actual)
+          } else if (stat.isFile()) {
+            declared({ bytes: 0, entries: 0 }, relative, stat.size)
+            if (++actual.entries > PLUGIN_LIMITS.entries) throw new Error('Plugin entry limit exceeded')
+            await mkdir(dirname(target), { recursive: true })
+            const handle = await open(source, constants.O_RDONLY | constants.O_NOFOLLOW)
+            try {
+              await pipeline(handle.createReadStream(), limiter(actual, relative), createWriteStream(target, { flags: 'wx', mode: 0o600 }))
+            } finally {
+              await handle.close()
+            }
+          } else throw new Error('Plugin special file rejected')
+        }
+        await inspectPluginFolder(root)
+      }
+    } else {
       const st = await lstat(input.path)
       if (!st.isFile() || st.isSymbolicLink() || st.size > PLUGIN_LIMITS.archiveBytes) throw new Error('Invalid plugin archive')
       if (input.type === 'zip') {
@@ -148,7 +197,7 @@ export async function preparePluginSource(input: PreparePluginSourceInput): Prom
         }
       } else await unpackTar(input.path, root)
     }
-    const selected = await safePluginPath(root, input.subdir ?? '.')
+    const selected = await safePluginPath(root, input.type === 'folder' ? '.' : (input.subdir ?? '.'))
     if (!(await lstat(selected)).isDirectory()) throw new Error('Plugin subdirectory not found')
     return { root: selected, container, cleanup: () => rm(container, { recursive: true, force: true }) }
   } catch (e) {
@@ -156,7 +205,10 @@ export async function preparePluginSource(input: PreparePluginSourceInput): Prom
     throw e
   }
 }
-export async function inspectPluginFolder(root: string): Promise<string[]> {
+export async function inspectPluginFolder(
+  root: string,
+  limits: { bytes: number; entries: number; textBytes: number } = PLUGIN_LIMITS
+): Promise<string[]> {
   const budget = { bytes: 0, entries: 0 },
     files: string[] = []
   if ((await lstat(root)).isSymbolicLink() || !(await lstat(root)).isDirectory()) throw new Error('Invalid plugin folder')
@@ -166,7 +218,7 @@ export async function inspectPluginFolder(root: string): Promise<string[]> {
         relative = full.slice(resolve(root).length + 1),
         stat = await lstat(full)
       if (stat.isSymbolicLink() || (!stat.isFile() && !stat.isDirectory())) throw new Error('Plugin symlink or special file rejected')
-      declared(budget, relative, stat.isFile() ? stat.size : 0)
+      declared(budget, relative, stat.isFile() ? stat.size : 0, limits)
       if (stat.isDirectory()) await visit(full)
       else files.push(relative)
     }
@@ -174,12 +226,23 @@ export async function inspectPluginFolder(root: string): Promise<string[]> {
   await visit(resolve(root))
   return files.sort()
 }
-async function copyFolder(source: string, target: string): Promise<void> {
+async function copyFolder(source: string, target: string, actual: Budget = { bytes: 0, entries: 0 }): Promise<void> {
   // 系统 /tmp 父目录可为别名；源自身和其所有后代都必须是普通文件或目录。
   const files = await inspectPluginFolder(resolve(source)),
-    canonical = await realpath(source),
-    actual = { bytes: 0, entries: 0 }
+    canonical = await realpath(source)
+  // inspect 已验证目录类型；显式复制空目录，组件声明可能正好指向空目录。
+  const copyDirectories = async (dir: string) => {
+    for (const entry of await readdir(dir, { withFileTypes: true }))
+      if (entry.isDirectory()) {
+        if (++actual.entries > PLUGIN_LIMITS.entries) throw new Error('Plugin entry limit exceeded')
+        const full = await safePluginPath(canonical, join(dir.slice(canonical.length), entry.name).replace(/^\//, ''))
+        await mkdir(join(target, full.slice(canonical.length)), { recursive: true })
+        await copyDirectories(full)
+      }
+  }
+  await copyDirectories(canonical)
   for (const relative of files) {
+    if (++actual.entries > PLUGIN_LIMITS.entries) throw new Error('Plugin entry limit exceeded')
     const path = await safePluginPath(canonical, relative),
       dest = await safePluginPath(target, relative)
     await mkdir(dirname(dest), { recursive: true })
@@ -385,4 +448,58 @@ async function unpackTar(path: string, root: string): Promise<void> {
 }
 export function sourceType(path: string): PreparePluginSourceInput['type'] {
   return extname(path).toLowerCase() === '.zip' ? 'zip' : /\.tar\.gz$|\.tgz$/i.test(basename(path)) ? 'tar.gz' : 'folder'
+}
+
+/** 仓库的原始路径和类型全部验证；只解压所选子树，插件预算不受无关文件影响。 */
+export async function prepareRepositorySource(
+  path: string,
+  subdir = '.',
+  signal?: AbortSignal,
+  selection?: string[],
+  discovery = false
+): Promise<PreparedPluginSource> {
+  const limits = discovery ? REPOSITORY_LIMITS : PLUGIN_LIMITS
+  const buffer = await readArchive(path)
+  inspectZip(buffer, true)
+  signal?.throwIfAborted()
+  const zip = await JSZip.loadAsync(buffer)
+  const roots = new Set(Object.values(zip.files).map((x) => x.name.split('/')[0]))
+  if (roots.size !== 1) throw new Error('Repository zip must have one root directory')
+  const prefix = [...roots][0] + '/'
+  const selected = safeRelativePath(subdir)
+  const subtree = prefix + (selected === '.' ? '' : selected + '/')
+  const selectedPaths = selection?.map(safeRelativePath)
+  const entries = Object.values(zip.files).filter((x) => {
+    if (!x.name.startsWith(subtree) || x.name === subtree) return false
+    const name = x.name.slice(subtree.length).replace(/\/$/, '')
+    return (
+      !selectedPaths ||
+      ['.claude-plugin/plugin.json', 'README.md'].includes(name) ||
+      selectedPaths.some((p) => p === '.' || name === p || name.startsWith(p + '/'))
+    )
+  })
+  if (!entries.length && !zip.files[subtree]?.dir) throw new Error('Plugin subdirectory not found')
+  const budget = { bytes: 0, entries: 0 }
+  // 先读取中央目录已验证的尺寸，流式展开仍单独限制真实字节数。
+  const container = await mkdtemp(join(tmpdir(), 'jiwei-plugin-repository-')),
+    root = join(container, 'content')
+  try {
+    await mkdir(root)
+    for (const item of entries) {
+      signal?.throwIfAborted()
+      const name = item.name.slice(subtree.length),
+        dest = await safePluginPath(root, name)
+      if (++budget.entries > limits.entries) throw new Error('Plugin entry limit exceeded')
+      if (item.dir) await mkdir(dest, { recursive: true })
+      else {
+        await mkdir(dirname(dest), { recursive: true })
+        await pipeline(item.nodeStream(), limiter(budget, name, limits), createWriteStream(dest, { flags: 'wx', mode: 0o600 }), { signal })
+      }
+    }
+    await inspectPluginFolder(root, limits)
+    return { root, container, cleanup: () => rm(container, { recursive: true, force: true }) }
+  } catch (e) {
+    await rm(container, { recursive: true, force: true })
+    throw e
+  }
 }

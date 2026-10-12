@@ -1,3 +1,5 @@
+import * as pluginMarkets from './services/plugins/markets'
+import * as pluginDirect from './services/plugins/direct'
 import * as plugins from './services/plugins/install'
 import * as pluginRegistry from './services/plugins/registry'
 import { tr } from './lib/messages'
@@ -126,6 +128,7 @@ type Handlers = {
   }
 }
 
+const pluginAcquisitionOwners = new Set<number>()
 const handlers: Handlers = {
   mistakes: {
     create: (_, input) => mistakeEntries.createManual(input),
@@ -476,11 +479,22 @@ const handlers: Handlers = {
     remove: (_, id) => advisor.removeDecision(id)
   },
   discover: {
-    feeds: () => discoverFeeds.listFeeds(), feedSave: (_, input) => discoverFeeds.saveFeed(input), feedRemove: (_, id) => discoverFeeds.removeFeed(id), feedRefresh: (_, id) => discoverFeeds.refreshFeed(id),
-    items: (_, all) => discoverItems.items(all), act: (_, input) => discoverItems.act(input), runNow: () => discoverDaily.runNow(), status: () => discoverDaily.dailyStatus(),
-    searchProviders: () => discoverSearch.searchProviders(), searchSave: (_, input) => discoverSearch.searchSave(input), searchTest: (_, service) => discoverSearch.searchTest(service),
-    path: (_, goalId) => discoverPath.path(goalId), pathPhases: (_, id) => discoverPath.pathPhases(id), remedy: (_, id) => discoverPath.remedy(id),
-    podcast: () => discoverPodcast.podcast(), podcastGenerate: () => discoverPodcast.generatePodcast(),
+    feeds: () => discoverFeeds.listFeeds(),
+    feedSave: (_, input) => discoverFeeds.saveFeed(input),
+    feedRemove: (_, id) => discoverFeeds.removeFeed(id),
+    feedRefresh: (_, id) => discoverFeeds.refreshFeed(id),
+    items: (_, all) => discoverItems.items(all),
+    act: (_, input) => discoverItems.act(input),
+    runNow: () => discoverDaily.runNow(),
+    status: () => discoverDaily.dailyStatus(),
+    searchProviders: () => discoverSearch.searchProviders(),
+    searchSave: (_, input) => discoverSearch.searchSave(input),
+    searchTest: (_, service) => discoverSearch.searchTest(service),
+    path: (_, goalId) => discoverPath.path(goalId),
+    pathPhases: (_, id) => discoverPath.pathPhases(id),
+    remedy: (_, id) => discoverPath.remedy(id),
+    podcast: () => discoverPodcast.podcast(),
+    podcastGenerate: () => discoverPodcast.generatePodcast(),
     ttsProviders: () => discoverTts.ttsProviders(),
     speechStatus: () => localSpeech.localSpeechStatus(),
     speechInstall: () => localSpeech.installLocalSpeech(),
@@ -489,12 +503,28 @@ const handlers: Handlers = {
     voicePreview: (_, engine, voice, providerId) => discoverPodcast.previewVoice(engine, voice, providerId)
   },
   mail: {
-    help: async (_, preset) => { await shell.openExternal(MAIL_PRESETS[preset].help) },
-    accounts: () => mail.accounts(), save: (_, input) => mail.saveAccount(input), test: (_, id) => mail.testAccount(id), remove: (_, id) => mail.removeAccount(id)
+    help: async (_, preset) => {
+      await shell.openExternal(MAIL_PRESETS[preset].help)
+    },
+    accounts: () => mail.accounts(),
+    save: (_, input) => mail.saveAccount(input),
+    test: (_, id) => mail.testAccount(id),
+    remove: (_, id) => mail.removeAccount(id)
   },
   tasks: {
-    list: () => tasks.listTasks(), save: (_, input) => tasks.saveTask(input), remove: (_, id) => tasks.removeTask(id), run: (_, id) => tasks.queueTask(id), runs: (_, id) => tasks.taskRuns(id), parse: (_, text) => tasks.parseTask(text), recipes: () => tasks.recipes(), tools: async () => (await taskToolCatalog()).info, pauseAll: (_, paused) => tasks.pauseAll(paused),
-    chooseFolder: async () => { const result = await dialog.showOpenDialog({ properties: ['openDirectory'] }); return result.canceled ? null : result.filePaths[0] ?? null }
+    list: () => tasks.listTasks(),
+    save: (_, input) => tasks.saveTask(input),
+    remove: (_, id) => tasks.removeTask(id),
+    run: (_, id) => tasks.queueTask(id),
+    runs: (_, id) => tasks.taskRuns(id),
+    parse: (_, text) => tasks.parseTask(text),
+    recipes: () => tasks.recipes(),
+    tools: async () => (await taskToolCatalog()).info,
+    pauseAll: (_, paused) => tasks.pauseAll(paused),
+    chooseFolder: async () => {
+      const result = await dialog.showOpenDialog({ properties: ['openDirectory'] })
+      return result.canceled ? null : (result.filePaths[0] ?? null)
+    }
   },
   plan: {
     schedulePreview: (_, input) => planSchedule.schedulePreview(input),
@@ -754,6 +784,34 @@ const handlers: Handlers = {
     clearAudit: () => auditLog.clearAudit()
   },
   plugins: {
+    markets: () => pluginMarkets.listMarkets(),
+    catalog: () => pluginMarkets.catalogPlugins(),
+    addMarket: (_, input) => pluginMarkets.addMarket(input),
+    removeMarket: (_, name, options) => pluginMarkets.removeMarket(name, options),
+    refreshMarket: (_, name, staleOnly) => pluginMarkets.refreshMarkets(name, staleOnly),
+    beginAcquisition: ({ win }) => {
+      if (!win) throw new Error('Window unavailable')
+      const owner = win.webContents.id
+      if (!pluginAcquisitionOwners.has(owner)) {
+        pluginAcquisitionOwners.add(owner)
+        win.webContents.once('destroyed', () => {
+          pluginAcquisitionOwners.delete(owner)
+          void pluginDirect.cancelOwnerAcquisitions(owner)
+        })
+      }
+      return pluginDirect.beginAcquisition(owner)
+    },
+    acquire: ({ win }, id, source) => pluginDirect.detectGithub(win?.webContents.id ?? -1, id, source),
+    acquireUpdate: ({ win }, id, pluginId) => pluginDirect.acquireUpdate(win?.webContents.id ?? -1, id, pluginId),
+    acquireFile: ({ win }, id) => pluginDirect.detectFile(win?.webContents.id ?? -1, id, win),
+    acquirePath: ({ win }, id, path) => {
+      if (app.isPackaged || process.env.JIWEI_TEST_PLUGINS !== '1') throw new Error('Test-only plugin path inspector is disabled')
+      return pluginDirect.detectPath(win?.webContents.id ?? -1, id, path)
+    },
+    cancelAcquisition: ({ win }, id) => pluginDirect.cancelAcquisition(win?.webContents.id ?? -1, id),
+    selectSkills: ({ win }, id, token, paths) => pluginDirect.selectDetectedSkills(win?.webContents.id ?? -1, id, token, paths),
+    addDetectedMarket: ({ win }, id, token) => pluginDirect.addDetectedMarket(win?.webContents.id ?? -1, id, token),
+    details: (_, input) => plugins.pluginDetails(input),
     list: () => plugins.listPlugins(),
     get: (_, id) => plugins.getPlugin(id),
     inspect: (_, source) => plugins.inspectPlugin(source),
@@ -798,7 +856,7 @@ export function registerIpc(): void {
       // 内置浏览器中的网页不得调用积微的接口（内容脚本只走 jw-page:* 消息）
       if (browser.isBrowserContents(e.sender)) throw new Error('Forbidden')
       if (
-        ['recording', 'people', 'voiceprint', 'lenses', 'series'].includes(ns) &&
+        ['recording', 'people', 'voiceprint', 'lenses', 'series', 'plugins'].includes(ns) &&
         (e.sender !== getMainWindow()?.webContents || e.senderFrame !== e.sender.mainFrame)
       )
         throw new Error('Forbidden')

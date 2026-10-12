@@ -1,5 +1,6 @@
 import { getMainWindow, setMainWindow } from './mainWindow'
 import { initializePlugins } from './services/plugins/install'
+import { initializeMarkets } from './services/plugins/markets'
 import { registerCapture, stopCapture } from './services/capture'
 import { shutdown as stopPhoneUpload } from './services/phoneUpload'
 import { registerInboxJobs } from './services/inbox'
@@ -171,6 +172,7 @@ app.whenReady().then(async () => {
   await openDatabase()
   ensureIdentity()
   await initializePlugins()
+  await initializeMarkets()
   await initializeRecordingFiles()
   resumeCryptoMigration()
   await refreshBrowserNetwork()

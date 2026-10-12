@@ -5,14 +5,14 @@ import { existsSync, renameSync } from 'fs'
 import { join, relative } from 'path'
 import { eq } from 'drizzle-orm'
 import { getDb } from '../../db'
-import { plugins, feeds, aiTasks, mcpServers, meta } from '../../db/schema'
+import { plugins, pluginMarkets, feeds, aiTasks, mcpServers, meta } from '../../db/schema'
 import { newId } from '../../lib/ids'
 import { emit } from '../../events'
 import { audit } from '../agent/audit'
 import { saveFeed, removeFeed } from '../discover/feeds'
 import { removeTask } from '../tasks/service'
 import { disconnect, connectServer, listServers } from '../mcp/client'
-import { parsePlugin, type ParsedPlugin, type ParsePluginOptions } from './components'
+import { parsePlugin, readPluginText, type ParsedPlugin, type ParsePluginOptions } from './components'
 import { preparePluginSource, safePluginPath, sourceType } from './sources'
 import { registeredPlugin, replacePluginRegistry } from './registry'
 import {
@@ -29,15 +29,18 @@ import {
 import { prepareConfig, disablePluginMcpRows } from './config'
 import {
   addedCapabilities,
+  marketplaceComponentSelection,
   PluginConfirmOptions,
   type PluginInfo,
   type PluginOrigin,
   type PluginPreview,
   type PluginInspectInput,
-  type PluginConfig
+  type PluginConfig,
+  type PluginDetails
 } from '@shared/plugins'
 
 export interface PluginAcquisition {
+  progressId?: string
   path: string
   type: 'folder' | 'zip' | 'tar.gz'
   subdir?: string
@@ -46,7 +49,8 @@ export interface PluginAcquisition {
   cleanup?: () => Promise<void>
 }
 /** P2 注册主进程来源适配器。它必须验证市场身份并获取真实 source，不接受 renderer 的信任位。 */
-let acquire: ((input: PluginInspectInput | PluginOrigin) => Promise<PluginAcquisition>) | undefined
+let acquire:
+  ((input: PluginInspectInput | PluginOrigin, context?: { signal: AbortSignal; id: string }) => Promise<PluginAcquisition>) | undefined
 export function registerPluginSourceAdapter(adapter: NonNullable<typeof acquire>): void {
   acquire = adapter
 }
@@ -126,15 +130,19 @@ export function listPlugins(): PluginInfo[] {
     .all()
     .map((r) => getPlugin(r.id))
 }
-async function inspectAcquired(input: PluginAcquisition, updateId?: string): Promise<PluginPreview> {
+export async function inspectAcquired(input: PluginAcquisition, updateId?: string, signal?: AbortSignal): Promise<PluginPreview> {
   const parent = await owned(join(pluginRoot(), 'previews'))
   await mkdir(parent, { recursive: true })
   let prepared: Pending['prepared'] | undefined
   try {
-    emit('plugins:progress', { id: input.origin.name ?? 'preview', phase: 'verify' })
-    prepared = await preparePluginSource({ ...input, tempParent: parent })
+    emit('plugins:progress', { id: input.progressId ?? input.origin.name ?? 'preview', phase: 'verify' })
+    const entry = input.options?.entry
+    const selection = input.origin.selection ?? marketplaceComponentSelection(entry)
+    prepared = await preparePluginSource({ ...input, selection, tempParent: parent })
     const options = input.options ?? {},
       parsed = await parsePlugin(prepared.root, options)
+    signal?.throwIfAborted()
+    if (input.origin.name && input.origin.name !== parsed.manifest.name) throw new Error('Marketplace plugin name mismatch')
     const id = `${parsed.manifest.name}@${input.origin.market}`
     if (updateId && updateId !== id) throw new Error('Updated plugin identity changed')
     // 两个市场不能悄悄覆盖同一技能 namespace。
@@ -186,18 +194,26 @@ async function inspectAcquired(input: PluginAcquisition, updateId?: string): Pro
 export function inspectPluginPath(path: string): Promise<PluginPreview> {
   return pluginMutation(() => inspectAcquired({ path, type: sourceType(path), origin: { kind: 'local', market: 'local', locator: path } }))
 }
-export function inspectPlugin(input: PluginInspectInput): Promise<PluginPreview> {
+export function inspectPlugin(input: PluginInspectInput, context?: { signal: AbortSignal; id: string }): Promise<PluginPreview> {
   return pluginMutation(async () => {
     if (!acquire) throw new Error('Plugin source adapter unavailable')
-    return inspectAcquired(await acquire(input))
+    return inspectAcquired({ ...(await acquire(input, context)), progressId: context?.id }, undefined, context?.signal)
   })
 }
-export function updatePlugin(id: string): Promise<PluginPreview> {
+export function updatePlugin(id: string, context?: { signal: AbortSignal; id: string }): Promise<PluginPreview> {
   return pluginMutation(async () => {
-    const origin = readState(id).origin
-    if (origin.kind === 'local') return inspectAcquired({ path: origin.locator, type: sourceType(origin.locator), origin }, id)
+    const state = readState(id),
+      origin = state.origin
+    if (origin.kind === 'local')
+      return inspectAcquired(
+        { path: origin.locator, type: sourceType(origin.locator), origin, options: state.current.options, progressId: context?.id },
+        id,
+        context?.signal
+      )
     if (!acquire) throw new Error('Plugin source adapter unavailable')
-    return inspectAcquired(await acquire(origin), id)
+    const acquired = await acquire(origin, context)
+    if (origin.selection) acquired.options = { ...acquired.options, entry: state.current.options.entry }
+    return inspectAcquired({ ...acquired, progressId: context?.id }, id, context?.signal)
   })
 }
 export async function installPluginFromFile(win: BrowserWindow | null): Promise<PluginPreview | null> {
@@ -276,6 +292,10 @@ export async function confirmPluginInstall(token: string, input: { feeds?: numbe
         newIdForCleanup: string | undefined,
         committed = false
       try {
+        if (pending.origin.kind === 'market') {
+          const market = getDb().select().from(pluginMarkets).where(eq(pluginMarkets.name, pending.origin.market)).get()
+          if (!market || market.source !== pending.origin.locator) throw new Error('Marketplace removed or replaced; inspect again')
+        }
         if (Date.now() >= pending.expiresAt) throw new Error('Plugin preview expired; inspect again')
         const opts = PluginConfirmOptions.parse(input),
           parsed = await parsePlugin(pending.prepared.root, pending.options),
@@ -508,25 +528,38 @@ async function recoverRemoval(trash: string): Promise<void> {
   }
 }
 export function uninstallPlugin(id: string, options: { removeFeeds?: boolean; removeTasks?: boolean } = {}): Promise<void> {
+  return pluginMutation(() => uninstallMany([id], options))
+}
+/** 市场移除与多个插件的 DB 删除共享一次事务；每个目录沿用已审查的恢复 journal。 */
+export function uninstallPluginsForMarket(select: () => { ids: string[]; commit: () => void }): Promise<void> {
   return pluginMutation(async () => {
-    pluginRow(id)
-    const trash = await owned(join(pluginRoot(), 'trash', randomBytes(16).toString('hex')))
-    await mkdir(await owned(join(pluginRoot(), 'trash')), { recursive: true })
-    await mkdir(trash)
-    const moves = [pluginCache(id), pluginData(id)].filter(existsSync).map((from, i) => ({ from, to: join(trash, String(i)) }))
-    for (const move of moves) await owned(move.from)
-    // 专属目录中先写完整临时记录，再原子发布；任何目录移动都必须在发布之后。
-    await writeFile(join(trash, 'journal.tmp'), JSON.stringify({ id, moves }), { flag: 'wx', mode: 0o600 })
-    await rename(join(trash, 'journal.tmp'), join(trash, 'journal.json'))
-    const effects: (() => void)[] = []
-    const afterCommit = (effect: () => void): void => {
-      effects.push(effect)
-    }
-    try {
+    const { ids, commit } = select()
+    await uninstallMany(ids, {}, commit)
+  })
+}
+async function uninstallMany(ids: string[], options: { removeFeeds?: boolean; removeTasks?: boolean }, commit?: () => void): Promise<void> {
+  const staged: { id: string; trash: string; moves: { from: string; to: string }[] }[] = []
+  const effects: (() => void)[] = []
+  let failure: unknown
+  const afterCommit = (effect: () => void): void => {
+    effects.push(effect)
+  }
+  try {
+    for (const id of ids) {
+      pluginRow(id)
+      const trash = await owned(join(pluginRoot(), 'trash', randomBytes(16).toString('hex')))
+      await mkdir(await owned(join(pluginRoot(), 'trash')), { recursive: true })
+      await mkdir(trash)
+      const moves = [pluginCache(id), pluginData(id)].filter(existsSync).map((from, i) => ({ from, to: join(trash, String(i)) }))
+      for (const move of moves) await owned(move.from)
+      await writeFile(join(trash, 'journal.tmp'), JSON.stringify({ id, moves }), { flag: 'wx', mode: 0o600 })
+      await rename(join(trash, 'journal.tmp'), join(trash, 'journal.json'))
+      staged.push({ id, trash, moves })
       await disconnectPlugin(id)
-      // 同步移动+同步事务之间没有事件循环切换。重启按 DB 是否还存在恢复/删除隔离目录。
-      for (const move of moves) renameSync(move.from, move.to)
-      getDb().transaction(() => {
+    }
+    for (const { moves } of staged) for (const move of moves) renameSync(move.from, move.to)
+    getDb().transaction(() => {
+      for (const id of ids) {
         if (options.removeFeeds)
           for (const row of getDb().select().from(feeds).where(eq(feeds.pluginId, id)).all())
             removeFeed(row.id, { clearCache: true, afterCommit })
@@ -541,17 +574,53 @@ export function uninstallPlugin(id: string, options: { removeFeeds?: boolean; re
           .where(eq(meta.key, stateKey(id)))
           .run()
         record('uninstall', id)
-      })
-      for (const effect of effects) effect()
+      }
+      commit?.()
+    })
+    for (const effect of effects) effect()
+    for (const id of ids) {
       replacePluginRegistry(id)
       for (const [token, pending] of previews)
         if (`${pending.parsed.manifest.name}@${pending.origin.market}` === id) await cancelPluginPreview(token).catch(() => undefined)
-      notify()
-    } finally {
-      // DB 提交结果决定清理/恢复；遇到冲突保留数据，不盲删隔离目录。
-      await recoverRemoval(trash)
     }
-  })
+    notify()
+  } catch (error) {
+    failure = error
+  } finally {
+    // 不因一个清理失败跳过其余恢复；任何不确定的数据留给启动恢复处理。
+    const results = await Promise.allSettled(staged.map(({ trash }) => recoverRemoval(trash)))
+    const cleanupFailure = results.find((r) => r.status === 'rejected')
+    if (cleanupFailure?.status === 'rejected') failure ??= cleanupFailure.reason
+  }
+  if (failure) throw failure
+}
+/** README 仅返回禁 HTML 的 Markdown 数据，渲染端仍必须禁 raw HTML 并外部打开链接。 */
+export async function pluginDetails(input: { id?: string; token?: string }): Promise<PluginDetails> {
+  const pending = input.token ? previews.get(input.token) : undefined
+  if (input.token && (!pending || pending.expiresAt <= Date.now())) throw new Error('Plugin preview expired')
+  const parsed = pending?.parsed ?? (input.id ? registeredPlugin(input.id) : undefined)
+  if (!parsed) throw new Error('Plugin details unavailable')
+  let readme = ''
+  try {
+    readme = await readPluginText(parsed.root, 'README.md')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+  }
+  // 保留 Markdown 文本；HTML 字符转义后不能形成元素或脚本。
+  readme = readme.replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  return {
+    installed: input.id ? getPlugin(input.id) : undefined,
+    readme,
+    unsupported: parsed.unsupported,
+    contents: {
+      skills: parsed.skills.map((x) => x.name),
+      templates: parsed.templates.map((x) => x.id),
+      frameworks: parsed.frameworks.map((x) => x.id),
+      recipes: parsed.recipes.map((x) => x.id),
+      feeds: parsed.feeds.map((x) => x.title),
+      mcp: Object.keys(parsed.mcpServers)
+    }
+  }
 }
 export async function openPluginFolder(id: string): Promise<void> {
   pluginRow(id)

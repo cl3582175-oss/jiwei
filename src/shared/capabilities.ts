@@ -1,4 +1,12 @@
 import {
+  MarketInputSchema,
+  MarketNameSchema,
+  type PluginMarketInfo,
+  type PluginCatalogCard,
+  type PluginDetection,
+  type PluginDetails
+} from './plugins'
+import {
   PluginInspectSource,
   PluginConfigValues,
   PluginConfirmOptions,
@@ -1159,6 +1167,69 @@ export const capabilities = {
     clearAudit: cap<void>()({ description: '清除审计日志', params: none })
   },
   plugins: {
+    markets: cap<PluginMarketInfo[]>()({ description: '市场清单与每个市场的缓存状态', params: none }),
+    catalog: cap<PluginCatalogCard[]>()({ description: '缓存中的合并插件目录', params: none }),
+    addMarket: cap<PluginMarketInfo>()({ description: '添加已确认信任的第三方市场', params: [['input', MarketInputSchema]] }),
+    removeMarket: cap<void>()({
+      description: '删除市场，默认同时卸载插件',
+      params: [
+        ['name', MarketNameSchema],
+        ['options', z.object({ uninstall: z.boolean().default(true) })]
+      ]
+    }),
+    refreshMarket: cap<PluginMarketInfo[]>()({
+      description: '刷新市场；staleOnly 用于打开市场页',
+      params: [
+        ['name', MarketNameSchema.optional()],
+        ['staleOnly', z.boolean().default(false)]
+      ]
+    }),
+    beginAcquisition: cap<string>()({ description: '创建本窗口拥有的可取消获取操作', params: none }),
+    acquire: cap<PluginDetection>()({
+      description: '识别来源，返回市场、技能选择或确认预览',
+      params: [
+        ['operation', z.string().length(64)],
+        ['source', PluginInspectSource]
+      ]
+    }),
+    acquireUpdate: cap<PluginPreview>()({
+      description: '可取消的更新获取与预览',
+      params: [
+        ['operation', z.string().length(64)],
+        ['id', z.string().max(257)]
+      ]
+    }),
+    acquireFile: cap<PluginDetection | null>()({
+      description: '通过原生选择器识别插件来源',
+      params: [['operation', z.string().length(64)]]
+    }),
+    acquirePath: cap<PluginDetection>()({
+      description: '开发测试：识别指定路径',
+      params: [
+        ['operation', z.string().length(64)],
+        ['path', z.string().max(4096)]
+      ]
+    }),
+    cancelAcquisition: cap<void>()({ description: '取消下载和尚未完成的预览', params: [['operation', z.string().length(64)]] }),
+    selectSkills: cap<PluginDetection>()({
+      description: '确认技能集合选择并生成安装预览',
+      params: [
+        ['operation', z.string().length(64)],
+        ['token', z.string().length(64)],
+        ['paths', z.array(z.string().max(4000)).min(1).max(2000)]
+      ]
+    }),
+    addDetectedMarket: cap<PluginMarketInfo>()({
+      description: '确认添加已识别的市场',
+      params: [
+        ['operation', z.string().length(64)],
+        ['token', z.string().length(64)]
+      ]
+    }),
+    details: cap<PluginDetails>()({
+      description: '已安装或已预览插件的内容与安全 README',
+      params: [['input', z.union([z.object({ id: z.string().max(257) }).strict(), z.object({ token: z.string().length(64) }).strict()])]]
+    }),
     list: cap<PluginInfo[]>()({ description: '已安装插件', params: none }),
     get: cap<PluginInfo>()({ description: '插件详情（无明文敏感值）', params: [['id', z.string().max(257)]] }),
     inspect: cap<PluginPreview>()({ description: '获取来源并预览插件', params: [['source', PluginInspectSource]] }),

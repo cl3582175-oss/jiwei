@@ -1,0 +1,457 @@
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
+import { mkdtemp, mkdir, writeFile, rm, readdir, readFile } from 'fs/promises'
+import { tmpdir } from 'os'
+import { join, dirname } from 'path'
+import { createServer, type Server } from 'http'
+import Database from 'better-sqlite3'
+import { drizzle } from 'drizzle-orm/better-sqlite3'
+import { eq } from 'drizzle-orm'
+import { migrate } from 'drizzle-orm/better-sqlite3/migrator'
+import { getLoadablePath } from 'sqlite-vec'
+import JSZip from 'jszip'
+import * as schema from '../../../db/knowledgeSchema'
+import type { DB } from '../../../db'
+const env = vi.hoisted(() => ({ root: '', db: null as DB | null, base: '', failAudit: false }))
+vi.mock('electron', () => ({
+  app: { getPath: () => join(env.root, 'data'), getAppPath: () => env.root, getVersion: () => 'test', isPackaged: false },
+  net: { fetch: (url: string, options: RequestInit) => fetch(url.replace('https://archive.fixture', env.base), options) },
+  dialog: { showOpenDialog: vi.fn() },
+  shell: { openPath: vi.fn() },
+  BrowserWindow: { getAllWindows: () => [] },
+  safeStorage: {
+    isEncryptionAvailable: () => true,
+    encryptString: (v: string) => Buffer.from(v),
+    decryptString: (v: Buffer) => v.toString()
+  }
+}))
+vi.mock('../../../db', () => ({ getDb: () => env.db, getSqlite: () => null }))
+vi.mock('../../settings', () => ({
+  getSettings: () => ({ language: 'en', ai: { disabledSkills: [] }, browser: { aiBlockedSites: [] } }),
+  setSettings: vi.fn()
+}))
+vi.mock('../../device', () => ({ deviceId: () => 'fixture-device' }))
+vi.mock('../../memory', () => ({ skillPreferences: () => [] }))
+vi.mock('../../agent/audit', () => ({
+  audit: () => {
+    if (env.failAudit) throw new Error('Injected audit failure')
+  }
+}))
+vi.mock('../../tasks/scheduler', () => ({ clearTriggerState: vi.fn(), initializeTrigger: vi.fn() }))
+vi.mock('../../ai/structured', () => ({ structured: vi.fn(), quickModel: vi.fn() }))
+vi.mock('../../mail/accounts', () => ({ accountRow: vi.fn() }))
+import {
+  initializePlugins,
+  inspectPlugin,
+  confirmPluginInstall,
+  updatePlugin,
+  listPlugins,
+  cancelPluginPreview,
+  pluginDetails
+} from '../install'
+import {
+  initializeMarkets,
+  addMarket,
+  addMarketSource,
+  refreshMarkets,
+  listMarkets,
+  catalogPlugins,
+  removeMarket,
+  officialCatalog,
+  comparePluginVersions
+} from '../markets'
+import {
+  beginAcquisition,
+  cancelAcquisition,
+  detectGithub,
+  detectPath,
+  selectDetectedSkills,
+  addDetectedMarket,
+  cancelOwnerAcquisitions
+} from '../direct'
+import { AcquisitionBatch, githubSource } from '../acquisition'
+import { prepareRepositorySource, preparePluginSource } from '../sources'
+import { replacePluginRegistry } from '../registry'
+import { readState } from '../state'
+let db: Database.Database, server: Server
+let routes: Map<string, { status?: number; body: string | Buffer; slow?: boolean }>, hits: string[]
+const skill = '---\nname: read\ndescription: Self authored test reader\n---\nRead evidence.'
+async function file(path: string, data: string | object) {
+  await mkdir(dirname(path), { recursive: true })
+  await writeFile(path, typeof data === 'string' ? data : JSON.stringify(data))
+}
+const entry = (name: string, source: unknown = `./plugins/${name}`, version = '1.0.0') => ({ name, source, version })
+const market = (name: string, plugins: unknown[] = [entry('one')]) => ({ name, owner: { name: 'Self-authored fixture' }, plugins })
+async function zip(files: Record<string, string | object>, prefix = 'repo/') {
+  const z = new JSZip()
+  for (const [name, value] of Object.entries(files)) z.file(prefix + name, typeof value === 'string' ? value : JSON.stringify(value))
+  return z.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' })
+}
+async function repository(repo = 'owner/repo', manifest = market('test-market'), extra: Record<string, string | object> = {}) {
+  routes.set(`/repos/${repo}`, { body: JSON.stringify({ default_branch: 'develop' }) })
+  routes.set(`/repos/${repo}/commits/develop`, { body: 'a'.repeat(40) })
+  routes.set(`/${repo}/develop/.claude-plugin/marketplace.json`, { body: JSON.stringify(manifest) })
+  routes.set(`/${repo}/zip/${'a'.repeat(40)}`, {
+    body: await zip({
+      '.claude-plugin/marketplace.json': manifest,
+      'plugins/one/.claude-plugin/plugin.json': { name: 'one', version: '1.0.0' },
+      'plugins/one/skills/read/SKILL.md': skill,
+      'plugins/one/README.md': '# Test\n<script>never()</script>\n[link](https://example.org)',
+      ...extra
+    })
+  })
+}
+beforeEach(async () => {
+  env.root = await mkdtemp(join(tmpdir(), 'jiwei-p2a-'))
+  env.failAudit = false
+  await mkdir(join(env.root, 'data'))
+  db = new Database(join(env.root, 'data', 'test.db'))
+  db.loadExtension(getLoadablePath())
+  env.db = drizzle(db, { schema })
+  migrate(env.db, { migrationsFolder: join(process.cwd(), 'resources/migrations') })
+  routes = new Map()
+  hits = []
+  server = createServer((req, res) => {
+    hits.push(req.url!)
+    const route = routes.get(req.url!)
+    res.statusCode = route?.status ?? (route ? 200 : 404)
+    if (route?.slow) {
+      res.write('x')
+      const timer = setInterval(() => res.write('x'), 50)
+      req.on('close', () => clearInterval(timer))
+    } else res.end(route?.body ?? 'not found')
+  })
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  env.base = `http://127.0.0.1:${(server.address() as { port: number }).port}`
+  for (const key of ['RAW', 'API', 'CODELOAD']) process.env[`JIWEI_GITHUB_${key}`] = env.base
+  await file(join(env.root, 'resources/marketplace/.claude-plugin/marketplace.json'), market('jiwei', []))
+  await initializePlugins()
+  await initializeMarkets()
+})
+afterEach(async () => {
+  await cancelOwnerAcquisitions(1)
+  await cancelOwnerAcquisitions(2)
+  for (const row of env.db!.select().from(schema.plugins).all()) replacePluginRegistry(row.id)
+  await initializePlugins()
+  db.close()
+  env.db = null
+  server.closeAllConnections()
+  await new Promise<void>((resolve) => server.close(() => resolve()))
+  for (const key of ['RAW', 'API', 'CODELOAD']) delete process.env[`JIWEI_GITHUB_${key}`]
+  await rm(env.root, { recursive: true, force: true })
+})
+describe('market acquisition through real HTTP, SQLite, files and token lifecycle', () => {
+  it('caches a repository once per refresh, keeps last-good catalog on failure and uses stale/forced refresh', async () => {
+    await repository('owner/repo', market('test-market', [entry('one'), entry('two', './plugins/two')]), {
+      'plugins/two/.claude-plugin/plugin.json': { name: 'two', version: '2.0.0' },
+      'plugins/two/skills/read/SKILL.md': skill,
+      'unrelated/huge.md': 'x'.repeat(2 * 1024 * 1024)
+    })
+    await addMarket({ kind: 'github', url: 'owner/repo' })
+    expect(catalogPlugins()).toHaveLength(2)
+    expect(hits.filter((p) => p.includes('/zip/'))).toHaveLength(1)
+    const fetchedAt = listMarkets().find((m) => m.name === 'test-market')!.fetchedAt
+    hits = []
+    await refreshMarkets(undefined, true)
+    expect(hits).toEqual([])
+    routes.delete('/owner/repo/develop/.claude-plugin/marketplace.json')
+    await refreshMarkets('test-market')
+    expect(listMarkets().find((m) => m.name === 'test-market')).toMatchObject({
+      fetchedAt,
+      count: 2,
+      error: expect.stringContaining('cached')
+    })
+    expect(listMarkets().find((m) => m.name === 'jiwei')?.error).toBeNull()
+  })
+  it('installs from cached catalog, details sanitize HTML, retains content but denies update and stale confirmation after market removal', async () => {
+    await repository()
+    await addMarket({ kind: 'github', url: 'owner/repo' })
+    const p = await inspectPlugin({ kind: 'market', market: 'test-market', name: 'one' })
+    expect((await pluginDetails({ token: p.token })).readme).not.toContain('<script>')
+    expect(p.origin.market).toBe('test-market')
+    await confirmPluginInstall(p.token, {})
+    const update = await updatePlugin(p.id)
+    await removeMarket('test-market', { uninstall: false })
+    expect(listPlugins()).toHaveLength(1)
+    await expect(updatePlugin(p.id)).rejects.toThrow('removed')
+    await expect(confirmPluginInstall(update.token, {})).rejects.toThrow('removed')
+    await expect(readFile(join(readState(p.id).current.directory, 'skills/read/SKILL.md'), 'utf8')).resolves.toBe(skill)
+  })
+  it('rejects reserved/duplicate identities and cannot remove official market', async () => {
+    const local = join(env.root, 'local')
+    for (const name of ['jiwei', 'jiwei-official', 'JiWei-imposter']) {
+      await file(join(local, '.claude-plugin/marketplace.json'), market(name, []))
+      await expect(addMarketSource({ kind: 'folder', path: local })).rejects.toThrow('Reserved')
+    }
+    await file(join(local, '.claude-plugin/marketplace.json'), market('same', []))
+    await addMarketSource({ kind: 'folder', path: local })
+    await expect(addMarketSource({ kind: 'folder', path: local })).rejects.toThrow('already exists')
+    await expect(removeMarket('jiwei', { uninstall: true })).rejects.toThrow('built-in')
+  })
+  it('removes market and all installed plugins atomically and restores directories when audit transaction fails', async () => {
+    await repository('owner/repo', market('test-market', [entry('one'), entry('two')]), {
+      'plugins/two/.claude-plugin/plugin.json': { name: 'two' },
+      'plugins/two/skills/read/SKILL.md': skill
+    })
+    await addMarket({ kind: 'github', url: 'owner/repo' })
+    for (const name of ['one', 'two']) {
+      const p = await inspectPlugin({ kind: 'market', market: 'test-market', name })
+      await confirmPluginInstall(p.token, {})
+    }
+    const directories = listPlugins().map((p) => readState(p.id).current.directory)
+    env.failAudit = true
+    await expect(removeMarket('test-market', { uninstall: true })).rejects.toThrow('audit failure')
+    expect(listPlugins()).toHaveLength(2)
+    expect(listMarkets()).toHaveLength(2)
+    for (const dir of directories) expect(await readdir(dir)).toContain('skills')
+    env.failAudit = false
+    await removeMarket('test-market', { uninstall: true })
+    expect(listPlugins()).toHaveLength(0)
+    expect(listMarkets()).toHaveLength(1)
+    expect(await readdir(join(env.root, 'data/plugins/trash'))).toEqual([])
+  })
+  it('selects official per-plugin newer remote or bundled version and falls back offline', async () => {
+    const bundled = join(env.root, 'resources/marketplace')
+    await file(
+      join(bundled, '.claude-plugin/marketplace.json'),
+      market('jiwei', [entry('one', './plugins/one', '2.0.0'), entry('two', './plugins/two', '3.0.0')])
+    )
+    for (const [name, version] of [
+      ['one', '2.0.0'],
+      ['two', '3.0.0']
+    ]) {
+      await file(join(bundled, `plugins/${name}/.claude-plugin/plugin.json`), { name, version })
+      await file(join(bundled, `plugins/${name}/skills/read/SKILL.md`), skill)
+    }
+    await repository('official/repo', market('jiwei', [entry('one', './plugins/one', '4.0.0'), entry('two', './plugins/two', '1.0.0')]), {
+      'plugins/one/.claude-plugin/plugin.json': { name: 'one', version: '4.0.0' },
+      'plugins/two/.claude-plugin/plugin.json': { name: 'two', version: '1.0.0' }
+    })
+    let batch = new AcquisitionBatch(new AbortController().signal, 'test')
+    try {
+      const result = await officialCatalog(batch, { name: 'jiwei', bundled: 'resources/marketplace', remote: 'official/repo' })
+      env
+        .db!.update(schema.pluginMarkets)
+        .set({ catalog: JSON.stringify(result.catalog) })
+        .where(eq(schema.pluginMarkets.name, 'jiwei'))
+        .run()
+      expect(result.catalog.items.map((x) => [x.entry.name, x.version, x.source.kind])).toEqual([
+        ['one', '4.0.0', 'github'],
+        ['two', '3.0.0', 'folder']
+      ])
+    } finally {
+      await batch.cleanup()
+    }
+    routes.clear()
+    const offlinePreview = await inspectPlugin({ kind: 'market', market: 'jiwei', name: 'one' })
+    expect(offlinePreview.version).toBe('2.0.0')
+    await confirmPluginInstall(offlinePreview.token, {})
+    batch = new AcquisitionBatch(new AbortController().signal, 'test')
+    try {
+      const result = await officialCatalog(batch, { name: 'jiwei', bundled: 'resources/marketplace', remote: 'official/repo' })
+      expect(result.error).toContain('bundled')
+      expect(result.catalog.items.every((x) => x.source.kind === 'folder')).toBe(true)
+    } finally {
+      await batch.cleanup()
+    }
+    expect(comparePluginVersions('1.0.0-beta.2', '1.0.0-beta.11')).toBe(-1)
+    expect(comparePluginVersions('hash:abc', 'hash:def')).toBeNull()
+  })
+  it('uses discovered default branch; fallback main/master only on discovery failure; explicit bad ref never falls back', async () => {
+    await repository()
+    let batch = new AcquisitionBatch(new AbortController().signal, 'branches')
+    try {
+      await batch.catalog(githubSource('owner/repo'))
+      expect(hits).toContain('/owner/repo/develop/.claude-plugin/marketplace.json')
+      expect(hits.some((p) => p.includes('/main/'))).toBe(false)
+    } finally {
+      await batch.cleanup()
+    }
+    routes.delete('/repos/owner/repo')
+    routes.set('/owner/repo/master/.claude-plugin/marketplace.json', { body: JSON.stringify(market('test-market', [])) })
+    hits = []
+    batch = new AcquisitionBatch(new AbortController().signal, 'fallback')
+    try {
+      await batch.catalog(githubSource('owner/repo'))
+      expect(hits).toContain('/owner/repo/main/.claude-plugin/marketplace.json')
+      expect(hits).toContain('/owner/repo/master/.claude-plugin/marketplace.json')
+    } finally {
+      await batch.cleanup()
+    }
+    hits = []
+    batch = new AcquisitionBatch(new AbortController().signal, 'explicit')
+    try {
+      await expect(batch.catalog(githubSource('https://github.com/owner/repo/tree/missing'))).rejects.toThrow()
+      expect(hits.every((p) => p.includes('/missing/'))).toBe(true)
+    } finally {
+      await batch.cleanup()
+    }
+  })
+  it('supports relative/github/git-subdir/url/archive sources and denies npm/command/other git hosts', async () => {
+    await repository(
+      'owner/repo',
+      market('source-market', [
+        entry('one'),
+        entry('two', { source: 'github', repo: 'owner/plugin', ref: 'main' }),
+        entry('three', { source: 'git-subdir', url: 'owner/repo', path: 'plugins/three', ref: 'develop' }),
+        entry('four', { source: 'url', url: 'https://github.com/owner/four' }),
+        entry('five', { source: 'archive', url: 'https://archive.fixture/archive.zip' }),
+        entry('npm', { source: 'npm', package: 'never' }),
+        entry('command', { source: 'command', command: 'never' }),
+        entry('other', { source: 'url', url: 'https://gitlab.com/owner/repo' })
+      ]),
+      {
+        'plugins/three/.claude-plugin/plugin.json': { name: 'three' },
+        'plugins/three/skills/read/SKILL.md': skill
+      }
+    )
+    routes.set('/owner/plugin/zip/main', {
+      body: await zip({ '.claude-plugin/plugin.json': { name: 'two' }, 'skills/read/SKILL.md': skill })
+    })
+    routes.set('/repos/owner/four', { body: JSON.stringify({ default_branch: 'main' }) })
+    routes.set('/owner/four/zip/main', {
+      body: await zip({ '.claude-plugin/plugin.json': { name: 'four' }, 'skills/read/SKILL.md': skill })
+    })
+    routes.set('/archive.zip', { body: await zip({ '.claude-plugin/plugin.json': { name: 'five' }, 'skills/read/SKILL.md': skill }, '') })
+    await addMarket({ kind: 'github', url: 'owner/repo' })
+    for (const name of ['one', 'two', 'three', 'four', 'five']) {
+      const p = await inspectPlugin({ kind: 'market', market: 'source-market', name })
+      expect(p.id).toBe(`${name}@source-market`)
+      await cancelPluginPreview(p.token)
+    }
+    for (const name of ['npm', 'command', 'other']) {
+      expect(catalogPlugins().find((p) => p.name === name)?.supported).toBe(false)
+      await expect(inspectPlugin({ kind: 'market', market: 'source-market', name })).rejects.toThrow('Unsupported')
+    }
+  })
+  it('projects strict:false selected skills before limits, rejecting unsafe unrelated raw archive entries', async () => {
+    await repository('owner/repo', market('selection-market', [{ name: 'picked', source: './', strict: false, skills: ['./selected'] }]), {
+      'selected/SKILL.md': skill.replace('name: read', 'name: selected'),
+      'unselected/SKILL.md': skill.replace('name: read', 'name: unselected'),
+      'unrelated/large.md': 'x'.repeat(2 * 1024 * 1024)
+    })
+    await addMarket({ kind: 'github', url: 'owner/repo' })
+    const p = await inspectPlugin({ kind: 'market', market: 'selection-market', name: 'picked' })
+    expect(p.skills).toHaveLength(1)
+    await confirmPluginInstall(p.token, {})
+    expect(await readdir(readState(p.id).current.directory)).toEqual(['selected'])
+    const z = new JSZip()
+    z.file('repo/plugin/SKILL.md', skill)
+    z.file('repo/unrelated/link', 'target', { unixPermissions: 0o120777 })
+    const path = join(env.root, 'unsafe.zip')
+    await writeFile(path, await z.generateAsync({ type: 'nodebuffer', platform: 'UNIX' }))
+    await expect(prepareRepositorySource(path, 'plugin')).rejects.toThrow('symlink')
+  })
+  it('aborts an owned acquisition before any preview exists; wrong owner cannot cancel it; temporary downloads are cleaned', async () => {
+    routes.set('/repos/owner/slow', { body: JSON.stringify({ default_branch: 'main' }) })
+    routes.set('/owner/slow/zip/main', { body: '', slow: true })
+    const before = (await readdir(tmpdir())).filter((x) => x.startsWith('jiwei-plugin-download-'))
+    const id = beginAcquisition(1)
+    const pending = detectGithub(1, id, { kind: 'github', url: 'owner/slow' })
+    const rejected = expect(pending).rejects.toThrow()
+    await vi.waitFor(() => expect(hits).toContain('/owner/slow/zip/main'))
+    await cancelAcquisition(2, id)
+    await cancelAcquisition(1, id)
+    await rejected
+    expect(listPlugins()).toEqual([])
+    expect((await readdir(tmpdir())).filter((x) => x.startsWith('jiwei-plugin-download-'))).toEqual(before)
+    expect(await readdir(join(env.root, 'data/plugins/previews')).catch(() => [])).toEqual([])
+  })
+  it('detects market/plugin/skills and only selected skills reach token install, with empty directories preserved', async () => {
+    await repository()
+    let id = beginAcquisition(1),
+      detected = await detectGithub(1, id, { kind: 'github', url: 'owner/repo' })
+    expect(detected.kind).toBe('market')
+    if (detected.kind === 'market') await addDetectedMarket(1, id, detected.token)
+    await cancelAcquisition(1, id)
+    const local = join(env.root, 'collection')
+    await file(join(local, 'first/SKILL.md'), skill.replace('name: read', 'name: first'))
+    await file(join(local, 'second/SKILL.md'), skill.replace('name: read', 'name: second'))
+    await file(join(local, 'second/never.py'), 'raise Exception()')
+    id = beginAcquisition(1)
+    detected = await detectPath(1, id, local)
+    expect(detected.kind).toBe('skills')
+    if (detected.kind !== 'skills') throw new Error('Expected skills')
+    await expect(selectDetectedSkills(1, id, detected.token, ['../escape'])).rejects.toThrow('selection')
+    const chosen = await selectDetectedSkills(1, id, detected.token, ['first'])
+    if (chosen.kind !== 'plugin') throw new Error('Expected plugin preview')
+    expect(chosen.preview.skills.map((s) => s.name)).toEqual(['collection:first'])
+    expect(chosen.preview.scripts).toEqual([])
+    await confirmPluginInstall(chosen.preview.token, {})
+    expect(await readdir(readState(chosen.preview.id).current.directory)).toEqual(['first'])
+    const empty = join(env.root, 'empty')
+    await mkdir(join(empty, 'skills'), { recursive: true })
+    const prepared = await preparePluginSource({ path: empty, type: 'folder' })
+    try {
+      expect(await readdir(prepared.root)).toEqual(['skills'])
+    } finally {
+      await prepared.cleanup()
+    }
+  })
+  it('keeps cache with a rate-limit message and returns sha/content-hash versions from real direct plugin acquisition', async () => {
+    await repository()
+    await addMarket({ kind: 'github', url: 'owner/repo' })
+    const initial = catalogPlugins()
+    routes.set('/repos/owner/repo/commits/develop', { status: 429, body: 'rate limit fixture' })
+    await refreshMarkets('test-market')
+    expect(catalogPlugins()).toEqual(initial)
+    expect(listMarkets().find((m) => m.name === 'test-market')!.error).toContain('rate limited')
+    routes.set('/repos/owner/direct', { body: JSON.stringify({ default_branch: 'main' }) })
+    routes.set('/repos/owner/direct/commits/main', { body: 'b'.repeat(40) })
+    const content = await zip({ '.claude-plugin/plugin.json': { name: 'direct' }, 'skills/read/SKILL.md': skill })
+    routes.set(`/owner/direct/zip/${'b'.repeat(40)}`, { body: content })
+    let id = beginAcquisition(1)
+    let detected = await detectGithub(1, id, { kind: 'github', url: 'owner/direct' })
+    if (detected.kind !== 'plugin') throw new Error('Expected plugin')
+    expect(detected.preview.version).toBe('b'.repeat(12))
+    await cancelAcquisition(1, id)
+    routes.delete('/repos/owner/direct/commits/main')
+    routes.set('/owner/direct/zip/main', { body: content })
+    id = beginAcquisition(1)
+    detected = await detectGithub(1, id, { kind: 'github', url: 'owner/direct' })
+    if (detected.kind !== 'plugin') throw new Error('Expected plugin')
+    expect(detected.preview.version).toMatch(/^[a-f0-9]{12}$/)
+    expect(detected.preview.version).not.toBe('b'.repeat(12))
+    await cancelAcquisition(1, id)
+  })
+  it.each(['', 'repo-main/'])(
+    'imports a %s zip marketplace snapshot, removes only its owned copy, and leaves the source zip intact',
+    async (prefix) => {
+      const path = join(env.root, 'source.zip')
+      await writeFile(
+        path,
+        await zip({ '.claude-plugin/marketplace.json': market('zip-market', []), 'README.md': 'Self-authored' }, prefix)
+      )
+      const id = beginAcquisition(1),
+        detected = await detectPath(1, id, path)
+      if (detected.kind !== 'market') throw new Error('Expected market')
+      await addDetectedMarket(1, id, detected.token)
+      expect(await readdir(join(env.root, 'data/plugins/market-imports'))).toHaveLength(1)
+      await removeMarket('zip-market', { uninstall: true })
+      expect(await readdir(join(env.root, 'data/plugins/market-imports'))).toEqual([])
+      expect((await readFile(path)).length).toBeGreaterThan(0)
+    }
+  )
+  it('detects a GitHub Agent Skills collection and preserves selected content through two updates', async () => {
+    routes.set('/repos/owner/collection', { body: JSON.stringify({ default_branch: 'main' }) })
+    const content = await zip({
+      'first/SKILL.md': skill.replace('name: read', 'name: first'),
+      'second/SKILL.md': skill.replace('name: read', 'name: second'),
+      'second/never.py': 'raise Exception()'
+    })
+    routes.set('/owner/collection/zip/main', { body: content })
+    const id = beginAcquisition(1),
+      detected = await detectGithub(1, id, { kind: 'github', url: 'owner/collection' })
+    if (detected.kind !== 'skills') throw new Error('Expected GitHub skills')
+    const chosen = await selectDetectedSkills(1, id, detected.token, ['first'])
+    if (chosen.kind !== 'plugin') throw new Error('Expected preview')
+    expect(chosen.preview.skills.map((x) => x.name)).toEqual(['collection:first'])
+    await confirmPluginInstall(chosen.preview.token, {})
+    for (let i = 0; i < 2; i++) {
+      const update = await updatePlugin(chosen.preview.id)
+      expect(update.skills.map((x) => x.name)).toEqual(['collection:first'])
+      expect(update.scripts).toEqual([])
+      await confirmPluginInstall(update.token, {})
+      expect(await readdir(readState(chosen.preview.id).current.directory)).toEqual(['first'])
+    }
+  })
+})
