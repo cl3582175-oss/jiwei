@@ -165,7 +165,7 @@
 - [x] v0.7 智能体底座（工具注册表、执行器、权限三级、审计）、MCP 服务端与客户端、费用与权限中心、积微助手“办”
 - [x] v0.8 AI 任务（定时、事件、IMAP 邮箱）、发现（每日精选、订阅源、搜索服务、学习路径、错题补救、每日播客）、计划（日历、时间线、AI 排期、ICS 导入）、学习目标升级为“方向”
 - [x] v0.9 可视化（即时图示补全、视频引擎：内置模板化场景渲染）、创作工坊（讲解视频、长文、PPT，产出回流）、参谋与决策日志、洞察看板（知识漏斗）
-- [ ] v0.10 插件市场（声明式与代码插件、GitHub 索引）、Manim 插件、角色工具包、导入 Agent Skills 与 knowledge-work-plugins、monid 插件
+- [x] v0.10 插件与市场（兼容 Claude Code 插件格式，GitHub 仓库即市场）、角色工具包与今日起步卡、Manim 数学动画插件、导入 Agent Skills 与 knowledge-work-plugins、monid 连接器
 - [ ] v0.11 自动更新、代码签名与公证、导入 Obsidian / Notion / Markdown
 
 ## v1.0 正式发布
