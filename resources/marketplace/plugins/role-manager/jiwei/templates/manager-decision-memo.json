@@ -1,0 +1,22 @@
+{
+  "id": "manager-decision-memo",
+  "type": "article",
+  "mode": "cowrite",
+  "title": {
+    "zh": "决策备忘录",
+    "en": "Decision memo"
+  },
+  "description": {
+    "zh": "叙述体、1500 字内：背景、要做的决定、选项与取舍、建议、风险、需要的支持。",
+    "en": "Explain a decision in connected prose, including options, trade-offs, risks and support needed."
+  },
+  "outline": [
+    "背景",
+    "要做的决定",
+    "选项与取舍",
+    "建议",
+    "风险与应对",
+    "需要的支持"
+  ],
+  "guidance": "叙述体，不用 PPT 式要点堆砌；1500 字内；可基于参谋备忘录。依据用户提供或已保存的真实素材，缺失数据和经历明确标注待补；保留出处。用用户使用的语言创作，先确认目标读者。"
+}

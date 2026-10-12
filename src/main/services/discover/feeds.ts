@@ -16,6 +16,8 @@ import { audit } from '../agent/audit'
 import { enqueue, registerJobKind, cancelJob } from '../jobs'
 import { tr } from '../../lib/messages'
 
+// 提取方式升级先重建基线，不能把旧页面因提取规则变化当作新内容投递。
+const WEB_HASH_PREFIX = 'visible-html-v1:'
 export const discoverChanged = (): void => emit('discover:changed', {})
 export function checkDiscoverUrl(url: string): void {
   checkedWebUrl(url)
@@ -146,10 +148,10 @@ async function doRefresh(id: string, signal?: AbortSignal): Promise<void> {
       url = normalizeFeed(channel).url
     }
     if (f.kind === 'web') {
-      const page = await fetchWebText(url, undefined, signal),
-        hash = createHash('sha256').update(page.text).digest('hex')
+      const page = await fetchWebText(url, 'html', signal),
+        hash = WEB_HASH_PREFIX + createHash('sha256').update(page.text).digest('hex')
       if (!valid()) return
-      if (f.contentHash && f.contentHash !== hash)
+      if (f.contentHash?.startsWith(WEB_HASH_PREFIX) && f.contentHash !== hash)
         upsertCandidate(
           {
             url,
@@ -177,13 +179,13 @@ async function doRefresh(id: string, signal?: AbortSignal): Promise<void> {
         if (r.status !== 200) throw new Error('Feed unavailable')
         // 普通网页地址可自动识别，首次建立哈希基线，不把旧正文当新更新。
         if (/text\/html/i.test(r.headers.get('content-type') ?? '') || /^\s*<!doctype html/i.test(r.text)) {
-          const page = await fetchWebText(url, undefined, signal)
+          const page = await fetchWebText(url, 'html', signal)
           if (!valid()) return
           db.update(feeds)
             .set({
               kind: 'web',
               title: page.title,
-              contentHash: createHash('sha256').update(page.text).digest('hex'),
+              contentHash: WEB_HASH_PREFIX + createHash('sha256').update(page.text).digest('hex'),
               lastFetchedAt: Date.now(),
               error: null
             })

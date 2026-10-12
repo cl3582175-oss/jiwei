@@ -1,10 +1,17 @@
+import { AnimationSchema } from './manim'
 import {
   MarketInputSchema,
   MarketNameSchema,
   type PluginMarketInfo,
   type PluginCatalogCard,
   type PluginDetection,
-  type PluginDetails
+  type PluginDetails,
+  type RoleCatalogCard,
+  type RoleBatchPreview,
+  type RoleBatchRecovery,
+  type RoleStarters,
+  type PluginStarter,
+  RoleBatchSelections
 } from './plugins'
 import {
   PluginInspectSource,
@@ -1167,7 +1174,44 @@ export const capabilities = {
     exportAudit: cap<string | null>()({ description: '导出审计日志（JSON）', params: none }),
     clearAudit: cap<void>()({ description: '清除审计日志', params: none })
   },
+  manim: {
+    status: cap<import('./manim').ManimStatus>()({ description: '数学动画运行环境的状态', params: none }),
+    install: cap<void>()({
+      description: '下载并安装数学动画运行环境（可复用本机 LaTeX）',
+      params: [['options', z.object({ useSystemTex: z.boolean().optional() })]]
+    }),
+    cancel: cap<void>()({ description: '取消安装', params: none }),
+    remove: cap<number>()({ description: '删除运行环境，返回释放的字节数', params: none }),
+    clip: cap<string>()({ description: '生成（或取缓存的）笔记数学动画，返回 jiwei:// 地址', params: [['animation', AnimationSchema]] })
+  },
   plugins: {
+    roleCatalog: cap<RoleCatalogCard[]>()({ description: '实际角色目录、内容数量与安装启用状态', params: none }),
+    beginRoleSelection: cap<string>()({ description: '创建窗口拥有的可取消角色选择', params: none }),
+    previewRoles: cap<RoleBatchPreview>()({
+      description: '合并预览所选角色，不安装',
+      params: [
+        ['token', z.string().length(64)],
+        ['ids', z.array(z.string().min(1).max(257)).min(1).max(8)]
+      ]
+    }),
+    confirmRoles: cap<RoleBatchRecovery>()({
+      description: '一次确认角色批次，返回已安装和待重试状态',
+      params: [
+        ['token', z.string().length(64)],
+        ['selections', RoleBatchSelections]
+      ]
+    }),
+    cancelRoleSelection: cap<void>()({ description: '取消本窗口角色批次，保留已经提交的包', params: [['token', z.string().length(64)]] }),
+    roleRecovery: cap<RoleBatchRecovery | null>()({ description: '上次角色确认的真实持久化恢复状态', params: none }),
+    roleStarters: cap<RoleStarters[]>()({ description: '启用角色的未关闭起步卡与逐项完成状态', params: none }),
+    activateStarter: cap<PluginStarter['action']>()({
+      description: '记录点击完成并返回经过身份验证的纯导航动作，不运行模型或任务',
+      params: [
+        ['pluginId', z.string().min(1).max(257)],
+        ['starterId', z.string().min(1).max(257)]
+      ]
+    }),
+    dismissStarters: cap<void>()({ description: '关闭角色起步卡并持久化', params: [['pluginId', z.string().min(1).max(257)]] }),
     markets: cap<PluginMarketInfo[]>()({ description: '市场清单与每个市场的缓存状态', params: none }),
     catalog: cap<PluginCatalogCard[]>()({ description: '缓存中的合并插件目录', params: none }),
     addMarket: cap<PluginMarketInfo>()({ description: '添加已确认信任的第三方市场', params: [['input', MarketInputSchema]] }),
@@ -1268,6 +1312,54 @@ export const capabilities = {
       ]
     }),
     openFolder: cap<void>()({ description: '打开已安装插件文件夹', params: [['id', z.string().max(257)]] }),
+    customize: cap<string>()({ description: '把已装插件复制成可编辑的本地副本，返回副本名', params: [['id', z.string().max(257)]] }),
+    createRolePack: cap<{ name: string; skipped: string[] }>()({
+      description: '从现有技能、视角、任务和订阅源组装角色包（只生成文件，安装另需预览确认）',
+      params: [
+        [
+          'input',
+          z.object({
+            name: z.string().trim().min(1).max(40),
+            description: z.string().trim().max(200).optional(),
+            skills: z.array(z.string().min(1).max(257)).max(30).optional(),
+            tasks: z.array(z.string().min(1).max(64)).max(10).optional(),
+            feeds: z.array(z.string().min(1).max(64)).max(30).optional()
+          })
+        ]
+      ]
+    }),
+    acquireAuthored: cap<PluginDetection>()({
+      description: '识别积微自制目录里的插件（路径由主进程决定）',
+      params: [
+        ['operation', z.string().length(64)],
+        [
+          'name',
+          z
+            .string()
+            .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
+            .max(64)
+        ]
+      ]
+    }),
+    openAuthored: cap<void>()({
+      description: '打开自制插件的可编辑文件夹',
+      params: [
+        [
+          'name',
+          z
+            .string()
+            .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
+            .max(64)
+        ]
+      ]
+    }),
+    exportPlugin: cap<string | null>()({
+      description: '导出为 Claude Code 格式的插件文件夹和 zip，可选附带市场文件',
+      params: [
+        ['id', z.string().max(257)],
+        ['withMarketplace', z.boolean()]
+      ]
+    }),
     templates: cap<PluginRegistryItem<PluginTemplate>[]>()({ description: '启用的作品模板', params: none }),
     frameworks: cap<PluginRegistryItem<PluginFramework>[]>()({ description: '启用的参谋框架', params: none }),
     recipes: cap<PluginRegistryItem<TaskRecipe | PluginRecipe>[]>()({ description: '启用的任务配方', params: none })

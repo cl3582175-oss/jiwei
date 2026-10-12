@@ -1,0 +1,22 @@
+{
+  "id": "research-defense",
+  "type": "slides",
+  "mode": "cowrite",
+  "title": {
+    "zh": "开题 / 答辩",
+    "en": "Research proposal or defence"
+  },
+  "description": {
+    "zh": "研究问题、相关工作、方法、进度、创新点（不超过三条）、风险与计划。",
+    "en": "Present a research proposal or defence with methods, evidence, contributions and risks."
+  },
+  "outline": [
+    "研究问题与意义",
+    "相关工作",
+    "方法",
+    "进度或结果",
+    "创新点",
+    "风险与计划"
+  ],
+  "guidance": "12–15 页；创新点不超过 3 条，每条一句话。依据用户提供或已保存的真实素材，缺失数据和经历明确标注待补；保留出处。用用户使用的语言创作，先确认目标读者。"
+}

@@ -3,6 +3,11 @@ import { canonicalUrl } from '@shared/browserUrl'
 import type { NoteSort, WorkspaceContext } from '@shared/types'
 import { toast } from 'sonner'
 
+export type StarterIntent =
+  | { kind: 'chat'; text: string; skill?: string }
+  | { kind: 'advisor'; framework: string; question: string }
+  | { kind: 'work'; template: string }
+  | { kind: 'recipe'; recipe: string }
 export type View =
   | 'today'
   | 'recording'
@@ -157,6 +162,9 @@ interface AppState extends Location {
   assistantDraft: { text: string; context?: string } | null
   askAssistant: (text: string, context?: string) => void
   takeAssistantDraft: () => AppState['assistantDraft']
+  /** 角色起步卡的预填：目标页面打开时取走，只填不发 */
+  starterIntent: StarterIntent | null
+  takeStarterIntent: <K extends StarterIntent['kind']>(kind: K) => Extract<StarterIntent, { kind: K }> | null
   /** 每组上次去过的条目：点组图标时回到这里 */
   lastInGroup: Partial<Record<NavGroup, NavItem>>
   goNav: (item: NavItem) => void
@@ -326,6 +334,13 @@ export const useApp = create<AppState>((set, get) => {
     askAssistant: (text, context) => {
       set({ conversationId: null, assistantDraft: { text, context } })
       get().navigate({ view: 'chat' })
+    },
+    starterIntent: null,
+    takeStarterIntent: (kind) => {
+      const intent = get().starterIntent
+      if (intent?.kind !== kind) return null
+      set({ starterIntent: null })
+      return intent as never
     },
     takeAssistantDraft: () => {
       const d = get().assistantDraft

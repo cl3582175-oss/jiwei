@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "category": "role",
+  "roles": [
+    "kaoyan"
+  ],
+  "name": {
+    "zh": "考研",
+    "en": "Postgraduate entrance exams"
+  },
+  "description": {
+    "zh": "择校、真题复盘、作文批改、复试准备",
+    "en": "Choose programmes, review past papers, improve essays and prepare admission interviews"
+  },
+  "engines": {
+    "jiwei": ">=0.10.0"
+  },
+  "dataLeavesDevice": false
+}

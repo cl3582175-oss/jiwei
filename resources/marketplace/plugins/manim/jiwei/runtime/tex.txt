@@ -1,0 +1,5 @@
+# Manim 需要的 LaTeX 包（TinyTeX-0 之上用 tlmgr 安装）；复用本机 LaTeX 时逐个用 kpsewhich 检查下列文件
+# packages:
+amsmath amsfonts babel-english cm doublestroke dvisvgm everyshi jknapltx latex latex-bin l3kernel lm physics preview relsize rsfs setspace standalone tools wasysym xcolor xkeyval graphics graphics-cfg graphics-def epstopdf-pkg
+# files:
+standalone.cls preview.sty dsfont.sty relsize.sty setspace.sty mathrsfs.sty wasysym.sty physics.sty everyshi.sty amsmath.sty amssymb.sty xcolor.sty

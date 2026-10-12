@@ -65,12 +65,24 @@ export function PluginDetailsDialog({
     if (kind === 'templates' || kind === 'frameworks') {
       app.setSettingsOpen(false)
       app.setView(kind === 'templates' ? 'works' : 'advisor')
-    } else app.openSettings(kind === 'skills' ? 'skills' : kind === 'mcp' ? 'connections' : kind === 'feeds' ? 'discover' : 'tasks')
+    } else
+      app.openSettings(
+        kind === 'skills'
+          ? 'skills'
+          : kind === 'lenses'
+            ? 'lenses'
+            : kind === 'mcp'
+              ? 'connections'
+              : kind === 'feeds'
+                ? 'discover'
+                : 'tasks'
+      )
   }
   const c = info.capabilities
   return (
     <PlanDialog
-      title={`${info.manifest.displayName ?? info.manifest.name} · ${info.version}`}
+      title={info.manifest.displayName ?? info.manifest.name}
+      description={`${t('plugins.version')} ${info.version}`}
       size="lg"
       onClose={onClose}
       testId="plugin-details"
@@ -86,16 +98,21 @@ export function PluginDetailsDialog({
       }
     >
       <div className="flex items-center gap-3">
-        <PluginIcon icon={query.data?.icon} name={info.manifest.name} category="skills" />
-        <div className="min-w-0 text-sm [overflow-wrap:anywhere]">
-          <PluginOriginLabel origin={info.origin} />
-          <p>
-            {info.origin.market} · {info.version}
+        <PluginIcon
+          icon={query.data?.icon}
+          name={info.manifest.displayName ?? info.manifest.name}
+          category={sourceCard?.category ?? ('category' in info ? (info.category ?? 'skills') : 'skills')}
+        />
+        <div className="min-w-0 flex-1 text-sm [overflow-wrap:anywhere]">
+          <p className="text-fg">{info.manifest.description}</p>
+          <p className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-muted">
+            <PluginOriginLabel origin={info.origin} />
+            {sourceCard?.origin.market !== 'jiwei' && (
+              <span>{typeof info.manifest.author === 'string' ? info.manifest.author : info.manifest.author?.name}</span>
+            )}
           </p>
-          <p>{typeof info.manifest.author === 'string' ? info.manifest.author : info.manifest.author?.name}</p>
         </div>
       </div>
-      <p className="text-sm [overflow-wrap:anywhere]">{info.manifest.description}</p>
       {plugin?.origin.kind === 'market' && !sourceCard && <p className="text-sm text-warning">{t('plugins.noUpdates')}</p>}
       {originLink && (
         <a
@@ -112,7 +129,8 @@ export function PluginDetailsDialog({
         {c.commands.length > 0 && <p className="text-warning">{t('plugins.commandsRisk')}</p>}
         {c.dataLeavesDevice && <p className="text-warning">{t('plugins.leaves')}</p>}
         {c.cost && <p className="text-warning">{i18n.language.startsWith('zh') ? c.cost.zh : c.cost.en}</p>}
-        {!c.servers.length && !c.dataLeavesDevice && !c.cost && (
+        {!!c.renderers?.length && <p className="text-warning">{t('plugins.rendererRisk')}</p>}
+        {!c.servers.length && !c.dataLeavesDevice && !c.cost && !c.renderers?.length && (
           <p data-tint="bamboo" className="text-[var(--tint-ink)]">
             {t('plugins.textOnly')}
           </p>
@@ -138,21 +156,23 @@ export function PluginDetailsDialog({
             {Object.entries(query.data.contents)
               .filter(([, items]) => items.length)
               .map(([kind, items]) => (
-                <div key={kind} className="rounded-lg border border-border p-3 text-xs [overflow-wrap:anywhere]">
-                  <p>
-                    {t(`plugins.${kind === 'mcp' ? 'servers' : kind}`)} · {items.length}
-                  </p>
-                  {items.map((name) => (
-                    <div key={name}>
-                      {plugin ? (
-                        <button className="text-left text-accent underline" onClick={() => navigate(kind)}>
+                <div key={kind} className="flex gap-3 border-b border-border py-2 text-sm last:border-0 [overflow-wrap:anywhere]">
+                  <span className="w-20 shrink-0 text-xs text-muted">{t(`plugins.${kind === 'mcp' ? 'servers' : kind}`)}</span>
+                  <span className="flex min-w-0 flex-1 flex-wrap gap-x-3 gap-y-1">
+                    {items.map((name, i) =>
+                      plugin && kind !== 'starters' ? (
+                        <button
+                          key={i}
+                          className="text-left text-accent hover:underline"
+                          onClick={() => navigate(kind === 'lenses' ? 'lenses' : kind)}
+                        >
                           {name}
                         </button>
                       ) : (
-                        name
-                      )}
-                    </div>
-                  ))}
+                        <span key={i}>{name}</span>
+                      )
+                    )}
+                  </span>
                 </div>
               ))}
           </section>

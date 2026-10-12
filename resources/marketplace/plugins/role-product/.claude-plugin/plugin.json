@@ -1,0 +1,16 @@
+{
+  "name": "role-product",
+  "displayName": "产品经理",
+  "version": "1.0.0",
+  "description": "审需求、归纳访谈、拆竞品、排优先级 / Review requirements, analyse interviews, compare competitors and prioritise work",
+  "author": {
+    "name": "积微 / Jiwei"
+  },
+  "keywords": [
+    "产品经理",
+    "product",
+    "Product manager",
+    "角色",
+    "role"
+  ]
+}

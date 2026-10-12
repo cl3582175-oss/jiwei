@@ -1,0 +1,16 @@
+{
+  "name": "role-manager",
+  "displayName": "管理者·决策",
+  "version": "1.0.0",
+  "description": "一对一、决策简报、取舍与优先级 / Prepare one-to-ones, explain decisions and make practical trade-offs",
+  "author": {
+    "name": "积微 / Jiwei"
+  },
+  "keywords": [
+    "管理者·决策",
+    "manager",
+    "Manager and decision maker",
+    "角色",
+    "role"
+  ]
+}

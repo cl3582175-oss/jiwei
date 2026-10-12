@@ -49,6 +49,7 @@ const epochs = new Map<string, number>()
 const pendingTransports = new Map<string, { epoch: number; transport: Transport }>()
 
 /** 工具多于这个数时，只给助手“找工具 / 调用工具”两个入口，避免工具描述占满上下文 */
+/** 策略表里的 "*" 是服务器级默认（收费 / 数据出本机的插件装好时设为每次询问），单个工具的设置优先 */
 const DIRECT_LIMIT = 24
 const CONNECT_TIMEOUT_MS = 30_000
 
@@ -96,7 +97,7 @@ function toInfo(r: Row): McpServerInfo {
         title: t.title ?? t.annotations?.title ?? t.name,
         description: (t.description ?? '').slice(0, 400),
         level,
-        policy: effectivePolicy(level, p[t.name])
+        policy: effectivePolicy(level, p[t.name] ?? p['*'])
       }
     })
   }
@@ -487,7 +488,7 @@ async function callTool(
       !current.enabled ||
       !tool ||
       levelFromAnnotations(tool.annotations) !== 'read' ||
-      effectivePolicy('read', policies(current)[name]) !== 'auto'
+      effectivePolicy('read', policies(current)[name] ?? policies(current)['*']) !== 'auto'
     )
       throw new Error(tr('工具权限已改变，后台调用已跳过', 'Tool permissions changed; background call skipped'))
   }
@@ -546,7 +547,7 @@ export async function assistantMcpTools(
     for (const t of conn.tools) {
       const level = levelFromAnnotations(t.annotations)
       if (options.readOnly && level !== 'read') continue
-      const policy = effectivePolicy(level, p[t.name])
+      const policy = effectivePolicy(level, p[t.name] ?? p['*'])
       if (policy === 'deny') continue
       const title = t.title ?? t.annotations?.title ?? t.name
       entries.push({
@@ -569,7 +570,8 @@ export async function assistantMcpTools(
                     level,
                     untrusted: true,
                     server: r.name,
-                    policy: current?.enabled && currentTool ? effectivePolicy(level, policies(current)[t.name]) : 'deny'
+                    policy:
+                      current?.enabled && currentTool ? effectivePolicy(level, policies(current)[t.name] ?? policies(current)['*']) : 'deny'
                   }
                 }
               }

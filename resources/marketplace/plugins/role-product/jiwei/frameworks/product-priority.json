@@ -1,0 +1,43 @@
+{
+  "id": "product-priority",
+  "title": {
+    "zh": "需求优先级",
+    "en": "Prioritise requirements"
+  },
+  "description": {
+    "zh": "给需求排序：影响用户数、对核心指标的影响、证据强度、投入成本和战略契合。",
+    "en": "Rank requests by reach, metric impact, evidence, cost and strategic fit."
+  },
+  "criteria": [
+    {
+      "name": "影响用户数",
+      "weight": 4,
+      "hint": "区分独立用户人数与反馈条数，注明样本和时间范围。"
+    },
+    {
+      "name": "对核心指标的影响",
+      "weight": 5,
+      "hint": "写清指标、基线与机制，估计范围不当实测。"
+    },
+    {
+      "name": "证据强度",
+      "weight": 4,
+      "hint": "优先观察、访谈和可复核数据；假设标为假设。"
+    },
+    {
+      "name": "投入成本",
+      "weight": 4,
+      "hint": "越低越好；含研发、验证、上线和维护，以同一单位比较。"
+    },
+    {
+      "name": "战略契合",
+      "weight": 3,
+      "hint": "与已确认目标关联，未提供目标时不自拟战略。"
+    }
+  ],
+  "questions": [
+    "这个需求有多少用户提过、证据来自哪？",
+    "不做会怎样？",
+    "最小可行版本是什么？"
+  ]
+}

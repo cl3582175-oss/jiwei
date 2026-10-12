@@ -12,6 +12,7 @@ import {
   timelineText
 } from './visuals'
 import { GraphDataSchema, checkGraph, graphText } from './graph'
+import { AnimationEmbedSchema, animationText, checkAnimation } from '../manim'
 import type { z } from 'zod'
 
 const def = <T>(kind: string, schema: z.ZodType<T>, text: (d: T) => string): EmbedKindDef => ({
@@ -48,6 +49,13 @@ export const EMBED_KINDS: Record<string, EmbedKindDef> = {
   timeline: def('timeline', TimelineDataSchema, timelineText),
   steps: def('steps', StepsDataSchema, stepsText),
   interactive: def('interactive', InteractiveDataSchema, interactiveText),
+  animation: {
+    ...def('animation', AnimationEmbedSchema, animationText),
+    validate: (d) => {
+      const r = AnimationEmbedSchema.safeParse(d)
+      return r.success && !checkAnimation(r.data.animation)
+    }
+  },
   graph: {
     ...def('graph', GraphDataSchema, graphText),
     // 除结构外还要语义正确（表达式可解析、几何引用有效），否则 AI 或导入写入的图无法显示

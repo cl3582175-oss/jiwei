@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "category": "role",
+  "roles": [
+    "jobseeker"
+  ],
+  "name": {
+    "zh": "求职者",
+    "en": "Job seeker"
+  },
+  "description": {
+    "zh": "简历对岗、面试模拟与复盘、选 offer",
+    "en": "Tailor your résumé, practise interviews and compare job offers"
+  },
+  "engines": {
+    "jiwei": ">=0.10.0"
+  },
+  "dataLeavesDevice": false
+}

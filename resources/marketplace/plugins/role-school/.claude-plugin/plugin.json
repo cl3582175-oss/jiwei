@@ -1,0 +1,16 @@
+{
+  "name": "role-school",
+  "displayName": "中学生·考试",
+  "version": "1.0.0",
+  "description": "错题找原因，考后知道下一步练什么 / Find the cause of mistakes and decide what to practise after an exam",
+  "author": {
+    "name": "积微 / Jiwei"
+  },
+  "keywords": [
+    "中学生·考试",
+    "school",
+    "School exams",
+    "角色",
+    "role"
+  ]
+}

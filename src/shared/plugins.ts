@@ -126,6 +126,8 @@ export const PluginManifestSchema = z.object({
   repository: z.string().optional(),
   license: z.string().optional(),
   keywords: z.array(z.string()).optional(),
+  /** Claude Code 的自由字段；积微只读 jiwei.customizedFrom（自定义副本的来源插件） */
+  metadata: z.record(z.string(), z.unknown()).optional(),
   ...components,
   userConfig: z.record(key, UserConfigOptionSchema).optional()
 })
@@ -212,6 +214,37 @@ export const PluginRecipeSchema = z.object({
   task: TaskSave.omit({ id: true }).refine((v) => v.tools.every((t) => PLUGIN_RECIPE_TOOLS.includes(t)), 'Unknown task tool'),
   requires: z.enum(['mail', 'discover']).optional()
 })
+// 起步卡只声明导航与预填数据；不接受执行、自动发送或任意 URL。
+const StarterReference = z
+  .string()
+  .min(1)
+  .max(257)
+  .refine((value) => {
+    const parts = value.split(':')
+    return parts.length <= 2 && parts.every((part) => PluginNameSchema.safeParse(part).success)
+  }, 'Invalid starter reference')
+export const PluginStarterActionSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('chat'), skill: StarterReference, prompt: LocalizedSchema }).strict(),
+  z.object({ kind: z.literal('advisor'), framework: StarterReference, question: LocalizedSchema }).strict(),
+  z.object({ kind: z.literal('work'), template: StarterReference }).strict(),
+  z
+    .object({ kind: z.literal('recipe'), recipe: StarterReference.optional(), recipeRef: PluginNameSchema.optional() })
+    .strict()
+    .refine((v) => !!v.recipe !== !!v.recipeRef, 'Choose recipe or recipeRef')
+])
+export const PluginStarterSchema = z
+  .object({
+    id: PluginNameSchema,
+    title: LocalizedSchema,
+    body: LocalizedSchema,
+    action: PluginStarterActionSchema
+  })
+  .strict()
+export const PluginStartersSchema = z
+  .array(PluginStarterSchema)
+  .max(30)
+  .refine((items) => new Set(items.map((s) => s.id)).size === items.length, 'Duplicate starter id')
+export type PluginStarter = z.infer<typeof PluginStarterSchema>
 export const PluginSourcesSchema = z.object({
   feeds: z
     .array(
@@ -244,6 +277,8 @@ export interface PluginCapabilities {
   dataLeavesDevice: boolean
   cost: JiweiExt['cost']
   unsupported: string[]
+  /** 积微官方渲染器（如 manim）：按需下载运行环境、在本机沙箱里运行。旧记录没有这一项 */
+  renderers?: string[]
 }
 export function inferCapabilities(plugin: {
   manifest: PluginManifest
@@ -275,7 +310,8 @@ export function inferCapabilities(plugin: {
     feeds: unique(plugin.feeds.map((f) => f.url)),
     dataLeavesDevice: plugin.extension?.dataLeavesDevice ?? false,
     cost: plugin.extension?.cost,
-    unsupported: unique(plugin.unsupported)
+    unsupported: unique(plugin.unsupported),
+    renderers: unique(plugin.extension?.renderers ?? [])
   }
 }
 export function addedCapabilities(before: PluginCapabilities, after: PluginCapabilities): Partial<PluginCapabilities> {
@@ -355,6 +391,8 @@ export const PluginConfirmOptions = z.object({
 })
 export const PluginUninstallOptions = z.object({ removeFeeds: z.boolean().default(false), removeTasks: z.boolean().default(false) })
 export interface PluginInfo {
+  /** 积微自制目录里的插件（可直接编辑文件夹，改完“更新”重新载入）：目录名 */
+  authored?: string
   available: boolean
   id: string
   version: string
@@ -369,6 +407,7 @@ export interface PluginInfo {
   tasks: number
 }
 export interface PluginPreview {
+  category?: JiweiExt['category']
   token: string
   expiresAt: number
   id: string
@@ -381,6 +420,7 @@ export interface PluginPreview {
   templates: PluginTemplate[]
   frameworks: PluginFramework[]
   recipes: PluginRecipe[]
+  starters: PluginStarter[]
   feeds: PluginFeed[]
   scripts: string[]
   issues: { path: string; code: string; message: string }[]
@@ -402,6 +442,7 @@ export interface PluginMarketInfo {
   count: number
 }
 export interface PluginCatalogCard {
+  counts?: PluginContributionCounts
   icon?: string
   id: string
   name: string
@@ -422,13 +463,23 @@ export interface PluginCatalogCard {
   updateAvailable: boolean
 }
 export interface PluginDetails {
+  starters: PluginStarter[]
   sourceUrl?: string
   icon?: string
   preview?: PluginPreview
   installed?: PluginInfo
   readme: string
   unsupported: string[]
-  contents: { skills: string[]; templates: string[]; frameworks: string[]; recipes: string[]; feeds: string[]; mcp: string[] }
+  contents: {
+    skills: string[]
+    lenses: string[]
+    templates: string[]
+    frameworks: string[]
+    recipes: string[]
+    starters: string[]
+    feeds: string[]
+    mcp: string[]
+  }
 }
 export type PluginDetection =
   | { kind: 'plugin'; preview: PluginPreview }
@@ -445,4 +496,50 @@ export function marketplaceComponentSelection(entry?: MarketplaceEntry): string[
   for (const mcp of Array.isArray(entry.mcpServers) ? entry.mcpServers : [entry.mcpServers]) if (typeof mcp === 'string') paths.push(mcp)
   const normalized = [...new Set(paths.map(safeRelativePath))]
   return normalized.filter((p) => !normalized.some((parent) => parent !== p && (parent === '.' || p.startsWith(parent + '/'))))
+}
+
+/** 今日的安装级起步状态，仅由主进程投影。 */
+export interface RoleStarters {
+  pluginId: string
+  name: { zh: string; en: string }
+  installedAt: number
+  starters: (PluginStarter & { completed: boolean })[]
+}
+
+export interface PluginContributionCounts {
+  skills: number
+  lenses: number
+  templates: number
+  frameworks: number
+  recipes: number
+  feeds: number
+  starters: number
+}
+export interface RoleCatalogCard extends PluginCatalogCard {
+  group: 'student' | 'work' | 'other'
+  enabled: boolean | null
+}
+export type RoleBatchPreview = {
+  token: string
+  expiresAt: number
+  roles: Omit<PluginPreview, 'token'>[]
+  alreadyInstalled: string[]
+}
+export const RoleBatchSelections = z
+  .array(
+    z
+      .object({
+        id: z.string().min(1).max(257),
+        options: PluginConfirmOptions
+      })
+      .strict()
+  )
+  .max(8)
+  .refine((items) => new Set(items.map((x) => x.id)).size === items.length, 'Duplicate role')
+export interface RoleBatchRecovery {
+  selected: string[]
+  installed: string[]
+  remaining: string[]
+  status: 'complete' | 'partial' | 'canceled' | 'interrupted'
+  error?: string
 }

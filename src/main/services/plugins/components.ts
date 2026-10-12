@@ -11,6 +11,7 @@ import {
   PluginTemplateSchema,
   PluginFrameworkSchema,
   PluginRecipeSchema,
+  PluginStartersSchema,
   PluginSourcesSchema,
   PluginMcpMapSchema,
   PluginMcpSchema,
@@ -23,14 +24,17 @@ import {
   type PluginManifest,
   type JiweiExt,
   type PluginTemplate,
+  type PluginContributionCounts,
   type PluginFramework,
   type PluginRecipe,
+  type PluginStarter,
   type PluginFeed,
   type PluginMcp,
   type PluginCapabilities
 } from '@shared/plugins'
 import { parseSkill, type ParsedSkill } from '../../lib/skillFormat'
 import { validateLensMetadata } from '../../lib/lensSkill'
+import { taskRecipes } from '@shared/taskRecipes'
 import { inspectPluginFolder, safePluginPath, PLUGIN_LIMITS } from './sources'
 
 export interface PluginIssue {
@@ -55,6 +59,7 @@ export interface ParsedPlugin {
   templates: PluginTemplate[]
   frameworks: PluginFramework[]
   recipes: PluginRecipe[]
+  starters: PluginStarter[]
   feeds: PluginFeed[]
   mcpServers: Record<string, PluginMcp>
   unsupported: string[]
@@ -267,6 +272,66 @@ export async function parsePlugin(root: string, options: ParsePluginOptions = {}
   const templates = await components('jiwei/templates', PluginTemplateSchema),
     frameworks = await components('jiwei/frameworks', PluginFrameworkSchema),
     recipes = await components('jiwei/recipes', PluginRecipeSchema)
+  let starters: PluginStarter[] = []
+  if (files.includes('jiwei/starters.json'))
+    await attempt('jiwei/starters.json', async () => {
+      const own = (reference: string, ids: string[]) => {
+        const prefix = `${manifest.name}:`,
+          local = reference.startsWith(prefix) ? reference.slice(prefix.length) : reference
+        if (!ids.includes(local)) throw new Error('Starter references an unavailable own contribution')
+        return prefix + local
+      }
+      // 全部引用验证通过才发布，避免部分有效的卡片掩盖资源包损坏。
+      starters = PluginStartersSchema.parse(await json('jiwei/starters.json')).map((starter) => {
+        const a = starter.action
+        if (a.kind === 'chat')
+          return {
+            ...starter,
+            action: {
+              ...a,
+              skill: own(
+                a.skill,
+                skills.filter((s) => s.metadata.kind !== 'lens').map((s) => s.localName)
+              )
+            }
+          }
+        if (a.kind === 'advisor')
+          return {
+            ...starter,
+            action: {
+              ...a,
+              framework: own(
+                a.framework,
+                frameworks.map((f) => f.id)
+              )
+            }
+          }
+        if (a.kind === 'work')
+          return {
+            ...starter,
+            action: {
+              ...a,
+              template: own(
+                a.template,
+                templates.map((t) => t.id)
+              )
+            }
+          }
+        if (a.recipe)
+          return {
+            ...starter,
+            action: {
+              ...a,
+              recipe: own(
+                a.recipe,
+                recipes.map((r) => r.id)
+              )
+            }
+          }
+        if (!taskRecipes.some((r) => r.id === a.recipeRef)) throw new Error('Unknown builtin recipe reference')
+        return starter
+      })
+    })
   let feeds: PluginFeed[] = []
   if (files.includes('jiwei/sources.json'))
     await attempt('jiwei/sources.json', async () => {
@@ -326,10 +391,12 @@ export async function parsePlugin(root: string, options: ParsePluginOptions = {}
     templates,
     frameworks,
     recipes,
+    starters,
     feeds,
     mcpServers,
     unsupported: unsupportedList,
-    scripts: files.filter(script),
+    // 官方渲染器自带的模板由积微在沙箱里运行，不算“只读取不运行”的脚本
+    scripts: files.filter((f) => script(f) && !(extension?.renderers.includes('manim') && f.startsWith('jiwei/manim/'))),
     issues,
     hash: digest,
     version: resolvePluginVersion({ manifest: manifest.version, entry: entry?.version, sha: options.sha, hash: digest })
@@ -366,4 +433,16 @@ export function resolvePluginMcp(
     env: map(server.env),
     headers: map(server.headers)
   })
+}
+
+export function pluginContributionCounts(parsed: ParsedPlugin): PluginContributionCounts {
+  return {
+    skills: parsed.skills.filter((s) => s.metadata.kind !== 'lens').length,
+    lenses: parsed.skills.filter((s) => s.metadata.kind === 'lens').length,
+    templates: parsed.templates.length,
+    frameworks: parsed.frameworks.length,
+    recipes: parsed.recipes.length,
+    feeds: parsed.feeds.length,
+    starters: parsed.starters.length
+  }
 }

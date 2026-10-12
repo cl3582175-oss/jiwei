@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "monid": {
+      "type": "http",
+      "url": "https://mcp.monid.ai/v1"
+    }
+  }
+}

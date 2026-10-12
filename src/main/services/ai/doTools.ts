@@ -1,13 +1,12 @@
+import { GoalListInput, readGoalMetadata } from './goalReadData'
+import { ActionListInput, readActions, MistakeListInput, readMistakes } from './readData'
 import { tool, type ToolSet } from 'ai'
 import { z } from 'zod'
-import { MistakeSubjectSchema } from '@shared/mistakes'
 import { InboxCreateSchema } from '@shared/inbox'
 import type { DocNode } from '@shared/types'
 import { createAction, listActions, updateAction } from '../reflection'
 import { goalProgress, listGoals, saveGoal } from '../progress'
 import * as inbox from '../inbox'
-import * as mistakes from '../mistakes'
-import { requireMistakeCloud } from '../mistakesPrivacy'
 import { createNote, getNote } from '../notes'
 import { replaceDoc } from '../docs'
 import { markdownToNodes } from '../../lib/markdown'
@@ -78,11 +77,13 @@ export function buildDoTools(zh: boolean): { tools: ToolSet; meta: Record<string
       execute: async (input) => { const e = plan.eventSave(input); return zh ? `已创建日程（${e.id}）。` : `Event created (${e.id}).` }
     }),
     actions_list: tool({
-      description: zh ? '列出未完成的行动项（ID、标题、截止日期）' : 'List open action items (ID, title, due date)',
-      inputSchema: z.object({}),
-      execute: async () => {
-        const list = listActions('open')
-        if (!list.length) return zh ? '没有未完成的行动项。' : 'No open actions.'
+      description: zh ? '列出行动项；默认open。可按status/goalId/dateRange/dateField(createdAt/doneAt/dueAt)过滤，毫秒半开区间，includeMetadata返回真实完成时间、负责人、笔记链接；limit/offset分页。' : 'List actions (default open); optional status/goalId/dateRange/dateField createdAt/doneAt/dueAt (epoch ms, exclusive endAt). includeMetadata returns completion, owner, note links. limit/offset pagination.',
+      inputSchema: ActionListInput,
+      execute: async (input) => {
+        const result = readActions(input)
+        if (input.includeMetadata) return JSON.stringify({ ...result, missingHistory: ['reply history', 'past ownership snapshots'] })
+        const list = result.items
+        if (!list.length) return input.status === 'open' ? (zh ? '没有未完成的行动项。' : 'No open actions.') : (zh ? '没有符合条件的行动项。' : 'No matching actions.')
         return list
           .slice(0, 50)
           .map((a) => `${a.id} · ${a.title}${a.dueAt ? ` · ${zh ? '截止' : 'due'} ${localDate(new Date(a.dueAt))}` : ''}`)
@@ -90,9 +91,10 @@ export function buildDoTools(zh: boolean): { tools: ToolSet; meta: Record<string
       }
     }),
     goals_list: tool({
-      description: zh ? '列出方向：掌握度、剩余天数、关联笔记数' : 'List learning goals with mastery and days left',
-      inputSchema: z.object({}),
-      execute: async () => {
+      description: zh ? '列出方向：掌握度、剩余天数、关联笔记数。includeMetadata:true 返回已存阶段/里程碑和当前进度；没有历史目标快照，日期仅为计划。limit/offset分页；嵌套覆盖量与next为继续读取参数，逐个交回本工具。' : 'List goals with mastery and days left. includeMetadata:true adds stored phases/milestones/current progress; no past goal snapshots. Dates alone are plans. limit/offset pagination; nested coverage and next provide continuation arguments for this same tool.',
+      inputSchema: GoalListInput,
+      execute: async (input) => {
+        if (input.includeMetadata) return JSON.stringify(readGoalMetadata(input))
         const goals = listGoals().filter((g) => g.status === 'active')
         if (!goals.length) return zh ? '还没有进行中的方向。' : 'No active goals.'
         return goals
@@ -108,37 +110,17 @@ export function buildDoTools(zh: boolean): { tools: ToolSet; meta: Record<string
     }),
     mistakes_list: tool({
       description: zh
-        ? '列出错题本里的题目（科目、知识点、错因、题干、正确答案）。可按科目、知识点、最近几天筛选。用于“出一套练习卷”“看看最近错在哪”。'
-        : 'List mistakes (subject, concepts, cause, question, answer). Filter by subject, concept, recent days.',
-      inputSchema: z.object({
-        subject: MistakeSubjectSchema.optional(),
-        concept: z.string().max(40).optional(),
-        days: z
-          .number()
-          .int()
-          .min(1)
-          .max(365)
-          .optional()
-          .describe(zh ? '最近几天' : 'Recent days'),
-        limit: z.number().int().min(1).max(40).optional()
-      }),
-      execute: async ({ subject, concept, days, limit = 20 }) => {
-        const list = mistakes.list({ subject, concept, since: days ? Date.now() - days * 86_400_000 : undefined }).slice(0, limit)
-        if (!list.length) return zh ? '没有符合条件的错题。' : 'No matching mistakes.'
-        return list
-          .map((m, i) => {
-            let open = true
-            try {
-              requireMistakeCloud(m.id)
-            } catch {
-              open = false
-            }
-            if (!open) return ''
-            const head = `${i + 1}. [${zh ? (SUBJECT_ZH[m.subject] ?? m.subject) : m.subject}] ${m.concepts.join('、') || '—'} · ${localDate(new Date(m.createdAt))}`
-            return `${head}\n${zh ? '题目' : 'Q'}：${cut(m.question, 600)}\n${zh ? '正确答案' : 'Answer'}：${cut(m.correctAnswer || '—', 300)}${m.causeReason ? `\n${zh ? '错因' : 'Cause'}：${cut(m.causeReason, 160)}` : ''}`
-          })
-          .filter(Boolean)
-          .join('\n\n')
+        ? '列出错题本里的题目（科目、知识点、错因、题干、正确答案）。可按科目、知识点、最近几天或dateRange（毫秒半开区间）筛选。includeMetadata返回稳定ID、笔记链接和当前FSRS投影；mastery可选mastered/unmastered/unknown，不能冒充历史。长题questionLimit最多12000，limit/offset分页。用于“出一套练习卷”“看看最近错在哪”。'
+        : 'List mistakes (subject, concepts, cause, question, answer). Filter by subject/concept/days/dateRange (epoch ms, exclusive endAt). includeMetadata returns IDs, note links and current FSRS mastery projection; mastery mastered/unmastered/unknown. questionLimit up to 12000; limit/offset pagination.',
+      inputSchema: MistakeListInput,
+      execute: async (input) => {
+        const result = readMistakes(input)
+        if (input.includeMetadata) return JSON.stringify(result)
+        if (!result.items.length) return zh ? '没有符合条件的错题。' : 'No matching mistakes.'
+        return result.items.map((m, i) => {
+          const head = `${i + 1}. [${zh ? (SUBJECT_ZH[m.subject] ?? m.subject) : m.subject}] ${m.concepts.join('、') || '—'} · ${localDate(new Date(m.createdAt))}`
+          return `${head}\n${zh ? '题目' : 'Q'}：${m.question}${m.questionTruncated ? `… [truncated; mistakes_list includeMetadata, questionLimit:12000; id:${m.id}]` : ''}\n${zh ? '正确答案' : 'Answer'}：${m.correctAnswer || '—'}${m.causeReason ? `\n${zh ? '错因' : 'Cause'}：${m.causeReason}` : ''}`
+        }).join('\n\n')
       }
     }),
     action_create: tool({
@@ -220,9 +202,9 @@ export function buildDoTools(zh: boolean): { tools: ToolSet; meta: Record<string
     },
     plan_list: { level: 'read', untrusted: true },
     plan_event_create: { level: 'write', confirm: true, describe: (i) => ({ title: zh ? `新建日程「${cut(String(i.title ?? ''), 60)}」` : `Create event “${cut(String(i.title ?? ''), 60)}”`, detail: `${new Date(Number(i.startAt)).toLocaleString()} — ${new Date(Number(i.endAt)).toLocaleString()}` }) },
-    actions_list: { level: 'read' },
-    goals_list: { level: 'read' },
-    mistakes_list: { level: 'read' },
+    actions_list: { level: 'read', untrusted: true },
+    goals_list: { level: 'read', untrusted: true },
+    mistakes_list: { level: 'read', untrusted: true },
     action_create: {
       level: 'write',
       confirm: true,
@@ -285,6 +267,7 @@ export function buildDoTools(zh: boolean): { tools: ToolSet; meta: Record<string
 
 /** 现有内置工具的级别：改笔记与记住偏好本身是提案，网页内容不可信 */
 export const BUILTIN_META: Record<string, ToolMeta> = {
+  note_find: { level: 'read', untrusted: true },
   memory_remember: { level: 'write', proposal: true },
   browser_read_page: { level: 'read', untrusted: true },
   browser_find: { level: 'read', untrusted: true },

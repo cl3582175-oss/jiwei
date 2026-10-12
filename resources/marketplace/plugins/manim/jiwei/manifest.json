@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "category": "renderer",
+  "name": { "zh": "数学动画（Manim）", "en": "Math animation (Manim)" },
+  "description": {
+    "zh": "公式逐步推导、函数平移伸缩、几何作图、数轴区间的动画",
+    "en": "Animated derivations, function transforms, geometry and number lines"
+  },
+  "engines": { "jiwei": ">=0.10.0" },
+  "renderers": ["manim"]
+}

@@ -242,6 +242,32 @@ function SceneFields({ s, onChange }: { s: VideoScene; onChange: (s: VideoScene)
       )
     case 'chart':
       return <p className="text-2xs text-subtle">{s.categories.join(' · ')}</p>
+    case 'animation': {
+      const a = s.animation
+      return (
+        <>
+          {a.kind === 'derivation' ? (
+            area(
+              t('works.video.steps'),
+              a.steps.map((x) => x.tex).join('\n'),
+              (v) => onChange({ ...s, animation: { ...a, steps: lines(v).map((tex, i) => ({ tex, note: a.steps[i]?.note })) } }),
+              true
+            )
+          ) : (
+            <p className="font-mono text-2xs text-subtle [overflow-wrap:anywhere]">
+              {a.kind === 'function-transform'
+                ? [`y = ${a.base}`, ...a.transforms.map((x) => x.label ?? `${x.kind} ${x.axis} ${x.amount}`)].join(' → ')
+                : a.kind === 'number-line'
+                  ? a.intervals.map((x) => x.label ?? `${x.from ?? '-∞'}~${x.to ?? '+∞'}`).join(' · ')
+                  : a.graph.type === 'geometry'
+                    ? `${a.graph.elements.length} 个元素`
+                    : ''}
+            </p>
+          )}
+          <p className="text-2xs text-subtle">{t('works.video.animationHint')}</p>
+        </>
+      )
+    }
   }
 }
 
@@ -438,6 +464,11 @@ export function VideoDone({ w }: { w: Work }) {
       {st?.status === 'error' && st.message && <p className="text-xs text-danger">{t('works.video.failed', { message: st.message })}</p>}
       {st?.status === 'done' && (
         <>
+          {st.message && (
+            <p className="text-xs text-warning" data-testid="video-note">
+              {st.message}
+            </p>
+          )}
           <video
             key={nonce}
             className="w-full max-w-[720px] rounded-xl border border-border bg-black"

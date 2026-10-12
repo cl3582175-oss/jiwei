@@ -1,0 +1,51 @@
+[
+  {
+    "id": "first-topics",
+    "title": {
+      "zh": "从我的笔记里找 5 个选题",
+      "en": "Find five topics in your notes"
+    },
+    "body": {
+      "zh": "从你最近的笔记里挖反常识、亲身经历和读者常问的选题。",
+      "en": "Mine your recent notes for surprising findings, personal stories and reader questions."
+    },
+    "action": {
+      "kind": "chat",
+      "skill": "role-creator:topic-mining",
+      "prompt": {
+        "zh": "从我的笔记里找 5 个有素材支撑的选题。",
+        "en": "Find five content topics supported by material in my notes."
+      }
+    }
+  },
+  {
+    "id": "first-longform",
+    "title": {
+      "zh": "写一篇公众号长文",
+      "en": "Start a long-form article"
+    },
+    "body": {
+      "zh": "按“场景开头、三个观点、读者能马上做的一件事”搭好长文结构。",
+      "en": "Structure a long post: an opening scene, three points, one thing readers can do now."
+    },
+    "action": {
+      "kind": "work",
+      "template": "creator-longform"
+    }
+  },
+  {
+    "id": "weekly-topics",
+    "title": {
+      "zh": "每周一自动生成选题池",
+      "en": "Set up weekly topic suggestions"
+    },
+    "body": {
+      "zh": "每周一早上，从上周笔记里整理 5 张选题卡放进收件箱。",
+      "en": "Every Monday morning, five topic cards from last week’s notes land in your inbox."
+    },
+    "action": {
+      "kind": "recipe",
+      "recipe": "creator-weekly-topics"
+    }
+  }
+]

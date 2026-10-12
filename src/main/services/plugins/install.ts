@@ -1,10 +1,11 @@
-import { sourceLink, type MarketSource } from './acquisition'
+import { tr } from '../../lib/messages'
+import { sourceLink, type MarketSource, type AcquisitionBatch } from './acquisition'
 import { pluginIcon } from './icon'
 import { dialog, shell, type BrowserWindow } from 'electron'
 import { randomBytes } from 'crypto'
 import { mkdir, readdir, rm, rename, writeFile, readFile, lstat } from 'fs/promises'
 import { existsSync, renameSync } from 'fs'
-import { join, relative } from 'path'
+import { basename, dirname, join, relative } from 'path'
 import { eq } from 'drizzle-orm'
 import { getDb } from '../../db'
 import { plugins, pluginMarkets, feeds, aiTasks, mcpServers, meta } from '../../db/schema'
@@ -19,6 +20,7 @@ import { preparePluginSource, safePluginPath, sourceType } from './sources'
 import { registeredPlugin, replacePluginRegistry } from './registry'
 import {
   pluginRoot,
+  authoringRoot,
   pluginCache,
   pluginData,
   pluginRow,
@@ -52,7 +54,11 @@ export interface PluginAcquisition {
 }
 /** P2 注册主进程来源适配器。它必须验证市场身份并获取真实 source，不接受 renderer 的信任位。 */
 let acquire:
-  ((input: PluginInspectInput | PluginOrigin, context?: { signal: AbortSignal; id: string }) => Promise<PluginAcquisition>) | undefined
+  | ((
+      input: PluginInspectInput | PluginOrigin,
+      context?: { signal: AbortSignal; id: string; batch?: AcquisitionBatch }
+    ) => Promise<PluginAcquisition>)
+  | undefined
 export function registerPluginSourceAdapter(adapter: NonNullable<typeof acquire>): void {
   acquire = adapter
 }
@@ -85,8 +91,12 @@ async function owned(path: string): Promise<string> {
 }
 function safeManifest(parsed: ParsedPlugin) {
   // 敏感默认值不进入 UI，亦不会自动启用；用户配置只通过专门的密文路径保存。
+  // 积微扩展里有中英文名称和简介时，按界面语言显示（Claude 格式只有一种语言）
+  const ext = parsed.extension
   return {
     ...parsed.manifest,
+    ...(ext?.name ? { displayName: tr(ext.name.zh, ext.name.en) } : {}),
+    ...(ext?.description ? { description: tr(ext.description.zh, ext.description.en) } : {}),
     userConfig: Object.fromEntries(
       Object.entries(parsed.manifest.userConfig ?? {}).map(([k, v]) => [k, v.sensitive ? { ...v, default: undefined } : v])
     )
@@ -96,7 +106,10 @@ export function getPlugin(id: string): PluginInfo {
   const row = pluginRow(id),
     state = readState(id),
     parsed = registeredPlugin(id)
+  const authored =
+    state.origin.kind === 'local' && dirname(state.origin.locator) === authoringRoot() ? basename(state.origin.locator) : undefined
   return {
+    ...(authored ? { authored } : {}),
     id,
     version: row.version,
     previousVersion: row.previousVersion,
@@ -170,6 +183,7 @@ export async function inspectAcquired(input: PluginAcquisition, updateId?: strin
     })
     return {
       token,
+      category: parsed.extension?.category,
       expiresAt,
       id,
       version: parsed.version,
@@ -181,6 +195,7 @@ export async function inspectAcquired(input: PluginAcquisition, updateId?: strin
       templates: parsed.templates,
       frameworks: parsed.frameworks,
       recipes: parsed.recipes,
+      starters: parsed.starters,
       feeds: parsed.feeds,
       scripts: parsed.scripts,
       issues: parsed.issues
@@ -196,13 +211,16 @@ export async function inspectAcquired(input: PluginAcquisition, updateId?: strin
 export function inspectPluginPath(path: string): Promise<PluginPreview> {
   return pluginMutation(() => inspectAcquired({ path, type: sourceType(path), origin: { kind: 'local', market: 'local', locator: path } }))
 }
-export function inspectPlugin(input: PluginInspectInput, context?: { signal: AbortSignal; id: string }): Promise<PluginPreview> {
+export function inspectPlugin(
+  input: PluginInspectInput,
+  context?: { signal: AbortSignal; id: string; batch?: AcquisitionBatch }
+): Promise<PluginPreview> {
   return pluginMutation(async () => {
     if (!acquire) throw new Error('Plugin source adapter unavailable')
     return inspectAcquired({ ...(await acquire(input, context)), progressId: context?.id }, undefined, context?.signal)
   })
 }
-export function updatePlugin(id: string, context?: { signal: AbortSignal; id: string }): Promise<PluginPreview> {
+export function updatePlugin(id: string, context?: { signal: AbortSignal; id: string; batch?: AcquisitionBatch }): Promise<PluginPreview> {
   return pluginMutation(async () => {
     const state = readState(id),
       origin = state.origin
@@ -267,7 +285,8 @@ function writeMcp(id: string, parsed: ParsedPlugin): void {
         cwd: server.cwd ?? null,
         url: server.url ?? null,
         enabled: false,
-        toolPolicies: previous?.toolPolicies ?? '{}',
+        // 收费或会把数据发给第三方的插件：所有工具默认每次询问（包括只读工具）
+        toolPolicies: previous?.toolPolicies ?? (parsed.extension?.cost || parsed.extension?.dataLeavesDevice ? '{"*":"ask"}' : '{}'),
         createdAt: previous?.createdAt ?? Date.now(),
         updatedAt: Date.now()
       })
@@ -284,6 +303,14 @@ async function cleanupVersions(id: string): Promise<void> {
   }
 }
 export async function confirmPluginInstall(token: string, input: { feeds?: number[]; config?: PluginConfig }): Promise<PluginInfo> {
+  const info = await confirmInstall(token, input)
+  // 自定义副本装好后停用原来的包，避免技能和起步卡重复出现（原包保留，随时可以切回）
+  const from = info.manifest.metadata?.['jiwei.customizedFrom']
+  if (typeof from === 'string' && from !== info.id && listPlugins().some((p) => p.id === from && p.enabled))
+    await setPluginEnabled(from, false).catch(() => undefined)
+  return info
+}
+async function confirmInstall(token: string, input: { feeds?: number[]; config?: PluginConfig }): Promise<PluginInfo> {
   const recovery: { pluginId: string; directory: string; serverId: string }[] = []
   try {
     return await pluginMutation(async () => {
@@ -357,7 +384,13 @@ export async function confirmPluginInstall(token: string, input: { feeds?: numbe
             .values({ ...values, id, installedAt: old?.installedAt ?? Date.now() })
             .onConflictDoUpdate({ target: plugins.id, set: values })
             .run()
-          writeState(id, { origin: pending.origin, current: version, previous: oldState?.current, secretKeys: config.secretKeys })
+          writeState(id, {
+            origin: pending.origin,
+            current: version,
+            previous: oldState?.current,
+            secretKeys: config.secretKeys,
+            starterProgress: oldState?.starterProgress
+          })
           writeMcp(id, installed)
           for (const index of new Set(opts.feeds)) {
             const f = installed.feeds[index]
@@ -631,11 +664,15 @@ export async function pluginDetails(input: { id?: string; token?: string }): Pro
     installed: input.id ? getPlugin(input.id) : undefined,
     readme,
     unsupported: parsed.unsupported,
+    starters: parsed.starters,
+    // 给人看的名称（按界面语言），不是内部 ID
     contents: {
-      skills: parsed.skills.map((x) => x.name),
-      templates: parsed.templates.map((x) => x.id),
-      frameworks: parsed.frameworks.map((x) => x.id),
-      recipes: parsed.recipes.map((x) => x.id),
+      skills: parsed.skills.filter((x) => x.metadata.kind !== 'lens').map((x) => x.metadata.title || x.name),
+      lenses: parsed.skills.filter((x) => x.metadata.kind === 'lens').map((x) => x.metadata.title || x.name),
+      templates: parsed.templates.map((x) => tr(x.title.zh, x.title.en)),
+      frameworks: parsed.frameworks.map((x) => tr(x.title.zh, x.title.en)),
+      recipes: parsed.recipes.map((x) => tr(x.name.zh, x.name.en)),
+      starters: parsed.starters.map((x) => tr(x.title.zh, x.title.en)),
       feeds: parsed.feeds.map((x) => x.title),
       mcp: Object.keys(parsed.mcpServers)
     }

@@ -2,7 +2,11 @@ import * as pluginMarkets from './services/plugins/markets'
 import * as updates from './services/updates'
 import * as importer from './services/importer/run'
 import * as pluginDirect from './services/plugins/direct'
+import * as pluginAuthoring from './services/plugins/authoring'
+import * as pluginManim from './services/plugins/manim'
 import * as plugins from './services/plugins/install'
+import * as pluginRoles from './services/plugins/roles'
+import * as pluginStarters from './services/plugins/starters'
 import * as pluginRegistry from './services/plugins/registry'
 import { tr } from './lib/messages'
 import * as plan from './services/plan/calendar'
@@ -130,6 +134,7 @@ type Handlers = {
   }
 }
 
+const pluginRoleOwners = new Set<number>()
 const pluginAcquisitionOwners = new Set<number>()
 const handlers: Handlers = {
   mistakes: {
@@ -785,7 +790,37 @@ const handlers: Handlers = {
     },
     clearAudit: () => auditLog.clearAudit()
   },
+  manim: {
+    status: () => pluginManim.manimStatus(),
+    install: (_, options) => {
+      // 安装要几分钟：后台进行，进度通过 plugins:changed 通知
+      void pluginManim.installManim(options).catch(() => undefined)
+    },
+    cancel: () => pluginManim.cancelManim(),
+    remove: () => pluginManim.removeManim(),
+    clip: (_, animation) => pluginManim.animationClip(animation)
+  },
   plugins: {
+    roleCatalog: () => pluginRoles.roleCatalog(),
+    beginRoleSelection: ({ win }) => {
+      if (!win) throw new Error('Window unavailable')
+      const owner = win.webContents.id
+      if (!pluginRoleOwners.has(owner)) {
+        pluginRoleOwners.add(owner)
+        win.webContents.once('destroyed', () => {
+          pluginRoleOwners.delete(owner)
+          void pluginRoles.cancelOwnerRoleSelections(owner)
+        })
+      }
+      return pluginRoles.beginRoleSelection(owner)
+    },
+    previewRoles: ({ win }, token, ids) => pluginRoles.previewRoles(win?.webContents.id ?? -1, token, ids),
+    confirmRoles: ({ win }, token, selections) => pluginRoles.confirmRoles(win?.webContents.id ?? -1, token, selections),
+    cancelRoleSelection: ({ win }, token) => pluginRoles.cancelRoleSelection(win?.webContents.id ?? -1, token),
+    roleRecovery: () => pluginRoles.roleRecovery(),
+    roleStarters: () => pluginStarters.listRoleStarters(),
+    activateStarter: (_, pluginId, starterId) => pluginStarters.completeRoleStarter(pluginId, starterId),
+    dismissStarters: (_, pluginId) => pluginStarters.dismissRoleStarters(pluginId),
     markets: () => pluginMarkets.listMarkets(),
     catalog: () => pluginMarkets.catalogPlugins(),
     addMarket: (_, input) => pluginMarkets.addMarket(input),
@@ -830,6 +865,14 @@ const handlers: Handlers = {
     setConfig: (_, id, values) => plugins.setPluginConfig(id, values),
     uninstall: (_, id, options) => plugins.uninstallPlugin(id, options),
     openFolder: (_, id) => plugins.openPluginFolder(id),
+    customize: (_, id) => pluginAuthoring.customizePlugin(id),
+    createRolePack: (_, input) => pluginAuthoring.createRolePack(input),
+    acquireAuthored: ({ win }, id, name) => pluginDirect.detectPath(win?.webContents.id ?? -1, id, pluginAuthoring.authoredPath(name)),
+    openAuthored: async (_, name) => {
+      await shell.openPath(pluginAuthoring.authoredPath(name))
+    },
+    exportPlugin: ({ win }, id, withMarketplace) =>
+      pluginAuthoring.exportPlugin(id, win, withMarketplace, app.isPackaged ? undefined : process.env.JIWEI_TEST_EXPORT_DIR),
     templates: () => pluginRegistry.listTemplates(),
     frameworks: () => pluginRegistry.listFrameworks(),
     recipes: () => pluginRegistry.listRecipes()

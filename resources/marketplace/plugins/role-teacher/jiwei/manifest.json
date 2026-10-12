@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "category": "role",
+  "roles": [
+    "teacher"
+  ],
+  "name": {
+    "zh": "教师",
+    "en": "Teacher"
+  },
+  "description": {
+    "zh": "备课、分层出题、写评语、听评课",
+    "en": "Plan lessons, create differentiated exercises, write feedback and review observed lessons"
+  },
+  "engines": {
+    "jiwei": ">=0.10.0"
+  },
+  "dataLeavesDevice": false
+}

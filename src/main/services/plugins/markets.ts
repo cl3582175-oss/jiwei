@@ -8,7 +8,7 @@ import { pluginMarkets, plugins } from '../../db/schema'
 import { audit } from '../agent/audit'
 import { emit } from '../../events'
 import { pluginMutation, pluginRoot, readState } from './state'
-import { parsePlugin, readPluginText } from './components'
+import { parsePlugin, readPluginText, pluginContributionCounts } from './components'
 import { safePluginPath, PLUGIN_LIMITS, preparePluginSource, inspectPluginFolder } from './sources'
 import { AcquisitionBatch, githubSource, httpsUrl, sourceLink, type MarketSource } from './acquisition'
 import { registerPluginSourceAdapter, uninstallPluginsForMarket, type PluginAcquisition } from './install'
@@ -23,12 +23,14 @@ import {
   type PluginMarketInfo,
   type MarketInput,
   type PluginInspectInput,
+  type PluginContributionCounts,
   type JiweiExt
 } from '@shared/plugins'
 
 export const OFFICIAL_MARKET = Object.freeze({ name: 'jiwei', bundled: 'resources/marketplace', remote: null as string | null })
 let officialDefinition = OFFICIAL_MARKET
 interface CatalogItem {
+  counts?: PluginContributionCounts
   icon?: string
   entry: MarketplaceEntry
   source: MarketSource
@@ -175,6 +177,7 @@ async function enrich(catalog: Catalog, batch: AcquisitionBatch, official: boole
         author: parsed.manifest.author,
         keywords: parsed.manifest.keywords
       }
+      item.counts = pluginContributionCounts(parsed)
       item.extension = parsed.extension
         ? { category: parsed.extension.category, name: parsed.extension.name, description: parsed.extension.description }
         : undefined
@@ -263,6 +266,7 @@ export function catalogPlugins(): PluginCatalogCard[] {
       const updateUnavailable = !!old && readState(old.id).origin.locator !== row.source
       return {
         id,
+        counts: item.counts,
         icon: item.icon,
         name: entry.name,
         displayName: item.metadata?.displayName ?? entry.displayName ?? entry.name,
@@ -457,10 +461,13 @@ export function validateMarketOrigin(origin: PluginOrigin): void {
 }
 export async function acquireMarketPlugin(
   input: PluginInspectInput | PluginOrigin,
-  context?: { signal: AbortSignal; id: string }
+  context?: { signal: AbortSignal; id: string; batch?: AcquisitionBatch }
 ): Promise<PluginAcquisition> {
   const signal = context?.signal ?? new AbortController().signal
-  const batch = new AcquisitionBatch(signal, context?.id ?? 'plugin-download')
+  const batch = context?.batch ?? new AcquisitionBatch(signal, context?.id ?? 'plugin-download')
+  const cleanupBatch = async (): Promise<void> => {
+    if (!context?.batch) await batch.cleanup()
+  }
   try {
     if (input.kind === 'github') {
       const source = githubSource('url' in input ? input.url : input.locator)
@@ -493,7 +500,7 @@ export async function acquireMarketPlugin(
         },
         cleanup: async () => {
           await result.prepared.cleanup()
-          await batch.cleanup()
+          await cleanupBatch()
         }
       }
     }
@@ -522,11 +529,11 @@ export async function acquireMarketPlugin(
       ...acquired,
       cleanup: async () => {
         await cleanup?.()
-        await batch.cleanup()
+        await cleanupBatch()
       }
     }
   } catch (error) {
-    await batch.cleanup()
+    await cleanupBatch()
     throw error
   }
 }

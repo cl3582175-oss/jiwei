@@ -3,7 +3,7 @@ import { mkdtempSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 
-// 首次启动引导：认识积微 → 个性化（名字、配色）→ 康奈尔笔记法 → 打开示例笔记；完成后不再出现
+// 首次启动引导：认识积微 → 个性化（名字、配色）→ 选角色（可跳过）→ 康奈尔笔记法 → 打开示例笔记；完成后不再出现
 test('first run onboarding creates the sample note', async () => {
   const userData = mkdtempSync(join(tmpdir(), 'jiwei-e2e-ob-'))
   const launch = () => electron.launch({ args: ['.', `--user-data-dir=${userData}`], env: { ...process.env, JIWEI_LANG: 'zh-CN' } })
@@ -17,6 +17,14 @@ test('first run onboarding creates the sample note', async () => {
   await expect(page.locator('html')).toHaveAttribute('data-palette', 'dunhuang')
   if (process.env.SHOTS_DIR) await page.screenshot({ path: join(process.env.SHOTS_DIR, '32-onboarding-2.png') })
   await page.getByRole('button', { name: '下一步' }).click()
+  // 角色：分“学生 / 工作”两组，不选可以跳过
+  await expect(page.getByRole('heading', { name: '你主要用积微做什么？' })).toBeVisible()
+  await expect(page.getByTestId('role-grid').getByRole('heading', { name: '我是学生' })).toBeVisible()
+  await expect(page.locator('[data-role-id="role-kaoyan@jiwei"]')).toBeVisible()
+  await page.locator('[data-role-id="role-kaoyan@jiwei"]').click()
+  await expect(page.getByRole('button', { name: /安装 1 个并继续/ })).toBeVisible()
+  await page.locator('[data-role-id="role-kaoyan@jiwei"]').click()
+  await page.getByRole('button', { name: /先跳过/ }).click()
   await expect(page.getByText('康奈尔笔记法，三分钟上手')).toBeVisible()
   if (process.env.SHOTS_DIR) await page.screenshot({ path: join(process.env.SHOTS_DIR, '33-onboarding-3.png') })
   await page.getByRole('button', { name: '打开示例笔记' }).click()

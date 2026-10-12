@@ -1,0 +1,55 @@
+[
+  {
+    "id": "first-paper",
+    "title": {
+      "zh": "精读一篇论文",
+      "en": "Read a paper closely"
+    },
+    "body": {
+      "zh": "导入或打开一篇论文，拆成问题、方法、结果、局限，以及和你的研究有什么关系。",
+      "en": "Open a paper and break it into question, method, results, limits and relevance to your work."
+    },
+    "action": {
+      "kind": "chat",
+      "skill": "role-research:paper-reading",
+      "prompt": {
+        "zh": "帮我精读这篇论文。",
+        "en": "Help me read this paper closely."
+      }
+    }
+  },
+  {
+    "id": "first-matrix",
+    "title": {
+      "zh": "把几篇文献做成对比表",
+      "en": "Compare several papers"
+    },
+    "body": {
+      "zh": "选几篇资料，按问题、方法、数据、结果、局限做成对比表，找出研究空白。",
+      "en": "Compare several papers by question, method, data, results and limits, and spot the gaps."
+    },
+    "action": {
+      "kind": "chat",
+      "skill": "role-research:lit-matrix",
+      "prompt": {
+        "zh": "把我选的几篇文献做成对比表。",
+        "en": "Compare the papers I select in an evidence matrix."
+      }
+    }
+  },
+  {
+    "id": "first-meeting",
+    "title": {
+      "zh": "准备下一次组会",
+      "en": "Prepare your next research meeting"
+    },
+    "body": {
+      "zh": "按“进展、结果、问题、需要导师决定的事”搭好组会汇报。",
+      "en": "Build a group-meeting deck: progress, results, problems and decisions you need."
+    },
+    "action": {
+      "kind": "work",
+      "template": "research-group-meeting"
+    }
+  }
+]

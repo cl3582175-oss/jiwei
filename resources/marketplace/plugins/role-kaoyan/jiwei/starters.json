@@ -1,0 +1,55 @@
+[
+  {
+    "id": "first-school-choice",
+    "title": {
+      "zh": "用框架想清楚择校",
+      "en": "Think through programme choices"
+    },
+    "body": {
+      "zh": "按分数差距、专业课难度、复试比例等打分比较，帮你想清楚，决定权在你。",
+      "en": "Score options on score gap, exam difficulty, interview weighting and more — the decision stays yours."
+    },
+    "action": {
+      "kind": "advisor",
+      "framework": "kaoyan-school-choice",
+      "question": {
+        "zh": "我正在考研择校，请帮我比较学校和专业。",
+        "en": "Help me compare postgraduate programmes and universities."
+      }
+    }
+  },
+  {
+    "id": "first-paper-review",
+    "title": {
+      "zh": "复盘一套真题",
+      "en": "Review a past exam paper"
+    },
+    "body": {
+      "zh": "告诉我年份、科目和各题型得分，找出差距在哪、该回炉哪些章节。",
+      "en": "Share the year, subject and section scores to find the gaps and chapters to revisit."
+    },
+    "action": {
+      "kind": "chat",
+      "skill": "role-kaoyan:kaoyan-paper-review",
+      "prompt": {
+        "zh": "我刚做完一套考研真题，帮我复盘。",
+        "en": "Help me review a postgraduate entrance exam paper I just completed."
+      }
+    }
+  },
+  {
+    "id": "weekly-progress",
+    "title": {
+      "zh": "每周进度对照",
+      "en": "Set up a weekly progress check"
+    },
+    "body": {
+      "zh": "每周日对照阶段目标：完成了什么、落后多少、错题集中在哪。",
+      "en": "Every Sunday, check progress against your plan: what’s done, how far behind, where mistakes cluster."
+    },
+    "action": {
+      "kind": "recipe",
+      "recipe": "kaoyan-weekly-progress"
+    }
+  }
+]

@@ -453,6 +453,8 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
       .run()
   }
   const finish = (status: ChatMessage['status'], error: string | null, usage: ChatMessage['usage']): void => {
+    // 有的模型会把工具返回的 <external-data> 原样复述进回答：保存前去掉（工具结果在步骤里能看到）
+    content = content.replace(/<external-data\b[^>]*>[\s\S]*?<\/external-data>\s*/g, '').trim()
     db.update(messages)
       .set({
         content,

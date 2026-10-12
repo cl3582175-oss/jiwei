@@ -1,0 +1,50 @@
+{
+  "id": "kaoyan-school-choice",
+  "title": {
+    "zh": "择校与专业",
+    "en": "Choose a postgraduate programme"
+  },
+  "description": {
+    "zh": "比较院校和专业：分数差距、专业课难度、复试比例、学校平台、地域就业和导师方向。",
+    "en": "Compare programmes on score gap, exam difficulty, interview weighting, institution, location and supervisors."
+  },
+  "criteria": [
+    {
+      "name": "预估分与往年复试线的差距",
+      "weight": 5,
+      "hint": "按年份、专业、类别比较分差，历史线不保证当年录取。"
+    },
+    {
+      "name": "专业课难度与是否自命题",
+      "weight": 4,
+      "hint": "依据考试大纲与用户做题表现；难度更可承受更有利。"
+    },
+    {
+      "name": "复试比例与公平性",
+      "weight": 3,
+      "hint": "用公开规则与实际证据，不能凭传闻给学校贴标签。"
+    },
+    {
+      "name": "学校层次与平台",
+      "weight": 3,
+      "hint": "比较具体资源与培养条件，不以名气替代方向匹配。"
+    },
+    {
+      "name": "地域与就业",
+      "weight": 3,
+      "hint": "按个人目标城市、可核实就业信息和生活成本比较。"
+    },
+    {
+      "name": "导师与方向匹配",
+      "weight": 3,
+      "hint": "看近期公开研究与招生方向，未确认名额写未知。"
+    }
+  ],
+  "questions": [
+    "目前真题或模考大概多少分？",
+    "是否跨考？",
+    "目标城市？",
+    "能否接受调剂？",
+    "如果没考上会二战吗？"
+  ]
+}

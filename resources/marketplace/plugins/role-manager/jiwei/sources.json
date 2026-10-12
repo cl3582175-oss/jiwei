@@ -1,0 +1,9 @@
+{
+  "feeds": [
+    {
+      "title": "Harvard Business Review · 最新文章",
+      "kind": "web",
+      "url": "https://hbr.org/the-latest"
+    }
+  ]
+}

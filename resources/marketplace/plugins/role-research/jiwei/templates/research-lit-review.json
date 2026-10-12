@@ -1,0 +1,21 @@
+{
+  "id": "research-lit-review",
+  "type": "article",
+  "mode": "cowrite",
+  "title": {
+    "zh": "文献综述",
+    "en": "Literature review"
+  },
+  "description": {
+    "zh": "按流派或方法梳理文献，写出共识、分歧和研究空白；每个论断都有出处。",
+    "en": "Compare research approaches and disagreements with a source for every substantive claim."
+  },
+  "outline": [
+    "研究背景",
+    "主要流派或方法",
+    "对比与分歧",
+    "研究空白",
+    "本研究的切入点"
+  ],
+  "guidance": "每个论断必须有出处；不编造文献；空白部分要具体。依据用户提供或已保存的真实素材，缺失数据和经历明确标注待补；保留出处。用用户使用的语言创作，先确认目标读者。"
+}

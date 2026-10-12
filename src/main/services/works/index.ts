@@ -1,3 +1,5 @@
+import { manimReady } from '../plugins/manim'
+import { ANIMATION_GUIDE } from '@shared/manim'
 import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import {
   ArticleOutlineDraft,
@@ -21,6 +23,7 @@ import {
   type VideoScene,
   type VideoVoice,
   StoryboardDraft,
+  animationFallback,
   checkScene
 } from '@shared/works'
 import { listTemplates } from '../plugins/registry'
@@ -388,16 +391,25 @@ export async function generateOutline(id: string): Promise<Work> {
     known = new Set(mats.map((m) => m.ref))
   const data = { ...brief(r), materials: usable(mats) }
   if (r.type === 'video') {
+    // 装好了数学动画插件才告诉模型可以用 animation 场景
+    const anim = await manimReady()
+    const animGuide = anim
+      ? zh()
+        ? `\n还可以用 animation 场景（数学动画，填 animation 参数），最多 2 个，只在“过程”比结果更重要时用：\n${ANIMATION_GUIDE}`
+        : `\nYou may also use up to 2 animation scenes (math animation, fill the animation parameters) when the process matters more than the result:\n${ANIMATION_GUIDE}`
+      : ''
     const out = await ask(
       'works.outline',
       StoryboardDraft,
-      zh()
+      (zh()
         ? `把选题做成 1–3 分钟讲解视频的分镜：5–10 个场景，第一个用 title（标题卡），最后一个用 summary（总结）。每个场景选一个模板并只填它的参数：bullets 要点（每条不超过 20 字）、formula 公式逐步推导（每步一个 LaTeX）、diagram 图示（Mermaid flowchart，节点文字简短）、chart 图表（数据个数与类别一致）、graph 函数图（表达式只用数字、x、+ - * / ^、括号与 sin cos tan exp ln log sqrt abs）、compare 左右对比、quote 引用。旁白是口语讲稿，每个场景 1–3 句、不超过 80 字，和画面互相补充而不是照念。注明用到的素材编号（M1…），只能引用所给素材；素材没有的内容不要当成事实。`
-        : `Storyboard a 1–3 minute explainer video: 5–10 scenes, the first a title card and the last a summary. Pick one template per scene and fill only its parameters: bullets (≤ 8 words each), formula (one LaTeX expression per step), diagram (Mermaid flowchart, short labels), chart (data length equals categories), graph (expressions with numbers, x, + - * / ^, parentheses and sin cos tan exp ln log sqrt abs), compare, quote. Narration is spoken, 1–3 sentences (≤ 45 words) per scene, complementing the visuals rather than reading them. Cite material ids (M1…); only given materials.`,
+        : `Storyboard a 1–3 minute explainer video: 5–10 scenes, the first a title card and the last a summary. Pick one template per scene and fill only its parameters: bullets (≤ 8 words each), formula (one LaTeX expression per step), diagram (Mermaid flowchart, short labels), chart (data length equals categories), graph (expressions with numbers, x, + - * / ^, parentheses and sin cos tan exp ln log sqrt abs), compare, quote. Narration is spoken, 1–3 sentences (≤ 45 words) per scene, complementing the visuals rather than reading them. Cite material ids (M1…); only given materials.`) +
+        animGuide,
       data,
       6000
     )
     const scenes = out.scenes
+      .map((sc) => (sc.template === 'animation' && !anim ? animationFallback(sc) : sc))
       .map((sc) => ({ ...sc, id: newId(), sources: keepRefs(sc.sources, known) }) as VideoScene)
       // 数据有误的场景（表达式无法解析、图表数据不齐）直接去掉，不带进渲染
       .filter((sc) => !checkScene(sc))

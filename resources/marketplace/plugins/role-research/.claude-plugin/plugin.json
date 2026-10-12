@@ -1,0 +1,16 @@
+{
+  "name": "role-research",
+  "displayName": "大学生·科研",
+  "version": "1.0.0",
+  "description": "读论文、做文献对比、准备组会 / Read papers closely, compare evidence and prepare research meetings",
+  "author": {
+    "name": "积微 / Jiwei"
+  },
+  "keywords": [
+    "大学生·科研",
+    "research",
+    "University research",
+    "角色",
+    "role"
+  ]
+}

@@ -1,0 +1,48 @@
+{
+  "id": "creator-topic-choice",
+  "title": {
+    "zh": "选题取舍",
+    "en": "Choose a content topic"
+  },
+  "description": {
+    "zh": "决定先做哪个选题：读者需求、独特经验、素材充足度、制作成本、时效和长期价值。",
+    "en": "Pick which topic to make first: reader demand, unique experience, material, cost, timeliness and lasting value."
+  },
+  "criteria": [
+    {
+      "name": "读者需求强度",
+      "weight": 5,
+      "hint": "引用读者提问与反馈，不编造热度。"
+    },
+    {
+      "name": "我的独特经验",
+      "weight": 4,
+      "hint": "区分亲历、他人故事与待查证资料。"
+    },
+    {
+      "name": "素材充足度",
+      "weight": 4,
+      "hint": "每个论点有可用出处与例子才算充足。"
+    },
+    {
+      "name": "制作成本",
+      "weight": 3,
+      "hint": "越低越好，包含查证、拍摄和剪辑时间。"
+    },
+    {
+      "name": "时效性",
+      "weight": 2,
+      "hint": "说明事件窗口与核实日期；无时效不制造焦虑。"
+    },
+    {
+      "name": "长期价值",
+      "weight": 3,
+      "hint": "判断过了热点后仍能帮助读者做什么。"
+    }
+  ],
+  "questions": [
+    "这个选题你的读者最近问过吗？",
+    "你有别人没有的经历或数据吗？",
+    "做一期要多久？"
+  ]
+}

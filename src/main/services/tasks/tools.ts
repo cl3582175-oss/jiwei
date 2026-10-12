@@ -56,7 +56,7 @@ export async function taskToolCatalog(model = ''): Promise<{ tools: ToolSet; met
   })
   meta.web_search = { level: 'read', untrusted: true }
   // 笔记和知识库也可能包含用户摘录的外部内容；后台运行从读取后使用更严格的污点策略。
-  for (const name of ['knowledge_search', 'source_read', 'note_read']) if (meta[name]) meta[name] = { ...meta[name], untrusted: true }
+  for (const name of ['knowledge_search', 'source_read', 'note_read', 'note_find']) if (meta[name]) meta[name] = { ...meta[name], untrusted: true }
   const mcp = await assistantMcpTools(zh, { readOnly: true, direct: true })
   Object.assign(tools, mcp.tools)
   Object.assign(meta, mcp.meta)

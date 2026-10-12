@@ -1,0 +1,49 @@
+{
+  "id": "research-topic",
+  "title": {
+    "zh": "选题与方向",
+    "en": "Choose a research direction"
+  },
+  "description": {
+    "zh": "比较研究方向或题目：兴趣、可行性、新颖性、导师支持、毕业要求和失败风险。",
+    "en": "Compare research topics on interest, feasibility, novelty, supervisor support, graduation fit and risk."
+  },
+  "criteria": [
+    {
+      "name": "自己的兴趣",
+      "weight": 4,
+      "hint": "看是否愿意持续读文献、做重复实验，以具体行为为依据。"
+    },
+    {
+      "name": "可行性：数据 / 设备 / 时间",
+      "weight": 5,
+      "hint": "逐项核对当前许可、设备窗口和时间；缺一项都保留条件。"
+    },
+    {
+      "name": "新颖性",
+      "weight": 3,
+      "hint": "以已有论文对比为依据；没搜到不能称首次。"
+    },
+    {
+      "name": "导师与组内支持",
+      "weight": 4,
+      "hint": "区分导师明确承诺与自己的期待。"
+    },
+    {
+      "name": "毕业 / 发表要求的匹配",
+      "weight": 4,
+      "hint": "引用现行培养或结题要求；发表前景只能作为判断。"
+    },
+    {
+      "name": "失败风险",
+      "weight": 3,
+      "hint": "风险越可控制评分越高，记录可行退路。"
+    }
+  ],
+  "questions": [
+    "离毕业或结题还有多久？",
+    "数据或实验条件现在有没有？",
+    "导师更倾向哪个方向？",
+    "做不出结果时有没有退路？"
+  ]
+}

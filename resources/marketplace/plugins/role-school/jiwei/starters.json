@@ -1,0 +1,55 @@
+[
+  {
+    "id": "first-exam-analysis",
+    "title": {
+      "zh": "分析最近一次考试",
+      "en": "Analyze your last exam"
+    },
+    "body": {
+      "zh": "把分数和错题告诉我，十分钟找出失分最多的地方和下一步练什么。",
+      "en": "Share your scores and mistakes to see where most points went and what to practise next."
+    },
+    "action": {
+      "kind": "chat",
+      "skill": "role-school:exam-analysis",
+      "prompt": {
+        "zh": "帮我分析这次考试",
+        "en": "Help me analyse my latest exam."
+      }
+    }
+  },
+  {
+    "id": "first-mistake",
+    "title": {
+      "zh": "把一道错题讲清楚",
+      "en": "Understand one mistake"
+    },
+    "body": {
+      "zh": "先说说你当时怎么想的，一步步找到卡住的地方，再做一道同类题。",
+      "en": "Explain how you approached it, find where you got stuck, then try a similar question."
+    },
+    "action": {
+      "kind": "chat",
+      "skill": "role-school:mistake-root-cause",
+      "prompt": {
+        "zh": "这道题我为什么做错了？请先听我说当时怎么想的。",
+        "en": "Help me understand this mistake. Ask how I approached it first."
+      }
+    }
+  },
+  {
+    "id": "weekly-mistakes",
+    "title": {
+      "zh": "每周日自动回顾错题",
+      "en": "Set up a Sunday mistake review"
+    },
+    "body": {
+      "zh": "每周日晚上把这周的错题按知识点分组，挑出最值得重做的 3 道。",
+      "en": "Every Sunday evening, group the week’s mistakes by topic and pick the 3 most worth redoing."
+    },
+    "action": {
+      "kind": "recipe",
+      "recipe": "school-weekly-mistakes"
+    }
+  }
+]

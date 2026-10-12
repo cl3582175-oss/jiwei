@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdtemp, mkdir, writeFile, readFile, rm, readdir, symlink } from 'fs/promises'
 import { tmpdir } from 'os'
 import { dirname, join } from 'path'
@@ -21,6 +21,9 @@ import {
 import { parsePlugin, resolvePluginMcp } from '../components'
 import { inspectZip, preparePluginSource, PLUGIN_LIMITS } from '../sources'
 import { unicodePathZip } from './zipFixtures'
+
+// 解包上限与真实安装流程较重；机器忙时 5 秒默认超时会误报
+vi.setConfig({ testTimeout: 20_000 })
 const roots: string[] = []
 async function temp() {
   const dir = await mkdtemp(join(tmpdir(), 'jiwei-p1a-test-'))

@@ -1,0 +1,44 @@
+{
+  "id": "school-choice",
+  "title": {
+    "zh": "选科与志愿",
+    "en": "Subjects and university choices"
+  },
+  "description": {
+    "zh": "比较选科或志愿：兴趣、成绩优势、专业覆盖、竞争强度和学习负担。",
+    "en": "Compare subject or university choices on interest, strengths, programme coverage, competition and workload."
+  },
+  "criteria": [
+    {
+      "name": "兴趣与长期动力",
+      "weight": 4,
+      "hint": "区分一时喜欢与能持续投入；引用实际学习经历。"
+    },
+    {
+      "name": "成绩优势与排名稳定性",
+      "weight": 5,
+      "hint": "比较最近三次排名及波动，不拿不同满分的原始分硬比。"
+    },
+    {
+      "name": "对想读专业的覆盖",
+      "weight": 4,
+      "hint": "依据当年目标学校公开选科要求，注明年份与原始链接；未查证不能判断满足。"
+    },
+    {
+      "name": "竞争强度",
+      "weight": 3,
+      "hint": "比较同口径可核实数据；压力较低更有利，不能由传闻算录取率。"
+    },
+    {
+      "name": "学习负担与时间",
+      "weight": 3,
+      "hint": "纳入作业、补基础和休息；在可承受范围内更有利。"
+    }
+  ],
+  "questions": [
+    "最近三次考试各科排名大概在哪？",
+    "有没有特别想读的专业或方向？",
+    "哪一科你学起来最不痛苦？",
+    "家里有没有必须考虑的限制（地域、费用）？"
+  ]
+}

@@ -1,0 +1,55 @@
+[
+  {
+    "id": "first-tradeoff",
+    "title": {
+      "zh": "用框架做一个取舍",
+      "en": "Work through a trade-off"
+    },
+    "body": {
+      "zh": "按战略契合、影响、成本、可逆性等打分，看清该做什么、该停什么。",
+      "en": "Score options on strategy, impact, cost and reversibility to see what to do and what to stop."
+    },
+    "action": {
+      "kind": "advisor",
+      "framework": "manager-tradeoff",
+      "question": {
+        "zh": "帮我比较这些事项，想清楚应该做什么、停什么。",
+        "en": "Help me compare these initiatives and decide what to pursue or stop."
+      }
+    }
+  },
+  {
+    "id": "first-one-on-one",
+    "title": {
+      "zh": "准备下一次一对一",
+      "en": "Prepare your next one-to-one"
+    },
+    "body": {
+      "zh": "整理对方上次的关切和还没兑现的承诺，排好议程。",
+      "en": "Gather their last concerns and open commitments into an agenda."
+    },
+    "action": {
+      "kind": "chat",
+      "skill": "role-manager:one-on-one",
+      "prompt": {
+        "zh": "帮我准备下一次一对一，先看上次的关切和承诺。",
+        "en": "Help me prepare my next one-to-one using previous concerns and commitments."
+      }
+    }
+  },
+  {
+    "id": "monday-decisions",
+    "title": {
+      "zh": "每周一的决策清单",
+      "en": "Set up a Monday decision list"
+    },
+    "body": {
+      "zh": "每周一早上列出本周必须做的决定和逾期的承诺。",
+      "en": "Every Monday morning, list this week’s decisions and overdue commitments."
+    },
+    "action": {
+      "kind": "recipe",
+      "recipe": "manager-monday"
+    }
+  }
+]

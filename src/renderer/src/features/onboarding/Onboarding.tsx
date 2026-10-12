@@ -13,10 +13,12 @@ import { Input } from '@/components/ui/primitives'
 import { Logo } from '@/components/Logo'
 import { InkWelcome } from '@/components/Illustrations'
 import { PaletteCard, Segmented } from '../settings/SettingsDialog'
+import { RoleBatchDialog, RoleGrid } from '../plugins/RolePicker'
 
-const STEPS = 3
+const STEPS = 4
+const ROLES = 2
 
-/** 首次启动引导：认识积微 → 个性化 → 康奈尔笔记法（创建示例笔记） */
+/** 首次启动引导：认识积微 → 个性化 → 选角色（v0.10）→ 康奈尔笔记法（创建示例笔记） */
 export function Onboarding() {
   const { t, i18n } = useTranslation()
   const qc = useQueryClient()
@@ -26,6 +28,8 @@ export function Onboarding() {
   const [step, setStep] = useState(0)
   const [name, setName] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [roles, setRoles] = useState<string[]>([]),
+    [confirmRoles, setConfirmRoles] = useState(false)
   if (!s || s.onboarded) return null
   const dark = document.documentElement.dataset.theme === 'dark'
 
@@ -171,7 +175,20 @@ export function Onboarding() {
                   </>
                 )}
 
-                {step === 2 && (
+                {step === ROLES && (
+                  <>
+                    <h2 className="font-display text-xl font-semibold tracking-[0.06em] text-fg">{t('onboarding.roles')}</h2>
+                    <p className="mt-2 max-w-[640px] text-sm leading-relaxed text-muted">{t('onboarding.rolesDesc')}</p>
+                    <div className="-mx-2 mt-5 min-h-0 flex-1 overflow-y-auto px-2 pb-4">
+                      <RoleGrid
+                        selected={roles}
+                        onToggle={(id) => setRoles((r) => (r.includes(id) ? r.filter((x) => x !== id) : [...r, id]))}
+                      />
+                    </div>
+                  </>
+                )}
+
+                {step === 3 && (
                   <>
                     <h2 className="font-display text-xl font-semibold tracking-[0.06em] text-fg">{t('onboarding.cornell')}</h2>
                     <p className="mt-2 max-w-[600px] text-sm leading-relaxed text-muted">{t('onboarding.cornellDesc')}</p>
@@ -215,7 +232,12 @@ export function Onboarding() {
                   {t('onboarding.back')}
                 </Button>
               )}
-              {step < STEPS - 1 ? (
+              {step === ROLES ? (
+                <Button variant="primary" onClick={() => (roles.length ? setConfirmRoles(true) : setStep(step + 1))}>
+                  {roles.length ? t('onboarding.installRoles', { count: roles.length }) : t('onboarding.skipRoles')}
+                  <ArrowRight />
+                </Button>
+              ) : step < STEPS - 1 ? (
                 <Button variant="primary" onClick={() => setStep(step + 1)}>
                   {step === 0 ? t('onboarding.start') : t('onboarding.next')}
                   <ArrowRight />
@@ -235,6 +257,17 @@ export function Onboarding() {
           </footer>
         </D.Content>
       </D.Portal>
+      {confirmRoles && (
+        <RoleBatchDialog
+          ids={roles}
+          onClose={() => setConfirmRoles(false)}
+          onDone={() => {
+            setConfirmRoles(false)
+            setRoles([])
+            setStep(ROLES + 1)
+          }}
+        />
+      )}
     </D.Root>
   )
 }

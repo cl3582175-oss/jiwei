@@ -1,0 +1,16 @@
+{
+  "name": "role-teacher",
+  "displayName": "教师",
+  "version": "1.0.0",
+  "description": "备课、分层出题、写评语、听评课 / Plan lessons, create differentiated exercises, write feedback and review observed lessons",
+  "author": {
+    "name": "积微 / Jiwei"
+  },
+  "keywords": [
+    "教师",
+    "teacher",
+    "Teacher",
+    "角色",
+    "role"
+  ]
+}

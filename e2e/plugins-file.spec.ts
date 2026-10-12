@@ -98,6 +98,7 @@ async function start() {
 async function settings(tab = '插件') {
   await page.keyboard.press('ControlOrMeta+,')
   await page.getByRole('button', { name: tab, exact: true }).click()
+  if (tab === '插件') await installedTab()
 }
 async function picker(path: string) {
   await app.evaluate(({ dialog }, path) => {
@@ -112,6 +113,14 @@ async function shot(name: string) {
 }
 function pluginCard() {
   return page.locator('[data-plugin-id="b2-fixture@local"]')
+}
+/** 已安装列表只有启用开关；更新、配置、回滚、卸载在“管理”对话框里 */
+async function manage() {
+  await pluginCard().getByRole('button', { name: '管理', exact: true }).click()
+  return page.getByTestId('plugin-details')
+}
+async function installedTab() {
+  await page.getByRole('group', { name: '插件', exact: true }).getByRole('button', { name: '已安装', exact: true }).click()
 }
 test.beforeAll(async () => {
   root = mkdtempSync(join(tmpdir(), 'jiwei-b2-e2e-'))
@@ -232,7 +241,7 @@ test('folder picker -> real preview token -> confirmation, cancellation and actu
   await expect(confirm).toBeVisible()
   await confirm.getByLabel('不添加的信息源').uncheck()
   await confirm.getByRole('button', { name: '安装', exact: true }).click()
-  await expect(pluginCard()).toContainText('已启用')
+  await expect(pluginCard().getByRole('switch')).toBeChecked()
   const data = await page.evaluate(async () => ({
     skills: await window.jiwei.skills.list(),
     lenses: await window.jiwei.lenses.list(),
@@ -246,13 +255,13 @@ test('folder picker -> real preview token -> confirmation, cancellation and actu
   expect(data.recipes.some((x) => x.id === 'b2-fixture:review')).toBe(true)
   await page.getByRole('button', { name: '技能', exact: true }).click()
   await expect(page.getByText('b2-fixture:read', { exact: true }).first()).toBeVisible()
-  await page.getByRole('button', { name: 'b2-fixture', exact: true }).first().click()
+  await page.getByRole('button', { name: '自编产品插件', exact: true }).first().click()
   await expect(pluginCard()).toBeVisible()
   await page.getByRole('button', { name: '视角', exact: true }).click()
   const lens = page.getByTestId('lens-settings').locator('article').filter({ hasText: '自编证据视角' })
   await expect(lens).toBeVisible()
   await expect(lens.getByRole('button', { name: /编辑|删除|移除/ })).toHaveCount(0)
-  await lens.getByRole('button', { name: 'b2-fixture', exact: true }).click()
+  await lens.getByRole('button', { name: '自编产品插件', exact: true }).click()
   await expect(pluginCard()).toBeVisible()
   await page.keyboard.press('Escape')
 })
@@ -261,7 +270,9 @@ test('selected template and framework persist and reach real main model inputs; 
   await page.getByRole('button', { name: /图文长文/ }).click()
   const dialog = page.getByTestId('new-work-dialog')
   await dialog.getByLabel('作品模板').selectOption('b2-fixture:article')
-  await expect(dialog.getByLabel('选题')).toHaveValue('证据文章模板')
+  // 模板只决定类型、读者和写法，选题由用户自己填
+  await expect(dialog.getByLabel('选题')).toHaveValue('')
+  await dialog.getByLabel('选题').fill('证据文章模板')
   await expect(dialog.getByLabel('写给谁')).toHaveValue('初学者')
   await shot('b2-template-selected')
   await dialog.getByRole('button', { name: '开始创作' }).click()
@@ -313,7 +324,7 @@ test('selected template and framework persist and reach real main model inputs; 
 test('capability update needs high-risk confirmation, safe focus, presence-only config, rollback', async () => {
   fixture('2', true)
   await settings()
-  await pluginCard().getByRole('button', { name: '检查文件更新' }).click()
+  await (await manage()).getByRole('button', { name: '更新', exact: true }).click()
   const confirm = page.getByTestId('plugin-confirm')
   await expect(confirm.getByRole('button', { name: '取消', exact: true })).toBeFocused()
   await expect(confirm).toContainText('新增能力')
@@ -359,7 +370,7 @@ test('capability update needs high-risk confirmation, safe focus, presence-only 
   await page.keyboard.press('Enter')
   await expect(confirm).toHaveCount(0)
   expect((await page.evaluate(() => window.jiwei.plugins.list()))[0].version).toBe('1')
-  await pluginCard().getByRole('button', { name: '检查文件更新' }).click()
+  await (await manage()).getByRole('button', { name: '更新', exact: true }).click()
   await confirm.getByLabel('合成凭证').fill('synthetic-b2-test-only')
   await expect(confirm.getByLabel('合成凭证')).toHaveAttribute('type', 'password')
   await confirm.getByRole('button', { name: '更新并同意新的能力' }).click()
@@ -368,18 +379,20 @@ test('capability update needs high-risk confirmation, safe focus, presence-only 
   expect(p.sensitive.token).toBe(true)
   expect(JSON.stringify(p)).not.toContain('synthetic-b2-test-only')
   expect((await page.evaluate(() => window.jiwei.mcp.servers()))[0].enabled).toBe(false)
-  await pluginCard().locator('summary').click()
-  await expect(pluginCard()).toContainText('已设置')
-  await expect(pluginCard().getByLabel('合成凭证')).toHaveValue('')
+  const details = await manage()
+  await details.locator('summary').click()
+  await expect(details).toContainText('已设置')
+  await expect(details.getByLabel('合成凭证')).toHaveValue('')
+  await page.keyboard.press('Escape')
   await page.getByRole('button', { name: '连接', exact: true }).click()
   const connector = page.getByTestId('mcp-server').filter({ hasText: 'fixture-connector' })
   await expect(connector).toBeVisible()
   await expect(connector.getByRole('switch')).not.toBeChecked()
   await expect(connector.getByRole('button', { name: '修改', exact: true })).toBeDisabled()
   await expect(connector.getByRole('button', { name: '删除', exact: true })).toBeDisabled()
-  await connector.getByRole('button', { name: 'b2-fixture', exact: true }).click()
+  await connector.getByRole('button', { name: '自编产品插件', exact: true }).click()
   await expect(pluginCard()).toBeVisible()
-  await pluginCard().getByRole('button', { name: /回滚/ }).click()
+  await (await manage()).getByRole('button', { name: /回滚/ }).click()
   await expect.poll(async () => (await page.evaluate(() => window.jiwei.plugins.list()))[0].version).toBe('1')
   expect(await page.evaluate(() => window.jiwei.mcp.servers())).toHaveLength(0)
   await page.keyboard.press('Escape')
@@ -399,12 +412,12 @@ test('actual restart keeps selections; disable hides definitions, uninstall reta
   expect(saved.decision.framework?.id).toBe('b2-fixture:decision')
   expect(saved.task?.pluginId).toBe('b2-fixture@local')
   await settings()
-  await pluginCard().getByRole('button', { name: '停用', exact: true }).click()
+  await pluginCard().getByRole('switch').click()
   await expect.poll(async () => (await page.evaluate(() => window.jiwei.plugins.templates())).length).toBe(0)
   expect((await page.evaluate(() => window.jiwei.skills.list())).some((s) => s.pluginId === 'b2-fixture@local')).toBe(false)
   expect((await page.evaluate(() => window.jiwei.plugins.frameworks())).length).toBe(0)
   expect((await page.evaluate(() => window.jiwei.tasks.recipes())).some((r) => r.id === 'b2-fixture:review')).toBe(false)
-  await pluginCard().getByRole('button', { name: '卸载', exact: true }).click()
+  await (await manage()).getByRole('button', { name: '卸载', exact: true }).click()
   const uninstall = page.getByTestId('plugin-uninstall')
   await expect(uninstall.getByLabel('同时删除订阅源')).not.toBeChecked()
   await expect(uninstall.getByLabel('同时删除任务')).not.toBeChecked()

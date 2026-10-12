@@ -82,6 +82,16 @@ function card(name = 'p2-evidence') {
 function installed(id = 'p2-evidence@p2-market') {
   return page.locator(`[data-plugin-id="${id}"]`)
 }
+/** 已安装列表只有启用开关；更新、回滚、文件夹、卸载在“管理”对话框里 */
+async function manage(id = 'p2-evidence@p2-market') {
+  await installed(id).getByRole('button', { name: '管理', exact: true }).click()
+  return page.getByTestId('plugin-details')
+}
+/** 第三方市场的状态行只在出错或选中该市场时显示 */
+async function marketRow(name: string) {
+  await page.getByRole('combobox', { name: '全部市场', exact: true }).selectOption(name)
+  return page.locator(`[data-market-name="${name}"]`)
+}
 async function github(repo: string) {
   await page.getByRole('button', { name: '从 GitHub 安装', exact: true }).click()
   await page.getByTestId('plugin-github').getByRole('textbox').fill(repo)
@@ -205,7 +215,7 @@ test.afterAll(async () => {
 test('offline official catalog, explicit trust, partial enrichment error/retry, bilingual search and filters', async () => {
   await settings()
   await marketTab()
-  await expect(page.locator('[data-market-name="jiwei"]')).toContainText('积微官方')
+  await expect(page.getByRole('combobox', { name: '全部市场', exact: true }).locator('option', { hasText: '积微官方' })).toHaveCount(1)
   expect((await page.evaluate(() => window.jiwei.plugins.markets())).map((m) => m.name)).toEqual(['jiwei'])
   await page.getByRole('button', { name: '不再推荐', exact: true }).click()
   expect((await page.evaluate(() => window.jiwei.settings.get())).plugins.recommendedDismissed).toBe(true)
@@ -245,7 +255,7 @@ test('offline official catalog, explicit trust, partial enrichment error/retry, 
 test('safe README details, system browser link, real pure-text install and registry consumers', async () => {
   const requested: string[] = []
   page.on('request', (r) => requested.push(r.url()))
-  await card().getByRole('button', { name: '详情', exact: true }).click()
+  await card().locator('[data-open-details]').click()
   const detail = page.getByTestId('plugin-details')
   await expect(detail).toBeVisible()
   await expect(detail.getByTestId('plugin-readme')).toContainText('Read evidence')
@@ -268,7 +278,7 @@ test('safe README details, system browser link, real pure-text install and regis
   await expect(confirm.getByRole('button', { name: '安装', exact: true })).toBeFocused()
   await confirm.getByRole('button', { name: '安装', exact: true }).click()
   await expect(card()).toContainText('已安装')
-  await card().getByRole('button', { name: '详情', exact: true }).click()
+  await card().locator('[data-open-details]').click()
   await expect(page.getByTestId('plugin-details')).toBeVisible()
   await expect(page.getByTestId('plugin-details').getByRole('button', { name: '停用', exact: true })).toBeVisible()
   await expect(page.getByTestId('plugin-details').getByRole('button', { name: '卸载', exact: true })).toBeVisible()
@@ -280,12 +290,11 @@ test('safe README details, system browser link, real pure-text install and regis
       return ''
     }
   })
-  await installed().getByRole('button', { name: '打开插件文件夹', exact: true }).click()
+  await (await manage()).getByRole('button', { name: '打开插件文件夹', exact: true }).click()
   await expect.poll(() => app.evaluate(() => (globalThis as typeof globalThis & { openedPath?: string }).openedPath)).toBeTruthy()
   evidenceDirectory = (await app.evaluate(() => (globalThis as typeof globalThis & { openedPath?: string }).openedPath))!
   expect(evidenceDirectory.startsWith(join(userData, 'plugins/cache/'))).toBe(true)
   expect(existsSync(join(evidenceDirectory, '.claude-plugin/plugin.json'))).toBe(true)
-  await installed().getByRole('button', { name: '详情', exact: true }).click()
   await page.getByTestId('plugin-details').getByRole('button', { name: 'p2-evidence:read', exact: true }).click()
   await expect(page.getByText('p2-evidence:read', { exact: true }).first()).toBeVisible()
   await expect(page.getByText('p2-evidence:check', { exact: true }).first()).toBeVisible()
@@ -293,7 +302,7 @@ test('safe README details, system browser link, real pure-text install and regis
   await navTo(page, /^作品/)
   await page.getByRole('button', { name: /图文长文/ }).click()
   await page.getByTestId('new-work-dialog').getByLabel('作品模板').selectOption('p2-evidence:article')
-  await expect(page.getByTestId('new-work-dialog').getByLabel('选题')).toHaveValue('市场证据文章')
+  await expect(page.getByTestId('new-work-dialog').getByLabel('选题')).toHaveValue('')
   await shot('p2-template')
   await page.keyboard.press('Escape')
   await navTo(page, /^参谋/)
@@ -321,9 +330,7 @@ test('risky connector focus, config presence/change/clear, disabled MCP and narr
   await confirm.getByRole('button', { name: '安装', exact: true }).click()
   await expect(confirm).toHaveCount(0)
   await installedTab()
-  const risk = installed('p2-risk@p2-market')
-  await risk.getByRole('button', { name: '详情', exact: true }).click()
-  const detail = page.getByTestId('plugin-details')
+  const detail = await manage('p2-risk@p2-market')
   await detail.locator('summary').filter({ hasText: '配置' }).click()
   await expect(detail).toContainText('已设置')
   await expect(detail.getByLabel('合成配置')).toHaveValue('')
@@ -367,7 +374,7 @@ test('cached update indicator, capability reconfirm, rollback, disable, uninstal
   await page.getByRole('button', { name: '刷新', exact: true }).click()
   await expect(card()).toContainText('有更新')
   await expect(page.getByLabel('有更新', { exact: true })).toBeVisible()
-  await card().getByRole('button', { name: '检查文件更新' }).click()
+  await card().getByRole('button', { name: '更新', exact: true }).click()
   const confirm = page.getByTestId('plugin-confirm')
   await expect(confirm).toContainText('新增能力')
   await expect(confirm).toContainText('update-connector')
@@ -375,16 +382,17 @@ test('cached update indicator, capability reconfirm, rollback, disable, uninstal
   await confirm.getByRole('button', { name: '更新并同意新的能力' }).click()
   await expect(card()).toContainText('2.0.0')
   await installedTab()
-  await installed().getByRole('button', { name: /回滚/ }).click()
+  await (await manage()).getByRole('button', { name: /回滚/ }).click()
   await expect.poll(async () => (await page.evaluate(() => window.jiwei.plugins.get('p2-evidence@p2-market'))).version).toBe('1.0.0')
-  await installed().getByRole('button', { name: '停用', exact: true }).click()
+  await page.keyboard.press('Escape')
+  await installed().getByRole('switch').click()
   await expect
     .poll(async () => (await page.evaluate(() => window.jiwei.skills.list())).some((s) => s.pluginId === 'p2-evidence@p2-market'))
     .toBe(false)
   expect((await page.evaluate(() => window.jiwei.plugins.templates())).some((s) => s.pluginId === 'p2-evidence@p2-market')).toBe(false)
   expect((await page.evaluate(() => window.jiwei.plugins.frameworks())).some((s) => s.pluginId === 'p2-evidence@p2-market')).toBe(false)
   expect((await page.evaluate(() => window.jiwei.tasks.recipes())).some((s) => s.id === 'p2-evidence:review')).toBe(false)
-  await installed().getByRole('button', { name: '卸载', exact: true }).click()
+  await (await manage()).getByRole('button', { name: '卸载', exact: true }).click()
   const dialog = page.getByTestId('plugin-uninstall')
   await expect(dialog.getByLabel('同时删除订阅源')).not.toBeChecked()
   await expect(dialog.getByLabel('同时删除任务')).not.toBeChecked()
@@ -427,7 +435,7 @@ test('direct detection: duplicate/reserved market, selected Agent Skills, GitHub
   await expect(page.getByTestId('plugin-acquisition').getByRole('alert')).toContainText('先卸载旧来源')
   await page.getByTestId('plugin-acquisition').getByRole('button', { name: '取消', exact: true }).click()
   await github('https://github.com/fixture/market/tree/main/plugins/evidence')
-  await expect(page.getByTestId('plugin-confirm')).toContainText('Evidence kit')
+  await expect(page.getByTestId('plugin-confirm')).toContainText('自编证据插件')
   await page.getByTestId('plugin-confirm').getByRole('button', { name: '取消', exact: true }).click()
   await page.evaluate(() => window.jiwei.plugins.uninstall('p2-direct@local', { removeFeeds: false, removeTasks: false }))
   const archive = join(root, 'direct.zip')
@@ -442,14 +450,15 @@ test('direct detection: duplicate/reserved market, selected Agent Skills, GitHub
     .click()
   await expect(page.getByTestId('plugin-confirm')).toHaveCount(0)
   await marketTab()
-  await page.locator('[data-market-name="p2-market"]').getByRole('button', { name: '删除市场', exact: true }).click()
+  await (await marketRow('p2-market')).getByRole('button', { name: '删除市场', exact: true }).click()
   const remove = page.getByTestId('plugin-remove-market')
   await expect(remove.getByRole('checkbox')).toBeChecked()
   await remove.getByRole('checkbox').uncheck()
   await remove.getByRole('button', { name: '删除市场', exact: true }).click()
   await installedTab()
   await expect(installed('p2-risk@p2-market')).toContainText('不能更新')
-  await expect(installed('p2-risk@p2-market').getByRole('button', { name: '检查文件更新' })).toBeDisabled()
+  await expect((await manage('p2-risk@p2-market')).getByRole('button', { name: '更新', exact: true })).toBeDisabled()
+  await page.getByTestId('plugin-details').getByRole('button', { name: '关闭', exact: true }).last().click()
 })
 
 test('local market replacement keeps retained-source update denial; HTTPS addition requires trust and stays on the real main path', async () => {
@@ -464,7 +473,8 @@ test('local market replacement keeps retained-source update denial; HTTPS additi
   await page.getByTestId('plugin-acquisition').getByRole('button', { name: '我信任这个来源，添加市场' }).click()
   await expect(page.getByTestId('plugin-acquisition')).toHaveCount(0)
   await expect(installed('p2-risk@p2-market')).toContainText('不能更新')
-  await expect(installed('p2-risk@p2-market').getByRole('button', { name: '检查文件更新' })).toBeDisabled()
+  await expect((await manage('p2-risk@p2-market')).getByRole('button', { name: '更新', exact: true })).toBeDisabled()
+  await page.getByTestId('plugin-details').getByRole('button', { name: '关闭', exact: true }).last().click()
   expect((await page.evaluate(() => window.jiwei.plugins.catalog())).find((p) => p.id === 'p2-risk@p2-market')?.updateAvailable).toBe(false)
   // Redirect only the transport for this self-authored HTTPS fixture, retaining URL validation,
   // actual HTTP bytes, market parsing, persistence, and error handling.
@@ -482,13 +492,14 @@ test('local market replacement keeps retained-source update denial; HTTPS additi
   await expect(add).toContainText('fixture.invalid')
   await add.getByRole('checkbox').check()
   await add.getByRole('button', { name: '我信任这个来源，添加市场' }).click()
-  await expect(page.locator('[data-market-name="p2-https"]')).toBeVisible()
+  await expect(await marketRow('p2-https')).toBeVisible()
+  await page.getByRole('combobox', { name: '全部市场', exact: true }).selectOption('')
   expect((await page.evaluate(() => window.jiwei.plugins.markets())).find((m) => m.name === 'p2-https')?.source).toContain(
     'fixture.invalid'
   )
   await expect(page.getByLabel('有更新', { exact: true })).toHaveCount(0)
   await expect(card('p2-risk')).toContainText('不能更新')
-  await card('p2-risk').getByRole('button', { name: '详情', exact: true }).click()
+  await card('p2-risk').locator('[data-open-details]').click()
   await expect(page.getByTestId('plugin-details')).toContainText('不能更新')
   await expect(page.getByTestId('plugin-details').getByRole('link', { name: /仓库/ })).toHaveAttribute(
     'href',
@@ -496,7 +507,7 @@ test('local market replacement keeps retained-source update denial; HTTPS additi
   )
   await page.getByTestId('plugin-details').getByRole('button', { name: '关闭', exact: true }).last().click()
   await marketTab()
-  await page.locator('[data-market-name="p2-market"]').getByRole('button', { name: '删除市场', exact: true }).click()
+  await (await marketRow('p2-market')).getByRole('button', { name: '删除市场', exact: true }).click()
   await expect(page.getByTestId('plugin-remove-market').getByRole('checkbox')).toBeChecked()
   await page.getByTestId('plugin-remove-market').getByRole('button', { name: '删除市场', exact: true }).click()
   await expect(page.getByTestId('plugin-remove-market')).toHaveCount(0)
