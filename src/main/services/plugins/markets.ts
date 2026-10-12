@@ -1,4 +1,5 @@
 import { app } from 'electron'
+import { pluginIcon } from './icon'
 import { eq } from 'drizzle-orm'
 import { join, dirname, relative, basename } from 'path'
 import { readdir, rm } from 'fs/promises'
@@ -6,7 +7,7 @@ import { getDb } from '../../db'
 import { pluginMarkets, plugins } from '../../db/schema'
 import { audit } from '../agent/audit'
 import { emit } from '../../events'
-import { pluginMutation, pluginRoot } from './state'
+import { pluginMutation, pluginRoot, readState } from './state'
 import { parsePlugin, readPluginText } from './components'
 import { safePluginPath, PLUGIN_LIMITS, preparePluginSource, inspectPluginFolder } from './sources'
 import { AcquisitionBatch, githubSource, httpsUrl, sourceLink, type MarketSource } from './acquisition'
@@ -28,6 +29,7 @@ import {
 export const OFFICIAL_MARKET = Object.freeze({ name: 'jiwei', bundled: 'resources/marketplace', remote: null as string | null })
 let officialDefinition = OFFICIAL_MARKET
 interface CatalogItem {
+  icon?: string
   entry: MarketplaceEntry
   source: MarketSource
   fallback?: MarketSource
@@ -165,6 +167,7 @@ async function enrich(catalog: Catalog, batch: AcquisitionBatch, official: boole
       prepared = await preparePluginSource({ ...acquired, selection: marketplaceComponentSelection(item.entry) })
       const parsed = await parsePlugin(prepared.root, acquired.options)
       if (parsed.manifest.name !== item.entry.name) throw new Error('Marketplace plugin name mismatch')
+      item.icon = await pluginIcon(parsed.root)
       item.version = parsed.version
       item.metadata = {
         displayName: parsed.manifest.displayName,
@@ -256,8 +259,11 @@ export function catalogPlugins(): PluginCatalogCard[] {
       const supported = pluginSourceSupport(entry.source).supported && !(typeof entry.source === 'string' && item.source.kind === 'url')
       const version = item.version ?? entry.version
       const comparison = old && version ? comparePluginVersions(version, old.version) : 0
+      // 同名市场被不同来源重新添加，不得让缓存更新提示绕过安装时绑定的来源。
+      const updateUnavailable = !!old && readState(old.id).origin.locator !== row.source
       return {
         id,
+        icon: item.icon,
         name: entry.name,
         displayName: item.metadata?.displayName ?? entry.displayName ?? entry.name,
         description: item.metadata?.description ?? entry.description ?? '',
@@ -272,7 +278,8 @@ export function catalogPlugins(): PluginCatalogCard[] {
         supported,
         unsupportedReason: supported ? undefined : '积微暂不支持这种来源 / Unsupported source',
         installedVersion: old?.version,
-        updateAvailable: !!old && !!version && (comparison === null ? version !== old.version : comparison > 0)
+        updateUnavailable,
+        updateAvailable: !!old && !updateUnavailable && !!version && (comparison === null ? version !== old.version : comparison > 0)
       }
     })
   })
@@ -423,6 +430,7 @@ export async function removeMarket(name: string, options: { uninstall: boolean }
           .from(plugins)
           .where(eq(plugins.market, name))
           .all()
+          .filter((p) => readState(p.id).origin.locator === row.source)
           .map((p) => p.id)
       : []
     return {

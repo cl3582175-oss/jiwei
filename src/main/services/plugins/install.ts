@@ -1,3 +1,5 @@
+import { sourceLink, type MarketSource } from './acquisition'
+import { pluginIcon } from './icon'
 import { dialog, shell, type BrowserWindow } from 'electron'
 import { randomBytes } from 'crypto'
 import { mkdir, readdir, rm, rename, writeFile, readFile, lstat } from 'fs/promises'
@@ -615,7 +617,17 @@ export async function pluginDetails(input: { id?: string; token?: string }): Pro
   }
   // 保留 Markdown 文本；HTML 字符转义后不能形成元素或脚本。
   readme = readme.replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  const origin = pending?.origin ?? (input.id ? readState(input.id).origin : undefined)
+  // 删除或换源后仍从已确认的安装记录投影原始来源；不借新同名市场赋予旧插件身份。
+  let sourceUrl: string | undefined
+  if (origin?.kind === 'github') sourceUrl = origin.locator
+  else if (origin?.kind === 'market') {
+    const source = JSON.parse(origin.locator) as MarketSource
+    if (source.kind !== 'folder') sourceUrl = sourceLink(source)
+  }
   return {
+    sourceUrl,
+    icon: await pluginIcon(parsed.root),
     installed: input.id ? getPlugin(input.id) : undefined,
     readme,
     unsupported: parsed.unsupported,

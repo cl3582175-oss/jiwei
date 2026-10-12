@@ -1,3 +1,4 @@
+import i18n from '@/i18n'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Dialog as D } from 'radix-ui'
 import { useTranslation } from 'react-i18next'
@@ -6,8 +7,12 @@ import { Button } from '@/components/ui/button'
 import { field } from '../plan/ui'
 import { api } from '@/lib/utils'
 
-export const pluginError = (e: unknown): string =>
-  String(e instanceof Error ? e.message : e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
+export const pluginError = (e: unknown): string => {
+  const message = String(e instanceof Error ? e.message : e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
+  if (message.includes('Plugin namespace already installed')) return i18n.t('plugins.namespaceError')
+  if (/market.*(removed|unavailable)|Market no longer|source market/i.test(message)) return `${i18n.t('plugins.sourceRemoved')} ${message}`
+  return message
+}
 export function PluginOriginLabel({ origin }: { origin: PluginInfo['origin'] }) {
   const { t } = useTranslation()
   // jiwei 是 main 保留的市场身份，不能由插件声明自行取得。
@@ -17,7 +22,9 @@ export function PluginOriginLabel({ origin }: { origin: PluginInfo['origin'] }) 
         ? t('plugins.official')
         : origin.kind === 'local'
           ? t('plugins.local')
-          : `${t('plugins.market')} · ${origin.market}`}
+          : origin.kind === 'github'
+            ? t('plugins.githubSource')
+            : `${t('plugins.market')} · ${origin.market}`}
     </span>
   )
 }

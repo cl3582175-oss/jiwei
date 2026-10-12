@@ -1,0 +1,1 @@
+{"name":"p2-market","owner":{"name":"Self-authored P2 fixture"},"plugins":[{"name":"p2-evidence","source":"./plugins/evidence"},{"name":"p2-risk","source":{"source":"github","repo":"fixture/risk"}},{"name":"p2-npm","source":{"source":"npm","package":"self-authored-never-run"}}]}

@@ -1,0 +1,1 @@
+{"id":"review","name":{"zh":"市场证据任务","en":"Market evidence review"},"instructionEn":"Review evidence","task":{"name":"市场证据任务","instruction":"Review facts and assumptions.","trigger":{"type":"manual"},"tools":["knowledge_search"],"outputs":{"inbox":true}}}

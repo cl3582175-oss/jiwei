@@ -1,3 +1,4 @@
+import { PluginUpdateDot } from '../plugins/PluginMarketplace'
 import { Puzzle } from 'lucide-react'
 import { PluginsSettings } from '../plugins/PluginsSettings'
 import { DiscoverSettings } from '../discover/DiscoverSettings'
@@ -338,6 +339,7 @@ export function SettingsDialog() {
                         : it.id === 'usage' || it.id === 'connections'
                           ? t(`agent.tabs.${it.id}`)
                           : t(`settings.${it.id}`)}
+                {it.id === 'plugins' && <PluginUpdateDot />}
               </button>
             ))}
           </nav>

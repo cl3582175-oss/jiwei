@@ -478,7 +478,7 @@ test('UI cancellation interrupts the real pre-commit install and corrupt zip rep
   file(corrupt, 'not a zip')
   await picker(corrupt)
   await page.getByRole('button', { name: '从文件安装', exact: true }).click()
-  await expect(page.getByTestId('plugins-settings').getByRole('alert')).toBeVisible()
+  await expect(page.getByTestId('plugin-acquisition').getByRole('alert')).toBeVisible()
   expect((await page.evaluate(() => window.jiwei.plugins.list())).map((p) => p.id)).toEqual(['b2-fixture@local'])
   expect(readdirSync(join(userData, 'plugins', 'previews'))).toEqual([])
   await shot('b2-corrupt-file-error')

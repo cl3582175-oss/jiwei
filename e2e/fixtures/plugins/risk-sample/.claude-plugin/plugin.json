@@ -1,0 +1,1 @@
+{"name": "p2-risk", "version": "1.0.0", "description": "Self-authored risky connector", "userConfig": {"key": {"type": "string", "title": "合成配置", "description": "Synthetic fixture only", "sensitive": true}}, "mcpServers": {"fixture": {"command": "p2-never-execute", "args": [], "env": {"KEY": "${user_config.key}"}}}}

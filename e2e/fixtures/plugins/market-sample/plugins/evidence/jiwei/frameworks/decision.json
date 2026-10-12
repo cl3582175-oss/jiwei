@@ -1,0 +1,1 @@
+{"id": "decision", "title": {"zh": "市场证据框架", "en": "Market evidence framework"}, "description": {"zh": "检查证据", "en": "Check evidence"}, "criteria": [{"name": "证据", "weight": 5, "hint": "Verify source"}, {"name": "成本", "weight": 2, "hint": "Estimate costs"}], "questions": ["What evidence is missing?"]}

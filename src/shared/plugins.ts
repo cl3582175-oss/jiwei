@@ -402,6 +402,7 @@ export interface PluginMarketInfo {
   count: number
 }
 export interface PluginCatalogCard {
+  icon?: string
   id: string
   name: string
   displayName: string
@@ -417,9 +418,12 @@ export interface PluginCatalogCard {
   supported: boolean
   unsupportedReason?: string
   installedVersion?: string
+  updateUnavailable: boolean
   updateAvailable: boolean
 }
 export interface PluginDetails {
+  sourceUrl?: string
+  icon?: string
   preview?: PluginPreview
   installed?: PluginInfo
   readme: string
