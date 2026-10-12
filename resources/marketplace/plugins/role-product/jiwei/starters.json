@@ -1,0 +1,59 @@
+[
+  {
+    "id": "first-prd",
+    "title": {
+      "zh": "审一份需求文档",
+      "en": "Review a requirements document"
+    },
+    "body": {
+      "zh": "先准备相关材料，打开助手后检查预填内容，再按发送开始。",
+      "en": "Bring the relevant material, review the prefilled request in the assistant, then send it when ready."
+    },
+    "action": {
+      "kind": "chat",
+      "skill": "role-product:prd-review",
+      "prompt": {
+        "zh": "请按检查清单审这份 PRD，只报告问题。",
+        "en": "Review this PRD against the checklist and report issues only."
+      }
+    }
+  },
+  {
+    "id": "first-interviews",
+    "title": {
+      "zh": "归纳最近的用户访谈",
+      "en": "Analyse recent customer interviews"
+    },
+    "body": {
+      "zh": "先准备相关材料，打开助手后检查预填内容，再按发送开始。",
+      "en": "Bring the relevant material, review the prefilled request in the assistant, then send it when ready."
+    },
+    "action": {
+      "kind": "chat",
+      "skill": "role-product:interview-synthesis",
+      "prompt": {
+        "zh": "归纳我指定的用户访谈，区分原话和假设。",
+        "en": "Analyse my selected interviews, separating quotations from assumptions."
+      }
+    }
+  },
+  {
+    "id": "first-priority",
+    "title": {
+      "zh": "给待办需求排优先级",
+      "en": "Prioritise your backlog"
+    },
+    "body": {
+      "zh": "带上备选方案、已有证据和个人约束，先检查预填的问题。",
+      "en": "Bring your options, evidence and constraints, then review the prefilled question before starting."
+    },
+    "action": {
+      "kind": "advisor",
+      "framework": "product-priority",
+      "question": {
+        "zh": "帮我比较这些待办需求的优先级。",
+        "en": "Help me prioritise these requirements."
+      }
+    }
+  }
+]

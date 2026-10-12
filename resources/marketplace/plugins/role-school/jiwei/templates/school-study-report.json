@@ -1,0 +1,21 @@
+{
+  "id": "school-study-report",
+  "type": "article",
+  "mode": "coach",
+  "title": {
+    "zh": "研究性学习报告",
+    "en": "Student research report"
+  },
+  "description": {
+    "zh": "研究性学习报告，按指定结构组织已有素材。",
+    "en": "Develop a student research report through coaching questions, using your own findings and sources."
+  },
+  "outline": [
+    "研究问题",
+    "为什么研究",
+    "怎么做的",
+    "发现了什么",
+    "不足与下一步"
+  ],
+  "guidance": "教练模式：只提问引导，不替写；提醒注明资料来源。依据用户提供或已保存的真实素材，缺失数据和经历明确标注待补；保留出处。用用户使用的语言创作，先确认目标读者。"
+}

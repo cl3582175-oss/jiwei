@@ -1,0 +1,21 @@
+{
+  "id": "jobseeker-portfolio",
+  "type": "slides",
+  "mode": "cowrite",
+  "title": {
+    "zh": "作品集 / 项目展示",
+    "en": "Project portfolio"
+  },
+  "description": {
+    "zh": "作品集 / 项目展示，按指定结构组织已有素材。",
+    "en": "Show project problems, your contribution and supported outcomes in a clear portfolio."
+  },
+  "outline": [
+    "我是谁",
+    "项目一：问题-做法-结果",
+    "项目二",
+    "项目三",
+    "我能带来什么"
+  ],
+  "guidance": "每个项目 2–3 页，结果页要有数据或截图占位。依据用户提供或已保存的真实素材，缺失数据和经历明确标注待补；保留出处。用用户使用的语言创作，先确认目标读者。"
+}

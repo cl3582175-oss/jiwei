@@ -181,6 +181,7 @@ export async function inspectAcquired(input: PluginAcquisition, updateId?: strin
       templates: parsed.templates,
       frameworks: parsed.frameworks,
       recipes: parsed.recipes,
+      starters: parsed.starters,
       feeds: parsed.feeds,
       scripts: parsed.scripts,
       issues: parsed.issues
@@ -631,11 +632,13 @@ export async function pluginDetails(input: { id?: string; token?: string }): Pro
     installed: input.id ? getPlugin(input.id) : undefined,
     readme,
     unsupported: parsed.unsupported,
+    starters: parsed.starters,
     contents: {
       skills: parsed.skills.map((x) => x.name),
       templates: parsed.templates.map((x) => x.id),
       frameworks: parsed.frameworks.map((x) => x.id),
       recipes: parsed.recipes.map((x) => x.id),
+      starters: parsed.starters.map((x) => x.id),
       feeds: parsed.feeds.map((x) => x.title),
       mcp: Object.keys(parsed.mcpServers)
     }

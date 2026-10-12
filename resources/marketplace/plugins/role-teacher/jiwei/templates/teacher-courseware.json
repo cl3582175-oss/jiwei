@@ -1,0 +1,23 @@
+{
+  "id": "teacher-courseware",
+  "type": "slides",
+  "mode": "cowrite",
+  "title": {
+    "zh": "一节课的课件",
+    "en": "Lesson slides"
+  },
+  "description": {
+    "zh": "一节课的课件，按指定结构组织已有素材。",
+    "en": "Build lesson slides with clear tasks, worked examples, practice and useful teaching prompts."
+  },
+  "outline": [
+    "导入问题",
+    "学习目标",
+    "新知讲解",
+    "例题",
+    "课堂练习",
+    "小结",
+    "作业"
+  ],
+  "guidance": "每页一个任务；例题页留学生思考空间；讲者备注写提问话术。依据用户提供或已保存的真实素材，缺失数据和经历明确标注待补；保留出处。用用户使用的语言创作，先确认目标读者。"
+}

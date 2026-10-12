@@ -1,0 +1,21 @@
+{
+  "id": "kaoyan-self-intro",
+  "type": "article",
+  "mode": "coach",
+  "title": {
+    "zh": "复试自我介绍",
+    "en": "Admission interview introduction"
+  },
+  "description": {
+    "zh": "复试自我介绍，按指定结构组织已有素材。",
+    "en": "Develop an honest two-minute admission interview introduction, with prompts for an English version."
+  },
+  "outline": [
+    "基本情况",
+    "专业基础",
+    "科研或项目经历",
+    "为什么报这个方向",
+    "读研计划"
+  ],
+  "guidance": "教练模式；中文版约 2 分钟（约 500 字）；提示准备英文版；不编造经历。依据用户提供或已保存的真实素材，缺失数据和经历明确标注待补；保留出处。用用户使用的语言创作，先确认目标读者。"
+}

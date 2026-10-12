@@ -1,0 +1,20 @@
+{
+  "id": "manager-all-hands",
+  "type": "article",
+  "mode": "cowrite",
+  "title": {
+    "zh": "团队讲话稿",
+    "en": "Team address"
+  },
+  "description": {
+    "zh": "团队讲话稿，按指定结构组织已有素材。",
+    "en": "Write a spoken team address explaining where things stand and what everyone can do next."
+  },
+  "outline": [
+    "我们在哪",
+    "为什么",
+    "接下来做什么",
+    "每个人能做什么"
+  ],
+  "guidance": "口语；5 分钟以内（约 1200 字）。依据用户提供或已保存的真实素材，缺失数据和经历明确标注待补；保留出处。用用户使用的语言创作，先确认目标读者。"
+}

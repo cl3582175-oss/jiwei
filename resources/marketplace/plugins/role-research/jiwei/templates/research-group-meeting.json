@@ -1,0 +1,22 @@
+{
+  "id": "research-group-meeting",
+  "type": "slides",
+  "mode": "cowrite",
+  "title": {
+    "zh": "组会汇报",
+    "en": "Research group update"
+  },
+  "description": {
+    "zh": "组会汇报，按指定结构组织已有素材。",
+    "en": "Prepare a research update with results, open problems and decisions needed from your adviser."
+  },
+  "outline": [
+    "上次组会的问题",
+    "本周做了什么",
+    "结果（图）",
+    "遇到的问题",
+    "需要导师决定的事",
+    "下周计划"
+  ],
+  "guidance": "8–10 页；结果页必须有图或表；“需要导师决定的事”单独一页。依据用户提供或已保存的真实素材，缺失数据和经历明确标注待补；保留出处。用用户使用的语言创作，先确认目标读者。"
+}

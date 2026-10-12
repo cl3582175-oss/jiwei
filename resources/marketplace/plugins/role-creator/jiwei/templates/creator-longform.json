@@ -1,0 +1,21 @@
+{
+  "id": "creator-longform",
+  "type": "article",
+  "mode": "cowrite",
+  "title": {
+    "zh": "公众号长文",
+    "en": "Long-form article"
+  },
+  "description": {
+    "zh": "公众号长文，按指定结构组织已有素材。",
+    "en": "Develop a long-form article with concrete examples and one action readers can take."
+  },
+  "outline": [
+    "开头的场景或冲突",
+    "核心观点一",
+    "观点二",
+    "观点三",
+    "读者可以马上做的一件事"
+  ],
+  "guidance": "2000–3500 字；每个观点配一个具体例子；结尾不喊口号。依据用户提供或已保存的真实素材，缺失数据和经历明确标注待补；保留出处。用用户使用的语言创作，先确认目标读者。"
+}

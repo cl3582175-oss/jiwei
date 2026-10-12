@@ -1,0 +1,55 @@
+[
+  {
+    "id": "first-paper",
+    "title": {
+      "zh": "精读一篇论文",
+      "en": "Read a paper closely"
+    },
+    "body": {
+      "zh": "先准备相关材料，打开助手后检查预填内容，再按发送开始。 学科专属订阅（如 arXiv）请到发现页按你的学科添加。",
+      "en": "Bring the relevant material, review the prefilled request in the assistant, then send it when ready. Add field-specific feeds such as arXiv from Discover for your discipline."
+    },
+    "action": {
+      "kind": "chat",
+      "skill": "role-research:paper-reading",
+      "prompt": {
+        "zh": "帮我精读这篇论文。",
+        "en": "Help me read this paper closely."
+      }
+    }
+  },
+  {
+    "id": "first-matrix",
+    "title": {
+      "zh": "把几篇文献做成对比表",
+      "en": "Compare several papers"
+    },
+    "body": {
+      "zh": "先准备相关材料，打开助手后检查预填内容，再按发送开始。 学科专属订阅（如 arXiv）请到发现页按你的学科添加。",
+      "en": "Bring the relevant material, review the prefilled request in the assistant, then send it when ready. Add field-specific feeds such as arXiv from Discover for your discipline."
+    },
+    "action": {
+      "kind": "chat",
+      "skill": "role-research:lit-matrix",
+      "prompt": {
+        "zh": "把我选的几篇文献做成对比表。",
+        "en": "Compare the papers I select in an evidence matrix."
+      }
+    }
+  },
+  {
+    "id": "first-meeting",
+    "title": {
+      "zh": "准备下一次组会",
+      "en": "Prepare your next research meeting"
+    },
+    "body": {
+      "zh": "选择真实笔记或资料，按模板确认结构，再开始创作。",
+      "en": "Choose your own notes or sources, review the template structure and start creating."
+    },
+    "action": {
+      "kind": "work",
+      "template": "research-group-meeting"
+    }
+  }
+]

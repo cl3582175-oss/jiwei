@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "category": "role",
+  "roles": [
+    "school"
+  ],
+  "name": {
+    "zh": "中学生·考试",
+    "en": "School exams"
+  },
+  "description": {
+    "zh": "错题找原因，考后知道下一步练什么",
+    "en": "Find the cause of mistakes and decide what to practise after an exam"
+  },
+  "engines": {
+    "jiwei": ">=0.10.0"
+  },
+  "dataLeavesDevice": false
+}

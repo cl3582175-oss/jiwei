@@ -1,6 +1,115 @@
 {
   "name": "jiwei",
-  "owner": { "name": "积微 / Jiwei" },
-  "metadata": { "description": "积微官方插件市场 / Jiwei official plugin marketplace" },
-  "plugins": []
+  "owner": {
+    "name": "积微 / Jiwei"
+  },
+  "metadata": {
+    "description": "积微官方插件市场 / Jiwei official plugin marketplace"
+  },
+  "plugins": [
+    {
+      "name": "role-school",
+      "source": "./plugins/role-school",
+      "displayName": "中学生·考试",
+      "description": "错题找原因，考后知道下一步练什么 / Find the cause of mistakes and decide what to practise after an exam",
+      "keywords": [
+        "中学生·考试",
+        "school",
+        "School exams",
+        "角色",
+        "role"
+      ]
+    },
+    {
+      "name": "role-research",
+      "source": "./plugins/role-research",
+      "displayName": "大学生·科研",
+      "description": "读论文、做文献对比、准备组会 / Read papers closely, compare evidence and prepare research meetings",
+      "keywords": [
+        "大学生·科研",
+        "research",
+        "University research",
+        "角色",
+        "role"
+      ]
+    },
+    {
+      "name": "role-kaoyan",
+      "source": "./plugins/role-kaoyan",
+      "displayName": "考研",
+      "description": "择校、真题复盘、作文批改、复试准备 / Choose programmes, review past papers, improve essays and prepare admission interviews",
+      "keywords": [
+        "考研",
+        "kaoyan",
+        "Postgraduate entrance exams",
+        "角色",
+        "role"
+      ]
+    },
+    {
+      "name": "role-jobseeker",
+      "source": "./plugins/role-jobseeker",
+      "displayName": "求职者",
+      "description": "简历对岗、面试模拟与复盘、选 offer / Tailor your résumé, practise interviews and compare job offers",
+      "keywords": [
+        "求职者",
+        "jobseeker",
+        "Job seeker",
+        "角色",
+        "role"
+      ]
+    },
+    {
+      "name": "role-product",
+      "source": "./plugins/role-product",
+      "displayName": "产品经理",
+      "description": "审需求、归纳访谈、拆竞品、排优先级 / Review requirements, analyse interviews, compare competitors and prioritise work",
+      "keywords": [
+        "产品经理",
+        "product",
+        "Product manager",
+        "角色",
+        "role"
+      ]
+    },
+    {
+      "name": "role-teacher",
+      "source": "./plugins/role-teacher",
+      "displayName": "教师",
+      "description": "备课、分层出题、写评语、听评课 / Plan lessons, create differentiated exercises, write feedback and review observed lessons",
+      "keywords": [
+        "教师",
+        "teacher",
+        "Teacher",
+        "角色",
+        "role"
+      ]
+    },
+    {
+      "name": "role-creator",
+      "source": "./plugins/role-creator",
+      "displayName": "内容创作者",
+      "description": "从笔记里挖选题、写标题开头、一稿多用 / Find ideas in your notes, write engaging openings and adapt content for different formats",
+      "keywords": [
+        "内容创作者",
+        "creator",
+        "Content creator",
+        "角色",
+        "role"
+      ]
+    },
+    {
+      "name": "role-manager",
+      "source": "./plugins/role-manager",
+      "displayName": "管理者·决策",
+      "description": "一对一、决策简报、取舍与优先级 / Prepare one-to-ones, explain decisions and make practical trade-offs",
+      "keywords": [
+        "管理者·决策",
+        "manager",
+        "Manager and decision maker",
+        "角色",
+        "role"
+      ]
+    }
+  ]
 }

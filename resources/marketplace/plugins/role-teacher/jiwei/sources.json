@@ -1,0 +1,9 @@
+{
+  "feeds": [
+    {
+      "title": "The Learning Scientists",
+      "kind": "rss",
+      "url": "https://www.learningscientists.org/blog?format=rss"
+    }
+  ]
+}

@@ -1,0 +1,55 @@
+[
+  {
+    "id": "first-exam-analysis",
+    "title": {
+      "zh": "分析最近一次考试",
+      "en": "Analyze your last exam"
+    },
+    "body": {
+      "zh": "先准备相关材料，打开助手后检查预填内容，再按发送开始。",
+      "en": "Bring the relevant material, review the prefilled request in the assistant, then send it when ready."
+    },
+    "action": {
+      "kind": "chat",
+      "skill": "role-school:exam-analysis",
+      "prompt": {
+        "zh": "帮我分析这次考试",
+        "en": "Help me analyse my latest exam."
+      }
+    }
+  },
+  {
+    "id": "first-mistake",
+    "title": {
+      "zh": "把一道错题讲清楚",
+      "en": "Understand one mistake"
+    },
+    "body": {
+      "zh": "先准备相关材料，打开助手后检查预填内容，再按发送开始。",
+      "en": "Bring the relevant material, review the prefilled request in the assistant, then send it when ready."
+    },
+    "action": {
+      "kind": "chat",
+      "skill": "role-school:mistake-root-cause",
+      "prompt": {
+        "zh": "这道题我为什么做错了？请先听我说当时怎么想的。",
+        "en": "Help me understand this mistake. Ask how I approached it first."
+      }
+    }
+  },
+  {
+    "id": "weekly-mistakes",
+    "title": {
+      "zh": "每周日自动回顾错题",
+      "en": "Set up a Sunday mistake review"
+    },
+    "body": {
+      "zh": "先查看时间、读取工具、结果去向和单次预算；确认并启用后才运行。",
+      "en": "Review the schedule, reading tools, destination and per-run budget. The task runs only after you confirm and enable it."
+    },
+    "action": {
+      "kind": "recipe",
+      "recipe": "school-weekly-mistakes"
+    }
+  }
+]

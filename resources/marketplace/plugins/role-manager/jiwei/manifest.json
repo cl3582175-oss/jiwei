@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "category": "role",
+  "roles": [
+    "manager"
+  ],
+  "name": {
+    "zh": "管理者·决策",
+    "en": "Manager and decision maker"
+  },
+  "description": {
+    "zh": "一对一、决策简报、取舍与优先级",
+    "en": "Prepare one-to-ones, explain decisions and make practical trade-offs"
+  },
+  "engines": {
+    "jiwei": ">=0.10.0"
+  },
+  "dataLeavesDevice": false
+}

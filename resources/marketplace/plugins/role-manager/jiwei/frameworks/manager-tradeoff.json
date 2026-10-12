@@ -1,0 +1,48 @@
+{
+  "id": "manager-tradeoff",
+  "title": {
+    "zh": "取舍与优先级",
+    "en": "Make trade-offs and set priorities"
+  },
+  "description": {
+    "zh": "结合个人约束与真实证据比较选项，权重可调整，最终由你决定。",
+    "en": "Compare options using evidence and your constraints. Adjust the weights and make the final decision yourself."
+  },
+  "criteria": [
+    {
+      "name": "战略契合",
+      "weight": 5,
+      "hint": "与已确认目标关联，未提供目标时不自拟战略。"
+    },
+    {
+      "name": "影响",
+      "weight": 5,
+      "hint": "说明影响对象、程度和证据，不能只列愿景。"
+    },
+    {
+      "name": "成本与人力",
+      "weight": 4,
+      "hint": "成本越低、人员可承受越有利，计入机会成本。"
+    },
+    {
+      "name": "可逆性",
+      "weight": 3,
+      "hint": "可低成本恢复更有利；明确不可逆部分。"
+    },
+    {
+      "name": "紧迫性",
+      "weight": 3,
+      "hint": "用真实期限和等待代价判断。"
+    },
+    {
+      "name": "团队负荷",
+      "weight": 3,
+      "hint": "负荷可承受评分更高，考虑已承诺的工作。"
+    }
+  ],
+  "questions": [
+    "这件事不做会怎样？",
+    "能不能先做一个小版本？",
+    "谁会受影响、要和谁沟通？"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "id": "manager-update",
+  "type": "slides",
+  "mode": "cowrite",
+  "title": {
+    "zh": "周报 / 季度汇报",
+    "en": "Weekly or quarterly update"
+  },
+  "description": {
+    "zh": "周报 / 季度汇报，按指定结构组织已有素材。",
+    "en": "Present key results, progress, problems and the support needed for the next phase."
+  },
+  "outline": [
+    "结论先行",
+    "关键指标",
+    "进展",
+    "问题与需要的支持",
+    "下阶段重点"
+  ],
+  "guidance": "6–8 页；“需要的支持”单独一页。依据用户提供或已保存的真实素材，缺失数据和经历明确标注待补；保留出处。用用户使用的语言创作，先确认目标读者。"
+}

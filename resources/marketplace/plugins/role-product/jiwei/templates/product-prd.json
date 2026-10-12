@@ -1,0 +1,22 @@
+{
+  "id": "product-prd",
+  "type": "article",
+  "mode": "cowrite",
+  "title": {
+    "zh": "需求文档（PRD）",
+    "en": "Product requirements document"
+  },
+  "description": {
+    "zh": "需求文档（PRD），按指定结构组织已有素材。",
+    "en": "Define a measurable goal, user scenarios, scope, normal and error flows, and a release plan."
+  },
+  "outline": [
+    "背景与目标",
+    "目标用户与场景",
+    "需求范围（做与不做）",
+    "主流程与异常",
+    "成功指标与埋点",
+    "上线计划与风险"
+  ],
+  "guidance": "先写“为什么做”，指标必须可衡量；异常流程不能省。依据用户提供或已保存的真实素材，缺失数据和经历明确标注待补；保留出处。用用户使用的语言创作，先确认目标读者。"
+}

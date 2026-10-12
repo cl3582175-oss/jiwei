@@ -1,0 +1,49 @@
+{
+  "id": "jobseeker-offer",
+  "title": {
+    "zh": "选 offer",
+    "en": "Compare job offers"
+  },
+  "description": {
+    "zh": "结合个人约束与真实证据比较选项，权重可调整，最终由你决定。",
+    "en": "Compare options using evidence and your constraints. Adjust the weights and make the final decision yourself."
+  },
+  "criteria": [
+    {
+      "name": "成长与学习空间",
+      "weight": 5,
+      "hint": "看实际任务、带教安排和学习机会，区分承诺与已落实。"
+    },
+    {
+      "name": "薪酬总包",
+      "weight": 4,
+      "hint": "分别列税前固定、浮动奖金、归属期股票及补贴；未保证部分不能当现金。"
+    },
+    {
+      "name": "直属上级与团队",
+      "weight": 4,
+      "hint": "以接触到的具体行为和组织安排为依据。"
+    },
+    {
+      "name": "行业与公司前景",
+      "weight": 3,
+      "hint": "依据已保存且有日期的资料，不凭印象预测。"
+    },
+    {
+      "name": "城市与生活成本",
+      "weight": 3,
+      "hint": "结合房租、通勤、家庭约束，比较可支配收入。"
+    },
+    {
+      "name": "稳定性与加班强度",
+      "weight": 3,
+      "hint": "稳定且工时可承受更有利；口头保证待核实。"
+    }
+  ],
+  "questions": [
+    "每个 offer 的总包（含奖金、股票、补贴）分别是多少？",
+    "见过直属上级吗，印象如何？",
+    "三年后你希望在做什么？",
+    "有没有必须回家乡或必须留某城市的约束？"
+  ]
+}

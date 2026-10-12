@@ -1,0 +1,19 @@
+{
+  "feeds": [
+    {
+      "title": "Nature",
+      "kind": "rss",
+      "url": "https://www.nature.com/nature.rss"
+    },
+    {
+      "title": "Science 新闻",
+      "kind": "rss",
+      "url": "https://www.science.org/rss/news_current.xml"
+    },
+    {
+      "title": "Retraction Watch",
+      "kind": "rss",
+      "url": "https://retractionwatch.com/feed/"
+    }
+  ]
+}

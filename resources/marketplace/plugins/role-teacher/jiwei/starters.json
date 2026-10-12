@@ -1,0 +1,55 @@
+[
+  {
+    "id": "first-lesson",
+    "title": {
+      "zh": "备一节课",
+      "en": "Plan a lesson"
+    },
+    "body": {
+      "zh": "先准备相关材料，打开助手后检查预填内容，再按发送开始。",
+      "en": "Bring the relevant material, review the prefilled request in the assistant, then send it when ready."
+    },
+    "action": {
+      "kind": "chat",
+      "skill": "role-teacher:lesson-design",
+      "prompt": {
+        "zh": "帮我备一节课，先确认学段、目标和学情。",
+        "en": "Help me plan a lesson, starting with the class, goals and learners."
+      }
+    }
+  },
+  {
+    "id": "first-questions",
+    "title": {
+      "zh": "出一套分层练习",
+      "en": "Create differentiated exercises"
+    },
+    "body": {
+      "zh": "先准备相关材料，打开助手后检查预填内容，再按发送开始。",
+      "en": "Bring the relevant material, review the prefilled request in the assistant, then send it when ready."
+    },
+    "action": {
+      "kind": "chat",
+      "skill": "role-teacher:question-bank",
+      "prompt": {
+        "zh": "帮我出一套基础、提高、拓展分层练习。",
+        "en": "Help me create basic, intermediate and extension exercises."
+      }
+    }
+  },
+  {
+    "id": "first-courseware",
+    "title": {
+      "zh": "做一节课的课件",
+      "en": "Create lesson slides"
+    },
+    "body": {
+      "zh": "选择真实笔记或资料，按模板确认结构，再开始创作。",
+      "en": "Choose your own notes or sources, review the template structure and start creating."
+    },
+    "action": {
+      "kind": "work",
+      "template": "teacher-courseware"
+    }
+  }
+]

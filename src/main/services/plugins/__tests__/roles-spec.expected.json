@@ -1,0 +1,980 @@
+{
+  "school": {
+    "skills": ["exam-analysis", "mistake-root-cause", "recite-plan"],
+    "lenses": ["lens-exam-points"],
+    "templates": [
+      {
+        "id": "school-micro-lesson",
+        "type": "video",
+        "mode": "cowrite",
+        "title": "一分钟讲清一个知识点",
+        "outline": ["这个知识点是什么", "一个生活中的例子", "最常见的错误", "一道小题检验"]
+      },
+      {
+        "id": "school-study-report",
+        "type": "article",
+        "mode": "coach",
+        "title": "研究性学习报告",
+        "outline": ["研究问题", "为什么研究", "怎么做的", "发现了什么", "不足与下一步"]
+      },
+      {
+        "id": "school-class-talk",
+        "type": "slides",
+        "mode": "cowrite",
+        "title": "课堂展示 PPT",
+        "outline": ["题目与问题", "背景", "三个要点", "一个例子", "总结与提问"]
+      }
+    ],
+    "frameworks": [
+      {
+        "id": "school-choice",
+        "title": "选科与志愿",
+        "criteria": [
+          {
+            "name": "兴趣与长期动力",
+            "weight": 4
+          },
+          {
+            "name": "成绩优势与排名稳定性",
+            "weight": 5
+          },
+          {
+            "name": "对想读专业的覆盖",
+            "weight": 4
+          },
+          {
+            "name": "竞争强度",
+            "weight": 3
+          },
+          {
+            "name": "学习负担与时间",
+            "weight": 3
+          }
+        ],
+        "questions": [
+          "最近三次考试各科排名大概在哪？",
+          "有没有特别想读的专业或方向？",
+          "哪一科你学起来最不痛苦？",
+          "家里有没有必须考虑的限制（地域、费用）？"
+        ]
+      }
+    ],
+    "recipes": [
+      {
+        "id": "school-weekly-mistakes",
+        "name": "周日错题回顾",
+        "trigger": {
+          "type": "schedule",
+          "every": "week",
+          "time": "19:00",
+          "days": [0]
+        },
+        "tools": ["mistakes_list", "note_read"],
+        "outputs": {
+          "inbox": true
+        }
+      },
+      {
+        "id": "school-daily-recall",
+        "name": "晚间三问",
+        "trigger": {
+          "type": "schedule",
+          "every": "day",
+          "time": "21:00"
+        },
+        "tools": ["note_find", "note_read"],
+        "outputs": {
+          "inbox": true
+        }
+      }
+    ],
+    "starters": ["first-exam-analysis", "first-mistake", "weekly-mistakes"],
+    "lensSettings": [
+      {
+        "id": "lens-exam-points",
+        "scenes": "lecture",
+        "output": "items",
+        "landing": "append"
+      }
+    ],
+    "starterActions": [
+      {
+        "id": "first-exam-analysis",
+        "title": "分析最近一次考试",
+        "kind": "chat",
+        "ref": "role-school:exam-analysis"
+      },
+      {
+        "id": "first-mistake",
+        "title": "把一道错题讲清楚",
+        "kind": "chat",
+        "ref": "role-school:mistake-root-cause"
+      },
+      {
+        "id": "weekly-mistakes",
+        "title": "每周日自动回顾错题",
+        "kind": "recipe",
+        "ref": "role-school:school-weekly-mistakes"
+      }
+    ]
+  },
+  "research": {
+    "skills": ["paper-reading", "lit-matrix", "research-question"],
+    "lenses": ["lens-advisor-feedback"],
+    "templates": [
+      {
+        "id": "research-group-meeting",
+        "type": "slides",
+        "mode": "cowrite",
+        "title": "组会汇报",
+        "outline": ["上次组会的问题", "本周做了什么", "结果（图）", "遇到的问题", "需要导师决定的事", "下周计划"]
+      },
+      {
+        "id": "research-lit-review",
+        "type": "article",
+        "mode": "cowrite",
+        "title": "文献综述",
+        "outline": ["研究背景", "主要流派或方法", "对比与分歧", "研究空白", "本研究的切入点"]
+      },
+      {
+        "id": "research-defense",
+        "type": "slides",
+        "mode": "cowrite",
+        "title": "开题 / 答辩",
+        "outline": ["研究问题与意义", "相关工作", "方法", "进度或结果", "创新点", "风险与计划"]
+      }
+    ],
+    "frameworks": [
+      {
+        "id": "research-topic",
+        "title": "选题与方向",
+        "criteria": [
+          {
+            "name": "自己的兴趣",
+            "weight": 4
+          },
+          {
+            "name": "可行性：数据 / 设备 / 时间",
+            "weight": 5
+          },
+          {
+            "name": "新颖性",
+            "weight": 3
+          },
+          {
+            "name": "导师与组内支持",
+            "weight": 4
+          },
+          {
+            "name": "毕业 / 发表要求的匹配",
+            "weight": 4
+          },
+          {
+            "name": "失败风险",
+            "weight": 3
+          }
+        ],
+        "questions": ["离毕业或结题还有多久？", "数据或实验条件现在有没有？", "导师更倾向哪个方向？", "做不出结果时有没有退路？"]
+      }
+    ],
+    "recipes": [
+      {
+        "id": "research-weekly-reading",
+        "name": "每周文献回顾",
+        "trigger": {
+          "type": "schedule",
+          "every": "week",
+          "time": "18:00",
+          "days": [5]
+        },
+        "tools": ["knowledge_search", "source_read", "note_find"],
+        "outputs": {
+          "inbox": true
+        }
+      },
+      {
+        "id": "research-meeting-prep",
+        "name": "组会前准备",
+        "trigger": {
+          "type": "schedule",
+          "every": "week",
+          "time": "09:00",
+          "days": [1]
+        },
+        "tools": ["actions_list", "note_find", "note_read"],
+        "outputs": {
+          "briefing": true
+        }
+      }
+    ],
+    "starters": ["first-paper", "first-matrix", "first-meeting"],
+    "lensSettings": [
+      {
+        "id": "lens-advisor-feedback",
+        "scenes": "meeting",
+        "output": "items",
+        "landing": "todos"
+      }
+    ],
+    "starterActions": [
+      {
+        "id": "first-paper",
+        "title": "精读一篇论文",
+        "kind": "chat",
+        "ref": "role-research:paper-reading"
+      },
+      {
+        "id": "first-matrix",
+        "title": "把几篇文献做成对比表",
+        "kind": "chat",
+        "ref": "role-research:lit-matrix"
+      },
+      {
+        "id": "first-meeting",
+        "title": "准备下一次组会",
+        "kind": "work",
+        "ref": "role-research:research-group-meeting"
+      }
+    ]
+  },
+  "kaoyan": {
+    "skills": ["kaoyan-paper-review", "kaoyan-essay-coach", "kaoyan-recite", "kaoyan-retest"],
+    "lenses": ["lens-mock-interview"],
+    "templates": [
+      {
+        "id": "kaoyan-self-intro",
+        "type": "article",
+        "mode": "coach",
+        "title": "复试自我介绍",
+        "outline": ["基本情况", "专业基础", "科研或项目经历", "为什么报这个方向", "读研计划"]
+      },
+      {
+        "id": "kaoyan-retest-slides",
+        "type": "slides",
+        "mode": "cowrite",
+        "title": "复试 PPT",
+        "outline": ["个人情况", "本科学习", "科研与项目", "研究兴趣", "读研计划"]
+      },
+      {
+        "id": "kaoyan-framework",
+        "type": "article",
+        "mode": "cowrite",
+        "title": "一科知识框架",
+        "outline": ["章节结构", "每章核心概念", "高频考点", "易错点"]
+      }
+    ],
+    "frameworks": [
+      {
+        "id": "kaoyan-school-choice",
+        "title": "择校与专业",
+        "criteria": [
+          {
+            "name": "预估分与往年复试线的差距",
+            "weight": 5
+          },
+          {
+            "name": "专业课难度与是否自命题",
+            "weight": 4
+          },
+          {
+            "name": "复试比例与公平性",
+            "weight": 3
+          },
+          {
+            "name": "学校层次与平台",
+            "weight": 3
+          },
+          {
+            "name": "地域与就业",
+            "weight": 3
+          },
+          {
+            "name": "导师与方向匹配",
+            "weight": 3
+          }
+        ],
+        "questions": ["目前真题或模考大概多少分？", "是否跨考？", "目标城市？", "能否接受调剂？", "如果没考上会二战吗？"]
+      }
+    ],
+    "recipes": [
+      {
+        "id": "kaoyan-weekly-progress",
+        "name": "每周进度对照",
+        "trigger": {
+          "type": "schedule",
+          "every": "week",
+          "time": "20:00",
+          "days": [0]
+        },
+        "tools": ["goals_list", "plan_list", "actions_list", "mistakes_list"],
+        "outputs": {
+          "briefing": true
+        }
+      },
+      {
+        "id": "kaoyan-daily-mistakes",
+        "name": "每日错题回看",
+        "trigger": {
+          "type": "schedule",
+          "every": "day",
+          "time": "22:00"
+        },
+        "tools": ["mistakes_list"],
+        "outputs": {
+          "inbox": true
+        }
+      }
+    ],
+    "starters": ["first-school-choice", "first-paper-review", "weekly-progress"],
+    "lensSettings": [
+      {
+        "id": "lens-mock-interview",
+        "scenes": "meeting,thought",
+        "output": "items",
+        "landing": "append"
+      }
+    ],
+    "starterActions": [
+      {
+        "id": "first-school-choice",
+        "title": "用框架想清楚择校",
+        "kind": "advisor",
+        "ref": "role-kaoyan:kaoyan-school-choice"
+      },
+      {
+        "id": "first-paper-review",
+        "title": "复盘一套真题",
+        "kind": "chat",
+        "ref": "role-kaoyan:kaoyan-paper-review"
+      },
+      {
+        "id": "weekly-progress",
+        "title": "每周进度对照",
+        "kind": "recipe",
+        "ref": "role-kaoyan:kaoyan-weekly-progress"
+      }
+    ]
+  },
+  "jobseeker": {
+    "skills": ["resume-tailor", "interview-prep", "company-research"],
+    "lenses": ["lens-interview-review"],
+    "templates": [
+      {
+        "id": "jobseeker-self-intro",
+        "type": "article",
+        "mode": "coach",
+        "title": "面试自我介绍",
+        "outline": ["我是谁", "与岗位最相关的两段经历", "为什么想要这份工作", "收尾"]
+      },
+      {
+        "id": "jobseeker-cover-letter",
+        "type": "article",
+        "mode": "cowrite",
+        "title": "求职信",
+        "outline": ["应聘岗位与来源", "与岗位匹配的经历", "为什么是这家公司", "结尾"]
+      },
+      {
+        "id": "jobseeker-portfolio",
+        "type": "slides",
+        "mode": "cowrite",
+        "title": "作品集 / 项目展示",
+        "outline": ["我是谁", "项目一：问题-做法-结果", "项目二", "项目三", "我能带来什么"]
+      }
+    ],
+    "frameworks": [
+      {
+        "id": "jobseeker-offer",
+        "title": "选 offer",
+        "criteria": [
+          {
+            "name": "成长与学习空间",
+            "weight": 5
+          },
+          {
+            "name": "薪酬总包",
+            "weight": 4
+          },
+          {
+            "name": "直属上级与团队",
+            "weight": 4
+          },
+          {
+            "name": "行业与公司前景",
+            "weight": 3
+          },
+          {
+            "name": "城市与生活成本",
+            "weight": 3
+          },
+          {
+            "name": "稳定性与加班强度",
+            "weight": 3
+          }
+        ],
+        "questions": [
+          "每个 offer 的总包（含奖金、股票、补贴）分别是多少？",
+          "见过直属上级吗，印象如何？",
+          "三年后你希望在做什么？",
+          "有没有必须回家乡或必须留某城市的约束？"
+        ]
+      }
+    ],
+    "recipes": [
+      {
+        "id": "jobseeker-weekly",
+        "name": "每周求职进度",
+        "trigger": {
+          "type": "schedule",
+          "every": "week",
+          "time": "20:00",
+          "days": [0]
+        },
+        "tools": ["actions_list", "plan_list", "goals_list"],
+        "outputs": {
+          "briefing": true
+        }
+      }
+    ],
+    "starters": ["first-resume", "first-interview", "first-offer"],
+    "lensSettings": [
+      {
+        "id": "lens-interview-review",
+        "scenes": "meeting,thought",
+        "output": "items",
+        "landing": "append"
+      }
+    ],
+    "starterActions": [
+      {
+        "id": "first-resume",
+        "title": "针对一个岗位改简历",
+        "kind": "chat",
+        "ref": "role-jobseeker:resume-tailor"
+      },
+      {
+        "id": "first-interview",
+        "title": "模拟一次面试",
+        "kind": "chat",
+        "ref": "role-jobseeker:interview-prep"
+      },
+      {
+        "id": "first-offer",
+        "title": "比较手上的 offer",
+        "kind": "advisor",
+        "ref": "role-jobseeker:jobseeker-offer"
+      }
+    ]
+  },
+  "product": {
+    "skills": ["prd-review", "interview-synthesis", "competitor-teardown"],
+    "lenses": ["lens-user-interview", "lens-requirement-review"],
+    "templates": [
+      {
+        "id": "product-prd",
+        "type": "article",
+        "mode": "cowrite",
+        "title": "需求文档（PRD）",
+        "outline": ["背景与目标", "目标用户与场景", "需求范围（做与不做）", "主流程与异常", "成功指标与埋点", "上线计划与风险"]
+      },
+      {
+        "id": "product-retro",
+        "type": "article",
+        "mode": "cowrite",
+        "title": "版本复盘",
+        "outline": ["目标回顾", "数据结果", "做得好的", "问题与原因", "下一步"]
+      },
+      {
+        "id": "product-review-deck",
+        "type": "slides",
+        "mode": "cowrite",
+        "title": "需求评审 PPT",
+        "outline": ["问题与机会", "用户证据", "方案", "范围与排期", "风险", "需要决定的事"]
+      }
+    ],
+    "frameworks": [
+      {
+        "id": "product-priority",
+        "title": "需求优先级",
+        "criteria": [
+          {
+            "name": "影响用户数",
+            "weight": 4
+          },
+          {
+            "name": "对核心指标的影响",
+            "weight": 5
+          },
+          {
+            "name": "证据强度",
+            "weight": 4
+          },
+          {
+            "name": "投入成本",
+            "weight": 4
+          },
+          {
+            "name": "战略契合",
+            "weight": 3
+          }
+        ],
+        "questions": ["这个需求有多少用户提过、证据来自哪？", "不做会怎样？", "最小可行版本是什么？"]
+      },
+      {
+        "id": "product-launch",
+        "title": "上线 / 不上线",
+        "criteria": [
+          {
+            "name": "质量与已知问题",
+            "weight": 5
+          },
+          {
+            "name": "指标风险",
+            "weight": 4
+          },
+          {
+            "name": "回滚难度",
+            "weight": 4
+          },
+          {
+            "name": "时间窗口",
+            "weight": 3
+          },
+          {
+            "name": "用户沟通准备",
+            "weight": 3
+          }
+        ],
+        "questions": ["有哪些已知问题，严重吗？", "能灰度吗？", "出问题多久能回滚？"]
+      }
+    ],
+    "recipes": [
+      {
+        "id": "product-weekly-voice",
+        "name": "每周用户声音",
+        "trigger": {
+          "type": "schedule",
+          "every": "week",
+          "time": "17:00",
+          "days": [5]
+        },
+        "tools": ["knowledge_search", "note_find", "note_read"],
+        "outputs": {
+          "inbox": true
+        }
+      },
+      {
+        "id": "product-review-prep",
+        "name": "评审前准备",
+        "trigger": {
+          "type": "schedule",
+          "every": "week",
+          "time": "09:00",
+          "days": [1]
+        },
+        "tools": ["plan_list", "note_find", "actions_list"],
+        "outputs": {
+          "briefing": true
+        }
+      }
+    ],
+    "starters": ["first-prd", "first-interviews", "first-priority"],
+    "lensSettings": [
+      {
+        "id": "lens-user-interview",
+        "scenes": "meeting",
+        "output": "items",
+        "landing": "append"
+      },
+      {
+        "id": "lens-requirement-review",
+        "scenes": "meeting",
+        "output": "items",
+        "landing": "todos"
+      }
+    ],
+    "starterActions": [
+      {
+        "id": "first-prd",
+        "title": "审一份需求文档",
+        "kind": "chat",
+        "ref": "role-product:prd-review"
+      },
+      {
+        "id": "first-interviews",
+        "title": "归纳最近的用户访谈",
+        "kind": "chat",
+        "ref": "role-product:interview-synthesis"
+      },
+      {
+        "id": "first-priority",
+        "title": "给待办需求排优先级",
+        "kind": "advisor",
+        "ref": "role-product:product-priority"
+      }
+    ]
+  },
+  "teacher": {
+    "skills": ["lesson-design", "question-bank", "student-feedback"],
+    "lenses": ["lens-lesson-observation"],
+    "templates": [
+      {
+        "id": "teacher-courseware",
+        "type": "slides",
+        "mode": "cowrite",
+        "title": "一节课的课件",
+        "outline": ["导入问题", "学习目标", "新知讲解", "例题", "课堂练习", "小结", "作业"]
+      },
+      {
+        "id": "teacher-micro-lesson",
+        "type": "video",
+        "mode": "cowrite",
+        "title": "微课视频",
+        "outline": ["一个问题引入", "讲解", "例子", "小结"]
+      },
+      {
+        "id": "teacher-reflection",
+        "type": "article",
+        "mode": "coach",
+        "title": "教学反思",
+        "outline": ["这节课的目标", "实际效果与证据", "意外情况", "原因", "下次改什么"]
+      }
+    ],
+    "frameworks": [
+      {
+        "id": "teacher-plan-choice",
+        "title": "教学方案取舍",
+        "criteria": [
+          {
+            "name": "学习目标达成",
+            "weight": 5
+          },
+          {
+            "name": "课时是否够",
+            "weight": 4
+          },
+          {
+            "name": "照顾学生差异",
+            "weight": 4
+          },
+          {
+            "name": "准备成本",
+            "weight": 3
+          },
+          {
+            "name": "评价是否可操作",
+            "weight": 3
+          }
+        ],
+        "questions": ["这节课最重要的一个目标是什么？", "班里学生差异大吗？", "有多少准备时间？"]
+      }
+    ],
+    "recipes": [
+      {
+        "id": "teacher-tomorrow",
+        "name": "明日备课提醒",
+        "trigger": {
+          "type": "schedule",
+          "every": "weekday",
+          "time": "20:00"
+        },
+        "tools": ["plan_list", "note_find"],
+        "outputs": {
+          "briefing": true
+        }
+      },
+      {
+        "id": "teacher-weekly-reflection",
+        "name": "每周教学反思素材",
+        "trigger": {
+          "type": "schedule",
+          "every": "week",
+          "time": "17:00",
+          "days": [5]
+        },
+        "tools": ["note_find", "note_read", "knowledge_search"],
+        "outputs": {
+          "inbox": true
+        }
+      }
+    ],
+    "starters": ["first-lesson", "first-questions", "first-courseware"],
+    "lensSettings": [
+      {
+        "id": "lens-lesson-observation",
+        "scenes": "lecture",
+        "output": "items",
+        "landing": "append"
+      }
+    ],
+    "starterActions": [
+      {
+        "id": "first-lesson",
+        "title": "备一节课",
+        "kind": "chat",
+        "ref": "role-teacher:lesson-design"
+      },
+      {
+        "id": "first-questions",
+        "title": "出一套分层练习",
+        "kind": "chat",
+        "ref": "role-teacher:question-bank"
+      },
+      {
+        "id": "first-courseware",
+        "title": "做一节课的课件",
+        "kind": "work",
+        "ref": "role-teacher:teacher-courseware"
+      }
+    ]
+  },
+  "creator": {
+    "skills": ["topic-mining", "hook-and-title", "repurpose"],
+    "lenses": ["lens-idea-capture"],
+    "templates": [
+      {
+        "id": "creator-longform",
+        "type": "article",
+        "mode": "cowrite",
+        "title": "公众号长文",
+        "outline": ["开头的场景或冲突", "核心观点一", "观点二", "观点三", "读者可以马上做的一件事"]
+      },
+      {
+        "id": "creator-short-video",
+        "type": "video",
+        "mode": "cowrite",
+        "title": "知识类短视频",
+        "outline": ["3 秒钩子", "问题", "讲解", "例子", "一句话总结"]
+      },
+      {
+        "id": "creator-carousel",
+        "type": "slides",
+        "mode": "cowrite",
+        "title": "图文卡片",
+        "outline": ["封面一句话", "问题", "要点 ×4–6", "总结", "关注引导"]
+      }
+    ],
+    "frameworks": [
+      {
+        "id": "creator-topic-choice",
+        "title": "选题取舍",
+        "criteria": [
+          {
+            "name": "读者需求强度",
+            "weight": 5
+          },
+          {
+            "name": "我的独特经验",
+            "weight": 4
+          },
+          {
+            "name": "素材充足度",
+            "weight": 4
+          },
+          {
+            "name": "制作成本",
+            "weight": 3
+          },
+          {
+            "name": "时效性",
+            "weight": 2
+          },
+          {
+            "name": "长期价值",
+            "weight": 3
+          }
+        ],
+        "questions": ["这个选题你的读者最近问过吗？", "你有别人没有的经历或数据吗？", "做一期要多久？"]
+      }
+    ],
+    "recipes": [
+      {
+        "id": "creator-weekly-topics",
+        "name": "每周选题池",
+        "trigger": {
+          "type": "schedule",
+          "every": "week",
+          "time": "09:00",
+          "days": [1]
+        },
+        "tools": ["knowledge_search", "note_find", "note_read"],
+        "outputs": {
+          "inbox": true
+        }
+      }
+    ],
+    "starters": ["first-topics", "first-longform", "weekly-topics"],
+    "lensSettings": [
+      {
+        "id": "lens-idea-capture",
+        "scenes": "thought",
+        "output": "items",
+        "landing": "append"
+      }
+    ],
+    "starterActions": [
+      {
+        "id": "first-topics",
+        "title": "从我的笔记里找 5 个选题",
+        "kind": "chat",
+        "ref": "role-creator:topic-mining"
+      },
+      {
+        "id": "first-longform",
+        "title": "写一篇公众号长文",
+        "kind": "work",
+        "ref": "role-creator:creator-longform"
+      },
+      {
+        "id": "weekly-topics",
+        "title": "每周一自动生成选题池",
+        "kind": "recipe",
+        "ref": "role-creator:creator-weekly-topics"
+      }
+    ]
+  },
+  "manager": {
+    "skills": ["one-on-one", "decision-brief", "priority-tradeoff"],
+    "lenses": ["lens-one-on-one"],
+    "templates": [
+      {
+        "id": "manager-decision-memo",
+        "type": "article",
+        "mode": "cowrite",
+        "title": "决策备忘录",
+        "outline": ["背景", "要做的决定", "选项与取舍", "建议", "风险与应对", "需要的支持"]
+      },
+      {
+        "id": "manager-update",
+        "type": "slides",
+        "mode": "cowrite",
+        "title": "周报 / 季度汇报",
+        "outline": ["结论先行", "关键指标", "进展", "问题与需要的支持", "下阶段重点"]
+      },
+      {
+        "id": "manager-all-hands",
+        "type": "article",
+        "mode": "cowrite",
+        "title": "团队讲话稿",
+        "outline": ["我们在哪", "为什么", "接下来做什么", "每个人能做什么"]
+      }
+    ],
+    "frameworks": [
+      {
+        "id": "manager-tradeoff",
+        "title": "取舍与优先级",
+        "criteria": [
+          {
+            "name": "战略契合",
+            "weight": 5
+          },
+          {
+            "name": "影响",
+            "weight": 5
+          },
+          {
+            "name": "成本与人力",
+            "weight": 4
+          },
+          {
+            "name": "可逆性",
+            "weight": 3
+          },
+          {
+            "name": "紧迫性",
+            "weight": 3
+          },
+          {
+            "name": "团队负荷",
+            "weight": 3
+          }
+        ],
+        "questions": ["这件事不做会怎样？", "能不能先做一个小版本？", "谁会受影响、要和谁沟通？"]
+      },
+      {
+        "id": "manager-hiring",
+        "title": "招聘决策",
+        "criteria": [
+          {
+            "name": "岗位关键能力",
+            "weight": 5
+          },
+          {
+            "name": "动机与稳定性",
+            "weight": 4
+          },
+          {
+            "name": "与团队的互补",
+            "weight": 4
+          },
+          {
+            "name": "成长潜力",
+            "weight": 3
+          },
+          {
+            "name": "风险信号",
+            "weight": 4
+          }
+        ],
+        "questions": ["这个岗位最关键的一项能力是什么，候选人有证据吗？", "面试中有哪些让你犹豫的地方？", "不招这个人的话备选方案是什么？"]
+      }
+    ],
+    "recipes": [
+      {
+        "id": "manager-monday",
+        "name": "周一决策清单",
+        "trigger": {
+          "type": "schedule",
+          "every": "week",
+          "time": "08:30",
+          "days": [1]
+        },
+        "tools": ["actions_list", "plan_list", "goals_list"],
+        "outputs": {
+          "briefing": true
+        }
+      },
+      {
+        "id": "manager-1on1-prep",
+        "name": "一对一准备",
+        "trigger": {
+          "type": "schedule",
+          "every": "weekday",
+          "time": "08:30"
+        },
+        "tools": ["plan_list", "note_find", "actions_list"],
+        "outputs": {
+          "briefing": true
+        }
+      }
+    ],
+    "starters": ["first-tradeoff", "first-one-on-one", "monday-decisions"],
+    "lensSettings": [
+      {
+        "id": "lens-one-on-one",
+        "scenes": "meeting",
+        "output": "items",
+        "landing": "todos"
+      }
+    ],
+    "starterActions": [
+      {
+        "id": "first-tradeoff",
+        "title": "用框架做一个取舍",
+        "kind": "advisor",
+        "ref": "role-manager:manager-tradeoff"
+      },
+      {
+        "id": "first-one-on-one",
+        "title": "准备下一次一对一",
+        "kind": "chat",
+        "ref": "role-manager:one-on-one"
+      },
+      {
+        "id": "monday-decisions",
+        "title": "每周一的决策清单",
+        "kind": "recipe",
+        "ref": "role-manager:manager-monday"
+      }
+    ]
+  }
+}

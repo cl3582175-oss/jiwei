@@ -49,3 +49,10 @@ export function listRecipes() {
     )
   ]
 }
+
+/** 引用已由 parser 限定到同插件或明确内置配方；此处沿用启用状态与 namespace。 */
+export function listStarters() {
+  return enabledPlugins().flatMap(({ id, parsed }) =>
+    parsed.starters.map((starter) => ({ ...starter, id: `${parsed.manifest.name}:${starter.id}`, pluginId: id, source: 'plugin' as const }))
+  )
+}

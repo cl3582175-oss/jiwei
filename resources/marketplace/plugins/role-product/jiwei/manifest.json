@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "category": "role",
+  "roles": [
+    "product"
+  ],
+  "name": {
+    "zh": "产品经理",
+    "en": "Product manager"
+  },
+  "description": {
+    "zh": "审需求、归纳访谈、拆竞品、排优先级",
+    "en": "Review requirements, analyse interviews, compare competitors and prioritise work"
+  },
+  "engines": {
+    "jiwei": ">=0.10.0"
+  },
+  "dataLeavesDevice": false
+}

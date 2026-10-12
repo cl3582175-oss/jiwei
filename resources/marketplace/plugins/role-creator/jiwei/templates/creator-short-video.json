@@ -1,0 +1,21 @@
+{
+  "id": "creator-short-video",
+  "type": "video",
+  "mode": "cowrite",
+  "title": {
+    "zh": "知识类短视频",
+    "en": "Educational short video"
+  },
+  "description": {
+    "zh": "知识类短视频，按指定结构组织已有素材。",
+    "en": "Turn a question and a useful example into a concise educational video script."
+  },
+  "outline": [
+    "3 秒钩子",
+    "问题",
+    "讲解",
+    "例子",
+    "一句话总结"
+  ],
+  "guidance": "60–90 秒；字幕短句。依据用户提供或已保存的真实素材，缺失数据和经历明确标注待补；保留出处。用用户使用的语言创作，先确认目标读者。"
+}

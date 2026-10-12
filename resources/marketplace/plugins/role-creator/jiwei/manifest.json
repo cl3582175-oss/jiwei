@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "category": "role",
+  "roles": [
+    "creator"
+  ],
+  "name": {
+    "zh": "内容创作者",
+    "en": "Content creator"
+  },
+  "description": {
+    "zh": "从笔记里挖选题、写标题开头、一稿多用",
+    "en": "Find ideas in your notes, write engaging openings and adapt content for different formats"
+  },
+  "engines": {
+    "jiwei": ">=0.10.0"
+  },
+  "dataLeavesDevice": false
+}

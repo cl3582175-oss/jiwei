@@ -1,0 +1,43 @@
+{
+  "id": "manager-hiring",
+  "title": {
+    "zh": "招聘决策",
+    "en": "Make a hiring decision"
+  },
+  "description": {
+    "zh": "结合个人约束与真实证据比较选项，权重可调整，最终由你决定。",
+    "en": "Compare options using evidence and your constraints. Adjust the weights and make the final decision yourself."
+  },
+  "criteria": [
+    {
+      "name": "岗位关键能力",
+      "weight": 5,
+      "hint": "用岗位相关作品、面试实例和已获准的背景信息判断。"
+    },
+    {
+      "name": "动机与稳定性",
+      "weight": 4,
+      "hint": "询问职业目标与角色预期，不由年龄、家庭或身份推断稳定性。"
+    },
+    {
+      "name": "与团队的互补",
+      "weight": 4,
+      "hint": "评价技能与协作方式，不以相似背景或个人喜好代替适配。"
+    },
+    {
+      "name": "成长潜力",
+      "weight": 3,
+      "hint": "看学习新任务的具体证据，避免空泛印象。"
+    },
+    {
+      "name": "风险信号",
+      "weight": 4,
+      "hint": "只记录岗位相关、可核实的矛盾，风险低更有利，给候选人解释机会。"
+    }
+  ],
+  "questions": [
+    "这个岗位最关键的一项能力是什么，候选人有证据吗？",
+    "面试中有哪些让你犹豫的地方？",
+    "不招这个人的话备选方案是什么？"
+  ]
+}

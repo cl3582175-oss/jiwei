@@ -1,0 +1,20 @@
+{
+  "id": "jobseeker-cover-letter",
+  "type": "article",
+  "mode": "cowrite",
+  "title": {
+    "zh": "求职信",
+    "en": "Cover letter"
+  },
+  "description": {
+    "zh": "求职信，按指定结构组织已有素材。",
+    "en": "Write a concise cover letter that connects your experience to the specific job requirements."
+  },
+  "outline": [
+    "应聘岗位与来源",
+    "与岗位匹配的经历",
+    "为什么是这家公司",
+    "结尾"
+  ],
+  "guidance": "不超过一页；每段对应 JD 的一个要求。依据用户提供或已保存的真实素材，缺失数据和经历明确标注待补；保留出处。用用户使用的语言创作，先确认目标读者。"
+}

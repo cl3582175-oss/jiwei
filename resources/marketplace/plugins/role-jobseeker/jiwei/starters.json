@@ -1,0 +1,59 @@
+[
+  {
+    "id": "first-resume",
+    "title": {
+      "zh": "针对一个岗位改简历",
+      "en": "Tailor your résumé to a role"
+    },
+    "body": {
+      "zh": "先准备相关材料，打开助手后检查预填内容，再按发送开始。",
+      "en": "Bring the relevant material, review the prefilled request in the assistant, then send it when ready."
+    },
+    "action": {
+      "kind": "chat",
+      "skill": "role-jobseeker:resume-tailor",
+      "prompt": {
+        "zh": "对照这个岗位和我的真实经历，帮我改简历。",
+        "en": "Help me tailor my résumé using the job description and my actual experience."
+      }
+    }
+  },
+  {
+    "id": "first-interview",
+    "title": {
+      "zh": "模拟一次面试",
+      "en": "Practise an interview"
+    },
+    "body": {
+      "zh": "先准备相关材料，打开助手后检查预填内容，再按发送开始。",
+      "en": "Bring the relevant material, review the prefilled request in the assistant, then send it when ready."
+    },
+    "action": {
+      "kind": "chat",
+      "skill": "role-jobseeker:interview-prep",
+      "prompt": {
+        "zh": "帮我模拟一次面试，一次问一题。",
+        "en": "Run a practice interview with me, one question at a time."
+      }
+    }
+  },
+  {
+    "id": "first-offer",
+    "title": {
+      "zh": "比较手上的 offer",
+      "en": "Compare your job offers"
+    },
+    "body": {
+      "zh": "带上备选方案、已有证据和个人约束，先检查预填的问题。",
+      "en": "Bring your options, evidence and constraints, then review the prefilled question before starting."
+    },
+    "action": {
+      "kind": "advisor",
+      "framework": "jobseeker-offer",
+      "question": {
+        "zh": "我有几个 offer，想按个人目标和约束比较。",
+        "en": "Help me compare my offers against my goals and constraints."
+      }
+    }
+  }
+]

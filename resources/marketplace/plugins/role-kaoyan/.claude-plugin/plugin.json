@@ -1,0 +1,16 @@
+{
+  "name": "role-kaoyan",
+  "displayName": "考研",
+  "version": "1.0.0",
+  "description": "择校、真题复盘、作文批改、复试准备 / Choose programmes, review past papers, improve essays and prepare admission interviews",
+  "author": {
+    "name": "积微 / Jiwei"
+  },
+  "keywords": [
+    "考研",
+    "kaoyan",
+    "Postgraduate entrance exams",
+    "角色",
+    "role"
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "id": "school-micro-lesson",
+  "type": "video",
+  "mode": "cowrite",
+  "title": {
+    "zh": "一分钟讲清一个知识点",
+    "en": "Explain one concept in a minute"
+  },
+  "description": {
+    "zh": "一分钟讲清一个知识点，按指定结构组织已有素材。",
+    "en": "Explain one concept to classmates with an everyday example, a common mistake and a short question."
+  },
+  "outline": [
+    "这个知识点是什么",
+    "一个生活中的例子",
+    "最常见的错误",
+    "一道小题检验"
+  ],
+  "guidance": "讲给同班同学听；不超过 90 秒；每个场景一句话；必须有一个“常见错误”。依据用户提供或已保存的真实素材，缺失数据和经历明确标注待补；保留出处。用用户使用的语言创作，先确认目标读者。"
+}

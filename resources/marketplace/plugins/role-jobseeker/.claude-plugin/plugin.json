@@ -1,0 +1,16 @@
+{
+  "name": "role-jobseeker",
+  "displayName": "求职者",
+  "version": "1.0.0",
+  "description": "简历对岗、面试模拟与复盘、选 offer / Tailor your résumé, practise interviews and compare job offers",
+  "author": {
+    "name": "积微 / Jiwei"
+  },
+  "keywords": [
+    "求职者",
+    "jobseeker",
+    "Job seeker",
+    "角色",
+    "role"
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "category": "role",
+  "roles": [
+    "research"
+  ],
+  "name": {
+    "zh": "大学生·科研",
+    "en": "University research"
+  },
+  "description": {
+    "zh": "读论文、做文献对比、准备组会",
+    "en": "Read papers closely, compare evidence and prepare research meetings"
+  },
+  "engines": {
+    "jiwei": ">=0.10.0"
+  },
+  "dataLeavesDevice": false
+}

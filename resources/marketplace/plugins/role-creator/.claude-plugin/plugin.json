@@ -1,0 +1,16 @@
+{
+  "name": "role-creator",
+  "displayName": "内容创作者",
+  "version": "1.0.0",
+  "description": "从笔记里挖选题、写标题开头、一稿多用 / Find ideas in your notes, write engaging openings and adapt content for different formats",
+  "author": {
+    "name": "积微 / Jiwei"
+  },
+  "keywords": [
+    "内容创作者",
+    "creator",
+    "Content creator",
+    "角色",
+    "role"
+  ]
+}

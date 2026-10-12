@@ -1,0 +1,21 @@
+{
+  "id": "product-retro",
+  "type": "article",
+  "mode": "cowrite",
+  "title": {
+    "zh": "版本复盘",
+    "en": "Release retrospective"
+  },
+  "description": {
+    "zh": "版本复盘，按指定结构组织已有素材。",
+    "en": "Compare release outcomes against goals and identify causes and concrete next steps."
+  },
+  "outline": [
+    "目标回顾",
+    "数据结果",
+    "做得好的",
+    "问题与原因",
+    "下一步"
+  ],
+  "guidance": "数据与目标对照；问题写原因不写人。依据用户提供或已保存的真实素材，缺失数据和经历明确标注待补；保留出处。用用户使用的语言创作，先确认目标读者。"
+}

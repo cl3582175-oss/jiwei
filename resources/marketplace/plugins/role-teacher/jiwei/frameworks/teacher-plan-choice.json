@@ -1,0 +1,43 @@
+{
+  "id": "teacher-plan-choice",
+  "title": {
+    "zh": "教学方案取舍",
+    "en": "Choose a lesson approach"
+  },
+  "description": {
+    "zh": "结合个人约束与真实证据比较选项，权重可调整，最终由你决定。",
+    "en": "Compare options using evidence and your constraints. Adjust the weights and make the final decision yourself."
+  },
+  "criteria": [
+    {
+      "name": "学习目标达成",
+      "weight": 5,
+      "hint": "用可观察的学生表现判断，不只看活动热闹。"
+    },
+    {
+      "name": "课时是否够",
+      "weight": 4,
+      "hint": "活动、练习、反馈总时间应留缓冲。"
+    },
+    {
+      "name": "照顾学生差异",
+      "weight": 4,
+      "hint": "检查基础薄弱和学有余力两类学生的任务。"
+    },
+    {
+      "name": "准备成本",
+      "weight": 3,
+      "hint": "越低越好，但不牺牲目标；计入批改与材料准备。"
+    },
+    {
+      "name": "评价是否可操作",
+      "weight": 3,
+      "hint": "检查能在课内获取且解释的学习证据。"
+    }
+  ],
+  "questions": [
+    "这节课最重要的一个目标是什么？",
+    "班里学生差异大吗？",
+    "有多少准备时间？"
+  ]
+}

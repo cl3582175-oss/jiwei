@@ -1,0 +1,43 @@
+{
+  "id": "product-launch",
+  "title": {
+    "zh": "上线 / 不上线",
+    "en": "Launch or hold"
+  },
+  "description": {
+    "zh": "结合个人约束与真实证据比较选项，权重可调整，最终由你决定。",
+    "en": "Compare options using evidence and your constraints. Adjust the weights and make the final decision yourself."
+  },
+  "criteria": [
+    {
+      "name": "质量与已知问题",
+      "weight": 5,
+      "hint": "阻断问题未解决不能被其他高分抵消。"
+    },
+    {
+      "name": "指标风险",
+      "weight": 4,
+      "hint": "风险越低且监控明确越有利。"
+    },
+    {
+      "name": "回滚难度",
+      "weight": 4,
+      "hint": "越容易回滚越有利；核对数据兼容和恢复耗时。"
+    },
+    {
+      "name": "时间窗口",
+      "weight": 3,
+      "hint": "区分真实截止日期与主观着急。"
+    },
+    {
+      "name": "用户沟通准备",
+      "weight": 3,
+      "hint": "明确谁告知、告知什么、客服如何应对。"
+    }
+  ],
+  "questions": [
+    "有哪些已知问题，严重吗？",
+    "能灰度吗？",
+    "出问题多久能回滚？"
+  ]
+}

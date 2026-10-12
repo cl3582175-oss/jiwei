@@ -1,0 +1,19 @@
+{
+  "feeds": [
+    {
+      "title": "人人都是产品经理",
+      "kind": "rss",
+      "url": "https://www.woshipm.com/feed"
+    },
+    {
+      "title": "少数派",
+      "kind": "rss",
+      "url": "https://sspai.com/feed"
+    },
+    {
+      "title": "Lenny's Newsletter（公开订阅）",
+      "kind": "rss",
+      "url": "https://www.lennysnewsletter.com/feed"
+    }
+  ]
+}

@@ -1,0 +1,55 @@
+[
+  {
+    "id": "first-school-choice",
+    "title": {
+      "zh": "用框架想清楚择校",
+      "en": "Think through programme choices"
+    },
+    "body": {
+      "zh": "带上备选方案、已有证据和个人约束，先检查预填的问题。",
+      "en": "Bring your options, evidence and constraints, then review the prefilled question before starting."
+    },
+    "action": {
+      "kind": "advisor",
+      "framework": "kaoyan-school-choice",
+      "question": {
+        "zh": "我正在考研择校，请帮我比较学校和专业。",
+        "en": "Help me compare postgraduate programmes and universities."
+      }
+    }
+  },
+  {
+    "id": "first-paper-review",
+    "title": {
+      "zh": "复盘一套真题",
+      "en": "Review a past exam paper"
+    },
+    "body": {
+      "zh": "先准备相关材料，打开助手后检查预填内容，再按发送开始。",
+      "en": "Bring the relevant material, review the prefilled request in the assistant, then send it when ready."
+    },
+    "action": {
+      "kind": "chat",
+      "skill": "role-kaoyan:kaoyan-paper-review",
+      "prompt": {
+        "zh": "我刚做完一套考研真题，帮我复盘。",
+        "en": "Help me review a postgraduate entrance exam paper I just completed."
+      }
+    }
+  },
+  {
+    "id": "weekly-progress",
+    "title": {
+      "zh": "每周进度对照",
+      "en": "Set up a weekly progress check"
+    },
+    "body": {
+      "zh": "先查看时间、读取工具、结果去向和单次预算；确认并启用后才运行。",
+      "en": "Review the schedule, reading tools, destination and per-run budget. The task runs only after you confirm and enable it."
+    },
+    "action": {
+      "kind": "recipe",
+      "recipe": "kaoyan-weekly-progress"
+    }
+  }
+]

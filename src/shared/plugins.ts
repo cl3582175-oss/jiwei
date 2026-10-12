@@ -212,6 +212,37 @@ export const PluginRecipeSchema = z.object({
   task: TaskSave.omit({ id: true }).refine((v) => v.tools.every((t) => PLUGIN_RECIPE_TOOLS.includes(t)), 'Unknown task tool'),
   requires: z.enum(['mail', 'discover']).optional()
 })
+// 起步卡只声明导航与预填数据；不接受执行、自动发送或任意 URL。
+const StarterReference = z
+  .string()
+  .min(1)
+  .max(257)
+  .refine((value) => {
+    const parts = value.split(':')
+    return parts.length <= 2 && parts.every((part) => PluginNameSchema.safeParse(part).success)
+  }, 'Invalid starter reference')
+export const PluginStarterActionSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('chat'), skill: StarterReference, prompt: LocalizedSchema }).strict(),
+  z.object({ kind: z.literal('advisor'), framework: StarterReference, question: LocalizedSchema }).strict(),
+  z.object({ kind: z.literal('work'), template: StarterReference }).strict(),
+  z
+    .object({ kind: z.literal('recipe'), recipe: StarterReference.optional(), recipeRef: PluginNameSchema.optional() })
+    .strict()
+    .refine((v) => !!v.recipe !== !!v.recipeRef, 'Choose recipe or recipeRef')
+])
+export const PluginStarterSchema = z
+  .object({
+    id: PluginNameSchema,
+    title: LocalizedSchema,
+    body: LocalizedSchema,
+    action: PluginStarterActionSchema
+  })
+  .strict()
+export const PluginStartersSchema = z
+  .array(PluginStarterSchema)
+  .max(30)
+  .refine((items) => new Set(items.map((s) => s.id)).size === items.length, 'Duplicate starter id')
+export type PluginStarter = z.infer<typeof PluginStarterSchema>
 export const PluginSourcesSchema = z.object({
   feeds: z
     .array(
@@ -381,6 +412,7 @@ export interface PluginPreview {
   templates: PluginTemplate[]
   frameworks: PluginFramework[]
   recipes: PluginRecipe[]
+  starters: PluginStarter[]
   feeds: PluginFeed[]
   scripts: string[]
   issues: { path: string; code: string; message: string }[]
@@ -422,13 +454,22 @@ export interface PluginCatalogCard {
   updateAvailable: boolean
 }
 export interface PluginDetails {
+  starters: PluginStarter[]
   sourceUrl?: string
   icon?: string
   preview?: PluginPreview
   installed?: PluginInfo
   readme: string
   unsupported: string[]
-  contents: { skills: string[]; templates: string[]; frameworks: string[]; recipes: string[]; feeds: string[]; mcp: string[] }
+  contents: {
+    skills: string[]
+    templates: string[]
+    frameworks: string[]
+    recipes: string[]
+    starters: string[]
+    feeds: string[]
+    mcp: string[]
+  }
 }
 export type PluginDetection =
   | { kind: 'plugin'; preview: PluginPreview }

@@ -89,7 +89,7 @@ vi.mock('../../ai/structured', () => ({
   }
 }))
 import { updatePlugin, inspectPluginPath, confirmPluginInstall, setPluginEnabled, uninstallPlugin, initializePlugins } from '../install'
-import { replacePluginRegistry } from '../registry'
+import { replacePluginRegistry, listTemplates, listFrameworks, listRecipes, listStarters } from '../registry'
 import { createWork, generateOutline, getWork, updateWork } from '../../works'
 import { ask, getDecision, listDecisions, regenerate, setWeights } from '../../advisor'
 import { recipes, saveTask } from '../../tasks/service'
@@ -143,11 +143,49 @@ beforeEach(async () => {
 })
 afterEach(async () => {
   replacePluginRegistry('product@local')
+  for (const role of ['school', 'research', 'kaoyan', 'jobseeker', 'product', 'teacher', 'creator', 'manager'])
+    replacePluginRegistry(`role-${role}@local`)
   db.close()
   env.db = null
   await rm(root, { recursive: true, force: true })
 })
 describe('plugin selections enter persisted product paths', () => {
+  it('keeps authored roles optional, then projects all confirmed contributions and removes them on disable', async () => {
+    expect(listStarters()).toEqual([])
+    expect(
+      env
+        .db!.select()
+        .from(schema.plugins)
+        .all()
+        .some((p) => p.id.startsWith('role-'))
+    ).toBe(false)
+    const roleIds = ['school', 'research', 'kaoyan', 'jobseeker', 'product', 'teacher', 'creator', 'manager']
+    for (const role of roleIds) {
+      const preview = await inspectPluginPath(join(process.cwd(), 'resources/marketplace/plugins', `role-${role}`))
+      expect(preview.issues).toEqual([])
+      expect(preview.starters).toHaveLength(3)
+      expect(preview.templates).toHaveLength(3)
+      expect(preview.skills.filter((s) => s.kind === 'lens')).toHaveLength(role === 'product' ? 2 : 1)
+      expect(preview.recipes).toHaveLength(['creator', 'jobseeker'].includes(role) ? 1 : 2)
+      // 预览不改变安装、任务和起步卡状态；显式确认才注册。
+      expect(listStarters().some((s) => s.pluginId === preview.id)).toBe(false)
+      await confirmPluginInstall(preview.token, { feeds: [], config: {} })
+      expect(listStarters().filter((s) => s.pluginId === preview.id)).toHaveLength(3)
+    }
+    expect(listTemplates().filter((t) => t.pluginId?.startsWith('role-'))).toHaveLength(24)
+    expect(listFrameworks().filter((f) => f.pluginId?.startsWith('role-'))).toHaveLength(10)
+    expect(listRecipes().filter((r) => r.pluginId?.startsWith('role-'))).toHaveLength(14)
+    expect(listStarters()).toHaveLength(24)
+    expect(env.db!.select().from(schema.aiTasks).all()).toEqual([])
+    const start = listStarters().find((s) => s.id === 'role-kaoyan:first-school-choice')!
+    expect(start.action).toMatchObject({ kind: 'advisor', framework: 'role-kaoyan:kaoyan-school-choice' })
+    for (const role of roleIds) await setPluginEnabled(`role-${role}@local`, false)
+    expect(listStarters()).toEqual([])
+    expect(listTemplates().filter((t) => t.pluginId?.startsWith('role-'))).toEqual([])
+    expect(listFrameworks().filter((f) => f.pluginId?.startsWith('role-'))).toEqual([])
+    expect(listRecipes().filter((r) => r.pluginId?.startsWith('role-'))).toEqual([])
+  })
+
   for (const existing of [false, true])
     it(`does not resurrect recipe provenance after uninstall during ${existing ? 'edit' : 'create'}`, async () => {
       const recipe = recipes().find((r) => r.id === 'product:a')!
