@@ -12,6 +12,7 @@ files:
   - '!**/.vscode/*'
   - '!src/*'
   - '!docs/*'
+  - '!design/**'
   - '!.superpowers/**'
   - '!e2e/**'
   - '!test-results/**'
