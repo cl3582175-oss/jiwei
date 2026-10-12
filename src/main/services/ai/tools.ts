@@ -6,7 +6,7 @@ import { RecordingFiltersSchema } from '@shared/lens'
 import { eq } from 'drizzle-orm'
 import { getDb } from '../../db'
 import { notes, sources } from '../../db/schema'
-import { listNotes } from '../notes'
+import { findNotes, importedSources, noteMetadata, NoteFindInput, ReadDateRange, ReadPage } from './readData'
 import { listSegments } from '../segments'
 import { loadDoc, stateToContent } from '../docs'
 import { createProposal } from '../proposals'
@@ -249,44 +249,53 @@ export function buildTools(s: AgentSession): ToolSet {
       }),
       knowledge_search: tool({
         description: zh
-          ? '在用户的知识库（笔记 + 资料）中检索。结果带编号，回答时用 [编号] 引用。已提供的片段不够时再用。'
-          : "Search the user's knowledge base (notes + sources). Results are numbered; cite as [n].",
-        inputSchema: RecordingFiltersSchema.extend({ query: z.string().min(1).max(500) }),
-        execute: async ({ query, ...filters }) => {
-          const hits = await retrieve(query, s.scope, 6, filters, s.preferSource)
+          ? '在用户的知识库（笔记 + 资料）中检索。结果带编号，回答时用 [编号] 引用。已提供的片段不够时再用。importedRange 按实际导入创建时间枚举资料，返回 JSON 引用元数据（非相关度排序）；时间戳毫秒、endAt不含；可省略关键词、分页后用 source_read 阅读。'
+          : "Search the user's knowledge base (notes + sources). Results are numbered; cite as [n]. importedRange enumerates sources by import creation time as JSON references; optional query, paginated, endAt exclusive epoch ms. Use source_read for content.",
+        inputSchema: RecordingFiltersSchema.extend({ query: z.string().trim().max(500).optional(), importedRange: ReadDateRange.optional(), ...ReadPage }).refine((v) => !!v.query || !!v.importedRange, 'Provide query or importedRange').refine((v) => !v.importedRange || !Object.keys(RecordingFiltersSchema.shape).some((k) => v[k as keyof typeof v] !== undefined), 'importedRange cannot be combined with recording filters'),
+        execute: async ({ query, importedRange, limit, offset, ...filters }) => {
+          if (importedRange) return JSON.stringify(importedSources(importedRange, s.scope, query, limit, offset))
+          const hits = await retrieve(query!, s.scope, 6, filters, s.preferSource)
           return hits.length ? numberHits(s, hits) : zh ? '没有找到相关内容。' : 'Nothing found.'
         }
       }),
       note_find: tool({
-        description: zh ? '按标题或内容关键词查找笔记，返回笔记 ID 与标题' : 'Find notes by keyword; returns IDs and titles',
-        inputSchema: z.object({ query: z.string().min(1).max(200) }),
-        execute: async ({ query }) => {
-          const list = listNotes({ search: query, limit: 10 }).filter((n) => !n.aiExcluded)
-          return list.length ? list.map((n) => `${n.id} · ${n.title || '—'}`).join('\n') : zh ? '没有找到。' : 'None.'
+        description: zh ? '按关键词或实际 dateRange 查笔记；dateField 选 createdAt/editedAt，毫秒半开区间。可开启 includeMetadata/includeExcerpt（3000字有界正文）、limit/offset分页。默认ID与标题。' : 'Find notes by keyword or dateRange (epoch ms, endAt exclusive); dateField createdAt/editedAt. Optional includeMetadata/includeExcerpt (3000 chars), limit/offset. Default IDs and titles.',
+        inputSchema: NoteFindInput,
+        execute: async (input) => {
+          const result = findNotes(input, s.scope)
+          if (input.includeMetadata || input.includeExcerpt || input.dateRange) return JSON.stringify(result)
+          return result.items.length ? result.items.map((n) => `${n.id} · ${n.title || '—'}`).join('\n') : zh ? '没有找到。' : 'None.'
         }
       }),
       note_read: tool({
         description: zh
-          ? '读取笔记的结构：每一行的 ID、线索与笔记段落（带段落 ID）、总结。修改笔记前先读。'
-          : 'Read a note: rows (IDs), cue/note blocks with IDs, summary. Read before editing.',
-        inputSchema: z.object({ noteId: z.string().max(64) }),
-        execute: async ({ noteId }) => `《${mustNote(noteId, zh)}》\n${describeNote(noteId, zh)}`
+          ? '读取笔记的结构：每一行的 ID、线索与笔记段落（带段落 ID）、总结。修改笔记前先读。includeMetadata:true 加实际创建/正文编辑时间与允许的资料引用。'
+          : 'Read a note: rows (IDs), cue/note blocks with IDs, summary. Read before editing. includeMetadata:true adds actual creation/edit dates and allowed source references.',
+        inputSchema: z.object({ noteId: z.string().max(64), includeMetadata: z.boolean().optional() }),
+        execute: async ({ noteId, includeMetadata }) => {
+          if (s.scope.type === 'items' && !s.scope.notes.includes(noteId)) throw new Error('Note is outside the selected scope')
+          return `《${mustNote(noteId, zh)}》\n${includeMetadata ? JSON.stringify(noteMetadata(noteId, s.scope)) + '\n' : ''}${describeNote(noteId, zh)}`
+        }
       }),
       source_read: tool({
         description: zh
-          ? '读取资料的片段（带片段 ID 与位置）。from 为起始序号（从 0 开始），一次最多 20 段。'
-          : 'Read source segments (with IDs and locations). from = start index, up to 20.',
+          ? '读取资料的片段（带片段 ID 与位置）。from 为起始序号（从 0 开始），一次最多 20 段。includeMetadata:true 加创建导入时间createdAt、获取时间accessedAt、发布日期publishedAt与总段数，三者不能混淆。'
+          : 'Read source segments (with IDs and locations). from = start index, up to 20. includeMetadata:true adds import creation createdAt, accessedAt, publishedAt and totalSegments; publication is not import.',
         inputSchema: z.object({
           sourceId: z.string().max(64),
           from: z.number().int().min(0).optional(),
-          count: z.number().int().min(1).max(20).optional()
+          count: z.number().int().min(1).max(20).optional(),
+          includeMetadata: z.boolean().optional()
         }),
-        execute: async ({ sourceId, from = 0, count = 12 }) => {
+        execute: async ({ sourceId, from = 0, count = 12, includeMetadata }) => {
+          if (s.scope.type === 'items' && !s.scope.sources.includes(sourceId)) throw new Error('Source is outside the selected scope')
           const src = readableSource(sourceId, zh)
           const segs = listSegments(sourceId)
           const part = segs.slice(from, from + count)
           const loc = (l: Record<string, unknown>): string => (l.value ? ` · ${String(l.value)}` : '')
+          const metadata = includeMetadata ? getDb().select({ sourceId: sources.id, createdAt: sources.createdAt, accessedAt: sources.accessedAt, publishedAt: sources.publishedAt, url: sources.url, author: sources.author }).from(sources).where(eq(sources.id, sourceId)).get() : null
           return [
+            ...(metadata ? [JSON.stringify({ ...metadata, totalSegments: segs.length, from, count: part.length })] : []),
             `《${src.title}》${zh ? `共 ${segs.length} 段，当前 ${from}–${from + part.length - 1}` : ` ${segs.length} segments`}`,
             ...part.map((g) => `[${g.id}${loc(g.locator)}] ${g.text}`)
           ].join('\n')
