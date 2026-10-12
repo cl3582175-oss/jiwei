@@ -72,6 +72,7 @@ import { AcquisitionBatch, githubSource } from '../acquisition'
 import { prepareRepositorySource, preparePluginSource } from '../sources'
 import { replacePluginRegistry } from '../registry'
 import { readState } from '../state'
+import { unicodePathZip } from './zipFixtures'
 let db: Database.Database, server: Server
 let routes: Map<string, { status?: number; body: string | Buffer; slow?: boolean }>, hits: string[]
 const skill = '---\nname: read\ndescription: Self authored test reader\n---\nRead evidence.'
@@ -661,4 +662,44 @@ describe('market acquisition through real HTTP, SQLite, files and token lifecycl
     await initialize({ ...definition, remote: 'different/repo' })
     expect(listMarkets()[0].fetchedAt).toBeNull()
   })
+  it.each(['selected', 'unselected'])('R1-I1 rejects unsafe Unicode paths in %s repository entries before selection', async (location) => {
+    const path = join(env.root, 'unicode-repository.zip')
+    await writeFile(
+      path,
+      unicodePathZip([
+        { name: 'repo/selected/keep.txt' },
+        { name: 'repo/safe.txt', unicodeName: `repo/${location}/../${location}/evil.txt` }
+      ])
+    )
+    const attempt = prepareRepositorySource(path, '.', undefined, ['selected']).then(async (prepared) => {
+      await prepared.cleanup()
+      return 'accepted'
+    })
+    await expect(attempt).rejects.toThrow('Unsafe plugin path')
+  })
+  it.each(['first', 'unselected'])(
+    'R1-I1 rejects %s Unicode paths during local detection/update and retains the installed selection',
+    async (location) => {
+      const path = join(env.root, 'collection.zip')
+      await writeFile(path, await zip({ 'first/SKILL.md': skill.replace('name: read', 'name: first') }, ''))
+      const operation = beginAcquisition(1),
+        detected = await detectPath(1, operation, path)
+      if (detected.kind !== 'skills') throw new Error('Expected skills')
+      const selected = await selectDetectedSkills(1, operation, detected.token, ['first'])
+      if (selected.kind !== 'plugin') throw new Error('Expected plugin')
+      await confirmPluginInstall(selected.preview.token, {})
+      const previous = readState(selected.preview.id).current
+      await writeFile(
+        path,
+        unicodePathZip([
+          { name: 'first/SKILL.md', content: skill.replace('name: read', 'name: first') },
+          { name: 'safe.txt', unicodeName: `../${location}/evil.txt` }
+        ])
+      )
+      await expect(updatePlugin(selected.preview.id)).rejects.toThrow('Unsafe plugin path')
+      expect(readState(selected.preview.id).current).toEqual(previous)
+      expect(await readdir(previous.directory)).toEqual(['first'])
+      await expect(detectPath(1, beginAcquisition(1), path)).rejects.toThrow('Unsafe plugin path')
+    }
+  )
 })

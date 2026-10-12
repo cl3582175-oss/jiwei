@@ -20,6 +20,7 @@ import {
 } from '@shared/plugins'
 import { parsePlugin, resolvePluginMcp } from '../components'
 import { inspectZip, preparePluginSource, PLUGIN_LIMITS } from '../sources'
+import { unicodePathZip } from './zipFixtures'
 const roots: string[] = []
 async function temp() {
   const dir = await mkdtemp(join(tmpdir(), 'jiwei-p1a-test-'))
@@ -288,6 +289,44 @@ describe('safe staging', () => {
     const central = buffer.indexOf(Buffer.from([0x50, 0x4b, 0x01, 0x02]))
     buffer.writeUInt32LE(PLUGIN_LIMITS.bytes + 1, central + 24)
     expect(() => inspectZip(buffer)).toThrow('limit')
+  })
+  it.each([
+    { label: 'ordinary local', options: {}, unicodeName: '../evil.txt' },
+    { label: 'repository discovery', options: { repository: true }, unicodeName: '../evil.txt' },
+    { label: 'selected', options: { selection: ['selected'] }, unicodeName: '../selected/evil.txt' },
+    { label: 'unselected', options: { selection: ['selected'] }, unicodeName: '../other/evil.txt' },
+    { label: 'outside subdir', options: { subdir: 'repo', selection: ['selected'] }, unicodeName: 'repo/../other/evil.txt' },
+    { label: 'directory', options: { selection: ['selected'] }, unicodeName: '../other/', directory: true },
+    { label: 'shadowed by safe file', options: {}, unicodeName: '../evil.txt', shadow: true }
+  ])('R1-I1 rejects unsafe Unicode ZIP names before projection: $label', async ({ options, unicodeName, directory, shadow }) => {
+    const parent = await temp(),
+      path = join(parent, 'unicode.zip')
+    await writeFile(
+      path,
+      unicodePathZip([
+        { name: 'selected/keep.txt' },
+        { name: 'repo/selected/keep.txt' },
+        { name: directory ? 'safe/' : 'safe.txt', unicodeName, directory },
+        ...(shadow ? [{ name: 'evil.txt' }] : [])
+      ])
+    )
+    const attempt = preparePluginSource({ path, type: 'zip', tempParent: parent, ...options }).then(async (prepared) => {
+      await prepared.cleanup()
+      return 'accepted'
+    })
+    await expect(attempt).rejects.toThrow('Unsafe plugin path')
+    expect((await readdir(parent)).filter((name) => name.startsWith('jiwei-plugin-'))).toEqual([])
+  })
+  it('R1-I1 preserves safe Unicode ZIP names and content', async () => {
+    const parent = await temp(),
+      path = join(parent, 'unicode.zip')
+    await writeFile(path, unicodePathZip([{ name: 'safe.txt', unicodeName: '技能/说明.txt', content: 'Safe Unicode fixture' }]))
+    const prepared = await preparePluginSource({ path, type: 'zip', tempParent: parent })
+    try {
+      expect(await readFile(join(prepared.root, '技能/说明.txt'), 'utf8')).toBe('Safe Unicode fixture')
+    } finally {
+      await prepared.cleanup()
+    }
   })
   it('stops understated zip actual size and excessive entry count', async () => {
     const parent = await temp(),

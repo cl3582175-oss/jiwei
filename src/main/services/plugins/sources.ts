@@ -3,7 +3,7 @@ import { lstat, mkdir, mkdtemp, open, readdir, realpath, rm } from 'fs/promises'
 import { basename, dirname, extname, join, resolve, sep } from 'path'
 import { tmpdir } from 'os'
 import { Transform } from 'stream'
-import { createGunzip } from 'zlib'
+import { createGunzip, crc32 } from 'zlib'
 import { pipeline } from 'stream/promises'
 import JSZip from 'jszip'
 import * as tar from 'tar'
@@ -109,6 +109,18 @@ export function inspectZip(buffer: Buffer, repository = false): void {
     const nameBytes = buffer.subarray(cursor + 46, cursor + 46 + n),
       name = nameBytes.toString('utf8'),
       clean = safeRelativePath(name)
+    // Unicode Path 可覆盖中央原名；在 JSZip 清洗/同名覆盖前逐条检查，目录也不能漏掉。
+    const extraEnd = cursor + 46 + n + extra
+    for (let field = cursor + 46 + n; field < extraEnd;) {
+      if (field + 4 > extraEnd) throw new Error('Invalid zip extra field')
+      const id = buffer.readUInt16LE(field),
+        length = buffer.readUInt16LE(field + 2),
+        value = field + 4
+      if (value + length > extraEnd) throw new Error('Invalid zip extra field')
+      if (id === 0x7075 && !(flags & 0x800) && length >= 5 && buffer[value] === 1 && buffer.readUInt32LE(value + 1) === crc32(nameBytes))
+        safeRelativePath(buffer.subarray(value + 5, value + length).toString('utf8'))
+      field = value + length
+    }
     const mode = buffer.readUInt32LE(cursor + 38) >>> 16
     if ((mode & 0xf000) === 0xa000 || (mode & 0xf000 && ![0x4000, 0x8000].includes(mode & 0xf000)))
       throw new Error('Plugin symlink or special file rejected')
@@ -123,6 +135,13 @@ export function inspectZip(buffer: Buffer, repository = false): void {
     cursor += 46 + n + extra + comment
   }
   if (cursor !== end) throw new Error('Invalid zip directory length')
+}
+async function loadSafeZip(buffer: Buffer, repository = false): Promise<JSZip> {
+  inspectZip(buffer, repository)
+  const zip = await JSZip.loadAsync(buffer)
+  // 必须检查全部解码名后才能选择子树，不能把未选中的不安全路径当作无害。
+  for (const item of Object.values(zip.files)) safeRelativePath(item.unsafeOriginalName ?? item.name)
+  return zip
 }
 export interface PreparedPluginSource {
   root: string
@@ -189,8 +208,7 @@ export async function preparePluginSource(input: PreparePluginSourceInput): Prom
       if (!st.isFile() || st.isSymbolicLink() || st.size > PLUGIN_LIMITS.archiveBytes) throw new Error('Invalid plugin archive')
       if (input.type === 'zip') {
         const buffer = await readArchive(input.path)
-        inspectZip(buffer, !!input.repository || !!input.selection || !!input.subdir)
-        const zip = await JSZip.loadAsync(buffer),
+        const zip = await loadSafeZip(buffer, !!input.repository || !!input.selection || !!input.subdir),
           actual = { bytes: 0, entries: 0 }
         const subdir = safeRelativePath(input.subdir ?? '.'),
           prefix = subdir === '.' ? '' : subdir + '/'
@@ -486,9 +504,8 @@ export async function prepareRepositorySource(
 ): Promise<PreparedPluginSource> {
   const limits = discovery ? REPOSITORY_LIMITS : PLUGIN_LIMITS
   const buffer = await readArchive(path)
-  inspectZip(buffer, true)
   signal?.throwIfAborted()
-  const zip = await JSZip.loadAsync(buffer)
+  const zip = await loadSafeZip(buffer, true)
   const roots = new Set(Object.values(zip.files).map((x) => x.name.split('/')[0]))
   if (roots.size !== 1) throw new Error('Repository zip must have one root directory')
   const prefix = [...roots][0] + '/'
