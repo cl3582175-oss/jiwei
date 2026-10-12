@@ -207,6 +207,68 @@ async function readArchive(path: string): Promise<Buffer> {
     await handle.close()
   }
 }
+/** entry 事件看不到 PAX/GNU/ignored headers；原始 framing 层必须独立计数。 */
+function tarHeaderBudget(): (chunk: Buffer) => void {
+  const budget = { bytes: 0, entries: 0 },
+    headerBlock = Buffer.alloc(512)
+  const metadataTypes = new Set([
+    'ExtendedHeader',
+    'OldExtendedHeader',
+    'GlobalExtendedHeader',
+    'NextFileHasLongPath',
+    'OldGnuLongPath',
+    'NextFileHasLongLinkpath'
+  ])
+  let headerBytes = 0,
+    bodyBytes = 0,
+    metadataBytes = 0,
+    metadataType = '',
+    metadata: Buffer[] = []
+  let extended: tar.Pax | undefined, globalExtended: tar.Pax | undefined
+  return (chunk) => {
+    let offset = 0
+    while (offset < chunk.length) {
+      if (bodyBytes) {
+        const size = Math.min(bodyBytes, chunk.length - offset)
+        if (metadataBytes) {
+          const length = Math.min(metadataBytes, size)
+          metadata.push(chunk.subarray(offset, offset + length))
+          metadataBytes -= length
+        }
+        offset += size
+        bodyBytes -= size
+        if (!bodyBytes && metadata.length) {
+          const value = Buffer.concat(metadata).toString('utf8')
+          // 使用依赖的公开 PAX 解析器保持有效 size 与 tar.Parser 一致，防止跳错下一个 header。
+          if (metadataType === 'ExtendedHeader' || metadataType === 'OldExtendedHeader') extended = tar.Pax.parse(value, extended)
+          else if (metadataType === 'GlobalExtendedHeader') globalExtended = tar.Pax.parse(value, globalExtended, true)
+          metadata = []
+        }
+        continue
+      }
+      const size = Math.min(512 - headerBytes, chunk.length - offset)
+      chunk.copy(headerBlock, headerBytes, offset, offset + size)
+      headerBytes += size
+      offset += size
+      if (headerBytes < 512) continue
+      headerBytes = 0
+      const raw = new tar.Header(headerBlock)
+      if (raw.nullBlock) continue
+      if (!raw.cksumValid) throw new Error('Invalid tar header checksum')
+      safeRelativePath(raw.path ?? '')
+      const header = new tar.Header(headerBlock, 0, extended, globalExtended),
+        declaredSize = header.size ?? 0
+      declared(budget, raw.path ?? '', declaredSize)
+      const isMetadata = metadataTypes.has(header.type)
+      if (isMetadata && declaredSize > PLUGIN_LIMITS.textBytes) throw new Error('Plugin tar metadata size limit exceeded')
+      bodyBytes = Math.ceil(declaredSize / 512) * 512
+      metadataType = header.type
+      metadataBytes = isMetadata ? declaredSize : 0
+      metadata = []
+      if (!isMetadata) extended = undefined
+    }
+  }
+}
 async function unpackTar(path: string, root: string): Promise<void> {
   const buffer = await readArchive(path)
   if (buffer.length > PLUGIN_LIMITS.archiveBytes) throw new Error('Plugin archive limit exceeded')
@@ -215,7 +277,8 @@ async function unpackTar(path: string, root: string): Promise<void> {
   const run = (onEntry: (entry: tar.ReadEntry, parser: tar.Parser) => void) =>
     new Promise<void>((resolve, reject) => {
       const parser = new tar.Parser({ strict: true, maxMetaEntrySize: PLUGIN_LIMITS.textBytes }),
-        unzip = createGunzip()
+        unzip = createGunzip(),
+        checkHeaders = tarHeaderBudget()
       let bytes = 0,
         ended = false
       const fail = (error: Error) => {
@@ -240,6 +303,13 @@ async function unpackTar(path: string, root: string): Promise<void> {
           const error = new Error('Plugin actual tar size limit exceeded')
           fail(error)
           parser.abort(error)
+          return
+        }
+        try {
+          checkHeaders(chunk)
+        } catch (e) {
+          fail(e as Error)
+          parser.abort(e as Error)
           return
         }
         if (!parser.write(chunk)) unzip.pause()

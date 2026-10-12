@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { mkdtemp, mkdir, writeFile, rm, readdir, symlink } from 'fs/promises'
+import { mkdtemp, mkdir, writeFile, readFile, rm, readdir, symlink } from 'fs/promises'
 import { tmpdir } from 'os'
 import { dirname, join } from 'path'
 import JSZip from 'jszip'
@@ -332,6 +332,48 @@ describe('safe staging', () => {
       })
     ).rejects.toThrow('limit')
     expect((await readdir(parent)).filter((n) => n.startsWith('jiwei-plugin-'))).toEqual([])
+  })
+  it.each(['ExtendedHeader', 'GlobalExtendedHeader', 'NextFileHasLongPath', 'SolarisACL'] as const)(
+    'counts raw %s headers toward the tar entry limit and cleans rejected staging',
+    async (type) => {
+      const parent = await temp(),
+        path = join(parent, 'metadata.tar.gz')
+      const metadata = new tar.Header({ path: 'metadata', size: 0, type, mode: 0o600 })
+      const ordinary = new tar.Header({ path: 'valid.txt', size: 0, type: 'File', mode: 0o600 })
+      metadata.encode()
+      ordinary.encode()
+      const headers = Array.from({ length: PLUGIN_LIMITS.entries + 1 }, () => metadata.block!)
+      await writeFile(path, gzipSync(Buffer.concat([...headers, ordinary.block!, Buffer.alloc(1024)])))
+      await expect(preparePluginSource({ path, type: 'tar.gz', tempParent: parent })).rejects.toThrow('limit')
+      expect((await readdir(parent)).filter((name) => name.startsWith('jiwei-plugin-'))).toEqual([])
+    }
+  )
+  it('preserves the exact tar entry boundary and PAX size framing', async () => {
+    const parent = await temp(),
+      path = join(parent, 'boundary.tar.gz')
+    const metadata = new tar.Header({ path: 'metadata', size: 0, type: 'ExtendedHeader', mode: 0o600 })
+    const ordinary = new tar.Header({ path: 'valid.txt', size: 0, type: 'File', mode: 0o600 })
+    metadata.encode()
+    ordinary.encode()
+    await writeFile(
+      path,
+      gzipSync(
+        Buffer.concat([...Array.from({ length: PLUGIN_LIMITS.entries - 1 }, () => metadata.block!), ordinary.block!, Buffer.alloc(1024)])
+      )
+    )
+    const boundary = await preparePluginSource({ path, type: 'tar.gz', tempParent: parent })
+    expect(await readdir(boundary.root)).toEqual(['valid.txt'])
+    await boundary.cleanup()
+    const data = Buffer.alloc(512)
+    data.write('abc')
+    await writeFile(
+      path,
+      gzipSync(Buffer.concat([new tar.Pax({ path: 'nested/valid.txt', size: 3 }).encode(), ordinary.block!, data, Buffer.alloc(1024)]))
+    )
+    const pax = await preparePluginSource({ path, type: 'tar.gz', tempParent: parent })
+    expect(await readFile(join(pax.root, 'nested/valid.txt'), 'utf8')).toBe('abc')
+    await pax.cleanup()
+    expect((await readdir(parent)).filter((name) => name.startsWith('jiwei-plugin-'))).toEqual([])
   })
   it('rejects manifest references through a symlink before component reads', async () => {
     const parent = await temp(),
