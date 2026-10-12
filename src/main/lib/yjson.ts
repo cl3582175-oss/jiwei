@@ -1,6 +1,6 @@
 import * as Y from 'yjs'
 import { ID_TYPES } from '@shared/docSchema'
-import { DOC_FIELD, type DocJSON, type DocNode } from '@shared/types'
+import { DOC_FIELD, EMBEDS_FIELD, type DocJSON, type DocNode } from '@shared/types'
 import { newId } from './ids'
 
 // 文档 JSON → Yjs（与 y-prosemirror 的表示一致：元素 → Y.XmlElement，连续文本 → 一个 Y.XmlText）。
@@ -39,13 +39,27 @@ function toYElement(node: DocNode): Y.XmlElement {
   return el
 }
 
-export function jsonToYState(doc: DocJSON): Uint8Array {
+export function jsonToYState(doc: DocJSON, embeds?: Record<string, { kind?: string; data?: unknown }>): Uint8Array {
   const ydoc = new Y.Doc()
   const frag = ydoc.getXmlFragment(DOC_FIELD)
   frag.insert(
     0,
     (doc.content ?? []).map((n) => toYElement(n))
   )
+  const toY = (value: unknown): unknown => {
+    if (Array.isArray(value)) {
+      const a = new Y.Array<unknown>()
+      a.push(value.map(toY))
+      return a
+    }
+    if (value && typeof value === 'object') {
+      const m = new Y.Map<unknown>()
+      for (const [key, v] of Object.entries(value)) if (v !== undefined) m.set(key, toY(v))
+      return m
+    }
+    return value
+  }
+  for (const [id, data] of Object.entries(embeds ?? {})) ydoc.getMap(EMBEDS_FIELD).set(id, toY(data))
   const state = Y.encodeStateAsUpdate(ydoc)
   ydoc.destroy()
   return state

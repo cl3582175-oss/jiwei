@@ -2,6 +2,8 @@ import { getMainWindow, setMainWindow } from './mainWindow'
 import { initializePlugins } from './services/plugins/install'
 import { initializeMarkets } from './services/plugins/markets'
 import { registerCapture, stopCapture } from './services/capture'
+import { registerImporterJobs } from './services/importer/run'
+import { registerImportCueJob } from './services/importer/cues'
 import { shutdown as stopPhoneUpload } from './services/phoneUpload'
 import { registerInboxJobs } from './services/inbox'
 import { registerMistakeJobs } from './services/mistakes'
@@ -196,6 +198,8 @@ app.whenReady().then(async () => {
   registerLensJobs()
   registerRecognizeJob()
   registerDigestJob()
+  registerImporterJobs()
+  registerImportCueJob()
   // 低谷时段运行（v0.7.5）：开启后，可延后的后台任务在 DeepSeek 高峰期排到下一个低谷
   setOffPeakPolicy((at) => {
     const s = getSettings()

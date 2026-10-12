@@ -127,7 +127,11 @@ export function listSources(q: SourceQuery): Source[] {
 export const getSource = (id: string): Source | null => query([eq(sources.id, id)])[0] ?? null
 
 /** 导入文件：内容相同的文件只存一份；已在资料库（未删除）中的相同文件跳过 */
-export async function importPaths(paths: string[], categoryId?: string | null): Promise<ImportResult> {
+export async function importPaths(
+  paths: string[],
+  categoryId?: string | null,
+  init?: { aiExcluded?: boolean; onCreated?: (sourceId: string, assetId: string) => void }
+): Promise<ImportResult> {
   const out: ImportResult = { imported: [], duplicates: 0 }
   const db = getDb()
   for (const p of paths) {
@@ -136,7 +140,7 @@ export async function importPaths(paths: string[], categoryId?: string | null): 
     const dup = db
       .select({ id: sources.id })
       .from(sources)
-      .where(and(eq(sources.assetId, row.id), isNull(sources.deletedAt)))
+      .where(and(eq(sources.assetId, row.id), isNull(sources.deletedAt), init?.aiExcluded ? eq(sources.aiExcluded, true) : undefined))
       .get()
     if (dup) {
       out.duplicates++
@@ -145,20 +149,24 @@ export async function importPaths(paths: string[], categoryId?: string | null): 
     const id = newId()
     const now = Date.now()
     const name = basename(p)
-    db.insert(sources)
-      .values({
-        id,
-        title: name.replace(/\.[^.]+$/, ''),
-        kind: EXT_KIND[extname(name).slice(1).toLowerCase()] ?? 'other',
-        assetId: row.id,
-        originalName: name,
-        accessedAt: now,
-        categoryId: categoryId ?? null,
-        createdAt: now,
-        updatedAt: now,
-        updatedBy: deviceId()
-      })
-      .run()
+    db.transaction(() => {
+      db.insert(sources)
+        .values({
+          id,
+          title: name.replace(/\.[^.]+$/, ''),
+          kind: EXT_KIND[extname(name).slice(1).toLowerCase()] ?? 'other',
+          assetId: row.id,
+          originalName: name,
+          accessedAt: now,
+          categoryId: categoryId ?? null,
+          aiExcluded: init?.aiExcluded ?? false,
+          createdAt: now,
+          updatedAt: now,
+          updatedBy: deviceId()
+        })
+        .run()
+      init?.onCreated?.(id, row.id)
+    })
     recordActivity('source_add')
     out.imported.push(getSource(id)!)
     if (canSegment(row.ext)) enqueueSegment(id)

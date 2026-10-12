@@ -62,9 +62,9 @@ export function initDoc(noteId: string): void {
 }
 
 /** 用文档 JSON 整体替换笔记正文（仅用于尚未在编辑器中打开的新笔记，如示例笔记、导入） */
-export function replaceDoc(noteId: string, doc: DocJSON): void {
+export function replaceDoc(noteId: string, doc: DocJSON, embeds?: EmbedsData): void {
   const db = getDb()
-  const state = jsonToYState(doc)
+  const state = jsonToYState(doc, embeds)
   db.transaction((tx) => {
     tx.delete(noteUpdates).where(eq(noteUpdates.noteId, noteId)).run()
     tx.insert(noteDocs)

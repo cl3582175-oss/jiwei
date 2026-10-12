@@ -51,7 +51,7 @@ function ImageView({ node, editor, selected, extension }: NodeViewProps) {
     }
   }
   return (
-    <NodeViewWrapper className="group relative max-w-full" data-image-block={node.attrs.id} data-id={node.attrs.id}>
+    <NodeViewWrapper className="group/image relative max-w-full overflow-hidden" data-image-block={node.attrs.id} data-id={node.attrs.id}>
       <img
         src={node.attrs.src as string}
         alt={(node.attrs.alt as string) ?? ''}
@@ -62,8 +62,8 @@ function ImageView({ node, editor, selected, extension }: NodeViewProps) {
         <button
           type="button"
           contentEditable={false}
-          className="absolute bottom-2 left-2 max-w-[calc(100%-1rem)] rounded border border-border bg-paper px-2 py-1 text-xs shadow opacity-0 group-hover:opacity-100 focus:opacity-100"
-          style={selected || busy ? { opacity: 1 } : undefined}
+          className="pointer-events-none absolute bottom-2 left-2 max-w-[calc(100%-1rem)] rounded border border-border bg-paper px-2 py-1 text-xs shadow opacity-0 group-hover/image:pointer-events-auto group-hover/image:opacity-100 focus:pointer-events-auto focus:opacity-100"
+          style={selected || busy ? { opacity: 1, pointerEvents: 'auto' } : undefined}
           disabled={busy}
           onClick={() => void recognize()}
         >

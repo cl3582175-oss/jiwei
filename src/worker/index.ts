@@ -5,6 +5,8 @@ import { parseDocx, parseEpub, parseHtml, parsePdf, renderPdfPage } from './pars
 import { transcribe } from './transcribe'
 import { extractVoiceprints, type VoiceprintInput } from './voiceprint'
 import { synthesizeLocal, type SpeechInput } from './speech'
+import { scanLibrary, type ImportHistory } from '../main/services/importer/scan'
+import { importMarkdown } from '../main/lib/importMarkdown'
 
 // 后台工作进程（Electron utilityProcess）：执行 CPU / IO 密集任务，不阻塞主进程与界面。
 // 协议：{ id, task, payload } 启动，{ cancel: id } 取消单项；只在任务实际退出后回复终态。
@@ -54,6 +56,14 @@ const tasks: Record<string, Task> = {
       progress(i / 4)
     }
     return { slept: ms }
+  },
+  'import.scan': (payload, progress, signal) => {
+    const input = payload as { paths: string[]; history: ImportHistory[] }
+    return scanLibrary(input.paths, input.history, progress, signal)
+  },
+  async 'import.convert'(payload) {
+    const input = payload as { text: string; filename: string }
+    return importMarkdown(input.text, input.filename)
   }
 }
 

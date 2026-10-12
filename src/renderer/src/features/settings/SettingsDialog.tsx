@@ -1,5 +1,6 @@
 import { PluginUpdateDot } from '../plugins/PluginMarketplace'
 import { UpdateSettings } from '../update/UpdateSettings'
+import { ImportLibraryButton } from '../import/ImportWizard'
 import { Puzzle } from 'lucide-react'
 import { PluginsSettings } from '../plugins/PluginsSettings'
 import { DiscoverSettings } from '../discover/DiscoverSettings'
@@ -272,6 +273,7 @@ function DataTab() {
       </Row>
       <RecordingSecurity />
       <BackupSettings />
+      <ImportLibraryButton />
     </>
   )
 }

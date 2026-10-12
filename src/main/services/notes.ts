@@ -105,7 +105,13 @@ export function getNote(id: string): Note | null {
   return r ? toSummaries([r])[0] : null
 }
 
-export function createNote(init?: { categoryId?: string | null; title?: string; kind?: NoteKind }): Note {
+export function createNote(init?: {
+  categoryId?: string | null
+  title?: string
+  kind?: NoteKind
+  aiExcluded?: boolean
+  createdAt?: number
+}): Note {
   const kind = init?.kind ?? 'cornell'
   // 复盘笔记（review）沿用康奈尔结构：线索栏是引导问题，笔记栏是回答；其他类型在对应版本实现
   if (kind !== 'cornell' && kind !== 'review') throw new Error(`Note kind "${kind}" is not available yet`)
@@ -121,7 +127,8 @@ export function createNote(init?: { categoryId?: string | null; title?: string; 
       learnedAt: now,
       docVersion: DOC_VERSIONS[kind],
       editedAt: now,
-      createdAt: now,
+      createdAt: init?.createdAt ?? now,
+      aiExcluded: init?.aiExcluded ?? false,
       updatedAt: now,
       updatedBy: deviceId()
     })

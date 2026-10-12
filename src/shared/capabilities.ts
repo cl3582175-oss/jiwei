@@ -67,6 +67,7 @@ import {
   type VoiceStatus
 } from './recording'
 import { z } from 'zod'
+import { ImportOptionsSchema } from './importer'
 import type { Insights } from './insights'
 import { WorkCreateSchema, WorkUpdateSchema, type VideoRender, type Work } from './works'
 import { AdvisorAskSchema, AdvisorWeightsSchema, DecideSchema, ReviewDecisionSchema, type Decision } from './advisor'
@@ -1298,6 +1299,20 @@ export const capabilities = {
     install: cap<void>()({ description: '安装已校验的应用更新', params: none }),
     acknowledge: cap<void>()({ description: '关闭已升级提示', params: none }),
     openLink: cap<void>()({ description: '在系统浏览器打开更新说明', params: [['url', z.string().max(2000).optional()]] })
+  },
+  importer: {
+    choose: cap<import('./importer').ImportScan | null>()({ description: '选择并扫描笔记库', params: [['mode', z.enum(['folder', 'files'])]] }),
+    inspect: cap<import('./importer').ImportScan>()({ description: '开发测试：扫描本地笔记库', params: [['paths', z.array(z.string().max(4096)).min(1).max(5000)]] }),
+    scan: cap<import('./importer').ImportScan>()({ description: '扫描进度与预览清单', params: [['id', z.string().max(64)]] }),
+    cancelScan: cap<void>()({ description: '取消扫描', params: [['id', z.string().max(64)]] }),
+    preview: cap<import('./importer').ImportPreview>()({ description: '转换后的只读康奈尔预览', params: [['id', z.string().max(64)], ['path', z.string().max(4096)]] }),
+    estimate: cap<import('./importer').ImportEstimate>()({ description: '估算补线索调用与费用', params: [['id', z.string().max(64)], ['paths', z.array(z.string().max(4096)).max(5000)]] }),
+    start: cap<import('./importer').ImportRun>()({ description: '导入所选笔记', params: [['id', z.string().max(64)], ['options', ImportOptionsSchema]] }),
+    run: cap<import('./importer').ImportRun>()({ description: '导入进度与结果', params: [['id', z.string().max(64)]] }),
+    history: cap<import('./importer').ImportRun[]>()({ description: '导入历史', params: none }),
+    cancel: cap<void>()({ description: '取消导入', params: [['id', z.string().max(64)]] }),
+    cancelCues: cap<void>()({ description: '取消本次导入的补线索任务', params: [['id', z.string().max(64)]] }),
+    undo: cap<import('./importer').ImportRun>()({ description: '把本次导入移入回收站', params: [['id', z.string().max(64)]] })
   }
 } as const
 

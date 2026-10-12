@@ -1134,6 +1134,7 @@ export interface JiweiEvents {
   /** 复盘、洞见或行动项变化 */
   'reflection:changed': Record<string, never>
   'updates:changed': import('./updates').UpdateState
+  'importer:changed': Record<string, never>
 }
 
 /** 本地 grounding 识别结果；保留版面块供公式与扫描文字层使用。 */

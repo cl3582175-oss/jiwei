@@ -1,5 +1,6 @@
 import * as pluginMarkets from './services/plugins/markets'
 import * as updates from './services/updates'
+import * as importer from './services/importer/run'
 import * as pluginDirect from './services/plugins/direct'
 import * as plugins from './services/plugins/install'
 import * as pluginRegistry from './services/plugins/registry'
@@ -854,6 +855,20 @@ const handlers: Handlers = {
     install: () => updates.installUpdate(),
     acknowledge: () => updates.acknowledgeUpgrade(),
     openLink: (_, url) => updates.openUpdateLink(url)
+  },
+  importer: {
+    choose: ({ win }, mode) => importer.chooseLibrary(win, mode),
+    inspect: (_, paths) => { if (app.isPackaged || process.env.JIWEI_TEST_IMPORT !== '1') throw new Error('Test-only path scanning is disabled'); return importer.beginScan(paths) },
+    scan: (_, id) => importer.getScan(id),
+    cancelScan: (_, id) => importer.cancelScan(id),
+    preview: (_, id, path) => importer.preview(id, path),
+    estimate: (_, id, paths) => importer.estimate(id, paths),
+    start: (_, id, options) => importer.beginImport(id, options),
+    run: (_, id) => importer.getRun(id),
+    history: () => importer.listRuns(),
+    cancel: (_, id) => importer.cancelImport(id),
+    cancelCues: (_, id) => importer.cancelCues(id),
+    undo: (_, id) => importer.undoImport(id)
   }
 }
 
