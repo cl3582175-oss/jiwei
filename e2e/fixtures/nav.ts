@@ -1,7 +1,7 @@
 import { expect, type Page } from '@playwright/test'
 
 // 导航（v0.7.4 浮卡）：今日 · 收集 · 学习 · 创作（v0.9）· 计划，积微助手在顶部。
-// 二级入口在组图标右侧的浮卡里：先悬停组图标，再点浮卡中的目标（已经在目标页时不重复点，以免关掉打开的笔记）。
+// 二级入口在组图标右侧的浮卡里：先悬停组图标（展开不了时点组图标），再点浮卡中的目标（已经在目标页时不重复点，以免关掉打开的笔记）。
 const GROUPS: [RegExp, string][] = [
   [/收件箱|资料库|浏览|录音/, '收集'],
   [/笔记|复习|费曼|图谱/, '学习'],
@@ -13,7 +13,11 @@ const GROUPS: [RegExp, string][] = [
 /** again：已经在目标页时也再点一次（如再点“笔记”回到笔记主页） */
 export async function navTo(page: Page, name: RegExp, opts: { again?: boolean } = {}): Promise<void> {
   const rail = page.getByTestId('nav-rail')
-  if (/AI 对话|积微助手/.test(name.source)) return rail.getByRole('button', { name: /^积微助手/ }).first().click()
+  if (/AI 对话|积微助手/.test(name.source))
+    return rail
+      .getByRole('button', { name: /^积微助手/ })
+      .first()
+      .click()
   const group = GROUPS.find(([pattern]) => pattern.test(name.source))
   if (!group) {
     const button = rail.getByRole('button', { name }).first()
@@ -26,6 +30,12 @@ export async function navTo(page: Page, name: RegExp, opts: { again?: boolean } 
   await page.mouse.move(600, 4)
   await groupButton.hover()
   const ring = page.getByTestId('nav-ring')
+  // 悬停偶尔在刚启动的窗口里收不到（同一文件里连续启动应用时更常见）；点组图标同样会展开浮卡（v0.11.1），两条都是真实路径
+  if (!(await ring.isVisible().catch(() => false))) {
+    await ring.waitFor({ state: 'visible', timeout: 1500 }).catch(async () => {
+      if (!(await ring.isVisible())) await groupButton.click()
+    })
+  }
   await expect(ring).toBeVisible()
   const item = ring.getByRole('menuitem', { name }).first()
   if (!opts.again && (await item.getAttribute('aria-current')) === 'page') {

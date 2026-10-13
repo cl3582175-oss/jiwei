@@ -130,9 +130,11 @@ export async function describeNote(noteId: string, zh: boolean, vision = false):
       const body = top.content?.find((c) => c.type === 'cornellBody')
       for (const c of cue?.content ?? []) out.push(blockLine(c, zh ? '线索' : 'cue'))
       for (const c of body?.content ?? []) out.push(blockLine(c, zh ? '笔记' : 'note'))
+      // 只在这一行除了图片没有别的文字时提示；有文字的行照常按文字出题
       if (
         !vision &&
         body &&
+        !nodeText(body).trim() &&
         imagesIn(body).some((n) => {
           const id = imageAssetId(n)
           return !id || !imageRecognizedText(id)?.trim()

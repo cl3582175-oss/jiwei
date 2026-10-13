@@ -22,7 +22,8 @@ import {
   Sparkles,
   Swords,
   Trash2,
-  Waypoints
+  Waypoints,
+  Square
 } from 'lucide-react'
 import { matrixTotals, type Decision, type DecisionMemo } from '@shared/advisor'
 import { estimateCost } from '@shared/ai'
@@ -236,7 +237,8 @@ function Home({ onOpen }: { onOpen: (id: string) => void }) {
               <Sparkles className="size-3.5 animate-pulse" />
               {t('advisor.asking')}
               <span className="text-subtle">{t('advisor.askingHint')}</span>
-              <Button size="sm" variant="ghost" className="ml-auto" onClick={() => void stop()}>
+              <Button size="sm" variant="outline" className="ml-auto" onClick={() => void stop()}>
+                <Square className="fill-current" />
                 {t('advisor.stop')}
               </Button>
             </p>
@@ -448,7 +450,8 @@ function DecisionPage({ id, onBack }: { id: string; onBack: () => void }) {
           <p role="status" className="mt-3 flex items-center gap-2 text-xs text-accent">
             <Loader2 className="size-3.5 animate-spin" />
             {t('advisor.asking')}
-            <Button size="sm" variant="ghost" className="ml-auto" onClick={() => void stop()}>
+            <Button size="sm" variant="outline" className="ml-auto" onClick={() => void stop()}>
+              <Square className="fill-current" />
               {t('advisor.stop')}
             </Button>
           </p>

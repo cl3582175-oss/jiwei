@@ -484,6 +484,36 @@ it('reads image markers and asset OCR instead of treating an image-only row as e
   expect(missing).toContain('图片尚未识别文字')
   expect(missing).toContain('第 1 行是图片')
   expect(missing).toContain('不得编造')
+  // 有文字的行：照常按文字出题，不提示“这一行是图片”
+  const doc = (body: import('@shared/types').DocNode[]) =>
+    Buffer.from(
+      jsonToYState({
+        type: 'doc',
+        content: [
+          {
+            type: 'cornellRow',
+            attrs: { id: 'row-image' },
+            content: [
+              { type: 'cornellCue', content: [{ type: 'paragraph', attrs: { id: 'cue-image' } }] },
+              { type: 'cornellBody', content: body }
+            ]
+          },
+          { type: 'cornellSummary', content: [{ type: 'paragraph' }] }
+        ]
+      })
+    )
+  env
+    .db!.update(schema.noteDocs)
+    .set({
+      state: doc([
+        { type: 'paragraph', attrs: { id: 'p-text' }, content: [{ type: 'text', text: '叶绿体吸收光能' }] },
+        { type: 'image', attrs: { id: 'image-1', src: `jiwei://asset/${assetId}.png`, alt: '叶片' } }
+      ])
+    })
+    .run()
+  const mixed = await call(buildTools({ ...session(), zh: true }), 'note_read', { noteId: 'image-note' })
+  expect(mixed).toContain('叶绿体吸收光能')
+  expect(mixed).not.toContain('第 1 行是图片')
 })
 it('registers image viewing only for vision; rejects excluded and out-of-scope notes before reading bytes', async () => {
   note('private-image', { aiExcluded: true })
