@@ -1,7 +1,7 @@
 import { dialog, shell, type BrowserWindow } from 'electron'
 import { cp, lstat, mkdir, readdir, readFile, rm, writeFile } from 'fs/promises'
 import { existsSync } from 'fs'
-import { join, relative } from 'path'
+import { join, relative, sep } from 'path'
 import { randomBytes } from 'crypto'
 import JSZip from 'jszip'
 import { z } from 'zod'
@@ -162,7 +162,7 @@ async function zipFolder(dir: string, file: string, prefix: string): Promise<voi
       const full = join(path, entry.name)
       if (entry.isSymbolicLink()) continue
       if (entry.isDirectory()) await walk(full)
-      else zip.file(`${prefix}/${relative(dir, full)}`, await readFile(full))
+      else zip.file(`${prefix}/${relative(dir, full).replaceAll(sep, '/')}`, await readFile(full))
     }
   }
   await walk(dir)

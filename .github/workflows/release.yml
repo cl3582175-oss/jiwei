@@ -85,6 +85,8 @@ jobs:
           Start-Sleep -Seconds 8
           $process.Refresh()
           if ($process.HasExited) { throw '应用启动后提前退出' }
+          # 只看进程不够：启动流程抛错时进程仍在，但没有窗口（v0.11.0 Windows 插件路径问题即如此）
+          if ($process.MainWindowHandle -eq 0) { Stop-Process -Id $process.Id; throw '应用启动后没有出现主窗口' }
           Stop-Process -Id $process.Id
       - name: 计算平台安装包 SHA-256
         run: node scripts/release-checksums.mjs release

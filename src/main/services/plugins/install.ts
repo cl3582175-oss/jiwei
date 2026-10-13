@@ -5,7 +5,7 @@ import { dialog, shell, type BrowserWindow } from 'electron'
 import { randomBytes } from 'crypto'
 import { mkdir, readdir, rm, rename, writeFile, readFile, lstat } from 'fs/promises'
 import { existsSync, renameSync } from 'fs'
-import { basename, dirname, join, relative } from 'path'
+import { basename, dirname, join, relative, sep } from 'path'
 import { eq } from 'drizzle-orm'
 import { getDb } from '../../db'
 import { plugins, pluginMarkets, feeds, aiTasks, mcpServers, meta } from '../../db/schema'
@@ -87,7 +87,7 @@ const record = (action: string, id: string): void =>
   audit({ caller: 'app', tool: `plugins.${action}`, level: 'write', status: 'ok', summary: `${action}: ${id}` })
 async function owned(path: string): Promise<string> {
   await mkdir(pluginRoot(), { recursive: true })
-  return safePluginPath(pluginRoot(), relative(pluginRoot(), path) || '.')
+  return safePluginPath(pluginRoot(), relative(pluginRoot(), path).replaceAll(sep, '/') || '.')
 }
 function safeManifest(parsed: ParsedPlugin) {
   // 敏感默认值不进入 UI，亦不会自动启用；用户配置只通过专门的密文路径保存。

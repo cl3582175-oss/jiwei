@@ -451,7 +451,7 @@ async function cleanupImport(path: string): Promise<void> {
   const parent = join(pluginRoot(), 'market-imports'),
     container = dirname(path),
     name = relative(parent, container)
-  if (!/^jiwei-plugin-[^/]+$/.test(name) || path !== join(container, 'content')) return
+  if (!/^jiwei-plugin-[^/\\]+$/.test(name) || path !== join(container, 'content')) return
   await rm(await safePluginPath(parent, name), { recursive: true, force: true })
 }
 export function validateMarketOrigin(origin: PluginOrigin): void {

@@ -254,7 +254,8 @@ export async function inspectPluginFolder(
   const visit = async (dir: string) => {
     for (const name of await readdir(dir)) {
       const full = join(dir, name),
-        relative = full.slice(resolve(root).length + 1),
+        // 统一为 /：Windows 的 \ 会被 safeRelativePath 拒绝，导致内置插件校验失败、应用无法启动
+        relative = full.slice(resolve(root).length + 1).replaceAll(sep, '/'),
         stat = await lstat(full)
       if (stat.isSymbolicLink() || (!stat.isFile() && !stat.isDirectory())) throw new Error('Plugin symlink or special file rejected')
       declared(budget, relative, stat.isFile() ? stat.size : 0, limits)
@@ -279,7 +280,7 @@ async function copyFolder(
     for (const entry of await readdir(dir, { withFileTypes: true }))
       if (entry.isDirectory()) {
         if (++actual.entries > limits.entries) throw new Error('Plugin entry limit exceeded')
-        const full = await safePluginPath(canonical, join(dir.slice(canonical.length), entry.name).replace(/^\//, ''))
+        const full = await safePluginPath(canonical, join(dir.slice(canonical.length), entry.name).replaceAll(sep, '/').replace(/^\//, ''))
         await mkdir(join(target, full.slice(canonical.length)), { recursive: true })
         await copyDirectories(full)
       }

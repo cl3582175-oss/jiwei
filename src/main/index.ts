@@ -8,7 +8,7 @@ import { shutdown as stopPhoneUpload } from './services/phoneUpload'
 import { registerInboxJobs } from './services/inbox'
 import { registerMistakeJobs } from './services/mistakes'
 import { registerMistakeEntryGuards } from './services/mistakeEntries'
-import { app, BrowserWindow, shell, nativeTheme } from 'electron'
+import { app, BrowserWindow, dialog, shell, nativeTheme } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import log from 'electron-log/main'
@@ -265,6 +265,14 @@ app.whenReady().then(async () => {
   app.on('activate', () => {
     if (!getMainWindow()) createWindow()
   })
+}).catch((e) => {
+  // 启动失败不能静默：否则进程留在后台占着单实例锁，用户再点图标也毫无反应
+  log.error('[startup] failed', e)
+  dialog.showErrorBox(
+    '积微启动失败',
+    `${e instanceof Error ? e.stack || e.message : String(e)}\n\n日志位置：${log.transports.file.getFile().path}`
+  )
+  app.exit(1)
 })
 
 app.on('window-all-closed', () => {
