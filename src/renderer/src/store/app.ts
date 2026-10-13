@@ -70,7 +70,15 @@ export interface Location {
   view: View
   noteId: string | null
   sourceId: string | null
+  sourceReturn?: SourceReturn | null
+  browserOpen?: boolean
+  browserNote?: string | null
 }
+
+type SourceReturn = Pick<
+  AppState,
+  'view' | 'noteId' | 'conversationId' | 'decisionId' | 'workId' | 'goalId' | 'reflectionId' | 'browserOpen' | 'browserNote'
+>
 
 const HISTORY_MAX = 100
 
@@ -86,6 +94,7 @@ const emptyContext: WorkspaceContext = {
 }
 
 interface AppState extends Location {
+  sourceReturn: SourceReturn | null
   taskFocusId: string | null
   goalId: string | null
   /** 参谋页当前打开的决策（v0.9） */
@@ -189,12 +198,18 @@ interface AppState extends Location {
   setPaletteOpen: (o: boolean) => void
 }
 
-const same = (a: Location, b: Location): boolean => a.view === b.view && a.noteId === b.noteId && a.sourceId === b.sourceId
+const same = (a: Location, b: Location): boolean =>
+  a.view === b.view &&
+  a.noteId === b.noteId &&
+  a.sourceId === b.sourceId &&
+  (a.sourceReturn ?? null) === (b.sourceReturn ?? null) &&
+  (a.browserOpen ?? false) === (b.browserOpen ?? false)
 
 export const useApp = create<AppState>((set, get) => {
   const apply = (loc: Location): void =>
     set((s) => ({
       ...loc,
+      sourceReturn: loc.sourceReturn ?? null,
       context: {
         ...s.context,
         noteId: loc.noteId,
@@ -216,6 +231,7 @@ export const useApp = create<AppState>((set, get) => {
     },
     noteId: null,
     sourceId: null,
+    sourceReturn: null,
     history: [{ view: 'today', noteId: null, sourceId: null }],
     historyIndex: 0,
 
@@ -224,7 +240,10 @@ export const useApp = create<AppState>((set, get) => {
       const next: Location = {
         view: to.view ?? s.view,
         noteId: to.noteId !== undefined ? to.noteId : s.noteId,
-        sourceId: to.sourceId !== undefined ? to.sourceId : s.sourceId
+        sourceId: to.sourceId !== undefined ? to.sourceId : s.sourceId,
+        sourceReturn: to.sourceReturn !== undefined ? to.sourceReturn : (to.view ?? s.view) === 'notes' ? s.sourceReturn : null,
+        browserOpen: to.browserOpen ?? s.browserOpen,
+        browserNote: to.browserNote !== undefined ? to.browserNote : s.browserNote
       }
       const cur = s.history[s.historyIndex]
       if (cur && same(cur, next)) return apply(next)
@@ -253,11 +272,34 @@ export const useApp = create<AppState>((set, get) => {
     },
     openSource: (sourceId) => {
       const s = get()
+      if (!sourceId) {
+        if (s.sourceReturn) {
+          const origin = s.sourceReturn
+          set(origin)
+          get().navigate({ ...origin, sourceId: null, sourceReturn: null })
+        } else get().navigate({ sourceId: null })
+        return
+      }
       // 在笔记旁打开（笔记页里正开着一篇笔记，如点了笔记里的引用）：资料放在这篇笔记左边；
       // 从资料库、今日、对话等其他地方打开：右边是这份资料的记笔记起始页，而不是上次打开的笔记（v0.7.6）
       const beside = s.view === 'notes' && !!s.noteId && !s.browserOpen
-      if (sourceId) set({ browserOpen: false })
-      get().navigate({ view: 'notes', sourceId, ...(sourceId && !beside ? { noteId: null } : {}) })
+      const sourceReturn =
+        s.view === 'notes' && s.sourceId && s.sourceReturn
+          ? s.sourceReturn
+          : beside
+            ? null
+            : {
+                view: s.view,
+                noteId: s.noteId,
+                conversationId: s.conversationId,
+                decisionId: s.decisionId,
+                workId: s.workId,
+                goalId: s.goalId,
+                reflectionId: s.reflectionId,
+                browserOpen: s.browserOpen,
+                browserNote: s.browserNote
+              }
+      get().navigate({ view: 'notes', sourceId, sourceReturn, browserOpen: false, ...(!beside ? { noteId: null } : {}) })
     },
     browserOpen: false,
     openBrowser: (input, opts) => {

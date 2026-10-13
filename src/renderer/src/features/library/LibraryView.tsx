@@ -1,5 +1,5 @@
 import { Mic } from 'lucide-react'
-import { useState, type ReactNode } from 'react'
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -57,6 +57,7 @@ import { TagEditor } from '../notes/TagEditor'
 import { lensSelectClass } from '../lenses/SeriesSelect'
 import type { Scene } from '@shared/recording'
 import { ImportLibraryButton } from '../import/ImportWizard'
+import { useLibraryState, setLibraryFilter, type CatFilter } from './state'
 
 export const KIND_ICON: Record<SourceKind, ReactNode> = {
   book: <BookOpen />,
@@ -71,8 +72,6 @@ export const KIND_ICON: Record<SourceKind, ReactNode> = {
 }
 
 const KINDS: SourceKind[] = ['book', 'pdf', 'video', 'audio', 'image', 'document', 'web', 'other']
-
-type CatFilter = { type: 'all' } | { type: 'uncategorized' } | { type: 'category'; id: string }
 
 function AddLinkDialog({
   open,
@@ -189,6 +188,7 @@ function SourceCard({ s }: { s: Source }) {
   const { data: cats = [] } = useCategories('source')
   const run = (p: Promise<unknown>): void => void p.catch((e) => toast.error(String(e)))
 
+  const selected = useLibraryState((state) => state.selectedId === s.id)
   const [infoOpen, setInfoOpen] = useState(false)
   const move = async (categoryId: string | null): Promise<void> => {
     await api.sources.update(s.id, { categoryId })
@@ -209,8 +209,27 @@ function SourceCard({ s }: { s: Source }) {
 
   return (
     <div
-      onDoubleClick={() => useApp.getState().openSource(s.id)}
-      className="paper group relative flex flex-col rounded-2xl p-4 shadow-[var(--shadow-1)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[var(--shadow-3)]"
+      role="button"
+      tabIndex={0}
+      aria-label={s.title}
+      aria-pressed={selected}
+      data-source-id={s.id}
+      onClick={() => useLibraryState.setState({ selectedId: s.id })}
+      onDoubleClick={() => {
+        useLibraryState.setState({ selectedId: s.id })
+        useApp.getState().openSource(s.id)
+      }}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' && event.target === event.currentTarget) {
+          event.preventDefault()
+          useLibraryState.setState({ selectedId: s.id })
+          useApp.getState().openSource(s.id)
+        }
+      }}
+      className={cn(
+        'paper group relative flex flex-col rounded-2xl p-4 shadow-[var(--shadow-1)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[var(--shadow-3)]',
+        selected && 'ring-2 ring-accent'
+      )}
     >
       <div className="flex items-start justify-between">
         <div data-tint={KIND_TINT[s.kind]} className="tint grid size-11 place-items-center rounded-xl [&_svg]:size-5">
@@ -228,7 +247,12 @@ function SourceCard({ s }: { s: Source }) {
             </Button>
           </MenuTrigger>
           <MenuContent>
-            <MenuItem onSelect={() => useApp.getState().openSource(s.id)}>
+            <MenuItem
+              onSelect={() => {
+                useLibraryState.setState({ selectedId: s.id })
+                useApp.getState().openSource(s.id)
+              }}
+            >
               <PanelLeftOpen />
               {t('workspace.openInWorkspace')}
             </MenuItem>
@@ -290,9 +314,18 @@ function SourceCard({ s }: { s: Source }) {
 export function LibraryView() {
   const { t } = useTranslation()
   const qc = useQueryClient()
-  const [kind, setKind] = useState<SourceKind | undefined>()
-  const [cat, setCat] = useState<CatFilter>({ type: 'all' })
-  const [search, setSearch] = useState('')
+  const { kind, cat, search, scene, seriesId } = useLibraryState()
+  const setKind = (kind?: SourceKind) => changeFilter({ kind })
+  const setCat = (cat: CatFilter) => changeFilter({ cat })
+  const setSearch = (search: string) => changeFilter({ search })
+  const setScene = (scene?: Scene) => changeFilter({ scene })
+  const setSeriesId = (seriesId: string) => changeFilter({ seriesId })
+  const scroller = useRef<HTMLDivElement>(null)
+  const restored = useRef(false)
+  const changeFilter = (patch: Parameters<typeof setLibraryFilter>[0]): void => {
+    setLibraryFilter(patch)
+    if (scroller.current) scroller.current.scrollTop = 0
+  }
   // 书脊（v0.7.3）：收起后竖排显示当前筛选；窗口较窄时自动收起
   const narrow = useWindowWidth() < 1100
   const { data: sourceCats = [] } = useCategories('source')
@@ -305,8 +338,6 @@ export function LibraryView() {
           ? t('common.uncategorized')
           : t('library.kinds.all')
   }`
-  const [scene, setScene] = useState<Scene | undefined>(),
-    [seriesId, setSeriesId] = useState('')
   const { data: series = [] } = useQuery({ queryKey: ['series'], queryFn: () => api.series.list() })
   const [dragging, setDragging] = useState(false)
   const [linkOpen, setLinkOpen] = useState(false)
@@ -319,6 +350,11 @@ export function LibraryView() {
     scene,
     seriesId: seriesId || undefined
   })
+  useLayoutEffect(() => {
+    if (!isFetched || !scroller.current || restored.current) return
+    scroller.current.scrollTop = useLibraryState.getState().scrollTop
+    restored.current = true
+  }, [isFetched, items.length])
   const targetCat = cat.type === 'category' ? cat.id : null
 
   const afterImport = (r: ImportResult): void => {
@@ -338,6 +374,7 @@ export function LibraryView() {
       role="button"
       tabIndex={0}
       onClick={onClick}
+      aria-pressed={active}
       className={cn(
         'group flex h-8 cursor-default items-center gap-2.5 rounded-md px-2.5 text-sm transition-colors [&>svg]:size-4',
         active
@@ -455,7 +492,14 @@ export function LibraryView() {
             ))}
           </select>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div
+          className="min-h-0 flex-1 overflow-y-auto"
+          ref={scroller}
+          data-testid="library-scroll"
+          onScroll={(event) => {
+            if (restored.current) useLibraryState.setState({ scrollTop: event.currentTarget.scrollTop })
+          }}
+        >
           {isFetched && items.length === 0 ? (
             <EmptyState
               icon={<InkLibrary size={180} />}
