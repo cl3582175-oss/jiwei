@@ -108,6 +108,10 @@ function BackendCard({
       if (!providerId && key.trim()) input.key = key.trim()
       if (!providerId && state?.keyProviderId && !key.trim()) input.enabled = false
     } else if (key.trim()) input.key = key.trim()
+    // 第一次填好凭证（或实例地址）就是要用它：直接启用，免得用户以为“保存”后已经生效（审查时真实用户就卡在这里）
+    const configuredBefore = id === 'searxng' ? !!state?.baseUrl : !!state?.keySet
+    const configuredNow = id === 'searxng' ? !!url : !!(input.key || input.keyProviderId)
+    if (!configuredBefore && configuredNow) input.enabled = true
     void act(() => persist(input, true))
   }
   const clearKey = (): void => {

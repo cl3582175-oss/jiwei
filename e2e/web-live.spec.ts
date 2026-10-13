@@ -17,6 +17,8 @@ let providerId = ''
 const model = process.env.WEB_LIVE_MODEL ?? 'deepseek-flash'
 const out = process.env.WEB_LIVE_OUT ?? join(tmpdir(), 'jiwei-web-live.json')
 const report: Record<string, unknown>[] = []
+// 带网页搜索 Key 的测试目录（用户在测试版里自己填的 Key）；设置时跑 W 组场景
+const profile = process.env.WEB_LIVE_PROFILE
 
 type Msg = {
   id: string
@@ -78,7 +80,7 @@ const tools = (m: Msg): string[] => m.steps.map((s) => s.tool)
 test.beforeAll(async () => {
   test.setTimeout(300_000)
   app = await electron.launch({
-    args: ['.', `--user-data-dir=${mkdtempSync(join(tmpdir(), 'jiwei-web-live-'))}`],
+    args: ['.', `--user-data-dir=${profile ?? mkdtempSync(join(tmpdir(), 'jiwei-web-live-'))}`],
     env: { ...process.env, JIWEI_LANG: 'zh-CN', JIWEI_SKIP_ONBOARDING: '1' }
   })
   page = await app.firstWindow()
@@ -102,8 +104,25 @@ test.beforeAll(async () => {
       { timeout: 180_000 }
     )
     .toBe(true)
+  if (profile) {
+    writeFileSync(
+      join(dir, 'Electron 版本.md'),
+      '# Electron 版本\n\nElectron 的最新稳定版本是 Electron 30，2024 年 4 月发布，内置 Chromium 124。'
+    )
+    await page.evaluate((p) => window.jiwei.sources.importPaths([p]), join(dir, 'Electron 版本.md'))
+    await page.evaluate(() => window.jiwei.retrieval.saveBackend({ id: 'tavily', enabled: true }))
+    await expect
+      .poll(
+        async () => {
+          const s = await page.evaluate(() => window.jiwei.embedding.status())
+          return s.total > 0 && s.indexed === s.total
+        },
+        { timeout: 180_000 }
+      )
+      .toBe(true)
+  }
   const status = await page.evaluate(() => window.jiwei.retrieval.status())
-  expect(status.webAvailable).toBe(false)
+  expect(status.webAvailable).toBe(!!profile)
   expect(status.academicEnabled).toBe(true)
 })
 test.afterAll(async () => {
@@ -203,4 +222,51 @@ test('S10 界面：真实网页引用与快照', async () => {
   await expect(page.getByRole('dialog')).toBeVisible({ timeout: 10_000 })
   await page.waitForTimeout(800)
   await page.screenshot({ path: join(dir!, 'live-snapshot.png') })
+})
+
+test.describe('W 网页搜索（需要 WEB_LIVE_PROFILE）', () => {
+  test.skip(!profile, '需要带网页搜索 Key 的测试目录')
+  test('W1 中文时效问题', async () => {
+    test.setTimeout(300_000)
+    const m = await ask('W1', 'DeepSeek 现在的 API 价格是多少？')
+    expect.soft(tools(m)).toContain('web_search')
+  })
+  test('W2 英文时效问题', async () => {
+    test.setTimeout(300_000)
+    const m = await ask('W2', 'What is the latest stable version of Electron right now?')
+    expect.soft(tools(m)).toContain('web_search')
+  })
+  test('W3 笔记过时、与网页冲突', async () => {
+    test.setTimeout(300_000)
+    const m = await ask('W3', '我资料里记的 Electron 最新稳定版本还对吗？')
+    expect.soft(tools(m)).toContain('web_search')
+    expect.soft(m.citations.some((c) => c.parentType === 'source')).toBe(true)
+    expect.soft(m.citations.some((c) => c.parentType === 'web')).toBe(true)
+  })
+  test('W4 知识库够用、不涉及时效时不搜', async () => {
+    test.setTimeout(300_000)
+    const m = await ask('W4', '根据我的资料，学习后一天大约遗忘多少？')
+    expect.soft(tools(m)).not.toContain('web_search')
+  })
+  test('W5 用户明确要求搜索', async () => {
+    test.setTimeout(300_000)
+    const m = await ask('W5', '帮我上网搜一下间隔重复有哪些近几年的研究结论')
+    expect.soft(tools(m)).toContain('web_search')
+  })
+  test('W6 总是模式：先主动搜索', async () => {
+    test.setTimeout(300_000)
+    const m = await ask('W6', '费曼学习法是什么？', { web: 'always' })
+    expect.soft(m.steps.some((s) => s.tool === 'web_search')).toBe(true)
+  })
+  test('W7 近期新闻', async () => {
+    test.setTimeout(300_000)
+    const m = await ask('W7', '这周有什么人工智能方面的重要新闻？')
+    expect.soft(tools(m)).toContain('web_search')
+  })
+  test('W8 用量统计', async () => {
+    const usage = await page.evaluate(() => window.jiwei.retrieval.usage('today'))
+    report.push({ name: 'W8', usage })
+    writeFileSync(out, JSON.stringify(report, null, 2))
+    expect(usage.total).toBeGreaterThan(0)
+  })
 })

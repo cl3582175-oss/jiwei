@@ -354,8 +354,8 @@ test('01. 设置页保存两服务、验证、地址校验、偏好与隐私配�
     await page.getByTestId('backend-' + id + '-save').click()
     await expect(key).toHaveValue('')
     await expect(key).toHaveAttribute('placeholder', '已设置')
+    // 第一次保存 Key 即自动启用，不需要再去拨开关
     const toggle = page.getByTestId('backend-' + id + '-toggle')
-    if ((await toggle.getAttribute('aria-checked')) !== 'true') await toggle.click()
     await expect(toggle).toHaveAttribute('aria-checked', 'true')
     await page.getByTestId('backend-' + id + '-test').click()
     await expect(page.getByTestId('backend-' + id + '-result')).toContainText('连接成功')
@@ -1013,7 +1013,8 @@ test('22. 智谱复用模型Key实时改变联网状态，清Key及删除服务�
       async () => (await page.evaluate(() => window.jiwei.retrieval.status())).backends.find((backend) => backend.id === 'zhipu')?.keySet
     )
     .toBe(true)
-  await page.getByTestId('backend-zhipu-toggle').click()
+  // 第一次配好凭证即自动启用
+  await expect(page.getByTestId('backend-zhipu-toggle')).toHaveAttribute('aria-checked', 'true')
   await closeSettings()
   await expect(picker()).toHaveText('联网：自动')
   await page.evaluate((id) => window.jiwei.providers.save({ id, kind: 'zhipu', apiKey: '' }), zhipuProviderId)

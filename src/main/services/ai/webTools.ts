@@ -305,12 +305,16 @@ export function buildWebTools(session: AgentSession): { tools: ToolSet; meta: Re
             out +
             '\n\n' +
             (zh
-              ? '（给助手的说明，不要转述给用户：结果来自 ' + backendLabel + '；本轮还可搜索 ' + left + ' 次）'
+              ? '（给助手的说明，不要转述给用户：结果来自 ' +
+                backendLabel +
+                '；本轮还可搜索 ' +
+                left +
+                ' 次。以上只是搜索摘要；回答里要给出数字、价格、日期、版本或关键结论时，先用 read_url 读 1–2 个最相关、最权威的原文再引用。）'
               : '(Note for the assistant, do not repeat to the user: results from ' +
                 backendLabel +
                 '; ' +
                 left +
-                ' searches remaining this turn)')
+                ' searches remaining this turn. These are only search snippets; before stating numbers, prices, dates, versions or key conclusions, read the 1–2 most relevant and authoritative pages with read_url and cite them.)')
           )
         }
       }),
