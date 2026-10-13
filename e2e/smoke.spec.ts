@@ -175,3 +175,44 @@ test('everything survives an app restart', async () => {
   await expect(sidebar().getByText('认知科学')).toBeVisible()
   await shot('14-after-restart')
 })
+
+test('Mod+A clears only the current Cornell grid and keeps the neighbouring row', async () => {
+  await page.keyboard.press('ControlOrMeta+n')
+  await page.getByPlaceholder('笔记标题').fill('局部全选回归')
+  await page.keyboard.press('Enter')
+  await page.keyboard.type('first grid')
+  await page.keyboard.press('ControlOrMeta+Enter')
+  await page.keyboard.type('second grid')
+  for (const theme of ['light', 'dark'] as const) {
+    await page.evaluate(async (theme) => {
+      await window.jiwei.settings.set({ theme })
+    }, theme)
+    await expect(page.locator('html')).toHaveAttribute('data-theme', theme)
+    await page
+      .locator('.cornell-body p')
+      .first()
+      .click({ position: { x: 5, y: 8 } })
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const editor = (document.querySelector('.tiptap') as HTMLElement & { editor: import('@tiptap/core').Editor }).editor
+          return { empty: editor.state.selection.empty, text: editor.state.selection.$from.parent.textContent }
+        })
+      )
+      .toEqual({ empty: true, text: 'first grid' })
+    await page.keyboard.press('ControlOrMeta+a')
+    await expect.poll(() => page.evaluate(() => window.getSelection()?.toString())).toBe('first grid')
+    await page.screenshot({ path: `.superpowers/sdd/v0.11.1-fixes/shots/p1-select-grid-${theme}.png` })
+  }
+  await page.keyboard.press('Backspace')
+  await expect(page.locator('.cornell-row')).toHaveCount(2)
+  await expect(page.locator('.cornell-body').first()).toHaveText('')
+  await expect(page.locator('.cornell-body').nth(1)).toHaveText('second grid')
+  await expect(page.locator('.cornell-body').first().locator('p')).toHaveCount(1)
+  await page.keyboard.type('replacement')
+  await expect(page.locator('.cornell-body').first()).toHaveText('replacement')
+  await page.getByRole('button', { name: '返回首页' }).click()
+  await sidebar().getByText('局部全选回归', { exact: true }).click()
+  await expect(page.locator('.cornell-body').first()).toHaveText('replacement')
+  await expect(page.locator('.cornell-body').nth(1)).toHaveText('second grid')
+})

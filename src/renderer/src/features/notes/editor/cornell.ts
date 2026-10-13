@@ -1,5 +1,6 @@
 import { Node, Extension, type CommandProps } from '@tiptap/core'
-import { Plugin, PluginKey, TextSelection, type EditorState, type Transaction } from '@tiptap/pm/state'
+import { AllSelection, Plugin, PluginKey, Selection, TextSelection, type EditorState, type Transaction } from '@tiptap/pm/state'
+import type { Mappable } from '@tiptap/pm/transform'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import type { Node as PMNode, ResolvedPos } from '@tiptap/pm/model'
 
@@ -109,6 +110,73 @@ function selectNear(tr: Transaction, pos: number, bias: 1 | -1 = 1): Transaction
 function rowsEnd(doc: PMNode): number {
   // 总结节点之前的位置 = 所有行之后
   return doc.content.size - doc.lastChild!.nodeSize
+}
+
+/** 块位于格子首尾时，选取全部块而非只选取其中的文字；替换仍限制在格子内部。 */
+class CornellContentSelection extends Selection {
+  content() {
+    return this.$from.doc.slice(this.from, this.to)
+  }
+
+  map(doc: PMNode, mapping: Mappable): Selection {
+    const from = mapping.map(this.from, 1)
+    const to = mapping.map(this.to, -1)
+    return CornellContentSelection.resolve(doc, from, to)
+  }
+
+  eq(other: Selection): boolean {
+    return other instanceof CornellContentSelection && other.from === this.from && other.to === this.to
+  }
+
+  toJSON(): { type: string; from: number; to: number } {
+    return { type: 'cornellContent', from: this.from, to: this.to }
+  }
+
+  static resolve(doc: PMNode, from: number, to: number): Selection {
+    const $from = doc.resolve(Math.max(0, Math.min(from, doc.content.size)))
+    const $to = doc.resolve(Math.max($from.pos, Math.min(to, doc.content.size)))
+    return $from.sameParent($to) && $from.pos < $to.pos ? new CornellContentSelection($from, $to) : Selection.near($from)
+  }
+
+  static fromJSON(doc: PMNode, json: { from: number; to: number }): Selection {
+    return CornellContentSelection.resolve(doc, json.from, json.to)
+  }
+
+  getBookmark() {
+    const bookmark = (from: number, to: number) => ({
+      map: (mapping: Mappable) => bookmark(mapping.map(from, 1), mapping.map(to, -1)),
+      resolve: (doc: PMNode) => CornellContentSelection.resolve(doc, from, to)
+    })
+    return bookmark(this.from, this.to)
+  }
+}
+Selection.jsonID('cornellContent', CornellContentSelection)
+
+/** 单元格 / 代码块 → 康奈尔格 → 全文。快捷键仅安装于可编辑笔记。 */
+export function selectCornellContent(state: EditorState, dispatch?: (tr: Transaction) => void): boolean {
+  const { selection, doc } = state
+  if (selection instanceof AllSelection) return true
+  const { $from, $to } = selection
+  for (let depth = $from.depth; depth > 0; depth--) {
+    const node = $from.node(depth)
+    const name = node.type.name
+    if (!['tableCell', 'tableHeader', 'codeBlock', CORNELL.cue, CORNELL.body, CORNELL.summary].includes(name)) continue
+    if ($to.pos > $from.end(depth)) continue
+    const start = $from.start(depth)
+    const end = $from.end(depth)
+    const textBounds =
+      node.isTextblock ||
+      (node.firstChild?.isTextblock && node.lastChild?.isTextblock && !(node.childCount === 1 && node.firstChild.type.name === 'codeBlock'))
+    const from = node.isTextblock ? start : textBounds ? start + 1 : start
+    const to = node.isTextblock ? end : textBounds ? end - 1 : end
+    if (selection.from === from && selection.to === to && !selection.empty) continue
+    const next = textBounds ? TextSelection.create(doc, from, to) : new CornellContentSelection(doc.resolve(from), doc.resolve(to))
+    dispatch?.(state.tr.setSelection(next).scrollIntoView())
+    return true
+  }
+  if (!sectionOf($from)) return false
+  dispatch?.(state.tr.setSelection(new AllSelection(doc)))
+  return true
 }
 
 export const CornellKeymap = Extension.create({
@@ -301,6 +369,9 @@ export const CornellShortcuts = Extension.create({
   name: 'cornellShortcuts',
   priority: 1000,
   addKeyboardShortcuts() {
-    return { 'Mod-Enter': () => this.editor.commands.addCornellRow() }
+    return {
+      'Mod-Enter': () => this.editor.commands.addCornellRow(),
+      'Mod-a': () => this.editor.isEditable && selectCornellContent(this.editor.state, this.editor.view.dispatch)
+    }
   }
 })
