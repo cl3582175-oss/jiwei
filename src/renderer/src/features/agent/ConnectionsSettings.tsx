@@ -1,5 +1,4 @@
 import { PluginSourceLabel } from '../plugins/PluginSourceLabel'
-import { SearchSettings } from '../discover/DiscoverSettings'
 import { useEffect, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -19,6 +18,7 @@ import { Switch } from '@/components/ui/switch'
 import { confirm } from '@/components/ui/confirm'
 import { useSettings, useUpdateSettings } from '@/lib/queries'
 import { api, cn } from '@/lib/utils'
+import { useApp } from '@/store/app'
 import { MailSettings } from '../tasks/MailSettings'
 
 // 设置 → 连接（v0.7）：积微使用外部 MCP 工具；让其他应用通过 MCP 使用积微。
@@ -697,7 +697,15 @@ export function ConnectionsSettings() {
       </section>
       <ServeSection />
       <MailSettings />
-      <SearchSettings />
+      <section
+        className="flex flex-wrap items-center justify-between gap-3 border-t border-border py-5"
+        data-testid="search-settings-moved"
+      >
+        <p className="text-sm text-muted">{t('retrieval.movedHere')}</p>
+        <Button size="sm" variant="outline" onClick={() => useApp.getState().openSettings('search')}>
+          {t('retrieval.goThere')}
+        </Button>
+      </section>
     </div>
   )
 }

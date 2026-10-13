@@ -243,11 +243,31 @@ export async function readUrl(value: string, opts: ReadOptions = {}): Promise<Re
     }
   }
   try {
-    let response: Awaited<ReturnType<typeof externalFetch>>
+    const renderReadable = async (): Promise<ReadablePage> => {
+      if (opts.signal?.aborted) throw new ReadError('canceled')
+      kind = 'render'
+      checkBudget()
+      validate(finalUrl)
+      const rendered = await renderPage(finalUrl, {
+        signal: opts.signal,
+        validateUrl: (target) => {
+          finalUrl = validate(target)
+        }
+      })
+      finalUrl = validate(rendered.finalUrl)
+      const result = extractReadable(rendered.html, finalUrl)
+      if (result.text.length < 200) throw new ReadError('empty')
+      return result
+    }
+    let response: Awaited<ReturnType<typeof externalFetch>> | null = null
+    let readable: ReadablePage | null = null
     try {
       response = await externalFetch(url, fetchOptions)
     } catch (error) {
-      if (error instanceof Error && error.message === 'Response too large') {
+      if (error instanceof Error && error.message === 'Redirect was cancelled') {
+        // Electron取消manual跳转时不暴露Location；只走已有受守卫的渲染，不放开自动跟随。
+        readable = await renderReadable()
+      } else if (error instanceof Error && error.message === 'Response too large') {
         if (!/\.pdf$/i.test(new URL(finalUrl).pathname)) {
           // 超限错误未保留响应头；仅此失败边界用HEAD确认PDF，不能普遍放宽网页正文上限。
           let validated = false
@@ -278,35 +298,24 @@ export async function readUrl(value: string, opts: ReadOptions = {}): Promise<Re
     }
     if (opts.signal?.aborted) throw new ReadError('canceled')
     validate(finalUrl)
-    const type = response.headers.get('content-type')?.toLowerCase() ?? ''
-    const pdf = type.includes('application/pdf') || /\.pdf$/i.test(new URL(finalUrl).pathname)
-    // HEAD与重试GET之间内容可能变化，20MB通路仍必须满足PDF合同，不能抽取超限HTML。
-    if (kind === 'pdf' && !pdf) throw new ReadError('size')
-    let readable: ReadablePage
-    if (pdf) {
-      kind = 'pdf'
-      if (response.status !== 200) throw new Error('HTTP ' + response.status)
-      readable = await parsePdf(response.bytes, finalUrl, opts.signal)
-    } else {
-      const isHtml = /(?:text\/html|application\/xhtml\+xml)/.test(type)
-      if (response.status !== 200 && !([403, 429].includes(response.status) && isHtml)) throw new Error('HTTP ' + response.status)
-      if (!isHtml) throw new ReadError('unsupported')
-      readable = extractReadable(response.text, finalUrl)
-      if (response.status !== 200 || readable.text.length < 500) {
-        kind = 'render'
-        checkBudget()
-        validate(finalUrl)
-        const rendered = await renderPage(finalUrl, {
-          signal: opts.signal,
-          validateUrl: (target) => {
-            finalUrl = validate(target)
-          }
-        })
-        finalUrl = validate(rendered.finalUrl)
-        readable = extractReadable(rendered.html, finalUrl)
-        if (readable.text.length < 200) throw new ReadError('empty')
+    if (response) {
+      const type = response.headers.get('content-type')?.toLowerCase() ?? ''
+      const pdf = type.includes('application/pdf') || /\.pdf$/i.test(new URL(finalUrl).pathname)
+      // HEAD与重试GET之间内容可能变化，20MB通路仍必须满足PDF合同，不能抽取超限HTML。
+      if (kind === 'pdf' && !pdf) throw new ReadError('size')
+      if (pdf) {
+        kind = 'pdf'
+        if (response.status !== 200) throw new Error('HTTP ' + response.status)
+        readable = await parsePdf(response.bytes, finalUrl, opts.signal)
+      } else {
+        const isHtml = /(?:text\/html|application\/xhtml\+xml)/.test(type)
+        if (response.status !== 200 && !([403, 429].includes(response.status) && isHtml)) throw new Error('HTTP ' + response.status)
+        if (!isHtml) throw new ReadError('unsupported')
+        readable = extractReadable(response.text, finalUrl)
+        if (response.status !== 200 || readable.text.length < 500) readable = await renderReadable()
       }
     }
+    if (!readable) throw new ReadError('failed')
     if (opts.signal?.aborted) throw new ReadError('canceled')
     validate(url)
     validate(finalUrl)

@@ -1051,7 +1051,7 @@ const en: Messages = {
     basisHide: 'Hide sources',
     basisHint:
       'Keyword: literal matches; semantic: similar meaning found by the local embedding model; open in workspace: the source you have open',
-    via: { keyword: 'keyword', semantic: 'semantic', both: 'keyword + semantic', context: 'open in workspace' },
+    via: { keyword: 'keyword', semantic: 'semantic', both: 'keyword + semantic', context: 'open in workspace', web: 'Web' },
     generalOnly: "This answer doesn't cite your knowledge base; it comes from the model's general knowledge.",
     copy: 'Copy',
     effortLabel: 'Thinking: {{level}}',

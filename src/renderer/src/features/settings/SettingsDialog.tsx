@@ -3,6 +3,7 @@ import { AboutSettings } from '../update/UpdateSettings'
 import { ImportLibraryButton } from '../import/ImportWizard'
 import { Puzzle } from 'lucide-react'
 import { PluginsSettings } from '../plugins/PluginsSettings'
+import { RetrievalSettings } from '../retrieval/RetrievalSettings'
 import { DiscoverSettings } from '../discover/DiscoverSettings'
 import { TasksSettings } from '../tasks/TasksSettings'
 import { BackupSettings } from './BackupSettings'
@@ -29,7 +30,8 @@ import {
   FolderOpen,
   FolderInput,
   TriangleAlert,
-  Layers
+  Layers,
+  Globe
 } from 'lucide-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -62,6 +64,7 @@ type Tab =
   | 'appearance'
   | 'usage'
   | 'connections'
+  | 'search'
   | 'data'
   | 'browser'
   | 'about'
@@ -303,6 +306,7 @@ export function SettingsDialog() {
     { id: 'appearance', icon: <Palette /> },
     { id: 'usage', icon: <Gauge /> },
     { id: 'connections', icon: <Cable /> },
+    { id: 'search', icon: <Globe /> },
     { id: 'tasks', icon: <Bot /> },
     { id: 'discover', icon: <Compass /> },
     { id: 'data', icon: <Database /> },
@@ -332,22 +336,25 @@ export function SettingsDialog() {
                 )}
               >
                 {it.icon}
-                {it.id === 'plugins'
-                  ? t('plugins.title')
-                  : it.id === 'discover'
-                    ? t('discover.title')
-                    : it.id === 'tasks'
-                      ? t('tasks.title')
-                      : it.id === 'browser'
-                        ? t('settings.browserTab')
-                        : it.id === 'usage' || it.id === 'connections'
-                          ? t(`agent.tabs.${it.id}`)
-                          : t(`settings.${it.id}`)}
+                {it.id === 'search'
+                  ? t('retrieval.title')
+                  : it.id === 'plugins'
+                    ? t('plugins.title')
+                    : it.id === 'discover'
+                      ? t('discover.title')
+                      : it.id === 'tasks'
+                        ? t('tasks.title')
+                        : it.id === 'browser'
+                          ? t('settings.browserTab')
+                          : it.id === 'usage' || it.id === 'connections'
+                            ? t(`agent.tabs.${it.id}`)
+                            : t(`settings.${it.id}`)}
                 {it.id === 'plugins' && <PluginUpdateDot />}
               </button>
             ))}
           </nav>
           <div className="min-w-0 flex-1 overflow-y-auto px-8 py-4">
+            {tab === 'search' && <RetrievalSettings />}
             {tab === 'discover' && <DiscoverSettings />}
             {tab === 'tasks' && <TasksSettings />}
             {tab === 'plugins' && <PluginsSettings />}

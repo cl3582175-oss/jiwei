@@ -6,6 +6,7 @@ import Database from 'better-sqlite3'
 import { drizzle } from 'drizzle-orm/better-sqlite3'
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator'
 import { getLoadablePath } from 'sqlite-vec'
+import { setMessageLanguage } from '../../../lib/messages'
 import type { DB } from '../../../db'
 import * as schema from '../../../db/knowledgeSchema'
 import type { externalFetch } from '../../externalFetch'
@@ -54,6 +55,7 @@ const run = <T>(fn: () => T): T => withRun({ purpose: 'chat', caller: 'assistant
 const calls = () => state.sqlite!.prepare('SELECT kind,ok,cached FROM retrieval_calls ORDER BY rowid').all()
 const pages = () => state.sqlite!.prepare('SELECT * FROM web_pages ORDER BY rowid').all() as Record<string, unknown>[]
 beforeEach(async () => {
+  setMessageLanguage('en')
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(new Date('2030-04-01T10:00:00Z'))
   state.sqlite = new Database(':memory:')
@@ -77,6 +79,7 @@ beforeEach(async () => {
   state.save.mockResolvedValue({ id: 'saved-source' })
 })
 afterEach(async () => {
+  setMessageLanguage('zh')
   state.sqlite?.close()
   state.sqlite = null
   state.db = null
@@ -243,6 +246,76 @@ describe('reader guards, redirects and accounting', () => {
     expect(read.page.method).toBe('render')
     expect(state.render).toHaveBeenCalledTimes(1)
     expect(calls()).toEqual([{ kind: 'render', ok: 1, cached: 0 }])
+  })
+  it('recovers Electron manual-redirect cancellation through guarded rendering and retains the final URL', async () => {
+    state.fetch.mockRejectedValue(new Error('Redirect was cancelled'))
+    const final = 'https://docs.example.org/final'
+    state.render.mockImplementation(async (_url, options) => {
+      options.validateUrl(final)
+      return { html: html(), finalUrl: final }
+    })
+    const guard = vi.fn()
+    const read = await run(() => readUrl('https://example.org/article', { validateUrl: guard }))
+    expect(read.page).toMatchObject({ url: 'https://example.org/article', method: 'render' })
+    expect(pages()[0].final_url).toBe(final)
+    expect(guard).toHaveBeenCalledWith(final)
+    expect(calls()).toEqual([{ kind: 'render', ok: 1, cached: 0 }])
+  })
+  it('keeps the caller whitelist at a rendered manual-redirect destination', async () => {
+    state.fetch.mockRejectedValue(new Error('Redirect was cancelled'))
+    state.render.mockResolvedValue({ html: html(), finalUrl: 'https://docs.example.org/not-allowed' })
+    await expect(
+      run(() =>
+        readUrl('https://example.org/article', {
+          validateUrl: (url) => {
+            if (new URL(url).hostname !== 'example.org') throw new Error('Denied')
+          }
+        })
+      )
+    ).rejects.toThrow('allowed reading scope')
+    expect(state.render).toHaveBeenCalledTimes(1)
+    expect(pages()).toHaveLength(0)
+  })
+  it('checks current privacy again after rendering a canceled manual redirect', async () => {
+    state.fetch.mockRejectedValue(new Error('Redirect was cancelled'))
+    state.render.mockImplementation(async () => {
+      state.blocked = ['docs.example.org']
+      return { html: html(), finalUrl: 'https://docs.example.org/final' }
+    })
+    await expect(run(() => readUrl('https://example.org/article'))).rejects.toThrow()
+    expect(state.render).toHaveBeenCalledTimes(1)
+    expect(pages()).toHaveLength(0)
+    expect(calls()).toEqual([{ kind: 'render', ok: 0, cached: 0 }])
+  })
+  it('does not render if privacy was revoked while the manual redirect failed', async () => {
+    state.fetch.mockImplementation(async () => {
+      state.blocked = ['example.org']
+      throw new Error('Redirect was cancelled')
+    })
+    await expect(run(() => readUrl('https://example.org/article'))).rejects.toThrow()
+    expect(state.render).not.toHaveBeenCalled()
+    expect(pages()).toHaveLength(0)
+  })
+  it('does not turn cancellation or ordinary transport errors into another browser request', async () => {
+    const controller = new AbortController()
+    state.fetch.mockImplementation(async () => {
+      controller.abort()
+      throw new Error('Redirect was cancelled')
+    })
+    await expect(run(() => readUrl('https://example.org/article', { signal: controller.signal }))).rejects.toThrow('canceled')
+    expect(state.render).not.toHaveBeenCalled()
+    state.fetch.mockRejectedValue(new Error('unrelated transport error private-query synthetic-key'))
+    const error = await run(() => readUrl('https://example.org/other')).catch((error: unknown) => error)
+    expect(String(error)).not.toMatch(/private-query|synthetic-key/)
+    expect(state.render).not.toHaveBeenCalled()
+    expect(pages()).toHaveLength(0)
+  })
+  it('still rejects unreadable rendered content after a manual-redirect cancellation', async () => {
+    state.fetch.mockRejectedValue(new Error('Redirect was cancelled'))
+    state.render.mockResolvedValue({ html: '<html><body>Unreadable.</body></html>', finalUrl: 'https://example.org/article' })
+    await expect(run(() => readUrl('https://example.org/article'))).rejects.toThrow('no readable text')
+    expect(pages()).toHaveLength(0)
+    expect(calls()).toEqual([{ kind: 'render', ok: 0, cached: 0 }])
   })
   it('renders short HTML, rejects short rendered content and non-HTML formats', async () => {
     state.fetch.mockResolvedValue(response('<html><body>Short.</body></html>'))

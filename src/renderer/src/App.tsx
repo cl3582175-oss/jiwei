@@ -43,6 +43,7 @@ import { TodayView } from './features/today/TodayView'
 import { useActivityTracker } from './features/today/useActivityTracker'
 import { AiPanelBody, AiPanelFloat } from './features/assist/AiPanel'
 import { useAssist } from './features/assist/store'
+import { WebSnapshotDialog } from './features/retrieval/WebSnapshotDialog'
 
 function useThemeSync(): 'light' | 'dark' {
   const { data: s } = useSettings()
@@ -146,6 +147,7 @@ function useMainEvents(): void {
         void qc.invalidateQueries({ queryKey: ['discover'] })
         void qc.invalidateQueries({ queryKey: ['inbox'] })
       }),
+      window.jiweiEvents.on('retrieval:changed', () => void qc.invalidateQueries({ queryKey: ['retrieval'] })),
       window.jiweiEvents.on('inbox:changed', () => {
         void qc.invalidateQueries({ queryKey: ['inbox'] })
         void qc.invalidateQueries({ queryKey: ['inboxEstimate'] })
@@ -296,6 +298,7 @@ export function App() {
       <SelectionToolbar />
       <AnnotationCard />
       <AnswerCard />
+      <WebSnapshotDialog />
       <Toaster
         theme={theme}
         position={browserOpen ? 'bottom-right' : 'bottom-center'}

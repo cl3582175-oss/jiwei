@@ -4,6 +4,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { BarChart3, Download, PauseCircle, RefreshCw, Trash2 } from 'lucide-react'
 import type { AuditEntry, Budget, UsageBucket } from '@shared/agent'
+import { BACKEND_INFO, BACKEND_IDS, type BackendId } from '@shared/retrieval'
+import { Segmented } from '@/features/plan/ui'
 import { currencyName, currencySymbol, DEFAULT_RATES, DEFAULT_RATES_AT, rateOf, toUsd, fromUsd } from '@shared/money'
 import { useMoney, type Money } from '@/lib/money'
 import { useApp } from '@/store/app'
@@ -249,6 +251,62 @@ function CurrencySection() {
             onCheckedChange={(autoRates) => update.mutate({ money: { ...m, autoRates } })}
           />
         </div>
+      </div>
+    </Section>
+  )
+}
+
+function RetrievalUsageSection() {
+  const { t } = useTranslation()
+  const [range, setRange] = useState<'today' | 'month'>('today')
+  const { data: usage, isError } = useQuery({
+    queryKey: ['retrieval', 'usage', range],
+    queryFn: () => api.retrieval.usage(range),
+    // 账目不会广播配置事件，重新打开时须读取本轮搜索后的真实次数。
+    staleTime: 0
+  })
+  const backendLabel = (backend: string): string =>
+    backend === 'reader'
+      ? t('retrieval.usage.reader')
+      : (BACKEND_IDS as readonly string[]).includes(backend)
+        ? BACKEND_INFO[backend as BackendId].name
+        : backend
+  return (
+    <Section title={t('retrieval.usage.title')} hint={t('retrieval.usage.help')}>
+      <div data-testid="retrieval-usage">
+        <Segmented
+          label={t('retrieval.usage.title')}
+          value={range}
+          onChange={setRange}
+          options={(['today', 'month'] as const).map((value) => ({ value, label: t(`retrieval.usage.${value}`) }))}
+        />
+        {isError && (
+          <p role="alert" className="mt-3 text-xs text-danger">
+            {t('retrieval.usage.loadError')}
+          </p>
+        )}
+        {usage && (
+          <>
+            <div className="mt-4 grid grid-cols-3 gap-3">
+              {(['total', 'cached', 'failed'] as const).map((key) => (
+                <div key={key} className="rounded-lg bg-sunken p-3">
+                  <p className="text-xs text-muted">{t(`retrieval.usage.${key}`)}</p>
+                  <p className="mt-1 text-lg font-medium text-fg tabular-nums" data-testid={`retrieval-usage-${key}`}>
+                    {usage[key]}
+                  </p>
+                </div>
+              ))}
+            </div>
+            <ul className="mt-3 divide-y divide-border">
+              {usage.byBackend.map(({ backend, calls }) => (
+                <li key={backend} className="flex items-center justify-between gap-3 py-2 text-sm">
+                  <span className="min-w-0 break-words text-fg">{backendLabel(backend)}</span>
+                  <span className="shrink-0 text-xs text-muted tabular-nums">{t('retrieval.usage.calls', { count: calls })}</span>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
       </div>
     </Section>
   )
@@ -504,6 +562,7 @@ export function UsageSettings() {
           {t('agent.usage.clear')}
         </Button>
       </div>
+      <RetrievalUsageSection />
     </div>
   )
 }
