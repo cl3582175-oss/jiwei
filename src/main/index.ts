@@ -61,6 +61,7 @@ import { setMessageLanguage } from './lib/messages'
 import { initializeRecordingFiles, resumeCryptoMigration, clearRecordingKeys, cryptoOperation } from './services/recordingFiles'
 import { refreshBrowserNetwork } from './services/browser/network'
 import { startUpdates, stopUpdates } from './services/updates'
+import { migrateSearchConnections } from './services/retrieval/backends/store'
 
 const HOUR = 3_600_000
 const DEEP_LINK = /^jiwei:\/\/(note|source)\/([0-9a-f-]{36})/i
@@ -175,6 +176,7 @@ app.whenReady().then(async () => {
 
   await initializeBackupSafety()
   await openDatabase()
+  migrateSearchConnections()
   ensureIdentity()
   await initializePlugins()
   await initializeMarkets()

@@ -211,6 +211,7 @@ export type Palette = 'qinglu' | 'celadon' | 'dunhuang'
 export type SidebarPage = 'notes' | 'library' | 'chat'
 
 export interface Settings {
+  retrieval: import('./retrieval').RetrievalSettings
   plugins: { recommendedDismissed: boolean }
   discover: { dailyLimit: number; dailyBudget: number; budgetCurrency: string; useSearch: boolean; podcast: boolean; podcastVoice: import('./discover').PodcastVoice }
   tasks: { paused: boolean; launchAtLogin: boolean; keepRunning: boolean }

@@ -10,6 +10,7 @@ import { DomainSchema, NetworkRuleSchema } from './browserSafety'
 import { AnchorSchema, ContextPacketSchema } from './context'
 import { RecordingFiltersSchema } from './lens'
 import { UpdateSettingsSchema } from './updates'
+import { RetrievalSettingsSchema } from './retrieval'
 
 // 所有跨进程输入的 zod 模式。类型由模式推导，保证“声明一次、处处一致”。
 
@@ -79,6 +80,7 @@ export const CategoryPatchSchema = z.object({
 })
 
 export const SettingsPatchSchema = z.object({
+  retrieval: RetrievalSettingsSchema.partial().optional(),
   plugins: z.object({ recommendedDismissed: z.boolean().optional() }).optional(),
   tasks: z.object({ paused: z.boolean().optional(), launchAtLogin: z.boolean().optional(), keepRunning: z.boolean().optional() }).optional(),
   plan: z.object({ autoComplete: z.boolean() }).optional(),
