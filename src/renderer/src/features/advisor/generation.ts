@@ -64,5 +64,5 @@ export function useAdvisorGeneration(target: string) {
         useAdvisorState.setState((s) => ({ stopped: { ...s.stopped, [target]: 0 } }))
     }, 3000)
   }
-  return { busy: active !== undefined || running.includes(target), stopped, run, stop }
+  return { busy: active !== undefined || running.includes(target), stopped: !!stopped, run, stop }
 }

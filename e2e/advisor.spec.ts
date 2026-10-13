@@ -244,3 +244,23 @@ test('首页决策菜单删除经确认后移除且不打开详情', async () =>
   await expect(row).toHaveCount(0)
   await expect(page.evaluate((id) => window.jiwei.advisor.get(id), d.id)).rejects.toThrow()
 })
+
+test('停止提示三秒后完全消失，表单没有残留的数字状态', async () => {
+  await navTo(page, /^参谋/, { again: true })
+  if (await page.getByTestId('decision-page').count())
+    await page.getByTestId('decision-page').getByRole('button', { name: '决策日志', exact: true }).click()
+  await page.getByRole('textbox', { name: '参谋', exact: true }).fill('【慢】停止提示消失测试')
+  await page.getByRole('button', { name: '请参谋', exact: true }).click()
+  await expect.poll(() => prompts.some((p) => p.includes('停止提示消失测试'))).toBe(true)
+  await page.getByRole('button', { name: '停止', exact: true }).click()
+  const hint = page.getByText('已停止，没有生成新的备忘录', { exact: true })
+  await expect(hint).toBeVisible()
+  await expect(hint).toHaveCount(0)
+  const zeros = await page.getByTestId('advisor-view').evaluate((el) => {
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+    let count = 0
+    while (walker.nextNode()) if (walker.currentNode.textContent?.trim() === '0') count++
+    return count
+  })
+  expect(zeros).toBe(0)
+})

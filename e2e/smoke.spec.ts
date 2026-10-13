@@ -180,6 +180,7 @@ test('Mod+A clears only the current Cornell grid and keeps the neighbouring row'
   await page.keyboard.press('ControlOrMeta+n')
   await page.getByPlaceholder('笔记标题').fill('局部全选回归')
   await page.keyboard.press('Enter')
+  await expect(page.locator('.tiptap')).toBeFocused()
   await page.keyboard.type('first grid')
   await page.keyboard.press('ControlOrMeta+Enter')
   await page.keyboard.type('second grid')
@@ -215,4 +216,56 @@ test('Mod+A clears only the current Cornell grid and keeps the neighbouring row'
   await sidebar().getByText('局部全选回归', { exact: true }).click()
   await expect(page.locator('.cornell-body').first()).toHaveText('replacement')
   await expect(page.locator('.cornell-body').nth(1)).toHaveText('second grid')
+})
+
+test('sole-image selection and empty grid deletion keep both Cornell rows', async () => {
+  await page.keyboard.press('ControlOrMeta+n')
+  await page.getByPlaceholder('笔记标题').fill('图片与空格删除边界')
+  await page.keyboard.press('Enter')
+  await expect(page.locator('.tiptap')).toBeFocused()
+  await page.evaluate(async () => {
+    const canvas = document.createElement('canvas')
+    canvas.width = canvas.height = 64
+    const ctx = canvas.getContext('2d')!
+    ctx.fillStyle = '#28977e'
+    ctx.fillRect(0, 0, 64, 64)
+    const bytes = Uint8Array.from(atob(canvas.toDataURL().split(',')[1]), (c) => c.charCodeAt(0))
+    const ref = await window.jiwei.assets.importBytes('grid.png', 'image/png', bytes)
+    const editor = (document.querySelector('.tiptap') as HTMLElement & { editor: import('@tiptap/core').Editor }).editor
+    editor.commands.insertContent({ type: 'image', attrs: { src: ref.url } })
+    editor.commands.addCornellRow()
+    editor.commands.insertContent('image neighbour stays')
+  })
+  await page.locator('.cornell-body img').click({ position: { x: 5, y: 5 } })
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (document.querySelector('.tiptap') as HTMLElement & { editor: import('@tiptap/core').Editor }).editor.state.selection.toJSON()
+            .type
+      )
+    )
+    .toBe('node')
+  await page.keyboard.press('ControlOrMeta+a')
+  await page.keyboard.press('Backspace')
+  await expect(page.locator('.cornell-row')).toHaveCount(2)
+  await expect(page.locator('.cornell-body').first()).toHaveText('')
+  await expect(page.locator('.cornell-body').nth(1)).toHaveText('image neighbour stays')
+  await page
+    .locator('.cornell-body p')
+    .first()
+    .click({ position: { x: 5, y: 8 } })
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (document.querySelector('.tiptap') as HTMLElement & { editor: import('@tiptap/core').Editor }).editor.state.selection.$from.parent
+            .textContent
+      )
+    )
+    .toBe('')
+  await page.keyboard.press('ControlOrMeta+a')
+  await page.keyboard.press('Backspace')
+  await expect(page.locator('.cornell-row')).toHaveCount(2)
+  await expect(page.locator('.cornell-body').nth(1)).toHaveText('image neighbour stays')
 })

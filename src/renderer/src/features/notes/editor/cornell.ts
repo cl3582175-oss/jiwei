@@ -114,6 +114,11 @@ function rowsEnd(doc: PMNode): number {
 
 /** 块位于格子首尾时，选取全部块而非只选取其中的文字；替换仍限制在格子内部。 */
 class CornellContentSelection extends Selection {
+  // 空代码块也有“内容已全选”阶段，不能作为普通光标落入空行退格删除。
+  get empty(): boolean {
+    return false
+  }
+
   content() {
     return this.$from.doc.slice(this.from, this.to)
   }
@@ -135,7 +140,10 @@ class CornellContentSelection extends Selection {
   static resolve(doc: PMNode, from: number, to: number): Selection {
     const $from = doc.resolve(Math.max(0, Math.min(from, doc.content.size)))
     const $to = doc.resolve(Math.max($from.pos, Math.min(to, doc.content.size)))
-    return $from.sameParent($to) && $from.pos < $to.pos ? new CornellContentSelection($from, $to) : Selection.near($from)
+    return $from.sameParent($to) &&
+      ['tableCell', 'tableHeader', 'codeBlock', CORNELL.cue, CORNELL.body, CORNELL.summary].includes($from.parent.type.name)
+      ? new CornellContentSelection($from, $to)
+      : Selection.near($from)
   }
 
   static fromJSON(doc: PMNode, json: { from: number; to: number }): Selection {
@@ -167,10 +175,14 @@ export function selectCornellContent(state: EditorState, dispatch?: (tr: Transac
     const textBounds =
       node.isTextblock ||
       (node.firstChild?.isTextblock && node.lastChild?.isTextblock && !(node.childCount === 1 && node.firstChild.type.name === 'codeBlock'))
-    const from = node.isTextblock ? start : textBounds ? start + 1 : start
-    const to = node.isTextblock ? end : textBounds ? end - 1 : end
-    if (selection.from === from && selection.to === to && !selection.empty) continue
-    const next = textBounds ? TextSelection.create(doc, from, to) : new CornellContentSelection(doc.resolve(from), doc.resolve(to))
+    const textFrom = node.isTextblock ? start : start + 1
+    const textTo = node.isTextblock ? end : end - 1
+    const useText = textBounds && textFrom < textTo
+    const from = useText ? textFrom : start
+    const to = useText ? textTo : end
+    const selectedContent = useText ? selection instanceof TextSelection : selection instanceof CornellContentSelection
+    if (selectedContent && selection.from === from && selection.to === to) continue
+    const next = useText ? TextSelection.create(doc, from, to) : new CornellContentSelection(doc.resolve(from), doc.resolve(to))
     dispatch?.(state.tr.setSelection(next).scrollIntoView())
     return true
   }

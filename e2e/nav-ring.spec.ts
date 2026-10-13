@@ -209,10 +209,26 @@ test('编辑笔记时点击一级组仅展开，当前笔记和正文保持；�
     await expect(ring()).toBeVisible()
     await expect(page.getByPlaceholder('笔记标题')).toHaveValue('点组保留笔记')
     await expect(page.locator('.cornell-body')).toHaveText('当前正文不要关闭')
+    await expect(ring().getByRole('menuitem').last()).toHaveCSS('opacity', '1')
     if (name === '计划')
       for (const theme of ['light', 'dark'] as const) {
         await page.evaluate((theme) => window.jiwei.settings.set({ theme }), theme)
         await expect(page.locator('html')).toHaveAttribute('data-theme', theme)
+        await expect
+          .poll(() =>
+            page.evaluate(() => {
+              const ring = document.querySelector('[data-testid=nav-ring]')!
+              return document
+                .getAnimations()
+                .filter(
+                  (a) =>
+                    a.playState === 'running' &&
+                    (a.effect as KeyframeEffect | null)?.target instanceof Element &&
+                    ring.contains((a.effect as KeyframeEffect).target as Element)
+                ).length
+            })
+          )
+          .toBe(0)
         await page.screenshot({ path: `.superpowers/sdd/v0.11.1-fixes/shots/p5-nav-expand-${theme}.png` })
       }
     await page.keyboard.press('Escape')

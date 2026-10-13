@@ -3,8 +3,8 @@ import { getSchema } from '@tiptap/core'
 import StarterKit from '@tiptap/starter-kit'
 import Image from '@tiptap/extension-image'
 import { TableKit } from '@tiptap/extension-table'
-import { AllSelection, EditorState, TextSelection, type Transaction } from '@tiptap/pm/state'
-import { CornellDocument, CornellRow, CornellCue, CornellBody, CornellSummary, selectCornellContent } from '../cornell'
+import { AllSelection, EditorState, NodeSelection, TextSelection, type Transaction } from '@tiptap/pm/state'
+import { CornellKeymap, CornellDocument, CornellRow, CornellCue, CornellBody, CornellSummary, selectCornellContent } from '../cornell'
 
 const schema = getSchema([
   StarterKit.configure({ document: false }),
@@ -91,4 +91,64 @@ describe('Cornell local select all', () => {
     deleted.doc.check()
     replaced.doc.check()
   })
+})
+
+it('does not confuse clicking a sole image with selecting the entire Cornell grid', () => {
+  const image = schema.nodes.image.create({ src: 'jiwei://asset/test.png' })
+  const document = doc([image])
+  let pos = 0
+  document.descendants((node, at) => {
+    if (node.type.name === 'image') pos = at
+  })
+  const state = press(EditorState.create({ schema, doc: document, selection: NodeSelection.create(document, pos) }))
+  expect(state.selection).not.toBeInstanceOf(AllSelection)
+  expect([state.selection.from, state.selection.to]).toEqual([9, 10])
+  const deleted = state.apply(state.tr.deleteSelection())
+  expect(deleted.doc.childCount).toBe(3)
+  expect(deleted.doc.child(1).textContent).toBe('cuesecond')
+  expect(deleted.doc.lastChild!.textContent).toBe('summary')
+  expect(press(state).selection).toBeInstanceOf(AllSelection)
+})
+it('empty grid select-all protects its row from Backspace and expands on the next press', () => {
+  const document = schema.nodes.doc.create(null, [row([p('')]), row([p('second')]), schema.nodes.cornellSummary.create(null, p(''))])
+  let state = EditorState.create({ schema, doc: document, selection: TextSelection.create(document, 10) })
+  state = press(state)
+  expect(state.selection.empty).toBe(false)
+  const shortcuts = CornellKeymap.config.addKeyboardShortcuts!.call({
+    editor: {
+      state,
+      view: {
+        dispatch: () => {
+          throw new Error('must not remove a row')
+        }
+      }
+    }
+  } as never)
+  expect(shortcuts.Backspace({ editor: {} } as never)).toBe(false)
+  const deleted = state.apply(state.tr.deleteSelection())
+  expect(deleted.doc.childCount).toBe(3)
+  expect(deleted.doc.child(0).child(1).toJSON()).toEqual({ type: 'cornellBody', content: [{ type: 'paragraph' }] })
+  expect(press(state).selection).toBeInstanceOf(AllSelection)
+})
+it.each(['tableCell', 'codeBlock'])('empty %s expands to grid then document and preserves row on deletion', (kind) => {
+  const block =
+    kind === 'codeBlock'
+      ? schema.nodes.codeBlock.create()
+      : schema.nodes.table.create(null, schema.nodes.tableRow.create(null, schema.nodes.tableCell.create(null, p(''))))
+  const document = doc([block])
+  let pos = 0
+  document.descendants((node, at) => {
+    if (
+      (kind === 'codeBlock' && node.type.name === 'codeBlock') ||
+      (kind === 'tableCell' && node.type.name === 'paragraph' && at > 9 && at < 20)
+    )
+      pos = at + 1
+  })
+  let state = press(EditorState.create({ schema, doc: document, selection: TextSelection.create(document, pos) }))
+  const deleted = state.apply(state.tr.deleteSelection())
+  expect(deleted.doc.childCount).toBe(3)
+  expect(deleted.doc.child(1).textContent).toBe('cuesecond')
+  state = press(state)
+  expect(state.selection).not.toBeInstanceOf(AllSelection)
+  expect(press(state).selection).toBeInstanceOf(AllSelection)
 })
