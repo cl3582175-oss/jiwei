@@ -51,7 +51,15 @@ jobs:
       - run: npm ci
       - run: npm run build
       - name: 打包所有目标（只生成本地文件）
-        run: npx electron-builder --publish never
+        shell: bash
+        # 没配置的 Secret 在 Actions 里是空字符串；electron-builder 会把空的 CSC_LINK 当成证书路径而失败，
+        # 所以先去掉空变量，没有证书时走免费的完整临时签名。
+        run: |
+          for name in CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID WIN_CSC_LINK WIN_CSC_KEY_PASSWORD; do
+            if [ -z "${!name}" ]; then unset "$name"; fi
+          done
+          if [ -z "${CSC_LINK:-}" ]; then export CSC_IDENTITY_AUTO_DISCOVERY=false; fi
+          npx electron-builder --publish never
         env:
           GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
           CSC_LINK: ${{ secrets.CSC_LINK }}
