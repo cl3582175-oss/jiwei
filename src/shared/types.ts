@@ -971,6 +971,8 @@ export interface SearchHit {
   text: string
   locator: string | null
   score: number
+  /** 余弦相似度（0–1）；向量不可用时不设置，检索排序仍使用 score。 */
+  sim?: number
   learnedAt: number | null
   updatedAt: number | null
   status: KnowledgeStatus | null
