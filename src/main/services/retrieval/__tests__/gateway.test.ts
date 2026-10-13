@@ -13,8 +13,8 @@ const state = vi.hoisted(() => ({
   searches: new Map<string, ReturnType<typeof vi.fn>>()
 }))
 vi.mock('../../../db', () => ({ getDb: () => state.db, getSqlite: () => state.sqlite }))
-vi.mock('electron', () => ({ app: { getLocale: () => 'zh-CN' }, nativeTheme: {} }))
-vi.mock('../../../events', () => ({ emit: vi.fn() }))
+vi.mock('electron', () => ({ app: { getLocale: () => 'zh-CN' }, nativeTheme: {}, BrowserWindow: { getAllWindows: () => [] } }))
+vi.mock('electron-log/main', () => ({ default: { warn: vi.fn() } }))
 vi.mock('../../ai/providers', () => ({ getProviderRow: vi.fn(), decryptKey: () => null }))
 vi.mock('../../mcp/secrets', () => ({ sealJson: () => Buffer.from('sealed-fixture'), openJson: () => 'synthetic-key' }))
 vi.mock('../backends/index', async () => {
@@ -33,6 +33,7 @@ import { withRun } from '../../agent/context'
 import { setSettings } from '../../settings'
 import { saveBackend } from '../backends/store'
 import { localDate } from '../../stats'
+import { emit } from '../../../events'
 
 const result = (backend: BackendId, rank = 1, url = `https://${backend}.example.org/learning`): WebResult => ({
   backend,
@@ -44,6 +45,21 @@ const result = (backend: BackendId, rank = 1, url = `https://${backend}.example.
 const run = <T>(fn: () => T): T => withRun({ purpose: 'chat', caller: 'assistant' }, fn)
 let day = 0
 
+function dynamicPrivateContent(kind: 'note' | 'source' = 'note', title = '动态保密查询标题'): () => void {
+  const common = { id: 'dynamic-private', title, aiExcluded: false, createdAt: 1, updatedAt: 1 }
+  if (kind === 'note')
+    state
+      .db!.insert(schema.notes)
+      .values({ ...common, plainText: '', learnedAt: 1, editedAt: 1 })
+      .run()
+  else
+    state
+      .db!.insert(schema.sources)
+      .values({ ...common, kind: 'web', accessedAt: 1 })
+      .run()
+  return () => state.sqlite!.prepare(`UPDATE ${kind === 'note' ? 'notes' : 'sources'} SET ai_excluded=1 WHERE id=?`).run(common.id)
+}
+
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(new Date('2030-01-01T10:00:00Z').getTime() + day++ * 86_400_000)
@@ -54,6 +70,7 @@ beforeEach(() => {
   for (const fn of state.searches.values()) fn.mockReset()
 })
 afterEach(() => {
+  vi.restoreAllMocks()
   state.sqlite?.close()
   state.sqlite = null
   state.db = null
@@ -176,22 +193,84 @@ describe('retrieval gateway', () => {
     ).rejects.toThrow('guard denied')
     expect(state.searches.get('bocha')!.mock.calls).toHaveLength(0)
   })
+  it.each(['note', 'source'] as const)('rechecks %s exclusion before sending a fallback query', async (kind) => {
+    const { searchWeb } = await import('../gateway')
+    const { BackendError } = await import('../backends/common')
+    const exclude = dynamicPrivateContent(kind)
+    for (const id of ['bocha', 'tavily'] as const) saveBackend({ id, key: 'synthetic', enabled: true })
+    state.searches.get('bocha')!.mockImplementation(async () => {
+      exclude()
+      throw new BackendError({ status: 500, retryable: true })
+    })
+    state.searches.get('tavily')!.mockResolvedValue([result('tavily')])
+    await expect(run(() => searchWeb('动态保密查询标题'))).rejects.toThrow('已拦截')
+    expect(state.searches.get('tavily')!.mock.calls).toHaveLength(0)
+    expect(state.sqlite!.prepare('SELECT COUNT(*) AS n FROM retrieval_calls WHERE cached=0').get()).toEqual({ n: 1 })
+  })
+  it('does not cache or return a response after its query becomes excluded', async () => {
+    const { searchWeb } = await import('../gateway')
+    const exclude = dynamicPrivateContent()
+    saveBackend({ id: 'bocha', key: 'synthetic', enabled: true })
+    state.searches.get('bocha')!.mockImplementation(async () => {
+      exclude()
+      return [result('bocha')]
+    })
+    await expect(run(() => searchWeb('动态保密查询标题'))).rejects.toThrow('已拦截')
+    expect(state.sqlite!.prepare('SELECT COUNT(*) AS n FROM web_search_cache').get()).toEqual({ n: 0 })
+  })
+  it('cancels an attempt waiting to send when exclusion changes and releases its event subscriptions', async () => {
+    const { searchWeb } = await import('../gateway')
+    const privacy = await import('../privacyGuard')
+    const check = vi.spyOn(privacy, 'check')
+    const exclude = dynamicPrivateContent()
+    saveBackend({ id: 'bocha', key: 'synthetic', enabled: true })
+    let release!: () => void
+    const waiting = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let sent = false
+    state.searches.get('bocha')!.mockImplementation(async (_query, _credential, signal: AbortSignal) => {
+      await waiting
+      signal.throwIfAborted()
+      sent = true
+      return [result('bocha')]
+    })
+    const pending = run(() => searchWeb('动态保密查询标题'))
+    exclude()
+    emit('notes:changed', { ids: ['dynamic-private'] })
+    release()
+    await expect(pending).rejects.toThrow('已拦截')
+    expect(sent).toBe(false)
+    const checksAfterRequest = check.mock.calls.length
+    emit('notes:changed', { ids: ['dynamic-private'] })
+    expect(check.mock.calls).toHaveLength(checksAfterRequest)
+    check.mockRestore()
+  })
+  it('propagates privacy denial from academic concurrency instead of returning another backend response', async () => {
+    const { searchAcademic } = await import('../gateway')
+    const exclude = dynamicPrivateContent('note', 'alpha beta gamma delta')
+    for (const id of ['openalex', 'semanticscholar', 'arxiv'] as const)
+      state.searches.get(id)!.mockImplementation(async () => {
+        exclude()
+        return [result(id)]
+      })
+    await expect(run(() => searchAcademic('alpha beta gamma delta'))).rejects.toThrow('已拦截')
+    expect(state.sqlite!.prepare('SELECT COUNT(*) AS n FROM web_search_cache').get()).toEqual({ n: 0 })
+  })
   it('merges academic results by URL, DOI and title, keeps richer metadata and tolerates partial failure', async () => {
     const { searchAcademic } = await import('../gateway')
     state.searches
       .get('openalex')!
       .mockResolvedValue([{ ...result('openalex', 1, 'https://doi.org/10.1234/demo'), doi: '10.1234/demo', title: 'A study' }])
-    state.searches
-      .get('semanticscholar')!
-      .mockResolvedValue([
-        {
-          ...result('semanticscholar', 2, 'https://scholar.example/paper'),
-          doi: '10.1234/DEMO',
-          title: 'A Study!',
-          citations: 50,
-          pdfUrl: 'https://paper.example/doc.pdf'
-        }
-      ])
+    state.searches.get('semanticscholar')!.mockResolvedValue([
+      {
+        ...result('semanticscholar', 2, 'https://scholar.example/paper'),
+        doi: '10.1234/DEMO',
+        title: 'A Study!',
+        citations: 50,
+        pdfUrl: 'https://paper.example/doc.pdf'
+      }
+    ])
     state.searches.get('arxiv')!.mockRejectedValue(new Error('raw sensitive error'))
     const found = await run(() => searchAcademic('English controlled study'))
     expect(found.results).toHaveLength(1)

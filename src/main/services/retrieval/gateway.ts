@@ -12,7 +12,7 @@ import {
 } from '@shared/retrieval'
 import { getDb } from '../../db'
 import { searchBackends, webSearchCache } from '../../db/schema'
-import { emit } from '../../events'
+import { emit, onMainEvent } from '../../events'
 import { isSensitiveUrl } from '../../lib/browserPolicy'
 import { tr } from '../../lib/messages'
 import { checkBudget } from '../agent/usage'
@@ -89,8 +89,8 @@ async function callBackend(
   opts: { signal?: AbortSignal; guard?: () => void; incognito?: boolean; noCache?: boolean }
 ): Promise<WebResult[]> {
   opts.signal?.throwIfAborted()
-  opts.guard?.()
-  checkBudget()
+  // 每次回退与缓存读取都按当前权限重新检查，不能沿用入口时的排除集合。
+  cleanQuery(query.q, opts.guard)
   const start = Date.now(),
     key = cacheKey(id, query),
     db = getDb()
@@ -109,13 +109,21 @@ async function callBackend(
   }
   const release = reserveCall()
   const config = db.select().from(searchBackends).where(eq(searchBackends.id, id)).get()
+  const privacyController = new AbortController()
+  // externalFetch可能等待同域队列；现有取消信号在真正发送前检查，及时撤销排队中的查询。
+  const stopPrivacyChecks = (['notes:changed', 'sources:changed'] as const).map((event) =>
+    onMainEvent(event, () => {
+      if (!privacyGuard.check(query.q)) privacyController.abort(new privacyGuard.PrivacyError())
+    })
+  )
+  const signal = opts.signal ? AbortSignal.any([opts.signal, privacyController.signal]) : privacyController.signal
   let ok = false,
     responded = false
   try {
-    const results = await BACKENDS[id].search(query, credentialsFor(id), opts.signal ?? new AbortController().signal)
+    const results = await BACKENDS[id].search(query, credentialsFor(id), signal)
     responded = true
-    opts.signal?.throwIfAborted()
-    opts.guard?.()
+    signal.throwIfAborted()
+    cleanQuery(query.q, opts.guard)
     // 搜索过程中用户可能停用或更换凭证；旧请求的结果不再进入后续流程。
     const current = db.select().from(searchBackends).where(eq(searchBackends.id, id)).get()
     if (
@@ -145,9 +153,12 @@ async function callBackend(
         .run()
     return results
   } catch (error) {
+    // 隐私撤销不是服务故障，不回退、不熔断，也不附带可能含查询的transport原始错误。
+    if (privacyController.signal.aborted) throw privacyController.signal.reason
     if (!opts.signal?.aborted && !responded) failed(id, error)
     throw error
   } finally {
+    for (const stop of stopPrivacyChecks) stop()
     try {
       recordCall(id, 'search', ok, false, start)
     } finally {
@@ -216,7 +227,7 @@ export async function searchWeb(q: string, opts: SearchWebOptions = {}): Promise
       // eslint-disable-next-line preserve-caught-error
       if (opts.signal?.aborted) throw new Error(tr('搜索已取消', 'Search canceled'))
       opts.guard?.()
-      if (error instanceof DailyLimitError) throw error
+      if (error instanceof DailyLimitError || error instanceof privacyGuard.PrivacyError) throw error
     }
   }
   // 空响应不属于故障：尝试回退后仍为空时给模型机会换词。
@@ -270,6 +281,8 @@ export async function searchAcademic(
   )
   const responses = await Promise.allSettled(ids.map((id) => callBackend(id, input, opts)))
   if (opts.signal?.aborted) throw new Error(tr('搜索已取消', 'Search canceled'))
+  const denied = responses.find((response) => response.status === 'rejected' && response.reason instanceof privacyGuard.PrivacyError)
+  if (denied?.status === 'rejected') throw denied.reason
   const groups: WebResult[][] = [],
     backends: BackendId[] = []
   responses.forEach((response, i) => {

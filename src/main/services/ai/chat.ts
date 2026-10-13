@@ -727,7 +727,17 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
             ? coachSystem(coach, zh)
             : systemPrompt(zh, session.tier, session.incognito, conversationId),
         messages: msgs,
-        prepareStep: ({ messages }) => ({ messages: attachNoteToolImages(messages) }),
+        prepareStep: ({ messages }) => {
+          requireRecordingCloudAccess(privacyInput)
+          // 连续工具轮次会复用已经发送过的证据；确认或工具等待期间撤销权限后，不能再次发送旧正文。
+          if (filterCurrentWebHits(session.hits).length !== session.hits.length)
+            throw new Error(
+              zh
+                ? '本轮资料的 AI 权限已改变，已停止后续请求。'
+                : 'AI access to material in this turn has changed; further requests were stopped.'
+            )
+          return { messages: attachNoteToolImages(messages) }
+        },
         // 向用户提了选择题：本轮到此结束，等用户选
         ...(withTools && toolset ? { tools: toolset, stopWhen: [stepCountIs(MAX_STEPS), hasToolCall(ASK_USER)] } : {}),
         providerOptions: built.providerOptions as never,

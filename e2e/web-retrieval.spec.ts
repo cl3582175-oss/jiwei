@@ -40,6 +40,14 @@ async function launch(): Promise<void> {
     }
   })
   app.process().stderr?.on('data', (data) => processErrors.push(String(data)))
+  // 向量使用本地假服务；共享模型的PID/退出清理同样隔离，避免测试触及用户的运行状态。
+  await app.evaluate(
+    ({ app }, isolated) => {
+      process.getBuiltinModule('fs').mkdirSync(isolated, { recursive: true })
+      app.setPath('appData', isolated)
+    },
+    join(userData, 'model-appdata')
+  )
   page = await app.firstWindow()
   page.on('pageerror', (error) => rendererErrors.push(String(error)))
   await page.waitForSelector('nav')
@@ -1070,4 +1078,67 @@ test('24. 已有对话同一renderer任务内切关并发送，不会把旧auto�
   expect(fixture.models.at(-1)!.tools).not.toContain('web_search')
   expect(fixture.models.at(-1)!.tools).not.toContain('read_url')
   expect(searchRequests()).toEqual([])
+})
+
+test('25. 工具轮次之间撤销网页权限后停止下一次模型请求，恢复权限后仍能继续', async () => {
+  const url = fixture.base + '/page-step-privacy'
+  const question = '请读取这个网页，再确认公开状态：' + url
+  const query = '受控公开状态检查'
+  await retrieval({ cautious: true })
+  fixture.steps = [{ name: 'read_url', args: { url } }, { name: 'web_search', args: { query } }, { text: '不应收到已撤销权限的网页正文' }]
+  await startAsk(question)
+  const approval = page.getByTestId('approval-card')
+  await expect(approval).toContainText(url)
+  await approval.getByRole('button', { name: '允许', exact: true }).click()
+  await expect(approval).toContainText(query)
+  const turns = () => fixture.models.filter((request) => request.user.includes(question))
+  expect(turns()).toHaveLength(2)
+  expect(
+    turns()[1]
+      .messages.map((message) => messageText(message.content))
+      .join('\n')
+  ).toContain('公开测试版本九')
+  await page.evaluate(() => window.jiwei.settings.set({ browser: { aiBlockedSites: ['127.0.0.1'] } }))
+  await approval.getByRole('button', { name: '允许', exact: true }).click()
+  await expect.poll(() => page.evaluate(() => (Reflect.get(window, 'webChatCompletions') as ChatMessage[]).at(-1)?.status)).toBe('error')
+  expect(turns()).toHaveLength(2)
+  const completed = await page.evaluate(() => (Reflect.get(window, 'webChatCompletions') as ChatMessage[]).at(-1)!)
+  expect(completed.error).toContain('AI 权限')
+  expect(completed.citations ?? []).toEqual([])
+  await page.evaluate(() => window.jiwei.settings.set({ browser: { aiBlockedSites: [] }, retrieval: { cautious: false } }))
+  fixture.steps = [{ text: '恢复权限后的新回答' }]
+  await newChat()
+  expect((await ask('权限恢复后继续提问')).assistant.content).toContain('恢复权限后的新回答')
+})
+
+test('26. 搜索等待期间改为不给AI会取消请求，保密查询不会回退到下一服务', async () => {
+  const query = '银杉抽屉中的特别秘密编号'
+  const noteId = await createNote('受控等待期隐私记录', [query + '仅供本地测试，不得继续发送。'])
+  await newChat()
+  fixture.steps = [{ name: 'web_search', args: { query } }]
+  fixture.failures.set('bocha', 500)
+  const paused = fixture.pauseNext((request) => request.path === '/search/bocha' && request.query === query)
+  try {
+    await startAsk('搜一下受控等待期的资料')
+    await paused.reached
+    expect(
+      searchRequests()
+        .filter((request) => request.query === query)
+        .map((request) => request.path)
+    ).toEqual(['/search/bocha'])
+    await page.evaluate((id) => window.jiwei.notes.update(id, { aiExcluded: true }), noteId)
+    paused.release()
+    await expect.poll(() => page.evaluate(() => (Reflect.get(window, 'webChatCompletions') as ChatMessage[]).length)).toBe(1)
+    const completed = await page.evaluate(() => (Reflect.get(window, 'webChatCompletions') as ChatMessage[]).at(-1)!)
+    expect(completed.steps?.find((step) => step.tool === 'web_search')).toMatchObject({ status: 'error' })
+    expect(completed.steps?.find((step) => step.tool === 'web_search')?.detail).toContain('已拦截')
+    expect(
+      searchRequests()
+        .filter((request) => request.query === query)
+        .map((request) => request.path)
+    ).toEqual(['/search/bocha'])
+    expect(await page.evaluate((id) => window.jiwei.notes.get(id), noteId)).toMatchObject({ aiExcluded: true })
+  } finally {
+    paused.release()
+  }
 })

@@ -47,7 +47,7 @@ vi.mock('electron', () => ({
 }))
 vi.mock('electron-log/main', () => ({ default: { warn: vi.fn(), error: vi.fn(), info: vi.fn() } }))
 vi.mock('../../../db', () => ({ getDb: () => probe.db, getSqlite: () => probe.sqlite }))
-vi.mock('../../../events', () => ({ emit: vi.fn() }))
+vi.mock('../../../events', () => ({ emit: vi.fn(), onMainEvent: () => () => {} }))
 vi.mock('../../../mainWindow', () => ({ getMainWindow: () => null }))
 vi.mock('../../device', () => ({ deviceId: () => 'purpose-probe' }))
 vi.mock('../../jobs', () => ({ enqueue: vi.fn(), registerJobKind: vi.fn(), runJobNow: vi.fn(), cancelJob: vi.fn() }))
