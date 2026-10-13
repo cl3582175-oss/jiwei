@@ -22,7 +22,7 @@ import { isReady } from '../ai/embedding'
 import { enqueue, registerJobKind, runJobNow } from '../jobs'
 import { allowedCandidate, allowedRelated, discoveryContext } from './context'
 import { checkFeeds, discoverChanged, listFeeds, refreshFeed, upsertCandidate } from './feeds'
-import { hasSearch, search } from './search'
+import { hasWebBackend, searchWeb } from '../retrieval/gateway'
 import { publishPick, restoreLater, dailyDeliveries, scoreAllowed } from './items'
 import { privacyFingerprint } from '../ai/privacy'
 import { audit } from '../agent/audit'
@@ -141,7 +141,7 @@ async function doDaily(
         guard()
         await refreshFeed(f.id, signal)
       }
-    if (getSettings().discover.useSearch && hasSearch()) {
+    if (getSettings().discover.useSearch && hasWebBackend()) {
       const q = await discoveryModel(
         'discover.queries',
         Queries,
@@ -152,14 +152,14 @@ async function doDaily(
       )
       for (const query of q.queries) {
         guard()
-        for (const r of await search(query, { count: 8, signal, guard }))
+        for (const { url, title, snippet, publishedAt } of (await searchWeb(query, { count: 8, signal, guard })).results)
           upsertCandidate(
             {
-              url: r.url,
-              title: r.title,
-              summary: r.snippet,
+              url,
+              title,
+              summary: snippet,
               author: null,
-              publishedAt: r.publishedAt ?? null,
+              publishedAt: publishedAt ?? null,
               audioUrl: null,
               pdfUrl: null
             },
@@ -348,7 +348,7 @@ export function checkDiscover(now = Date.now()): void {
     !s.ai.chat.model ||
     !s.discover.dailyLimit ||
     getMeta(key(now)) ||
-    !(listFeeds().some((f) => f.enabled) || (s.discover.useSearch && hasSearch()))
+    !(listFeeds().some((f) => f.enabled) || (s.discover.useSearch && hasWebBackend()))
   )
     return
   const id = enqueue('discover.daily', {}, { dedupeKey: 'discover.daily', runAfter: nextOffPeak(now) })

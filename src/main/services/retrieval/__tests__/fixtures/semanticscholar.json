@@ -1,0 +1,42 @@
+{
+  "data": [
+    {
+      "title": "Academic <b>fixture</b>",
+      "url": "https://www.semanticscholar.org/paper/fixture",
+      "year": 2026,
+      "abstract": "<p>Fixture abstract</p>",
+      "authors": [
+        {
+          "name": "Ada"
+        },
+        {
+          "name": "Bo"
+        },
+        {
+          "name": "Chen"
+        },
+        {
+          "name": "Dina"
+        },
+        {
+          "name": "Eli"
+        },
+        {
+          "name": "Farah"
+        },
+        {
+          "name": "Gao"
+        }
+      ],
+      "venue": "Fixture <i>journal</i>",
+      "citationCount": 7,
+      "externalIds": {
+        "DOI": "10.1234/fixture"
+      },
+      "openAccessPdf": {
+        "url": "https://papers.example.org/full.pdf?utm_source=fixture"
+      },
+      "publicationDate": "2026-01-02"
+    }
+  ]
+}

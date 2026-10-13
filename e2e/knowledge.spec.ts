@@ -3,6 +3,7 @@ import { mkdtempSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { makePdf } from './fixtures/makePdf'
+import { isolateEmbeddingCache } from './fixtures/embeddingCache'
 
 // v0.2 知识库：本地向量模型（多镜像下载、校验）→ 笔记与资料两类来源建索引 → 混合检索（含隐私与范围过滤）
 // 不需要 API Key。
@@ -18,6 +19,7 @@ test.beforeAll(async () => {
   })
   page = await app.firstWindow()
   await page.waitForSelector('nav')
+  await isolateEmbeddingCache(app)
 })
 test.afterAll(async () => {
   await app?.close()

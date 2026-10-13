@@ -12,6 +12,7 @@ import { Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui/primit
 import { BookOpen, ChevronDown, Clock, Download, Globe, Sparkles } from 'lucide-react'
 import { useDiscoverEvents } from './queries'
 import { FeedsDrawer } from './FeedsDrawer'
+import { useRetrievalStatus } from '../retrieval/queries'
 
 function Related({ type, id }: { type: 'note' | 'source'; id: string }) {
   const { data } = useQuery<{ title: string } | null>({
@@ -67,7 +68,11 @@ function PickCard({ item }: { item: FeedItem }) {
         {item.remedyId && <span className="rounded-full bg-accent-soft px-2 py-0.5 text-accent">{t('discover.remedy')}</span>}
       </div>
       <h3 className="mt-1.5 font-serif text-[17px] leading-snug font-semibold break-words text-fg">
-        <button className="max-w-full text-left [overflow-wrap:anywhere] hover:text-accent" onClick={() => void act('read')} disabled={busy}>
+        <button
+          className="max-w-full text-left [overflow-wrap:anywhere] hover:text-accent"
+          onClick={() => void act('read')}
+          disabled={busy}
+        >
           {item.title}
         </button>
       </h3>
@@ -77,7 +82,12 @@ function PickCard({ item }: { item: FeedItem }) {
         <span className="min-w-0 [overflow-wrap:anywhere]">
           <span className="sr-only">{t('discover.why')}：</span>
           {item.reason}
-          {item.gap && <span className="text-muted"> · {t('discover.gap')}：{item.gap}</span>}
+          {item.gap && (
+            <span className="text-muted">
+              {' '}
+              · {t('discover.gap')}：{item.gap}
+            </span>
+          )}
         </span>
       </p>
       {item.related.length > 0 && (
@@ -128,7 +138,7 @@ export function PicksView({ inboxIds }: { inboxIds: Set<string> }) {
   useDiscoverEvents()
   const { data: items = [] } = useQuery({ queryKey: ['discover', 'items'], queryFn: () => api.discover.items() }),
     { data: status } = useQuery({ queryKey: ['discover', 'status'], queryFn: () => api.discover.status() }),
-    { data: providers = [] } = useQuery({ queryKey: ['discover', 'search'], queryFn: () => api.discover.searchProviders() })
+    { data: retrieval } = useRetrievalStatus()
   const visible = items.filter((i) => i.inboxId && inboxIds.has(i.inboxId))
   return (
     <div className="min-h-0 flex-1 overflow-y-auto px-8 pb-10" data-testid="picks-view">
@@ -156,8 +166,8 @@ export function PicksView({ inboxIds }: { inboxIds: Set<string> }) {
             {t('discover.run')}
           </Button>
         </div>
-        {!providers.some((p) => p.enabled && p.keySet) && (
-          <button className="mb-4 text-xs text-accent hover:underline" onClick={() => useApp.getState().openSettings('connections')}>
+        {retrieval && !retrieval.webAvailable && (
+          <button className="mb-4 text-xs text-accent hover:underline" onClick={() => useApp.getState().openSettings('search')}>
             {t('discover.searchHint')}
           </button>
         )}

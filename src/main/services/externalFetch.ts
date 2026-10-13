@@ -11,7 +11,7 @@ export function checkedWebUrl(value: string, httpsOnly = false): URL {
   return u
 }
 
-async function inDomain<T>(u: URL, fn: () => Promise<T>): Promise<T> {
+async function inDomain<T>(u: URL, fn: () => Promise<T>, minIntervalMs = 2000): Promise<T> {
   const previous = queues.get(u.hostname) ?? Promise.resolve()
   let release!: () => void
   const next = new Promise<void>((r) => {
@@ -20,8 +20,8 @@ async function inDomain<T>(u: URL, fn: () => Promise<T>): Promise<T> {
   queues.set(u.hostname, next)
   await previous.catch(() => {})
   try {
-    // 从上次完成后等待两秒，覆盖连接与响应延迟，确保请求开始间隔不少于两秒。
-    const wait = (completed.get(u.hostname) ?? 0) + 2000 - Date.now()
+    // 默认从上次完成后等待两秒，调用方按服务的限流规则指定间隔。
+    const wait = (completed.get(u.hostname) ?? 0) + minIntervalMs - Date.now()
     if (wait > 0) await new Promise((r) => setTimeout(r, wait))
     return await fn()
   } finally {
@@ -33,7 +33,7 @@ async function inDomain<T>(u: URL, fn: () => Promise<T>): Promise<T> {
 
 export async function externalFetch(
   value: string,
-  options: { headers?: Record<string, string>; method?: string; body?: string; maxBytes?: number; httpsOnly?: boolean; validateUrl?: (url: string) => void; signal?: AbortSignal } = {}
+  options: { headers?: Record<string, string>; method?: string; body?: string; maxBytes?: number; httpsOnly?: boolean; validateUrl?: (url: string) => void; signal?: AbortSignal; minIntervalMs?: number } = {}
 ): Promise<{ status: number; text: string; bytes: Uint8Array; headers: Headers }> {
   let u = checkedWebUrl(value, options.httpsOnly),
     headers = { ...options.headers },
@@ -70,7 +70,7 @@ export async function externalFetch(
         offset += c.length
       }
       return { status: res.status, text: new TextDecoder().decode(data), bytes: data, headers: res.headers }
-    })
+    }, options.minIntervalMs)
     if (!(response.status >= 300 && response.status < 400 && response.status !== 304)) return response
     const location = response.headers.get('location')
     if (!location) throw new Error('Invalid redirect')

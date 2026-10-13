@@ -19,6 +19,7 @@ import {
   Plug,
   AudioLines,
   Eye,
+  Wrench,
   Zap,
   X,
   ScanText,
@@ -42,7 +43,7 @@ const errText = (e: unknown): string =>
 
 /** 单个服务商：接口地址、API Key（加密保存，明文不回显）、模型列表、连接测试 */
 /**
- * 一个模型的能力：能否看图、强 / 普通。默认按名称自动判断；点击切换为相反值，
+ * 一个模型的能力：能否看图、工具可靠性、强 / 普通。点击切换为相反值，
  * 切换回与自动判断相同时即恢复“自动”（不留下多余的设定）。
  */
 function ModelRow({
@@ -61,20 +62,21 @@ function ModelRow({
   const set = (patch: ModelCapsOverride): void => {
     const next: ModelCapsOverride = { ...p.modelCaps[model], ...patch }
     if (next.vision === caps.auto.vision) delete next.vision
+    if (next.tools === caps.auto.tools) delete next.tools
     if (next.tier === caps.auto.tier) delete next.tier
     if (!next.price) delete next.price
     const all = { ...p.modelCaps, [model]: next }
     if (!Object.keys(next).length) delete all[model]
     onCaps(all)
   }
-  const custom = (k: 'vision' | 'tier'): boolean => p.modelCaps[model]?.[k] !== undefined
+  const custom = (k: 'vision' | 'tools' | 'tier'): boolean => p.modelCaps[model]?.[k] !== undefined
   const chip = (on: boolean, overridden: boolean): string =>
     cn(
       'relative inline-flex h-6 items-center gap-1 rounded-full px-2 text-2xs transition-colors [&_svg]:size-3',
       on ? 'bg-accent-soft text-accent' : 'text-subtle hover:bg-sunken hover:text-muted',
       overridden && 'ring-1 ring-accent/40'
     )
-  const how = (k: 'vision' | 'tier'): string => (custom(k) ? t('ai.caps.custom') : t('ai.caps.auto'))
+  const how = (k: 'vision' | 'tools' | 'tier'): string => (custom(k) ? t('ai.caps.custom') : t('ai.caps.auto'))
   return (
     <li className="group flex h-9 items-center gap-2 rounded-lg px-2.5 hover:bg-surface-hover" data-model={model}>
       <span className="min-w-0 flex-1 truncate font-mono text-xs text-fg">{model}</span>
@@ -95,6 +97,17 @@ function ModelRow({
         >
           <Eye />
           {t('ai.caps.vision')}
+        </button>
+      </Tip>
+      <Tip label={`${t('retrieval.toolsHelp')} · ${how('tools')}`}>
+        <button
+          className={chip(caps.tools, custom('tools'))}
+          aria-pressed={caps.tools}
+          aria-label={`${model} ${t(caps.tools ? 'retrieval.toolsReliable' : 'retrieval.toolsUnreliable')}`}
+          onClick={() => set({ tools: !caps.tools })}
+        >
+          <Wrench />
+          {t(caps.tools ? 'retrieval.toolsReliable' : 'retrieval.toolsUnreliable')}
         </button>
       </Tip>
       <Tip label={`${caps.tier === 'strong' ? t('ai.caps.strongOn') : t('ai.caps.strongOff')} · ${how('tier')}`}>

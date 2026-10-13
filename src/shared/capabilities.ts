@@ -1,4 +1,5 @@
 import { AnimationSchema } from './manim'
+import { BACKEND_IDS, BackendSaveSchema, WebModeSchema, type RetrievalStatus, type RetrievalUsage, type WebPageView } from './retrieval'
 import {
   MarketInputSchema,
   MarketNameSchema,
@@ -666,7 +667,7 @@ export const capabilities = {
       description: '修改对话标题、检索范围或置顶',
       params: [
         id(),
-        ['patch', z.object({ title: z.string().max(200).optional(), scope: S.ChatScopeSchema.optional(), pinned: z.boolean().optional() })]
+        ['patch', z.object({ title: z.string().max(200).optional(), scope: S.ChatScopeSchema.optional(), pinned: z.boolean().optional(), web: WebModeSchema.nullable().optional() })]
       ]
     }),
     remove: cap<void>()({ description: '删除对话', params: [id()] })
@@ -1431,6 +1432,15 @@ export const capabilities = {
     cancel: cap<void>()({ description: '取消导入', params: [['id', z.string().max(64)]] }),
     cancelCues: cap<void>()({ description: '取消本次导入的补线索任务', params: [['id', z.string().max(64)]] }),
     undo: cap<import('./importer').ImportRun>()({ description: '把本次导入移入回收站', params: [['id', z.string().max(64)]] })
+  },
+  retrieval: {
+    status: cap<RetrievalStatus>()({ description: '联网服务状态与今日用量', params: none }),
+    saveBackend: cap<void>()({ description: '保存联网搜索服务配置', params: [['input', BackendSaveSchema]] }),
+    testBackend: cap<{ ok: boolean; message: string }>()({ description: '测试联网搜索服务', params: [['id', z.enum(BACKEND_IDS)]] }),
+    page: cap<WebPageView | null>()({ description: '查看网页快照', params: [id()] }),
+    savePage: cap<{ sourceId: string }>()({ description: '将网页快照存为资料', params: [id()] }),
+    clearCache: cap<{ searches: number; pages: number }>()({ description: '清理搜索缓存与未被引用的网页快照', params: none }),
+    usage: cap<RetrievalUsage>()({ description: '联网搜索与读取次数', params: [['range', z.enum(['today', 'month'])]] })
   }
 } as const
 

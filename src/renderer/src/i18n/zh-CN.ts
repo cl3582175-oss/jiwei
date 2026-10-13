@@ -14,6 +14,7 @@ import { mistakesZh } from '../features/mistakes/messages'
 import { todayZh } from '../features/today/messages'
 import { safetyZh } from '../features/settings/safetyMessages'
 import { readingZh } from '../features/reading/messages'
+import { retrievalZh } from '../features/retrieval/messages'
 
 const zhCN = {
   updates: updatesZh,
@@ -32,6 +33,7 @@ const zhCN = {
   agent: agentZh,
   spend: spendZh,
   reading: readingZh,
+  retrieval: retrievalZh,
   learning: {
     pendingProposal: '此提案须在错题或阅读入口完成审阅与确认。',
     returnReading: '返回阅读资料',
@@ -1011,7 +1013,7 @@ const zhCN = {
     basisShow: '展开依据',
     basisHide: '收起依据',
     basisHint: '关键词：字面相同的内容；语义：本地向量模型找到的意思相近的内容；正在看的内容：你在工作区里打开的资料',
-    via: { keyword: '关键词', semantic: '语义', both: '关键词＋语义', context: '正在看的内容' },
+    via: { keyword: '关键词', semantic: '语义', both: '关键词＋语义', context: '正在看的内容', web: '网页' },
     generalOnly: '本回答没有引用你的知识库，内容来自模型的通用知识。',
     copy: '复制',
     effortLabel: '思考：{{level}}',

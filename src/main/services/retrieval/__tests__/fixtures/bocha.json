@@ -1,0 +1,21 @@
+{
+  "data": {
+    "webPages": {
+      "value": [
+        {
+          "name": "<b>Fixture title</b>",
+          "url": "https://www.example.org/read/?utm_source=fixture&b=2&a=1",
+          "summary": "<p>Fixture snippet</p><script>remove()</script>",
+          "datePublished": "2026-01-02T03:04:05Z",
+          "siteName": "Fixture site"
+        },
+        {
+          "title": "Fallback title",
+          "url": "https://example.org/second",
+          "snippet": "Fallback snippet",
+          "datePublished": "not-a-date"
+        }
+      ]
+    }
+  }
+}

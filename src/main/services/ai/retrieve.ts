@@ -19,6 +19,8 @@ const RRF_K = 60
 const DAY = 86_400_000
 
 type Key = string // `${ownerType}:${ownerId}`
+/** 知识库入口只产生笔记和资料，网页命中由联网工具提供。 */
+export type KnowledgeHit = SearchHit & { parentType: 'note' | 'source' }
 
 function keywordHits(q: string, limit: number, filters: RecordingFilters = {}): Key[] {
   const fq = ftsQuery(q)
@@ -85,9 +87,18 @@ function keywordHits(q: string, limit: number, filters: RecordingFilters = {}): 
   return keys.slice(0, limit * 2)
 }
 
-async function vectorHits(q: string, limit: number, filters: RecordingFilters = {}): Promise<Key[]> {
-  if (!(await isReady())) return []
+interface VectorHits {
+  keys: Key[]
+  dist: Map<Key, number>
+  qv: number[] | null
+}
+const noVectors = (): VectorHits => ({ keys: [], dist: new Map(), qv: null })
+const clampSim = (sim: number): number => Math.max(0, Math.min(1, sim))
+
+async function vectorHits(q: string, limit: number, filters: RecordingFilters = {}): Promise<VectorHits> {
+  if (!(await isReady())) return noVectors()
   const [v] = await embed([q], 'query')
+  if (!v?.length || v.some((n) => !Number.isFinite(n))) return noVectors()
   const filter = lensVectorSQL(filters),
     filtered = Object.values(filters).some(Boolean)
   const rows = (
@@ -99,7 +110,7 @@ async function vectorHits(q: string, limit: number, filters: RecordingFilters = 
           .prepare('SELECT rowid, distance FROM vec_chunks WHERE embedding MATCH ? AND k = ? ORDER BY distance')
           .all(vecBuffer(v), limit * 3)
   ) as { rowid: number; distance: number }[]
-  if (!rows.length) return []
+  if (!rows.length) return { keys: [], dist: new Map(), qv: v }
   const meta = getDb()
     .select({ rowid: chunks.rowid, ownerType: chunks.ownerType, ownerId: chunks.ownerId })
     .from(chunks)
@@ -111,13 +122,19 @@ async function vectorHits(q: string, limit: number, filters: RecordingFilters = 
     )
     .all()
   const byRow = new Map(meta.map((m) => [m.rowid, `${m.ownerType}:${m.ownerId}`]))
-  return rows.map((r) => byRow.get(Number(r.rowid))).filter((k): k is Key => !!k)
+  const keys = rows.map((r) => byRow.get(Number(r.rowid))).filter((k): k is Key => !!k)
+  const dist = new Map<Key, number>()
+  for (const r of rows) {
+    const key = byRow.get(Number(r.rowid))
+    if (key && Number.isFinite(r.distance)) dist.set(key, Math.min(dist.get(key) ?? Infinity, r.distance))
+  }
+  return { keys, dist, qv: v }
 }
 
 /** 读取候选分片的内容与元数据（同时完成隐私与范围过滤） */
-function hydrate(keys: Key[], scope: ChatScope): Map<Key, SearchHit> {
+function hydrate(keys: Key[], scope: ChatScope): Map<Key, KnowledgeHit> {
   const db = getDb()
-  const out = new Map<Key, SearchHit>()
+  const out = new Map<Key, KnowledgeHit>()
   const blockIds = keys.filter((k) => k.startsWith('block:')).map((k) => k.slice(6))
   const segIds = keys.filter((k) => k.startsWith('segment:')).map((k) => k.slice(8))
   const noteScope = scope.type === 'items' ? new Set(scope.notes) : null
@@ -240,7 +257,7 @@ function hydrate(keys: Key[], scope: ChatScope): Map<Key, SearchHit> {
   return out
 }
 
-function weight(h: SearchHit): number {
+export function weight(h: SearchHit): number {
   let w = 1
   if (h.status === 'outdated') w *= 0.55
   else if (h.status === 'disputed') w *= 0.85
@@ -260,24 +277,49 @@ export async function retrieve(
   limit = 8,
   filters: RecordingFilters = {},
   prefer?: string | null
-): Promise<SearchHit[]> {
+): Promise<KnowledgeHit[]> {
   if (scope.type === 'none' || !query.trim()) return []
   const [kw, vec] = await Promise.all([
     Promise.resolve(keywordHits(query, limit, filters)),
-    vectorHits(query, limit, filters).catch(() => [] as Key[])
+    vectorHits(query, limit, filters).catch(noVectors)
   ])
   const rrf = new Map<Key, number>()
   kw.forEach((k, i) => rrf.set(k, (rrf.get(k) ?? 0) + 1 / (RRF_K + i)))
   // 向量命中权重略高：语义相关比字面重合更可靠
-  vec.forEach((k, i) => rrf.set(k, (rrf.get(k) ?? 0) + 1.2 / (RRF_K + i)))
+  vec.keys.forEach((k, i) => rrf.set(k, (rrf.get(k) ?? 0) + 1.2 / (RRF_K + i)))
   const hits = hydrate([...rrf.keys()], scope)
   const kwSet = new Set(kw)
-  const vecSet = new Set(vec)
+  const vecSet = new Set(vec.keys)
   const via = (k: Key): SearchHit['via'] => (kwSet.has(k) && vecSet.has(k) ? 'both' : vecSet.has(k) ? 'semantic' : 'keyword')
-  return [...hits.entries()]
-    .map(([k, h]) => ({ ...h, via: via(k), score: (rrf.get(k) ?? 0) * weight(h) * (prefer && h.parentId === prefer ? 1.6 : 1) }))
+  const finalHits = [...hits.entries()]
+    .map(([k, h]) => ({
+      ...h,
+      via: via(k),
+      score: (rrf.get(k) ?? 0) * weight(h) * (prefer && h.parentId === prefer ? 1.6 : 1),
+      ...(vec.dist.has(k) ? { sim: clampSim(1 - vec.dist.get(k)!) } : {})
+    }))
     .sort((a, b) => b.score - a.score)
     .slice(0, limit)
+  // 先完成隐私、范围和数量筛选，再批量补算；补算失败不改变原有排名与结果。
+  const missing = finalHits.filter((h) => h.sim === undefined)
+  if (vec.qv && missing.length) {
+    try {
+      const qv = vec.qv
+      const vectors = await embed(
+        missing.map((h) => h.text),
+        'doc',
+        missing.map((h) => h.title)
+      )
+      for (let i = 0; i < missing.length; i++) {
+        const v = vectors[i]
+        if (v?.length === qv.length && v.every(Number.isFinite))
+          missing[i].sim = clampSim(qv.reduce((sum, n, j) => sum + n * v[j], 0))
+      }
+    } catch {
+      /* 相似度是附加元数据，向量失败时保留关键词结果。 */
+    }
+  }
+  return finalHits
 }
 
 /**
@@ -313,7 +355,7 @@ export async function similarTo(
   limit: number,
   minSim: number,
   options?: { distinctCornellNotes?: boolean; guard?: () => void }
-): Promise<(SearchHit & { sim: number })[]> {
+): Promise<(KnowledgeHit & { sim: number })[]> {
   if (!text.trim() || !(await isReady())) return []
   options?.guard?.()
   const [v] = await embed([text.slice(0, 2000)], 'doc')

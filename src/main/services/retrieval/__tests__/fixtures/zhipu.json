@@ -1,0 +1,11 @@
+{
+  "search_result": [
+    {
+      "title": "<b>Fixture title</b>",
+      "link": "https://www.example.org/read/?utm_source=fixture&b=2&a=1",
+      "content": "<p>Fixture snippet</p><script>remove()</script>",
+      "publish_date": "2026-01-02T03:04:05Z",
+      "media": "Fixture site"
+    }
+  ]
+}

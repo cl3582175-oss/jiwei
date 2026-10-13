@@ -1,0 +1,67 @@
+{
+  "results": [
+    {
+      "id": "https://openalex.org/W0000001",
+      "doi": "https://doi.org/10.1234/fixture",
+      "display_name": "Academic <b>fixture</b>",
+      "publication_year": 2026,
+      "publication_date": "2026-01-02",
+      "authorships": [
+        {
+          "author": {
+            "display_name": "Ada"
+          }
+        },
+        {
+          "author": {
+            "display_name": "Bo"
+          }
+        },
+        {
+          "author": {
+            "display_name": "Chen"
+          }
+        },
+        {
+          "author": {
+            "display_name": "Dina"
+          }
+        },
+        {
+          "author": {
+            "display_name": "Eli"
+          }
+        },
+        {
+          "author": {
+            "display_name": "Farah"
+          }
+        },
+        {
+          "author": {
+            "display_name": "Gao"
+          }
+        }
+      ],
+      "primary_location": {
+        "landing_page_url": "https://papers.example.org/landing",
+        "source": {
+          "display_name": "Fixture <i>journal</i>"
+        }
+      },
+      "best_oa_location": {
+        "pdf_url": "https://papers.example.org/full.pdf?utm_source=fixture"
+      },
+      "cited_by_count": 7,
+      "abstract_inverted_index": {
+        "well": [2],
+        "Index": [0],
+        "restored": [1]
+      },
+      "open_access": {
+        "oa_url": "https://papers.example.org/landing",
+        "is_oa": true
+      }
+    }
+  ]
+}

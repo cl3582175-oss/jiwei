@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Locally authored fixture feed</title>
+  <entry>
+    <id>http://arxiv.org/abs/2401.01234v2</id>
+    <title>First relevance result</title>
+    <summary>First abstract</summary>
+    <published>2020-01-02T03:04:05Z</published>
+    <author><name>Ada</name></author>
+    <author><name>Bo</name></author>
+    <link href="http://arxiv.org/abs/2401.01234v2" rel="alternate" type="text/html"/>
+  </entry>
+  <entry>
+    <id>https://arxiv.org/abs/hep-th/0301234v3</id>
+    <title>Second relevance result</title>
+    <summary>Second abstract</summary>
+    <published>2026-01-02T03:04:05Z</published>
+    <author><name>Chen</name></author>
+  </entry>
+</feed>

@@ -9,12 +9,14 @@ import { DEFAULT_BUDGET, DEFAULT_MCP_PORT, type Budget } from '@shared/agent'
 import { DEFAULT_PODCAST_VOICE } from '@shared/discover'
 import { defaultMoney, fromUsd, rateOf, toUsd } from '@shared/money'
 import type { SettingsPatch } from '@shared/schemas'
+import { RETRIEVAL_DEFAULTS } from '@shared/retrieval'
 
 function defaults(): Settings {
   // JIWEI_LANG 便于测试固定界面语言
   const language: Settings['language'] =
     (process.env.JIWEI_LANG as Settings['language']) || (app.getLocale().toLowerCase().startsWith('zh') ? 'zh-CN' : 'en')
   return {
+    retrieval: { ...RETRIEVAL_DEFAULTS, trustedSites: [], lowTrustSites: [] },
     plugins: { recommendedDismissed: false },
     discover: { dailyLimit: 5, dailyBudget: fromUsd(0.5 / (rateOf('CNY') ?? 7), defaultMoney(language).currency), budgetCurrency: defaultMoney(language).currency, useSearch: true, podcast: false, podcastVoice: DEFAULT_PODCAST_VOICE },
     tasks: { paused: false, launchAtLogin: false, keepRunning: false },
@@ -47,6 +49,7 @@ export function getSettings(): Settings {
   const result: Settings = {
     ...base,
     ...stored,
+    retrieval: { ...base.retrieval, ...stored.retrieval },
     capture: mergeCaptureSettings(stored.capture, process.platform === 'darwin'),
     money: { ...base.money, ...stored.money },
     plugins: { ...base.plugins, ...stored.plugins },
@@ -59,6 +62,7 @@ export function getSettings(): Settings {
 }
 
 export function setSettings(patch: SettingsPatch): Settings {
+  if (patch.retrieval) patch = { ...patch, retrieval: { ...getSettings().retrieval, ...patch.retrieval } }
   if (patch.updates) patch = { ...patch, updates: { ...getSettings().updates!, ...patch.updates } }
   if (patch.plugins) patch = { ...patch, plugins: { ...getSettings().plugins, ...patch.plugins } }
   if (patch.discover) patch = { ...patch, discover: { ...getSettings().discover, ...patch.discover } }
@@ -87,6 +91,7 @@ export function setSettings(patch: SettingsPatch): Settings {
   applyNativeTheme(next)
   // 设置可能由助手工具、MCP、AI 任务等改动，广播给界面刷新
   emit('settings:changed', {})
+  if (patch.retrieval) emit('retrieval:changed', {})
   return next
 }
 

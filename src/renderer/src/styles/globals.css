@@ -1036,6 +1036,14 @@
   background: var(--accent);
   color: var(--accent-fg);
 }
+.cite-chip-web {
+  background: var(--p-sky);
+  color: var(--p-sky-ink);
+}
+.cite-chip-web:hover {
+  background: var(--p-sky-ink);
+  color: var(--surface);
+}
 /* 引用跳转后的高亮闪烁 */
 @keyframes flash {
   0%,

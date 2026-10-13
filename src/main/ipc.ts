@@ -114,6 +114,12 @@ import * as approval from './services/agent/approval'
 import * as auditLog from './services/agent/audit'
 import * as mcpClient from './services/mcp/client'
 import * as mcpServe from './services/mcp/serve'
+import * as retrievalGateway from './services/retrieval/gateway'
+import * as retrievalBackends from './services/retrieval/backends/store'
+import * as retrievalReader from './services/retrieval/reader'
+import { clearRetrievalCache } from './services/retrieval/maintenance'
+import { retrievalUsage } from './services/retrieval/calls'
+import { emit } from './events'
 
 /** 会影响知识库内容（或隐私范围）的操作完成后，更新索引 */
 const reindexAfter = <T>(v: T): T => {
@@ -424,11 +430,18 @@ const handlers: Handlers = {
   providers: {
     list: () => providers.listProviders(),
     save: (_, input) => {
+      const retrievalKeyAffected = input.kind === 'zhipu' || (input.id ? providers.getProviderRow(input.id).kind === 'zhipu' : false)
       const saved = providers.saveProvider(input)
       if (input.modelCaps) usage.backfillUnpriced(saved.id)
+      // 搜索可以复用智谱服务商Key；修改或清除它时已有状态缓存也必须失效。
+      if (retrievalKeyAffected) emit('retrieval:changed', {})
       return saved
     },
-    remove: (_, id) => providers.removeProvider(id),
+    remove: (_, id) => {
+      const retrievalKeyAffected = providers.getProviderRow(id).kind === 'zhipu'
+      providers.removeProvider(id)
+      if (retrievalKeyAffected) emit('retrieval:changed', {})
+    },
     fetchModels: (_, id) => providers.fetchModels(id),
     test: (_, id) => providers.testProvider(id)
   },
@@ -917,6 +930,15 @@ const handlers: Handlers = {
     cancel: (_, id) => importer.cancelImport(id),
     cancelCues: (_, id) => importer.cancelCues(id),
     undo: (_, id) => importer.undoImport(id)
+  },
+  retrieval: {
+    status: () => retrievalGateway.retrievalStatus(),
+    saveBackend: (_, input) => retrievalBackends.saveBackend(input),
+    testBackend: (_, id) => retrievalGateway.testBackend(id),
+    page: (_, id) => retrievalReader.getPage(id),
+    savePage: (_, id) => retrievalReader.savePage(id),
+    clearCache: () => clearRetrievalCache(),
+    usage: (_, range) => retrievalUsage(range)
   }
 }
 

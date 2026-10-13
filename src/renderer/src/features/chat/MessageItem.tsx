@@ -16,27 +16,54 @@ import {
   CircleX,
   ListChecks,
   ArrowUpRight,
-  Library
+  Library,
+  Globe
 } from 'lucide-react'
 import type { AgentStep, ChatMessage, Citation } from '@shared/types'
 import { cn, formatDate } from '@/lib/utils'
 import { useApp } from '@/store/app'
 import { Tip } from '@/components/ui/primitives'
 import { ApprovalCard, BudgetNotice, StepLinkButton, budgetKind } from '@/features/agent/ChatCards'
+import { useWebSnapshot } from '@/features/retrieval/store'
 
-/** 打开引用：笔记定位到段落，资料定位到片段 / 页码 */
+/** 打开引用：知识库定位到段落 / 页码，网页打开快照或原网页。 */
 export function openCitation(c: Citation): void {
   const s = useApp.getState()
+  if (c.parentType === 'web') {
+    if (c.snippetOnly || !c.parentId || c.parentId.startsWith('tmp-')) {
+      if (c.url) s.openBrowser(c.url)
+    } else useWebSnapshot.getState().open(c.parentId, c.locator, c.url)
+    return
+  }
   s.setHighlight({ type: c.parentType === 'note' ? 'block' : 'segment', id: c.ownerId, locator: c.locator })
   if (c.parentType === 'note') s.openNote(c.parentId)
   else s.openSource(c.parentId)
 }
 
+function citationSite(c: Citation): string {
+  if (c.site) return c.site
+  try {
+    return c.url ? new URL(c.url).hostname : ''
+  } catch {
+    return ''
+  }
+}
+
 function CiteChip({ n, citation }: { n: number; citation?: Citation }) {
   if (!citation) return <sup className="text-subtle">[{n}]</sup>
+  const web = citation.parentType === 'web'
+  const site = web ? citationSite(citation) : ''
   return (
-    <Tip label={`${citation.title} · ${citation.snippet.slice(0, 60)}…`} side="top">
-      <button onClick={() => openCitation(citation)} className="cite-chip" aria-label={`[${n}] ${citation.title}`}>
+    <Tip
+      label={web ? [site, citation.title].filter(Boolean).join(' · ') : `${citation.title} · ${citation.snippet.slice(0, 60)}…`}
+      side="top"
+    >
+      <button
+        onClick={() => openCitation(citation)}
+        className={cn('cite-chip', web && 'cite-chip-web')}
+        aria-label={`[${n}] ${citation.title}`}
+        data-testid={web ? 'web-cite-chip' : undefined}
+      >
         {n}
       </button>
     </Tip>
@@ -152,22 +179,51 @@ function Steps({ steps, streaming }: { steps: AgentStep[]; streaming: boolean })
 
 function CitationCard({ c }: { c: Citation }) {
   const { t, i18n } = useTranslation()
+  const web = c.parentType === 'web'
   const date = c.parentType === 'note' ? c.updatedAt : (c.learnedAt ?? c.updatedAt)
+  const dateLabel =
+    date === null || (!web && !date)
+      ? ''
+      : web && c.learnedAt === null
+        ? t('retrieval.snapshot.fetchedAt', { date: formatDate(date, i18n.language) })
+        : formatDate(date, i18n.language)
   return (
     <button
       onClick={() => openCitation(c)}
       className="group flex w-full gap-3 rounded-lg px-3 py-2 text-left transition-colors hover:bg-surface-hover"
+      data-testid={web ? 'web-citation-card' : undefined}
     >
       <span className="mt-0.5 grid size-5 shrink-0 place-items-center rounded bg-accent-soft font-mono text-2xs text-accent">{c.n}</span>
       <span className="min-w-0 flex-1">
-        <span className="flex items-center gap-1.5 text-xs text-fg">
+        <span className={cn('flex items-center gap-1.5 text-xs text-fg', web && 'flex-wrap')}>
           {c.parentType === 'note' ? (
             <NotebookText className="size-3.5 shrink-0 text-subtle" />
+          ) : web ? (
+            <Globe className="size-3.5 shrink-0 text-subtle" />
           ) : (
             <FileText className="size-3.5 shrink-0 text-subtle" />
           )}
-          <span className="truncate font-medium">{c.title || t('common.untitled')}</span>
-          {c.locator && <span className="shrink-0 text-2xs text-subtle">{c.locator.replace('page=', 'p.').replace('chapter=', '§')}</span>}
+          <span className="min-w-0 truncate font-medium">{c.title || t('common.untitled')}</span>
+          {web && <span className="min-w-0 truncate text-2xs text-subtle">{citationSite(c)}</span>}
+          {!web && c.locator && (
+            <span className="shrink-0 text-2xs text-subtle">{c.locator.replace('page=', 'p.').replace('chapter=', '§')}</span>
+          )}
+          {web && c.snippetOnly && (
+            <span className="shrink-0 rounded bg-sunken px-1 text-2xs text-subtle" data-testid="web-citation-snippet">
+              {t('retrieval.citation.snippet')}
+            </span>
+          )}
+          {web && c.meta?.doi && (
+            <span className="shrink-0 rounded bg-sunken px-1 text-2xs text-subtle" data-testid="web-citation-academic">
+              {t('retrieval.citation.academic')}
+            </span>
+          )}
+          {web && c.suspicious && (
+            <span className="inline-flex shrink-0 items-center gap-0.5 text-2xs text-[#b8862b]" data-testid="web-citation-suspicious">
+              <CircleAlert className="size-3" />
+              {t('retrieval.citation.suspicious')}
+            </span>
+          )}
           {c.status === 'outdated' && (
             <span className="inline-flex shrink-0 items-center gap-0.5 text-2xs text-subtle">
               <Archive className="size-3" />
@@ -182,7 +238,7 @@ function CitationCard({ c }: { c: Citation }) {
           )}
           {c.origin === 'ai' && <Sparkles className="size-3 shrink-0 text-subtle" />}
           {c.via && <span className="shrink-0 rounded bg-sunken px-1 text-2xs text-subtle">{t(`chat.via.${c.via}`)}</span>}
-          <span className="ml-auto shrink-0 text-2xs text-subtle">{date ? formatDate(date, i18n.language) : ''}</span>
+          <span className="ml-auto shrink-0 text-2xs text-subtle">{dateLabel}</span>
         </span>
         <span className="mt-0.5 line-clamp-2 block text-2xs leading-relaxed text-muted">{c.snippet.replace(/^#{1,6}\s+/gm, '')}</span>
       </span>
@@ -231,6 +287,13 @@ function Basis({ citations }: { citations: Citation[] }) {
   const counts = new Map<string, number>()
   for (const c of citations) if (c.via) counts.set(c.via, (counts.get(c.via) ?? 0) + 1)
   const order = ['keyword', 'semantic', 'both', 'context'] as const
+  const via = order
+    .filter((k) => counts.get(k))
+    .map((k) => `${t(`chat.via.${k}`)} ${counts.get(k)}`)
+    .join(' · ')
+  const web = citations.filter((c) => c.parentType === 'web').length,
+    kb = citations.length - web
+  const title = t(`retrieval.basis.${kb && web ? 'both' : web ? 'web' : 'kb'}`, { kb, web })
   return (
     <div className="mt-3" data-testid="answer-basis">
       <Tip label={t('chat.basisHint')} side="top">
@@ -241,16 +304,8 @@ function Basis({ citations }: { citations: Citation[] }) {
           className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs text-subtle transition-colors hover:bg-surface-hover hover:text-fg"
         >
           <Library className="size-3.5" />
-          {t('chat.basis', { count: citations.length })}
-          {counts.size > 0 && (
-            <span className="text-2xs text-subtle/80">
-              ·{' '}
-              {order
-                .filter((k) => counts.get(k))
-                .map((k) => `${t(`chat.via.${k}`)} ${counts.get(k)}`)
-                .join(' · ')}
-            </span>
-          )}
+          {title}
+          {via && <span className="text-2xs text-subtle/80">· {via}</span>}
           <ChevronRight className={cn('size-3 transition-transform', open && 'rotate-90')} />
         </button>
       </Tip>

@@ -18,6 +18,7 @@ import { InkMountains } from '@/components/Illustrations'
 import { ModelPicker } from '../ai/ModelPicker'
 import { EffortPicker } from '../ai/EffortPicker'
 import { ScopePicker } from './ScopePicker'
+import { WebModePicker, useWebMode } from '../retrieval/WebModePicker'
 import { MessageItem, REPLY_EVENT } from './MessageItem'
 import { errText, sendChat, useChatThread, useModelChoice } from './useChat'
 
@@ -189,6 +190,7 @@ function ChatPanel() {
   const { data: emb } = useEmbeddingStatus()
   const { data: conversations = [] } = useConversations()
   const conv = conversations.find((c) => c.id === conversationId)
+  const { web, setWeb } = useWebMode(conversationId, conv?.web)
   const { choice, setChoice, effort, setEffort, provider } = useModelChoice()
   const [scope, setScope] = useState<ChatScope>({ type: 'all' })
   const { msgs, setMsgs, streaming } = useChatThread(conversationId)
@@ -222,6 +224,8 @@ function ChatPanel() {
         model: choice.model,
         effort,
         scope,
+        // 既有会话由模式菜单立即更新；发送不写回旧渲染值，避免待回包的切换被撤销。
+        ...(conversationId ? {} : { web }),
         context: { ...packetFromWorkspace(getWorkspaceContext()), page: page ?? null },
         ...(conversationId ? {} : { incognito: incognitoNew })
       })
@@ -344,6 +348,9 @@ function ChatPanel() {
             <ModelPicker compact value={choice} onChange={setChoice} />
             {provider && <EffortPicker compact kind={provider.kind} value={effort} onChange={setEffort} />}
             <ScopePicker value={scope} onChange={setScope} />
+            <span className="contents" data-testid="chat-web-mode">
+              <WebModePicker value={web} onChange={setWeb} />
+            </span>
             {!conv && (
               <Tip label={t('chat.incognitoHint')} side="top">
                 <button

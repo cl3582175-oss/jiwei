@@ -821,6 +821,7 @@ export const conversations = sqliteTable(
     title: text('title').notNull().default(''),
     /** 检索范围（JSON）：全部知识库 / 指定笔记与资料 / 不使用知识库 */
     scope: text('scope').notNull().default('{"type":"all"}'),
+    web: text('web', { enum: ['off', 'auto', 'always'] }),
     pinned: integer('pinned', { mode: 'boolean' }).notNull().default(false),
     /** 无痕：不使用、不形成记忆 */
     incognito: integer('incognito', { mode: 'boolean' }).notNull().default(false),
@@ -1238,6 +1239,75 @@ export const searchConnections = sqliteTable('search_connections', {
   enabled: integer('enabled', { mode: 'boolean' }).notNull().default(false),
   updatedAt: integer('updated_at').notNull()
 })
+
+/** 旧搜索连接保留不删；迁移只复制密文，避免升级损失凭证。 */
+export const searchBackends = sqliteTable('search_backends', {
+  id: text('id').primaryKey(),
+  keyEnc: blob('key_enc', { mode: 'buffer' }),
+  keyProviderId: text('key_provider_id'),
+  baseUrl: text('base_url'),
+  enabled: integer('enabled', { mode: 'boolean' }).notNull().default(false),
+  updatedAt: integer('updated_at').notNull()
+})
+
+export const webSearchCache = sqliteTable(
+  'web_search_cache',
+  {
+    key: text('key').primaryKey(),
+    backend: text('backend').notNull(),
+    results: text('results').notNull(),
+    createdAt: integer('created_at').notNull(),
+    expiresAt: integer('expires_at').notNull()
+  },
+  (t) => [index('web_search_cache_expires_idx').on(t.expiresAt)]
+)
+
+export const webPages = sqliteTable(
+  'web_pages',
+  {
+    id: text('id').primaryKey(),
+    url: text('url').notNull(),
+    finalUrl: text('final_url').notNull(),
+    title: text('title').notNull().default(''),
+    siteName: text('site_name'),
+    publishedAt: integer('published_at'),
+    fetchedAt: integer('fetched_at').notNull(),
+    method: text('method', { enum: ['fetch', 'render', 'pdf'] }).notNull(),
+    lang: text('lang'),
+    text: text('text').notNull(),
+    textHash: text('text_hash').notNull()
+  },
+  (t) => [index('web_pages_url_idx').on(t.url), uniqueIndex('web_pages_url_hash_uq').on(t.url, t.textHash)]
+)
+
+export const webPageRefs = sqliteTable(
+  'web_page_refs',
+  {
+    pageId: text('page_id').notNull(),
+    messageId: text('message_id').notNull(),
+    conversationId: text('conversation_id').notNull(),
+    createdAt: integer('created_at').notNull()
+  },
+  (t) => [primaryKey({ columns: [t.pageId, t.messageId] }), index('web_page_refs_conv_idx').on(t.conversationId)]
+)
+
+export const retrievalCalls = sqliteTable(
+  'retrieval_calls',
+  {
+    id: text('id').primaryKey(),
+    at: integer('at').notNull(),
+    date: text('date').notNull(),
+    backend: text('backend').notNull(),
+    kind: text('kind', { enum: ['search', 'fetch', 'render', 'pdf'] }).notNull(),
+    purpose: text('purpose').notNull(),
+    runId: text('run_id'),
+    conversationId: text('conversation_id'),
+    ok: integer('ok', { mode: 'boolean' }).notNull(),
+    cached: integer('cached', { mode: 'boolean' }).notNull(),
+    durationMs: integer('duration_ms')
+  },
+  (t) => [index('retrieval_calls_date_idx').on(t.date)]
+)
 
 /** 插件凭证仅存密文；生命周期事务由 plugins/install 维护。 */
 export const pluginMarkets = sqliteTable('plugin_markets', {

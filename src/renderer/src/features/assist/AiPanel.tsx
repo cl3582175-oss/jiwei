@@ -3,20 +3,37 @@ import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { DropdownMenu } from 'radix-ui'
 import { toast } from 'sonner'
-import { Sparkles, X, Pin, PinOff, SquarePen, ArrowUp, Square, NotebookText, FileText, TextQuote, Globe, Plus, Check, Maximize2, LayoutDashboard } from 'lucide-react'
+import {
+  Sparkles,
+  X,
+  Pin,
+  PinOff,
+  SquarePen,
+  ArrowUp,
+  Square,
+  NotebookText,
+  FileText,
+  TextQuote,
+  Globe,
+  Plus,
+  Check,
+  Maximize2,
+  LayoutDashboard
+} from 'lucide-react'
 import { usePageContext } from './pageContext'
 import { packetFromWorkspace, fmtTime, type ContextPacket } from '@shared/context'
 import { collectTabSources, sameContextTab, withTabSources, type SelectedTab } from '@shared/browserTabContext'
 import type { WorkspaceContext } from '@shared/types'
 import { api, cn, modKey } from '@/lib/utils'
 import { useApp } from '@/store/app'
-import { useNote } from '@/lib/queries'
+import { useConversations, useNote } from '@/lib/queries'
 import { Button } from '@/components/ui/button'
 import { Menu, MenuContent, MenuTrigger, Tip } from '@/components/ui/primitives'
 import { MessageItem, REPLY_EVENT } from '../chat/MessageItem'
 import { errText, sendChat, useChatThread, useModelChoice } from '../chat/useChat'
 import { ModelPicker } from '../ai/ModelPicker'
 import { EffortPicker } from '../ai/EffortPicker'
+import { WebModePicker, useWebMode } from '../retrieval/WebModePicker'
 import { useAssist } from './store'
 import { activeTab, aiAllowed, useBrowser } from '../browser/store'
 
@@ -92,6 +109,9 @@ export function AiPanelBody({ pinned }: { pinned: boolean }) {
   const ctx = useApp((s) => s.context)
   const view = useApp((s) => s.view)
   const conversationId = useAssist((s) => s.panelConversationId)
+  const { data: conversations = [] } = useConversations()
+  const conv = conversations.find((c) => c.id === conversationId)
+  const { web, setWeb } = useWebMode(conversationId, conv?.web)
   const { choice, setChoice, effort, setEffort, provider } = useModelChoice()
   const { msgs, setMsgs, streaming } = useChatThread(conversationId)
   const chips = useContextChips(ctx)
@@ -173,6 +193,8 @@ export function AiPanelBody({ pinned }: { pinned: boolean }) {
         model: choice.model,
         effort,
         scope: { type: 'all' },
+        // 既有会话由模式菜单立即更新；发送不写回旧渲染值，避免待回包的切换被撤销。
+        ...(conversationId ? {} : { web }),
         kind: 'workspace',
         context: packet
       })
@@ -182,6 +204,7 @@ export function AiPanelBody({ pinned }: { pinned: boolean }) {
         qc.setQueryData(['messages', r.conversation.id], [r.userMessage, r.assistant])
         useAssist.getState().setPanel({ panelConversationId: r.conversation.id })
       }
+      void qc.invalidateQueries({ queryKey: ['conversations'] })
     } catch (e) {
       toast.error(errText(e))
     } finally {
@@ -215,7 +238,6 @@ export function AiPanelBody({ pinned }: { pinned: boolean }) {
     window.addEventListener(REPLY_EVENT, onReply)
     return () => window.removeEventListener(REPLY_EVENT, onReply)
   }, [conversationId])
-
 
   return (
     <div className="flex h-full flex-col" role="complementary" aria-label={t('assist.panel')}>
@@ -408,6 +430,9 @@ export function AiPanelBody({ pinned }: { pinned: boolean }) {
           <div className="flex flex-wrap items-center gap-1.5 px-2 pb-2">
             <ModelPicker compact value={choice} onChange={setChoice} />
             {provider && <EffortPicker compact kind={provider.kind} value={effort} onChange={setEffort} />}
+            <span className="contents" data-testid="panel-web-mode">
+              <WebModePicker value={web} onChange={setWeb} />
+            </span>
             <span className="flex-1" />
             {streaming ? (
               <Button
