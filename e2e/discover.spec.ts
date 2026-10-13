@@ -441,7 +441,7 @@ test('P6 三种搜索适配、加密凭证与每日精选配方的固定流程/�
   }
   const connections = await page.evaluate(() => window.jiwei.discover.searchProviders())
   expect(connections.every((c) => c.keySet)).toBe(true)
-  expect(connections.filter((c) => c.enabled)).toHaveLength(1)
+  expect(connections.filter((c) => c.enabled)).toHaveLength(3)
   expect(JSON.stringify(connections)).not.toContain('fixture-key')
   const body = JSON.parse(networkRequests.find((r) => r.url === '/search/bocha')!.body)
   expect(body).toMatchObject({ count: 1, summary: true, freshness: 'noLimit' })

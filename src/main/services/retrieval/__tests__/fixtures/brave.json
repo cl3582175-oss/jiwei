@@ -1,0 +1,16 @@
+{
+  "web": {
+    "results": [
+      {
+        "title": "<b>Fixture title</b>",
+        "url": "https://www.example.org/read/?utm_source=fixture&b=2&a=1",
+        "description": "<p>Fixture snippet</p><script>remove()</script>",
+        "page_age": "2026-01-02T03:04:05Z",
+        "profile": {
+          "name": "Fixture site"
+        },
+        "age": "2 days ago"
+      }
+    ]
+  }
+}

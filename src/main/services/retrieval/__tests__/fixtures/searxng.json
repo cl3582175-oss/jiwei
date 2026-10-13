@@ -1,0 +1,10 @@
+{
+  "results": [
+    {
+      "title": "<b>Fixture title</b>",
+      "url": "https://www.example.org/read/?utm_source=fixture&b=2&a=1",
+      "content": "<p>Fixture snippet</p><script>remove()</script>",
+      "publishedDate": "2026-01-02T03:04:05Z"
+    }
+  ]
+}

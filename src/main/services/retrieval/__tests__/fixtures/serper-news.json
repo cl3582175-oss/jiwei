@@ -1,0 +1,11 @@
+{
+  "news": [
+    {
+      "title": "News fixture",
+      "link": "https://news.example.org/story",
+      "snippet": "News snippet",
+      "date": "a week ago",
+      "source": "Fixture newsroom"
+    }
+  ]
+}

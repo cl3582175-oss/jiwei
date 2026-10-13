@@ -3,7 +3,7 @@ import { ASK_USER, buildScopeTools } from './scopeTools'
 import { and, asc, desc, eq, isNull, ne } from 'drizzle-orm'
 import log from 'electron-log/main'
 import { getDb } from '../../db'
-import { conversations, messages } from '../../db/schema'
+import { conversations, messages, webPageRefs } from '../../db/schema'
 import { newId } from '../../lib/ids'
 import { deviceId } from '../device'
 import { emit } from '../../events'
@@ -157,6 +157,7 @@ export function deleteConversation(id: string): void {
     if (m?.c === id) ctrl.abort()
   })
   db.transaction((tx) => {
+    tx.delete(webPageRefs).where(eq(webPageRefs.conversationId, id)).run()
     tx.delete(messages).where(eq(messages.conversationId, id)).run()
     tx.delete(conversations).where(eq(conversations.id, id)).run()
   })

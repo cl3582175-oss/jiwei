@@ -62,6 +62,7 @@ import { initializeRecordingFiles, resumeCryptoMigration, clearRecordingKeys, cr
 import { refreshBrowserNetwork } from './services/browser/network'
 import { startUpdates, stopUpdates } from './services/updates'
 import { migrateSearchConnections } from './services/retrieval/backends/store'
+import { cleanupRetrieval } from './services/retrieval/maintenance'
 
 const HOUR = 3_600_000
 const DEEP_LINK = /^jiwei:\/\/(note|source)\/([0-9a-f-]{36})/i
@@ -248,6 +249,7 @@ app.whenReady().then(async () => {
       pruneRevisions()
       pruneJobs()
       pruneAudit()
+      cleanupRetrieval()
       await pruneImportScans()
       await collectGarbage()
     } catch (e) {

@@ -29,7 +29,7 @@ const probe = vi.hoisted(() => ({
   task: null as AiTask | null
 }))
 
-// 只替代桌面与外部服务边界；search/externalFetch 仍发出真实的 loopback 请求。
+// 只替代桌面与外部服务边界；gateway/externalFetch 仍发出真实的 loopback 请求。
 vi.mock('electron', () => ({
   app: { isPackaged: false, getLocale: () => 'en' },
   nativeTheme: {},
@@ -121,11 +121,12 @@ import { currentRun, withRun } from '../../agent/context'
 import { runDaily } from '../../discover/daily'
 import { path, remedy } from '../../discover/path'
 import { runTask } from '../../tasks/runner'
-import * as searchModule from '../../discover/search'
+import * as gateway from '../gateway'
+import { migrateSearchConnections } from '../backends/store'
 import { getSettings } from '../../settings'
 
 const articleUrl = 'https://purpose.example/article'
-const originalSearch = searchModule.search
+const originalSearch = gateway.searchWeb
 let sqlite: Database.Database
 let server: Server
 let taskStep: number
@@ -166,6 +167,7 @@ beforeEach(async () => {
       updatedAt: 1
     })
     .run()
+  migrateSearchConnections()
   for (const [key, value] of Object.entries({
     language: 'en',
     ai: {
@@ -257,7 +259,7 @@ beforeEach(async () => {
       )
     }
   })
-  vi.spyOn(searchModule, 'search').mockImplementation((...args) => {
+  vi.spyOn(gateway, 'searchWeb').mockImplementation((...args) => {
     const run = currentRun()
     probe.atSearch.push({ entry: probe.entry, purpose: run?.purpose, caller: run?.caller })
     return originalSearch(...args)
@@ -292,6 +294,7 @@ function expectPurpose(purpose: string, count: number, caller: string): void {
   expect(probe.atSearch).toEqual(Array.from({ length: count }, () => ({ entry: probe.entry, purpose, caller })))
   expect(probe.atNetwork).toEqual(probe.atSearch)
   expect(probe.received).toHaveLength(count)
+  expect(sqlite.prepare('SELECT count(*) AS n FROM retrieval_calls WHERE kind = ?').get('search')).toEqual({ n: count })
   expect(probe.received.every((request) => request.path === '/bocha')).toBe(true)
   expect(probe.requests.every((request) => request.credentials === 'omit' && request.redirect === 'manual')).toBe(true)
   expect(probe.requests.every((request) => !new Headers(request.headers).has('user-agent'))).toBe(true)
@@ -340,9 +343,9 @@ describe('P0 production search caller purposes', () => {
     const run = probe.db!.select().from(schema.aiTaskRuns).get()
     expect(run).toMatchObject({ id: result.runId, status: 'ok', error: null })
     expect(probe.modelPurposes).toEqual(['task', 'task'])
-    expect(
-      probe.model!.doGenerateCalls[1].prompt.some((message) => message.role === 'tool' && JSON.stringify(message).includes(articleUrl))
-    ).toBe(true)
+    const toolMessage = probe.model!.doGenerateCalls[1].prompt.find((message) => message.role === 'tool')
+    expect(JSON.stringify(toolMessage)).toContain(articleUrl)
+    expect(JSON.stringify(toolMessage)).not.toContain('backend')
     expectPurpose('task', 1, 'task:Controlled search task')
   }, 20000)
 })

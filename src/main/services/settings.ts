@@ -91,6 +91,7 @@ export function setSettings(patch: SettingsPatch): Settings {
   applyNativeTheme(next)
   // 设置可能由助手工具、MCP、AI 任务等改动，广播给界面刷新
   emit('settings:changed', {})
+  if (patch.retrieval) emit('retrieval:changed', {})
   return next
 }
 

@@ -1041,6 +1041,7 @@ export interface SourceRecognition {
 export interface JiweiEvents {
   'mail:changed': Record<string, never>
   'discover:changed': Record<string, never>
+  'retrieval:changed': Record<string, never>
   'lenses:changed': { sourceId: string }
   'series:changed': undefined
   'recording:changed': { id: string }

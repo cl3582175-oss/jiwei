@@ -13,6 +13,7 @@ import { meta, searchBackends, searchConnections } from '../../../db/schema'
 import { sealJson, openJson } from '../../mcp/secrets'
 import { getProviderRow, decryptKey } from '../../ai/providers'
 import { tr } from '../../../lib/messages'
+import { emit } from '../../../events'
 
 type Row = typeof searchBackends.$inferSelect
 const academic = (id: BackendId): boolean => (ACADEMIC_BACKENDS as readonly string[]).includes(id)
@@ -129,4 +130,5 @@ export function saveBackend(input: BackendSave): void {
     throw new Error(tr('请先填写 Key', 'Enter a key first'))
   const row: Row = { id: value.id, keyEnc, keyProviderId, baseUrl, enabled: value.enabled, updatedAt: Date.now() }
   db.insert(searchBackends).values(row).onConflictDoUpdate({ target: searchBackends.id, set: row }).run()
+  emit('retrieval:changed', {})
 }

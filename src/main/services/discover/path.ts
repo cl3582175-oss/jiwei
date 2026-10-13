@@ -18,7 +18,7 @@ import { requireMistake, requireMistakeCloud } from '../mistakesPrivacy'
 import { audit } from '../agent/audit'
 import { previewPathPhases } from '../plan/schedule'
 import { tr } from '../../lib/messages'
-import { hasSearch, search } from './search'
+import { hasWebBackend, searchWeb } from '../retrieval/gateway'
 import { checkDiscoveryBudget, discoveryModel } from './daily'
 import { discoveryContext, allowedCandidate } from './context'
 import { upsertCandidate } from './feeds'
@@ -35,9 +35,9 @@ async function resources(query: string, guard: () => void): Promise<Resource[]> 
     const id = `${h.parentType}:${h.parentId}`
     if (!map.has(id)) map.set(id, { id, title: h.title, type: h.parentType, text: h.text.slice(0, 800) })
   }
-  if (getSettings().discover.useSearch && hasSearch())
-    for (const r of await search(query, { count: 8, guard }))
-      map.set(r.url, { id: r.url, title: r.title, type: 'web', url: r.url, text: r.snippet })
+  if (getSettings().discover.useSearch && hasWebBackend())
+    for (const { url, title, snippet } of (await searchWeb(query, { count: 8, guard })).results)
+      map.set(url, { id: url, title, type: 'web', url, text: snippet })
   guard()
   return [...map.values()].slice(0, 12)
 }

@@ -8,7 +8,7 @@ import { fetchWebText } from '../webText'
 import type { ToolMeta } from '../agent/wrap'
 import { getSettings } from '../settings'
 import { mailTools } from '../mail/tools'
-import { hasSearch, search } from '../discover/search'
+import { hasWebBackend, searchWeb } from '../retrieval/gateway'
 import { checkBudget } from '../agent/usage'
 
 export async function taskToolCatalog(model = ''): Promise<{ tools: ToolSet; meta: Record<string, ToolMeta>; info: TaskToolInfo[] }> {
@@ -50,8 +50,16 @@ export async function taskToolCatalog(model = ''): Promise<{ tools: ToolSet; met
     inputSchema: z.object({ query: z.string().trim().min(1).max(500), count: z.number().int().min(1).max(10).default(8), freshness: z.enum(['day', 'week', 'month', 'year']).optional() }),
     execute: async ({ query, count, freshness }, { abortSignal }) => {
       checkBudget()
-      if (!hasSearch()) throw new Error(zh ? '请先配置搜索服务' : 'Configure a search service first')
-      return JSON.stringify(await search(query, { count, freshness, signal: abortSignal, guard: checkBudget }))
+      if (!hasWebBackend()) throw new Error(zh ? '请先配置搜索服务' : 'Configure a search service first')
+      const { results } = await searchWeb(query, { count, freshness, signal: abortSignal, guard: checkBudget })
+      return JSON.stringify(
+        results.map(({ url, title, snippet, publishedAt }) => ({
+          url,
+          title,
+          snippet,
+          ...(publishedAt === undefined ? {} : { publishedAt })
+        }))
+      )
     }
   })
   meta.web_search = { level: 'read', untrusted: true }
