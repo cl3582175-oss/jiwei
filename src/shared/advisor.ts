@@ -1,6 +1,8 @@
 import { z } from 'zod'
 import type { PluginRegistryItem, PluginFramework } from './plugins'
 
+export const ADVISOR_CANCELED = 'ADVISOR_CANCELED'
+
 // 参谋与决策日志（v0.9）：备忘录由模型按此结构生成；依据只能引用所供素材的编号。
 
 const text = (max: number) => z.string().trim().min(1).max(max)

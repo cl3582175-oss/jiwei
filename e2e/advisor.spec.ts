@@ -55,26 +55,31 @@ test.beforeAll(async () => {
       const prompt = text(input.messages.filter((m: { role: string }) => m.role === 'user').at(-1)?.content)
       prompts.push(prompt)
       const ids = [...prompt.matchAll(/"id":"(S\d+)"/g)].map((m) => m[1])
-      res.writeHead(200, { 'content-type': 'application/json' }).end(
-        JSON.stringify({
-          id: 'controlled',
-          object: 'chat.completion',
-          created: 1,
-          model: 'deepseek-flash',
-          choices: [
-            {
-              index: 0,
-              message: {
-                role: 'assistant',
-                content: null,
-                tool_calls: [{ id: 'submit', type: 'function', function: { name: 'submit', arguments: JSON.stringify(memo(ids)) } }]
-              },
-              finish_reason: 'tool_calls'
-            }
-          ],
-          usage: { prompt_tokens: 3000, completion_tokens: 900, total_tokens: 3900 }
-        })
-      )
+      const respond = () =>
+        res.writeHead(200, { 'content-type': 'application/json' }).end(
+          JSON.stringify({
+            id: 'controlled',
+            object: 'chat.completion',
+            created: 1,
+            model: 'deepseek-flash',
+            choices: [
+              {
+                index: 0,
+                message: {
+                  role: 'assistant',
+                  content: null,
+                  tool_calls: [{ id: 'submit', type: 'function', function: { name: 'submit', arguments: JSON.stringify(memo(ids)) } }]
+                },
+                finish_reason: 'tool_calls'
+              }
+            ],
+            usage: { prompt_tokens: 3000, completion_tokens: 900, total_tokens: 3900 }
+          })
+        )
+      if (prompt.includes('【慢】')) {
+        const timer = setTimeout(respond, 10_000)
+        res.on('close', () => clearTimeout(timer))
+      } else respond()
     })
   })
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r))
@@ -195,4 +200,47 @@ test('记录决定 → 到期在今日页提醒 → 回看并把教训写成复�
   expect(notes.length).toBe(1)
   await page.keyboard.press('ControlOrMeta+9')
   await expect(page.getByTestId('decisions-due')).toHaveCount(0)
+})
+
+test('首页停止在两秒内恢复，导航返回仍能停止且输入保留', async () => {
+  await navTo(page, /^参谋/, { again: true })
+  await page.getByTestId('decision-page').getByRole('button', { name: '决策日志', exact: true }).click()
+  const before = (await page.evaluate(() => window.jiwei.advisor.list())).length
+  const question = '【慢】要不要换一个实习岗位？'
+  await page.getByRole('textbox', { name: '参谋', exact: true }).fill(question)
+  if (!(await page.getByRole('textbox', { name: '补充背景（可选）' }).count()))
+    await page.getByRole('button', { name: '补充背景（可选）' }).click()
+  await page.getByRole('textbox', { name: '补充背景（可选）' }).fill('背景输入也应保留')
+  await page.getByRole('button', { name: '请参谋', exact: true }).click()
+  await expect(page.getByRole('button', { name: '停止', exact: true })).toBeVisible()
+  await expect.poll(() => prompts.some((p) => p.includes(question))).toBe(true)
+  await page.keyboard.press('ControlOrMeta+9')
+  await navTo(page, /^参谋/, { again: true })
+  await expect(page.getByRole('button', { name: '停止', exact: true })).toBeVisible()
+  await expect(page.getByRole('textbox', { name: '参谋', exact: true })).toHaveValue(question)
+  for (const theme of ['light', 'dark'] as const) {
+    await page.evaluate((theme) => window.jiwei.settings.set({ theme }), theme)
+    await expect(page.locator('html')).toHaveAttribute('data-theme', theme)
+    await page.screenshot({ path: `.superpowers/sdd/v0.11.1-fixes/shots/p3-advisor-stop-${theme}.png` })
+  }
+  await page.getByRole('button', { name: '停止', exact: true }).click()
+  await expect(page.getByRole('button', { name: '请参谋', exact: true })).toBeEnabled({ timeout: 2000 })
+  await expect(page.getByText('已停止，没有生成新的备忘录', { exact: true })).toBeVisible()
+  await expect(page.getByRole('textbox', { name: '参谋', exact: true })).toHaveValue(question)
+  await expect(page.getByRole('textbox', { name: '补充背景（可选）' })).toHaveValue('背景输入也应保留')
+  expect((await page.evaluate(() => window.jiwei.advisor.list())).length).toBe(before)
+})
+
+test('首页决策菜单删除经确认后移除且不打开详情', async () => {
+  const d = (await page.evaluate(() => window.jiwei.advisor.list()))[0]
+  const row = page.getByTestId('decision-log').locator('li').filter({ hasText: d.question })
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1000, 680))
+  await page.mouse.move(800, 650)
+  await expect(row.getByRole('button', { name: '更多', exact: true })).toHaveCSS('opacity', '1')
+  await row.getByRole('button', { name: '更多', exact: true }).click()
+  await expect(page.getByTestId('decision-page')).toHaveCount(0)
+  await page.getByRole('menuitem', { name: '删除', exact: true }).click()
+  await page.getByRole('alertdialog').getByRole('button', { name: '确认', exact: true }).click()
+  await expect(row).toHaveCount(0)
+  await expect(page.evaluate((id) => window.jiwei.advisor.get(id), d.id)).rejects.toThrow()
 })

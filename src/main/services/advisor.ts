@@ -1,6 +1,7 @@
 import { and, desc, eq, inArray, isNull, lte } from 'drizzle-orm'
 import {
   AdvisorAskSchema,
+  ADVISOR_CANCELED,
   AdvisorWeightsSchema,
   DecideSchema,
   DecisionMemoDraft,
@@ -36,6 +37,34 @@ import { createProposal } from './proposals'
 type Row = typeof decisions.$inferSelect
 
 const LESSON_NOTE_KEY = 'advisor.lessonNote'
+const running = new Map<string, AbortController>()
+
+export const runningGenerations = (): string[] => [...running.keys()]
+export function cancelGeneration(target: string): void {
+  const ctrl = running.get(target)
+  if (!ctrl) return
+  ctrl.abort(new Error(ADVISOR_CANCELED))
+  running.delete(target)
+  changed()
+}
+
+async function withGeneration<T>(target: string, fn: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  if (running.has(target)) throw new Error(tr('参谋仍在生成，请先停止', 'Advisor is still generating; stop it first'))
+  const ctrl = new AbortController()
+  running.set(target, ctrl)
+  changed()
+  try {
+    return await withRun({ purpose: 'advisor.memo', caller: 'app', perRun: perRunLimit() }, () => fn(ctrl.signal))
+  } catch (error) {
+    if (ctrl.signal.aborted) throw new Error(ADVISOR_CANCELED, { cause: error })
+    throw error
+  } finally {
+    if (running.get(target) === ctrl) {
+      running.delete(target)
+      changed()
+    }
+  }
+}
 
 function changed(): void {
   emit('advisor:changed', {})
@@ -154,14 +183,21 @@ async function generateMemo(
   question: string,
   context: string,
   goalId: string | null,
-  framework: Decision['framework']
+  framework: Decision['framework'],
+  signal: AbortSignal
 ): Promise<{ memo: DecisionMemo; model: string }> {
+  const guard = (): void => {
+    signal.throwIfAborted()
+    checkBudget()
+  }
+  guard()
   const s = getSettings(),
     chat = s.ai.chat,
     zh = s.language.startsWith('zh')
   if (!chat.providerId || !chat.model) throw new Error(tr('请先在设置中配置 AI 模型', 'Configure an AI model in Settings first'))
   const goal = goalId ? getDb().select({ title: goals.title }).from(goals).where(eq(goals.id, goalId)).get() : undefined
   const hits = await retrieve(`${question}\n${context}`.slice(0, 1500), { type: 'all' }, 10)
+  guard()
   const list: MemoSource[] = hits.map((h, i) => ({
     id: `S${i + 1}`,
     parentType: h.parentType,
@@ -199,8 +235,10 @@ async function generateMemo(
       (framework
         ? '\n' + asExternalData('advisor.selectedFramework', JSON.stringify(framework), { maxChars: 320000, overflow: 'reject' })
         : ''),
-    guard: checkBudget
+    signal,
+    guard
   })
+  guard()
   return {
     memo: {
       ...normalizeMemo(
@@ -214,36 +252,57 @@ async function generateMemo(
   }
 }
 
-/** 提一个问题：创建草稿并生成备忘录（失败时保留草稿，可重试） */
+/** 生成成功才创建决策；普通失败保留草稿供重试，取消不落库。 */
 export async function ask(input: AdvisorAsk): Promise<Decision> {
   const q = AdvisorAskSchema.parse(input)
   const framework = q.frameworkId ? listFrameworks().find((f) => f.id === q.frameworkId) : undefined
   if (q.frameworkId && !framework) throw new Error(tr('分析框架已不可用，请重新选择', 'Framework unavailable; choose another framework'))
   const now = Date.now(),
     id = newId()
-  getDb()
-    .insert(decisions)
-    .values({
-      id,
-      question: q.question,
-      context: q.context,
-      framework: framework ? JSON.stringify(framework) : null,
-      goalId: q.goalId,
-      status: 'draft',
-      createdAt: now,
-      updatedAt: now,
-      updatedBy: deviceId()
-    })
-    .run()
-  changed()
-  return regenerate(id)
+  const values = {
+    id,
+    question: q.question,
+    context: q.context,
+    framework: framework ? JSON.stringify(framework) : null,
+    goalId: q.goalId,
+    status: 'draft' as const,
+    createdAt: now,
+    updatedAt: now,
+    updatedBy: deviceId()
+  }
+  return withGeneration('ask', async (signal) => {
+    try {
+      const { memo, model } = await generateMemo(q.question, q.context ?? '', q.goalId ?? null, framework ?? null, signal)
+      signal.throwIfAborted()
+      getDb()
+        .insert(decisions)
+        .values({ ...values, memo: JSON.stringify(memo), model })
+        .run()
+      changed()
+      audit({
+        caller: 'app',
+        tool: 'advisor.memo',
+        level: 'write',
+        status: 'ok',
+        summary: `Decision memo: ${memo.options.length} options, ${memo.sources.length} sources`
+      })
+      return toDecision(row(id))
+    } catch (error) {
+      if (!signal.aborted && !getDb().select({ id: decisions.id }).from(decisions).where(eq(decisions.id, id)).get()) {
+        getDb().insert(decisions).values(values).run()
+        changed()
+      }
+      throw error
+    }
+  })
 }
 
 export async function regenerate(id: string): Promise<Decision> {
   const r = row(id)
-  return withRun({ purpose: 'advisor.memo', caller: 'app', perRun: perRunLimit() }, async () => {
+  return withGeneration(id, async (signal) => {
     checkBudget()
-    const { memo, model } = await generateMemo(r.question, r.context, r.goalId, r.framework ? JSON.parse(r.framework) : null)
+    const { memo, model } = await generateMemo(r.question, r.context, r.goalId, r.framework ? JSON.parse(r.framework) : null, signal)
+    signal.throwIfAborted()
     audit({
       caller: 'app',
       tool: 'advisor.memo',
@@ -251,6 +310,7 @@ export async function regenerate(id: string): Promise<Decision> {
       status: 'ok',
       summary: `Decision memo: ${memo.options.length} options, ${memo.sources.length} sources`
     })
+    signal.throwIfAborted()
     return patch(id, { memo: JSON.stringify(memo), weights: null, model })
   })
 }
@@ -313,6 +373,7 @@ export function setStatus(id: string, status: 'draft' | 'dropped'): Decision {
 
 export function removeDecision(id: string): void {
   row(id)
+  cancelGeneration(id)
   getDb().update(decisions).set({ deletedAt: Date.now(), updatedAt: Date.now(), updatedBy: deviceId() }).where(eq(decisions.id, id)).run()
   changed()
 }

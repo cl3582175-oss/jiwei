@@ -764,6 +764,8 @@ export const capabilities = {
       params: [['input', AdvisorAskSchema]]
     }),
     regenerate: cap<Decision>()({ description: '重新生成决策备忘录（花费 AI 费用）', params: [id('id')] }),
+    cancel: cap<void>()({ description: '停止参谋生成，保留输入和已有备忘录', params: [id('target')] }),
+    running: cap<string[]>()({ description: '正在生成的参谋任务：ask 或决策 ID', params: none }),
     weights: cap<Decision>()({
       description: '调整决策矩阵的准则权重（null 恢复建议权重）',
       params: [id('id'), ['weights', AdvisorWeightsSchema]]
@@ -1393,13 +1395,37 @@ export const capabilities = {
     openLink: cap<void>()({ description: '在系统浏览器打开更新说明', params: [['url', z.string().max(2000).optional()]] })
   },
   importer: {
-    choose: cap<import('./importer').ImportScan | null>()({ description: '选择并扫描笔记库', params: [['mode', z.enum(['folder', 'files', 'notion', 'notion-folder'])]] }),
-    inspect: cap<import('./importer').ImportScan>()({ description: '开发测试：扫描本地笔记库', params: [['paths', z.array(z.string().max(4096)).min(1).max(5000)]] }),
+    choose: cap<import('./importer').ImportScan | null>()({
+      description: '选择并扫描笔记库',
+      params: [['mode', z.enum(['folder', 'files', 'notion', 'notion-folder'])]]
+    }),
+    inspect: cap<import('./importer').ImportScan>()({
+      description: '开发测试：扫描本地笔记库',
+      params: [['paths', z.array(z.string().max(4096)).min(1).max(5000)]]
+    }),
     scan: cap<import('./importer').ImportScan>()({ description: '扫描进度与预览清单', params: [['id', z.string().max(64)]] }),
     cancelScan: cap<void>()({ description: '取消扫描', params: [['id', z.string().max(64)]] }),
-    preview: cap<import('./importer').ImportPreview>()({ description: '转换后的只读康奈尔预览', params: [['id', z.string().max(64)], ['path', z.string().max(4096)]] }),
-    estimate: cap<import('./importer').ImportEstimate>()({ description: '估算补线索调用与费用', params: [['id', z.string().max(64)], ['paths', z.array(z.string().max(4096)).max(5000)]] }),
-    start: cap<import('./importer').ImportRun>()({ description: '导入所选笔记', params: [['id', z.string().max(64)], ['options', ImportOptionsSchema]] }),
+    preview: cap<import('./importer').ImportPreview>()({
+      description: '转换后的只读康奈尔预览',
+      params: [
+        ['id', z.string().max(64)],
+        ['path', z.string().max(4096)]
+      ]
+    }),
+    estimate: cap<import('./importer').ImportEstimate>()({
+      description: '估算补线索调用与费用',
+      params: [
+        ['id', z.string().max(64)],
+        ['paths', z.array(z.string().max(4096)).max(5000)]
+      ]
+    }),
+    start: cap<import('./importer').ImportRun>()({
+      description: '导入所选笔记',
+      params: [
+        ['id', z.string().max(64)],
+        ['options', ImportOptionsSchema]
+      ]
+    }),
     run: cap<import('./importer').ImportRun>()({ description: '导入进度与结果', params: [['id', z.string().max(64)]] }),
     history: cap<import('./importer').ImportRun[]>()({ description: '导入历史', params: none }),
     cancel: cap<void>()({ description: '取消导入', params: [['id', z.string().max(64)]] }),

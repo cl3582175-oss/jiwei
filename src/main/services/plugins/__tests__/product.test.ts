@@ -15,6 +15,7 @@ const env = vi.hoisted(() => ({
   db: null as DB | null,
   calls: [] as { system: string; prompt: string; purpose: string }[],
   failure: false,
+  advisorGate: undefined as Promise<void> | undefined,
   onAudit: undefined as ((entry: { summary: string }) => void) | undefined,
   toolGate: undefined as (() => Promise<void>) | undefined
 }))
@@ -65,6 +66,7 @@ vi.mock('../../ai/structured', () => ({
   quickModel: () => 'controlled',
   structured: async (input: { system: string; prompt: string; purpose: string }) => {
     env.calls.push(input)
+    if (input.purpose === 'advisor.memo') await env.advisorGate
     if (env.failure) throw new Error('Controlled provider unavailable')
     if (input.purpose.startsWith('works.'))
       return {
@@ -99,7 +101,7 @@ vi.mock('../../ai/structured', () => ({
 import { updatePlugin, inspectPluginPath, confirmPluginInstall, setPluginEnabled, uninstallPlugin, initializePlugins } from '../install'
 import { replacePluginRegistry, listTemplates, listFrameworks, listRecipes, listStarters } from '../registry'
 import { createWork, generateOutline, getWork, updateWork } from '../../works'
-import { ask, getDecision, listDecisions, regenerate, setWeights } from '../../advisor'
+import { ask, cancelGeneration, runningGenerations, getDecision, listDecisions, regenerate, setWeights } from '../../advisor'
 import { recipes, saveTask } from '../../tasks/service'
 import { initializeMarkets, addMarket } from '../markets'
 import {
@@ -132,6 +134,7 @@ beforeEach(async () => {
   migrate(env.db, { migrationsFolder: join(process.cwd(), 'resources/migrations') })
   env.calls = []
   env.failure = false
+  env.advisorGate = undefined
   env.onAudit = undefined
   env.toolGate = undefined
   await file(join(source, '.claude-plugin/plugin.json'), { name: 'product', version: '1' })
@@ -695,4 +698,35 @@ describe('plugin selections enter persisted product paths', () => {
     expect(TaskSave.safeParse({ ...r.task, recipe: 'p'.repeat(128) + ':' + 'r'.repeat(128) }).success).toBe(true)
     expect(TaskSave.safeParse({ ...r.task, recipe: 'p'.repeat(258) }).success).toBe(false)
   })
+})
+
+it('cancels ask without persisting a new decision even if the provider completes late', async () => {
+  let release!: () => void
+  env.advisorGate = new Promise<void>((r) => {
+    release = r
+  })
+  const pending = ask({ question: 'Should I stop this question?' })
+  const rejected = expect(pending).rejects.toThrow('ADVISOR_CANCELED')
+  await vi.waitFor(() => expect(env.calls.some((c) => c.purpose === 'advisor.memo')).toBe(true))
+  cancelGeneration('ask')
+  expect(runningGenerations()).not.toContain('ask')
+  release()
+  await rejected
+  expect(listDecisions()).toHaveLength(0)
+})
+it('cancels regeneration without replacing the saved memo or weights', async () => {
+  const d = await ask({ question: 'Should I preserve this memo?' })
+  setWeights(d.id, { Evidence: 1 })
+  const before = getDecision(d.id)
+  let release!: () => void
+  env.advisorGate = new Promise<void>((r) => {
+    release = r
+  })
+  const pending = regenerate(d.id)
+  const rejected = expect(pending).rejects.toThrow('ADVISOR_CANCELED')
+  await vi.waitFor(() => expect(runningGenerations()).toContain(d.id))
+  cancelGeneration(d.id)
+  release()
+  await rejected
+  expect(getDecision(d.id)).toEqual(before)
 })

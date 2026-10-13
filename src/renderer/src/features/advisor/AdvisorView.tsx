@@ -35,6 +35,7 @@ import { useSettings } from '@/lib/queries'
 import { useMoney } from '@/lib/money'
 import { useApp } from '@/store/app'
 import { PlanDialog, Segmented, field } from '@/features/plan/ui'
+import { setAdvisorDraft, useAdvisorGeneration, useAdvisorState } from './generation'
 
 // 参谋与决策日志（v0.9）：提问 → 备忘录（选项、决策矩阵、依据、假设、事前验尸、反方意见）→ 记录决定与预期 → 到期回看。
 
@@ -82,13 +83,14 @@ function Home({ onOpen }: { onOpen: (id: string) => void }) {
   const { data: goals = [] } = useQuery({ queryKey: ['goals'], queryFn: () => api.goals.list() })
   const { data: frameworks = [] } = useQuery({ queryKey: ['frameworks'], queryFn: () => api.plugins.frameworks() })
   const pluginName = usePluginNames()
-  const [frameworkId, setFrameworkId] = useState('')
+  const { frameworkId, question, context, showContext, goalId } = useAdvisorState((s) => s.draft)
+  const setFrameworkId = (frameworkId: string) => setAdvisorDraft({ frameworkId })
+  const setQuestion = (question: string) => setAdvisorDraft({ question })
+  const setContext = (context: string) => setAdvisorDraft({ context })
+  const setShowContext = (showContext: boolean) => setAdvisorDraft({ showContext })
+  const setGoalId = (goalId: string) => setAdvisorDraft({ goalId })
+  const { busy, stopped, run, stop } = useAdvisorGeneration('ask')
   const selected = frameworks.find((x) => x.id === frameworkId)
-  const [question, setQuestion] = useState(''),
-    [context, setContext] = useState(''),
-    [showContext, setShowContext] = useState(false),
-    [goalId, setGoalId] = useState(''),
-    [busy, setBusy] = useState(false)
   // 角色起步卡：选好分析框架、预填问题，不自动提交
   useEffect(() => {
     const intent = useApp.getState().takeStarterIntent('advisor')
@@ -109,23 +111,21 @@ function Home({ onOpen }: { onOpen: (id: string) => void }) {
     : null
   const submit = async (): Promise<void> => {
     if (question.trim().length < 4 || busy) return
-    setBusy(true)
-    try {
-      const d = await api.advisor.ask({
-        question: question.trim(),
-        context: context.trim(),
-        goalId: goalId || null,
-        frameworkId: frameworkId || undefined
-      })
-      setQuestion('')
-      setContext('')
-      onOpen(d.id)
-    } catch (e) {
-      toast.error(errText(e))
-    } finally {
-      setBusy(false)
-    }
+    await run(
+      () =>
+        api.advisor.ask({
+          question: question.trim(),
+          context: context.trim(),
+          goalId: goalId || null,
+          frameworkId: frameworkId || undefined
+        }),
+      (d) => {
+        setAdvisorDraft({ question: '', context: '' })
+        onOpen(d.id)
+      }
+    )
   }
+
   const now = Date.now()
   const groups: { key: string; items: Decision[] }[] = [
     { key: 'due', items: list.filter((d) => d.status === 'decided' && d.reviewAt !== null && d.reviewAt <= now) },
@@ -236,9 +236,17 @@ function Home({ onOpen }: { onOpen: (id: string) => void }) {
               <Sparkles className="size-3.5 animate-pulse" />
               {t('advisor.asking')}
               <span className="text-subtle">{t('advisor.askingHint')}</span>
+              <Button size="sm" variant="ghost" className="ml-auto" onClick={() => void stop()}>
+                {t('advisor.stop')}
+              </Button>
             </p>
           )}
         </div>
+        {stopped && (
+          <p role="status" className="mt-3 text-xs text-muted">
+            {t('advisor.stopped')}
+          </p>
+        )}
         {!list.length && !busy && (
           <div className="mt-4 flex flex-wrap items-center gap-2">
             <span className="text-xs text-muted">{t('advisor.examples')}</span>
@@ -269,26 +277,29 @@ function Home({ onOpen }: { onOpen: (id: string) => void }) {
                 </p>
                 <ul className="paper divide-y divide-border/70 overflow-hidden rounded-2xl shadow-[var(--shadow-1)]">
                   {g.items.map((d) => (
-                    <li key={d.id}>
-                      <button
-                        className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-surface-hover/60"
-                        onClick={() => onOpen(d.id)}
-                        data-decision={d.question}
-                      >
-                        <StatusDot d={d} now={now} />
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-sm text-fg">{d.question}</span>
-                          {d.choice && <span className="mt-0.5 block truncate text-xs text-muted">→ {d.choice}</span>}
-                        </span>
-                        {d.status === 'decided' && d.reviewAt && (
-                          <span className={cn('shrink-0 text-2xs tabular-nums', d.reviewAt <= now ? 'text-warning' : 'text-subtle')}>
-                            {d.reviewAt <= now
-                              ? t('advisor.overdue')
-                              : t('advisor.reviewOn', { date: new Date(d.reviewAt).toLocaleDateString(i18n.language) })}
+                    <li key={d.id} className="group/decision">
+                      <div className="flex items-center pr-2">
+                        <button
+                          className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-surface-hover/60"
+                          onClick={() => onOpen(d.id)}
+                          data-decision={d.question}
+                        >
+                          <StatusDot d={d} now={now} />
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-sm text-fg">{d.question}</span>
+                            {d.choice && <span className="mt-0.5 block truncate text-xs text-muted">→ {d.choice}</span>}
                           </span>
-                        )}
-                        {d.status === 'reviewed' && d.accuracy && <Accuracy n={d.accuracy} />}
-                      </button>
+                          {d.status === 'decided' && d.reviewAt && (
+                            <span className={cn('shrink-0 text-2xs tabular-nums', d.reviewAt <= now ? 'text-warning' : 'text-subtle')}>
+                              {d.reviewAt <= now
+                                ? t('advisor.overdue')
+                                : t('advisor.reviewOn', { date: new Date(d.reviewAt).toLocaleDateString(i18n.language) })}
+                            </span>
+                          )}
+                          {d.status === 'reviewed' && d.accuracy && <Accuracy n={d.accuracy} />}
+                        </button>
+                        <DecisionActions d={d} onRemoved={() => {}} home />
+                      </div>
                       <div className="px-4 pb-2">
                         <PluginSourceLabel pluginId={d.framework?.pluginId} />
                       </div>
@@ -300,6 +311,77 @@ function Home({ onOpen }: { onOpen: (id: string) => void }) {
         )}
       </section>
     </div>
+  )
+}
+
+function DecisionActions({
+  d,
+  onRemoved,
+  onRegenerate,
+  busy = false,
+  home = false
+}: {
+  d: Decision
+  onRemoved: () => void
+  onRegenerate?: () => void
+  busy?: boolean
+  home?: boolean
+}) {
+  const { t } = useTranslation()
+  const qc = useQueryClient()
+  const change = async (fn: () => Promise<unknown>, removed = false): Promise<void> => {
+    try {
+      await fn()
+      void qc.invalidateQueries({ queryKey: ['advisor'] })
+      if (removed) onRemoved()
+    } catch (error) {
+      toast.error(errText(error))
+    }
+  }
+  return (
+    <Menu>
+      <MenuTrigger asChild>
+        <Button
+          size="icon-sm"
+          variant="ghost"
+          aria-label={t('common.more')}
+          onClick={(e) => e.stopPropagation()}
+          className={
+            home
+              ? 'opacity-0 group-hover/decision:opacity-100 group-focus-within/decision:opacity-100 focus:opacity-100 [@media(hover:none)]:opacity-100 max-[1100px]:opacity-100'
+              : undefined
+          }
+        >
+          <MoreHorizontal />
+        </Button>
+      </MenuTrigger>
+      <MenuContent align="end">
+        {onRegenerate && d.status !== 'reviewed' && (
+          <MenuItem disabled={busy} onSelect={onRegenerate}>
+            <RotateCcw />
+            {t('advisor.regenerate')}
+          </MenuItem>
+        )}
+        {d.status === 'dropped' && (
+          <MenuItem onSelect={() => void change(() => api.advisor.status(d.id, 'draft'))}>{t('advisor.restore')}</MenuItem>
+        )}
+        {d.status === 'draft' && (
+          <MenuItem onSelect={() => void change(() => api.advisor.status(d.id, 'dropped'))}>{t('advisor.drop')}</MenuItem>
+        )}
+        <MenuItem
+          danger
+          onSelect={() =>
+            void (async () => {
+              if (await confirm({ title: t('advisor.removeTitle'), description: t('advisor.removeDesc'), danger: true }))
+                await change(() => api.advisor.remove(d.id), true)
+            })()
+          }
+        >
+          <Trash2 />
+          {t('advisor.remove')}
+        </MenuItem>
+      </MenuContent>
+    </Menu>
   )
 }
 
@@ -330,22 +412,10 @@ function Accuracy({ n }: { n: number }) {
 
 function DecisionPage({ id, onBack }: { id: string; onBack: () => void }) {
   const { t, i18n } = useTranslation()
-  const qc = useQueryClient()
   const { data: d } = useQuery({ queryKey: ['advisor', 'one', id], queryFn: () => api.advisor.get(id) })
-  const [busy, setBusy] = useState(false),
-    [deciding, setDeciding] = useState(false),
+  const { busy, stopped, run, stop } = useAdvisorGeneration(id)
+  const [deciding, setDeciding] = useState(false),
     [reviewing, setReviewing] = useState(false)
-  const run = async (fn: () => Promise<unknown>): Promise<void> => {
-    setBusy(true)
-    try {
-      await fn()
-      void qc.invalidateQueries({ queryKey: ['advisor'] })
-    } catch (e) {
-      toast.error(errText(e))
-    } finally {
-      setBusy(false)
-    }
-  }
   if (!d) return null
   const memo = d.memo
   return (
@@ -370,41 +440,7 @@ function DecisionPage({ id, onBack }: { id: string; onBack: () => void }) {
                 {t('advisor.reviewNow')}
               </Button>
             )}
-            <Menu>
-              <MenuTrigger asChild>
-                <Button size="icon-sm" variant="ghost" aria-label={t('common.more')}>
-                  <MoreHorizontal />
-                </Button>
-              </MenuTrigger>
-              <MenuContent align="end">
-                {d.status !== 'reviewed' && (
-                  <MenuItem onSelect={() => void run(() => api.advisor.regenerate(id))}>
-                    <RotateCcw />
-                    {t('advisor.regenerate')}
-                  </MenuItem>
-                )}
-                {d.status === 'dropped' && (
-                  <MenuItem onSelect={() => void run(() => api.advisor.status(id, 'draft'))}>{t('advisor.restore')}</MenuItem>
-                )}
-                {d.status === 'draft' && (
-                  <MenuItem onSelect={() => void run(() => api.advisor.status(id, 'dropped'))}>{t('advisor.drop')}</MenuItem>
-                )}
-                <MenuItem
-                  danger
-                  onSelect={() =>
-                    void (async () => {
-                      if (await confirm({ title: t('advisor.removeTitle'), description: t('advisor.removeDesc'), danger: true })) {
-                        await run(() => api.advisor.remove(id))
-                        onBack()
-                      }
-                    })()
-                  }
-                >
-                  <Trash2 />
-                  {t('advisor.remove')}
-                </MenuItem>
-              </MenuContent>
-            </Menu>
+            <DecisionActions d={d} onRemoved={onBack} onRegenerate={() => void run(() => api.advisor.regenerate(id))} busy={busy} />
           </div>
         </div>
         {d.context && <p className="mt-2 text-sm leading-relaxed whitespace-pre-wrap text-muted">{d.context}</p>}
@@ -412,10 +448,18 @@ function DecisionPage({ id, onBack }: { id: string; onBack: () => void }) {
           <p role="status" className="mt-3 flex items-center gap-2 text-xs text-accent">
             <Loader2 className="size-3.5 animate-spin" />
             {t('advisor.asking')}
+            <Button size="sm" variant="ghost" className="ml-auto" onClick={() => void stop()}>
+              {t('advisor.stop')}
+            </Button>
           </p>
         )}
       </div>
 
+      {stopped && (
+        <p role="status" className="text-xs text-muted">
+          {t('advisor.stopped')}
+        </p>
+      )}
       {/* 决定与回看 */}
       {(d.status === 'decided' || d.status === 'reviewed') && (
         <section className="rounded-2xl border border-accent/25 bg-accent-soft/40 px-5 py-4" data-testid="decision-record">

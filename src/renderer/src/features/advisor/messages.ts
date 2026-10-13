@@ -9,6 +9,8 @@ export const advisorZh = {
   ask: '请参谋',
   asking: '正在找依据、权衡选项…',
   askingHint: '通常需要 30–60 秒',
+  stop: '停止',
+  stopped: '已停止，没有生成新的备忘录',
   costHint: '会用你的知识库作依据，调用 {{model}}，预计约 {{cost}}',
   noModel: '请先在设置中配置 AI 模型',
   examples: '可以这样问',
@@ -82,6 +84,8 @@ export const advisorZh = {
 }
 
 export const advisorEn: typeof advisorZh = {
+  stop: 'Stop',
+  stopped: 'Stopped; no new memo was created',
   title: 'Advisor',
   intro:
     'Bring a real decision. The advisor first looks for evidence in your notes and sources, then uses a decision matrix, a pre-mortem and counter-arguments to help you think it through. The decision is yours.',

@@ -479,6 +479,8 @@ const handlers: Handlers = {
     due: () => advisor.dueDecisions(),
     ask: (_, input) => advisor.ask(input),
     regenerate: (_, id) => advisor.regenerate(id),
+    cancel: (_, target) => advisor.cancelGeneration(target),
+    running: () => advisor.runningGenerations(),
     weights: (_, id, weights) => advisor.setWeights(id, weights),
     decide: (_, input) => advisor.decide(input),
     review: (_, input) => advisor.reviewDecision(input),
@@ -901,7 +903,10 @@ const handlers: Handlers = {
   },
   importer: {
     choose: ({ win }, mode) => importer.chooseLibrary(win, mode),
-    inspect: (_, paths) => { if (app.isPackaged || process.env.JIWEI_TEST_IMPORT !== '1') throw new Error('Test-only path scanning is disabled'); return importer.beginScan(paths) },
+    inspect: (_, paths) => {
+      if (app.isPackaged || process.env.JIWEI_TEST_IMPORT !== '1') throw new Error('Test-only path scanning is disabled')
+      return importer.beginScan(paths)
+    },
     scan: (_, id) => importer.getScan(id),
     cancelScan: (_, id) => importer.cancelScan(id),
     preview: (_, id, path) => importer.preview(id, path),
@@ -922,7 +927,8 @@ export function registerIpc(): void {
     ipcMain.handle(`${ns}:${name}`, async (e, ...raw) => {
       // 内置浏览器中的网页不得调用积微的接口（内容脚本只走 jw-page:* 消息）
       if (browser.isBrowserContents(e.sender)) throw new Error('Forbidden')
-      if (['updates', 'importer'].includes(ns) && (e.sender !== getMainWindow()?.webContents || e.senderFrame !== e.sender.mainFrame)) throw new Error('Forbidden')
+      if (['updates', 'importer'].includes(ns) && (e.sender !== getMainWindow()?.webContents || e.senderFrame !== e.sender.mainFrame))
+        throw new Error('Forbidden')
       if (
         ['recording', 'people', 'voiceprint', 'lenses', 'series', 'plugins'].includes(ns) &&
         (e.sender !== getMainWindow()?.webContents || e.senderFrame !== e.sender.mainFrame)
