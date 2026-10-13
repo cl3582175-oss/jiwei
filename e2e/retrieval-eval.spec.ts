@@ -3,6 +3,7 @@ import { mkdtempSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { NOTES, QUERIES } from './fixtures/retrievalEval'
+import { isolateEmbeddingCache } from './fixtures/embeddingCache'
 
 // 检索评估（v0.4.3，决定是否引入重排序模型）：14 篇笔记 + 40 个换了说法的问题，
 // 统计正确段落在混合检索结果中的排名：Recall@1/3/5/8/30 与 MRR。
@@ -21,6 +22,7 @@ test.beforeAll(async () => {
   })
   page = await app.firstWindow()
   await page.waitForSelector('nav')
+  await isolateEmbeddingCache(app)
 })
 test.afterAll(async () => {
   await app?.close()
@@ -38,10 +40,10 @@ test('evaluate hybrid retrieval', async () => {
     await page.keyboard.type(' ')
     await expect.poll(() => page.evaluate((t) => window.jiwei.notes.list({ search: t }).then((x) => x.length), n.title)).toBeGreaterThan(0)
     const id = await page.evaluate((t) => window.jiwei.notes.list({ search: t }).then((x) => x[0].id), n.title)
-    await page.evaluate(
-      ({ id, ops }) => window.jiwei.proposals.create({ noteId: id, title: '语料', ops }),
-      { id, ops: n.rows.map(([cue, body]) => ({ op: 'insert_row' as const, afterRowId: null, cue: [para(cue)], body: [para(body)] })) }
-    )
+    await page.evaluate(({ id, ops }) => window.jiwei.proposals.create({ noteId: id, title: '语料', ops }), {
+      id,
+      ops: n.rows.map(([cue, body]) => ({ op: 'insert_row' as const, afterRowId: null, cue: [para(cue)], body: [para(body)] }))
+    })
     await page.getByRole('button', { name: '全部接受' }).click()
     await expect(page.getByRole('button', { name: '全部接受' })).toHaveCount(0)
   }
