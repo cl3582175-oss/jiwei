@@ -174,8 +174,7 @@ interface AppState extends Location {
   /** 角色起步卡的预填：目标页面打开时取走，只填不发 */
   starterIntent: StarterIntent | null
   takeStarterIntent: <K extends StarterIntent['kind']>(kind: K) => Extract<StarterIntent, { kind: K }> | null
-  /** 每组上次去过的条目：点组图标时回到这里 */
-  lastInGroup: Partial<Record<NavGroup, NavItem>>
+  /** 进入选定的二级导航条目 */
   goNav: (item: NavItem) => void
   /** 打开笔记 / 资料后需要定位并高亮的段落（来自 AI 引用） */
   highlight: { type: 'block' | 'segment'; id: string; locator?: string | null } | null
@@ -389,10 +388,8 @@ export const useApp = create<AppState>((set, get) => {
       if (d) set({ assistantDraft: null })
       return d
     },
-    lastInGroup: {},
     goNav: (item) => {
       const s = get()
-      set({ lastInGroup: { ...s.lastInGroup, [groupOf(item)]: item } })
       if (item === 'browser') return s.openBrowser()
       if (s.browserOpen && item === 'notes') s.closeBrowser()
       if (item === 'graph') return s.openGraph(null)

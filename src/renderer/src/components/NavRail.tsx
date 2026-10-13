@@ -36,7 +36,7 @@ import { useReviewStats } from '@/features/review/ReviewView'
 import { useAssist } from '@/features/assist/store'
 
 // 左侧导航（v0.6.7，v0.7.4 改为浮卡）：顶部是积微助手，其下按学习闭环分组——今日 · 收集 · 学习 · 计划。
-// 点组图标直达这组上次去过的页面；停在组图标上，组图标的底色向右延伸成玻璃浮卡，按行列出二级入口（NavRing）。
+// 点组图标展开二级入口，不改变当前页面；停在组图标上，组图标的底色向右延伸成玻璃浮卡，按行列出二级入口（NavRing）。
 // 导航栏高度从此固定，当前所在的二级页面以组图标右下角的小标显示。快捷键保持不变。
 
 const OPEN_DELAY = 120
@@ -79,44 +79,47 @@ function RailButton({
   children: ReactNode
 }) {
   const button = (
-      <button
-        ref={buttonRef}
-        onClick={onClick}
-        onPointerEnter={onPointerEnter}
-        onPointerLeave={onPointerLeave}
-        onKeyDown={onKeyDown}
-        aria-haspopup={expanded !== undefined ? 'menu' : undefined}
-        aria-expanded={expanded}
-        aria-label={label}
-        aria-current={active ? 'page' : undefined}
-        aria-pressed={pressed}
-        className={cn(
-          'no-drag relative grid place-items-center transition-[background-color,color,border-radius] duration-150',
-          small ? 'size-8 rounded-lg [&_svg]:size-[16px]' : 'size-10 rounded-[10px] [&_svg]:size-[19px]',
-          expanded
-            ? 'z-[51] rounded-r-none border border-r-0 border-border bg-surface/90 text-accent backdrop-blur-xl'
-            : accent
+    <button
+      ref={buttonRef}
+      onClick={onClick}
+      onPointerEnter={onPointerEnter}
+      onPointerLeave={onPointerLeave}
+      onKeyDown={onKeyDown}
+      aria-haspopup={expanded !== undefined ? 'menu' : undefined}
+      aria-expanded={expanded}
+      aria-label={label}
+      aria-current={active ? 'page' : undefined}
+      aria-pressed={pressed}
+      className={cn(
+        'no-drag relative grid place-items-center transition-[background-color,color,border-radius] duration-150',
+        small ? 'size-8 rounded-lg [&_svg]:size-[16px]' : 'size-10 rounded-[10px] [&_svg]:size-[19px]',
+        expanded
+          ? 'z-[51] rounded-r-none border border-r-0 border-border bg-surface/90 text-accent backdrop-blur-xl'
+          : accent
             ? active
               ? 'bg-accent text-accent-fg'
               : 'bg-accent-soft text-accent hover:bg-accent hover:text-accent-fg'
             : active
               ? 'bg-accent-soft text-accent'
               : 'text-subtle hover:bg-surface-hover hover:text-fg'
-        )}
-      >
-        {children}
-        {!!badge && (
-          <span className="absolute -top-0.5 -right-0.5 min-w-4 rounded-full bg-accent px-1 text-center text-[10px] leading-4 font-medium text-accent-fg tabular-nums">
-            {badge > 99 ? '99+' : badge}
-          </span>
-        )}
-        {sub && (
-          <span className="absolute -bottom-1 -left-1 grid size-[18px] place-items-center rounded-full border border-accent/40 bg-surface text-accent shadow-card [&_svg]:size-[11px]" data-testid="nav-sub">
-            {sub}
-          </span>
-        )}
-        {active && !small && !accent && <span className="absolute top-2.5 -left-[17px] h-5 w-[3px] rounded-r-full bg-accent" />}
-      </button>
+      )}
+    >
+      {children}
+      {!!badge && (
+        <span className="absolute -top-0.5 -right-0.5 min-w-4 rounded-full bg-accent px-1 text-center text-[10px] leading-4 font-medium text-accent-fg tabular-nums">
+          {badge > 99 ? '99+' : badge}
+        </span>
+      )}
+      {sub && (
+        <span
+          className="absolute -bottom-1 -left-1 grid size-[18px] place-items-center rounded-full border border-accent/40 bg-surface text-accent shadow-card [&_svg]:size-[11px]"
+          data-testid="nav-sub"
+        >
+          {sub}
+        </span>
+      )}
+      {active && !small && !accent && <span className="absolute top-2.5 -left-[17px] h-5 w-[3px] rounded-r-full bg-accent" />}
+    </button>
   )
   return noTip ? button : <Tip label={label}>{button}</Tip>
 }
@@ -185,18 +188,12 @@ function useRingHint(): [boolean, boolean, () => void] {
 
 export function NavRail() {
   const { t } = useTranslation()
-  const { view, setSettingsOpen, setPaletteOpen, browserOpen, lastInGroup, goNav } = useApp()
+  const { view, setSettingsOpen, setPaletteOpen, browserOpen, goNav } = useApp()
   const { data: inbox = [] } = useInbox()
   const { data: stats } = useReviewStats()
   const inboxCount = inbox.filter((i) => i.status === 'new' || i.status === 'suggested').length
   const current = currentNavItem({ view, browserOpen })
   const currentGroup = current ? groupOf(current) : null
-
-  // 通过快捷键、链接等其他途径到达的页面，也记为这组的“上次”
-  useEffect(() => {
-    if (current && useApp.getState().lastInGroup[groupOf(current)] !== current)
-      useApp.setState((s) => ({ lastInGroup: { ...s.lastInGroup, [groupOf(current)]: current } }))
-  }, [current])
 
   const item: Record<NavItem, { label: string; icon: ReactNode; badge?: number }> = {
     today: { label: `${t('nav.today')}  ${modKey}9`, icon: <Sun /> },
@@ -223,6 +220,7 @@ export function NavRail() {
   }
   // 半环：悬停片刻展开，移开片刻收起
   const [ring, setRing] = useState<NavGroup | null>(null)
+  const [keyboardOpen, setKeyboardOpen] = useState(false)
   const anchors = useRef<Partial<Record<NavGroup, HTMLButtonElement | null>>>({})
   const openTimer = useRef<number | undefined>(undefined)
   const closeTimer = useRef<number | undefined>(undefined)
@@ -239,22 +237,40 @@ export function NavRail() {
     keep()
     window.clearTimeout(openTimer.current)
     if (NAV_GROUPS[g].length < 2) return setRing(null)
-    openTimer.current = window.setTimeout(() => {
-      setRing(g)
-      doneHint()
-    }, ring ? 0 : OPEN_DELAY)
+    openTimer.current = window.setTimeout(
+      () => {
+        setKeyboardOpen(false)
+        setRing(g)
+        doneHint()
+      },
+      ring ? 0 : OPEN_DELAY
+    )
   }
   const scheduleClose = (): void => {
     window.clearTimeout(openTimer.current)
     window.clearTimeout(closeTimer.current)
     closeTimer.current = window.setTimeout(() => {
       // 鼠标仍停在组图标或半环上（进出事件的顺序并不总是可靠）：不收起
-      const hovered = document.querySelector('[data-testid="nav-ring"] :hover') || document.querySelector('[data-testid="nav-rail"] [aria-expanded="true"]:hover')
+      const hovered =
+        document.querySelector('[data-testid="nav-ring"] :hover') ||
+        document.querySelector('[data-testid="nav-rail"] [aria-expanded="true"]:hover')
       if (!hovered) setRing(null)
     }, CLOSE_DELAY)
   }
-  const select = (i: NavItem): void => {
+  const close = (): void => {
+    window.clearTimeout(openTimer.current)
+    window.clearTimeout(closeTimer.current)
     setRing(null)
+  }
+  const expand = (g: NavGroup, keyboard: boolean): void => {
+    window.clearTimeout(openTimer.current)
+    window.clearTimeout(closeTimer.current)
+    setKeyboardOpen(keyboard)
+    setRing(g)
+    doneHint()
+  }
+  const select = (i: NavItem): void => {
+    close()
     goNav(i)
   }
 
@@ -264,7 +280,10 @@ export function NavRail() {
   }
 
   return (
-    <nav className={cn('drag flex w-[72px] shrink-0 flex-col items-center gap-1.5 overflow-y-auto pb-4', isMac ? 'pt-12' : 'pt-3')} data-testid="nav-rail">
+    <nav
+      className={cn('drag flex w-[72px] shrink-0 flex-col items-center gap-1.5 overflow-y-auto pb-4', isMac ? 'pt-12' : 'pt-3')}
+      data-testid="nav-rail"
+    >
       <div className="mb-3">
         <Logo />
       </div>
@@ -303,12 +322,16 @@ export function NavRail() {
               onPointerEnter={() => scheduleOpen(g)}
               onPointerLeave={scheduleClose}
               onKeyDown={(e) => {
-                if (multi && (e.key === 'ArrowRight' || e.key === ' ')) {
+                if (multi && ['ArrowRight', 'Enter', ' '].includes(e.key)) {
                   e.preventDefault()
-                  setRing(g)
+                  expand(g, true)
                 }
               }}
-              onClick={() => select(lastInGroup[g] ?? NAV_GROUPS[g][0])}
+              onClick={() => {
+                if (!multi) select(NAV_GROUPS[g][0])
+                else if (ring === g) close()
+                else expand(g, false)
+              }}
             >
               {groups[g].icon}
             </RailButton>
@@ -326,7 +349,8 @@ export function NavRail() {
             return { id: i, label, hint, icon: item[i].icon, badge: item[i].badge, current: current === i }
           })}
           onSelect={(id) => select(id as NavItem)}
-          onClose={() => setRing(null)}
+          onClose={close}
+          focusOnOpen={keyboardOpen}
           onPointerEnter={keep}
           onPointerLeave={scheduleClose}
         />

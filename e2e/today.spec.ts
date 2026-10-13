@@ -15,7 +15,10 @@ const requests: { body: string; stream: boolean }[] = []
 let userData = ''
 
 async function launch(): Promise<void> {
-  app = await electron.launch({ args: ['.', `--user-data-dir=${userData}`], env: { ...process.env, JIWEI_LANG: 'zh-CN', JIWEI_SKIP_ONBOARDING: '1' } })
+  app = await electron.launch({
+    args: ['.', `--user-data-dir=${userData}`],
+    env: { ...process.env, JIWEI_LANG: 'zh-CN', JIWEI_SKIP_ONBOARDING: '1' }
+  })
   page = await app.firstWindow()
   await page.waitForSelector('nav')
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1440, 900))
@@ -31,7 +34,11 @@ async function activityRows(): Promise<{ kind: string; ref_type: string | null; 
     const Database = requireFromApp('better-sqlite3') as typeof import('better-sqlite3')
     const db = new Database(path.join(app.getPath('userData'), 'data', 'jiwei.db'), { readonly: true })
     try {
-      return db.prepare('SELECT kind, ref_type, duration_ms FROM activity_events ORDER BY at').all() as { kind: string; ref_type: string | null; duration_ms: number }[]
+      return db.prepare('SELECT kind, ref_type, duration_ms FROM activity_events ORDER BY at').all() as {
+        kind: string
+        ref_type: string | null
+        duration_ms: number
+      }[]
     } finally {
       db.close()
     }
@@ -56,9 +63,18 @@ test.beforeAll(async () => {
         return
       }
       const call = { id: 's', type: 'function', function: { name: 'submit', arguments: JSON.stringify({ text: BRIEF }) } }
-      res.writeHead(200, { 'content-type': 'application/json' }).end(
-        JSON.stringify({ id: 'r', object: 'chat.completion', created: 1, model: 'today-fixture', choices: [{ index: 0, message: { role: 'assistant', content: null, tool_calls: [call] }, finish_reason: 'tool_calls' }], usage: { prompt_tokens: 10, completion_tokens: 10, total_tokens: 20 } })
-      )
+      res
+        .writeHead(200, { 'content-type': 'application/json' })
+        .end(
+          JSON.stringify({
+            id: 'r',
+            object: 'chat.completion',
+            created: 1,
+            model: 'today-fixture',
+            choices: [{ index: 0, message: { role: 'assistant', content: null, tool_calls: [call] }, finish_reason: 'tool_calls' }],
+            usage: { prompt_tokens: 10, completion_tokens: 10, total_tokens: 20 }
+          })
+        )
     })
   })
   await new Promise<void>((r) => provider.listen(0, '127.0.0.1', r))
@@ -75,7 +91,8 @@ test('全新用户：默认打开「今日」，导航为助手 + 四组，晨�
   await expect(page.getByTestId('today-fresh')).toBeVisible()
   const rail = page.getByTestId('nav-rail')
   await expect(rail.getByRole('button', { name: /^积微助手/ })).toBeVisible()
-  for (const g of ['今日', '收集', '学习', '计划']) await expect(rail.getByRole('button', { name: new RegExp(`^${g}`) }).first()).toBeVisible()
+  for (const g of ['今日', '收集', '学习', '计划'])
+    await expect(rail.getByRole('button', { name: new RegExp(`^${g}`) }).first()).toBeVisible()
   // 「今日」只有一项，不展开；其他组的子项此时不显示
   await expect(rail.getByRole('button', { name: /^资料库/ })).toHaveCount(0)
   // 没有模型：模板晨报 + 说明
@@ -84,14 +101,18 @@ test('全新用户：默认打开「今日」，导航为助手 + 四组，晨�
   await shot('today-fresh')
 })
 
-test('导航分组：点组回到上次去过的页面，⌘9 回到今日', async () => {
+test('导航分组：点组只展开卡片，页面不变；点卡片入口才跳转；⌘9 回到今日', async () => {
   const rail = page.getByTestId('nav-rail')
   await rail.getByRole('button', { name: /^学习/ }).click()
+  await expect(page.getByTestId('today-view')).toBeVisible()
+  await page.getByTestId('nav-ring').getByRole('menuitem', { name: /^笔记/ }).click()
   await expect(currentNav(page, '学习', '笔记')).toBeVisible()
   await navTo(page, /^图谱/)
   await page.keyboard.press('ControlOrMeta+9')
   await expect(page.getByTestId('today-view')).toBeVisible()
   await rail.getByRole('button', { name: /^学习/ }).click()
+  await expect(page.getByTestId('today-view')).toBeVisible()
+  await page.getByTestId('nav-ring').getByRole('menuitem', { name: /^图谱/ }).click()
   await expect(currentNav(page, '学习', '图谱')).toBeVisible()
   // 收集组：资料库；计划组：方向、复盘
   await navTo(page, /^资料库/)
@@ -194,7 +215,9 @@ test('学习活动：写笔记的有效时长被记录，切到别处立即上�
     Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true })
     document.dispatchEvent(new Event('visibilitychange'))
   })
-  await expect.poll(async () => (await activityRows()).some((r) => r.kind === 'write' && r.ref_type === 'note' && r.duration_ms >= 10000)).toBe(true)
+  await expect
+    .poll(async () => (await activityRows()).some((r) => r.kind === 'write' && r.ref_type === 'note' && r.duration_ms >= 10000))
+    .toBe(true)
   await page.evaluate(() => {
     Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true })
   })

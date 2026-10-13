@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { cn } from '@/lib/utils'
 
 // 导航浮卡（v0.7.4）：悬停一级入口时，组图标的底色向右延伸成一张玻璃浮卡，按行列出二级入口
-// （图标 · 文字 · 快捷键或角标），当前页高亮。点一级图标直达上次页面（由调用方处理）；
+// （图标 · 文字 · 快捷键或角标），当前页高亮。点一级图标立即展开或收起（由调用方处理）；
 // Esc 或移开收起；↑↓ 选择、回车进入、数字键直达。浮卡是 role="menu"：盖住内置浏览器时，网页会自动换成截图。
 
 export interface RingItem {
@@ -33,6 +33,7 @@ export function NavRing({
   items,
   onSelect,
   onClose,
+  focusOnOpen = false,
   onPointerEnter,
   onPointerLeave
 }: {
@@ -41,13 +42,20 @@ export function NavRing({
   items: RingItem[]
   onSelect: (id: string) => void
   onClose: () => void
+  focusOnOpen?: boolean
   onPointerEnter: () => void
   onPointerLeave: () => void
 }) {
   const [shown, setShown] = useState(false)
-  const [focus, setFocus] = useState(() => Math.max(0, items.findIndex((i) => i.current)))
+  const [focus, setFocus] = useState(() =>
+    Math.max(
+      0,
+      items.findIndex((i) => i.current)
+    )
+  )
   const [rect, setRect] = useState<DOMRect | null>(null)
   const refs = useRef<(HTMLButtonElement | null)[]>([])
+  const card = useRef<HTMLDivElement>(null)
 
   useLayoutEffect(() => {
     setRect(anchor.getBoundingClientRect())
@@ -61,6 +69,10 @@ export function NavRing({
         e.preventDefault()
         onClose()
         anchor.focus()
+      } else if (e.target !== anchor && !refs.current.some((r) => r === e.target)) return
+      else if ((e.key === 'Enter' || e.key === ' ') && refs.current.some((r) => r === e.target)) {
+        e.preventDefault()
+        onSelect(items[focus].id)
       } else if (e.key === 'ArrowDown') {
         e.preventDefault()
         setFocus((f) => (f + 1) % items.length)
@@ -77,12 +89,20 @@ export function NavRing({
     }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
-  }, [items, onClose, onSelect, anchor])
+  }, [items, onClose, onSelect, anchor, focus])
 
   // 键盘打开时把焦点放到当前项
   useEffect(() => {
-    if (anchor === document.activeElement || refs.current.some((r) => r === document.activeElement)) refs.current[focus]?.focus()
-  }, [focus, anchor])
+    if (rect && (focusOnOpen || refs.current.some((r) => r === document.activeElement))) refs.current[focus]?.focus()
+  }, [focus, anchor, rect, focusOnOpen])
+
+  useEffect(() => {
+    const outside = (event: PointerEvent): void => {
+      if (event.target instanceof Node && !anchor.contains(event.target) && !card.current?.contains(event.target)) onClose()
+    }
+    window.addEventListener('pointerdown', outside, true)
+    return () => window.removeEventListener('pointerdown', outside, true)
+  }, [anchor, onClose])
 
   if (!rect) return null
   const top = flyoutTop(rect.top, items.length, window.innerHeight)
@@ -92,6 +112,7 @@ export function NavRing({
   return createPortal(
     <div role="menu" aria-label={title} data-testid="nav-ring" className="pointer-events-none fixed inset-0 z-50">
       <div
+        ref={card}
         className={cn(
           'pointer-events-auto absolute w-[216px] border border-border bg-surface/90 p-1.5 shadow-float backdrop-blur-xl backdrop-saturate-150',
           joined ? 'rounded-tl-none rounded-tr-[14px] rounded-br-[14px] rounded-bl-[14px] border-l-0' : 'rounded-[14px]',

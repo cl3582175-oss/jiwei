@@ -4,7 +4,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import { currentNav, navTo } from './fixtures/nav'
 
-// 导航浮卡（v0.7.4）：导航栏高度固定；悬停组图标，组图标向右延伸成玻璃浮卡列出二级入口；点组图标直达上次页面；
+// 导航浮卡（v0.7.4）：导航栏高度固定；悬停组图标，组图标向右延伸成玻璃浮卡列出二级入口；点组图标只展开入口；
 // 当前位置以组图标右下角的小标显示；Esc / 移开收起；键盘可操作；靠近窗口底部时浮卡上移不被切掉。
 
 test.describe.configure({ mode: 'serial' })
@@ -82,13 +82,34 @@ test('点浮卡入口跳转；组图标右下角显示当前位置；导航栏�
   await expect(ring()).toHaveCount(0)
 })
 
-test('点组图标直达上次页面，不需要展开', async () => {
+test('点组图标立即展开且页面不变，再点收起', async () => {
   await navTo(page, /^图谱/)
   await page.keyboard.press('ControlOrMeta+9')
   await page.mouse.move(800, 400)
-  await rail().getByRole('button', { name: /^学习/ }).click()
-  await expect(currentNav(page, '学习', '图谱')).toBeVisible()
+  const g = rail().getByRole('button', { name: /^学习/ })
+  await g.click()
+  await expect(ring()).toBeVisible()
+  await expect(page.getByTestId('today-view')).toBeVisible()
+  await expect(g).toHaveAttribute('aria-expanded', 'true')
+  await g.click()
   await expect(ring()).toHaveCount(0)
+  await expect(g).toHaveAttribute('aria-expanded', 'false')
+  await expect(page.getByTestId('today-view')).toBeVisible()
+})
+
+test('Esc 和点击卡片外收起，焦点还给组图标且页面不变', async () => {
+  const g = rail().getByRole('button', { name: /^收集/ })
+  await g.click()
+  await expect(ring()).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(ring()).toHaveCount(0)
+  await expect(g).toBeFocused()
+  await expect(page.getByTestId('today-view')).toBeVisible()
+  await g.click()
+  await expect(ring()).toBeVisible()
+  await page.getByTestId('today-view').click({ position: { x: 600, y: 50 } })
+  await expect(ring()).toHaveCount(0)
+  await expect(page.getByTestId('today-view')).toBeVisible()
 })
 
 test('移开鼠标收起；从组图标移到浮卡不会收起', async () => {
@@ -156,4 +177,45 @@ test('浮卡盖住内置浏览器时，网页暂时换成截图，不会挡住�
     .poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].contentView.children[0]?.getVisible() ?? false))
     .toBe(false)
   await page.keyboard.press('Escape')
+})
+
+test('Enter、空格、→ 展开并聚焦当前入口，方向键和 Enter 进入', async () => {
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1440, 900))
+  await navTo(page, /^笔记/, { again: true })
+  for (const key of ['Enter', 'Space', 'ArrowRight']) {
+    const g = rail().getByRole('button', { name: /^学习/ })
+    await page.mouse.move(1000, 500)
+    await g.focus()
+    await page.keyboard.press(key)
+    await expect(ring()).toBeVisible()
+    await expect(ring().getByRole('menuitem', { name: /^笔记/ })).toBeFocused()
+    await page.keyboard.press('ArrowDown')
+    await expect(ring().getByRole('menuitem', { name: /^复习/ })).toBeFocused()
+    await page.keyboard.press('Enter')
+    await expect(ring()).toHaveCount(0)
+    await expect(currentNav(page, '学习', '复习')).toBeVisible()
+    await navTo(page, /^笔记/, { again: true })
+  }
+})
+
+test('编辑笔记时点击一级组仅展开，当前笔记和正文保持；浅深色截图', async () => {
+  await page.keyboard.press('ControlOrMeta+n')
+  await page.getByPlaceholder('笔记标题').fill('点组保留笔记')
+  await page.keyboard.press('Enter')
+  await page.keyboard.type('当前正文不要关闭')
+  for (const name of ['收集', '学习', '创作', '计划']) {
+    const g = rail().getByRole('button', { name: new RegExp(`^${name}`) })
+    await g.click()
+    await expect(ring()).toBeVisible()
+    await expect(page.getByPlaceholder('笔记标题')).toHaveValue('点组保留笔记')
+    await expect(page.locator('.cornell-body')).toHaveText('当前正文不要关闭')
+    if (name === '计划')
+      for (const theme of ['light', 'dark'] as const) {
+        await page.evaluate((theme) => window.jiwei.settings.set({ theme }), theme)
+        await expect(page.locator('html')).toHaveAttribute('data-theme', theme)
+        await page.screenshot({ path: `.superpowers/sdd/v0.11.1-fixes/shots/p5-nav-expand-${theme}.png` })
+      }
+    await page.keyboard.press('Escape')
+    await expect(ring()).toHaveCount(0)
+  }
 })
