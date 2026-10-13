@@ -18,6 +18,7 @@ import { capsFor } from './providers'
 import { retrieve } from './retrieve'
 import { contextSourceEvidence, resolveContext } from './context'
 import { buildTools, numberHits, stepLabel, type AgentSession } from './tools'
+import { attachNoteToolImages } from './noteToolImages'
 import { loadSkill, skillCatalog } from './skills'
 import { userCard } from '../memory'
 import { learnerNote } from '../learner'
@@ -436,6 +437,7 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
     zh,
     model: input.model,
     tier: capsFor(input.providerId, input.model).tier,
+    vision: capsFor(input.providerId, input.model).vision,
     scope: input.scope,
     incognito: conv.incognito,
     conversationId,
@@ -579,6 +581,7 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
             ? coachSystem(coach, zh)
             : systemPrompt(zh, session.tier, session.incognito, conversationId),
         messages: msgs,
+        prepareStep: ({ messages }) => ({ messages: attachNoteToolImages(messages) }),
         // 向用户提了选择题：本轮到此结束，等用户选
         ...(withTools && toolset ? { tools: toolset, stopWhen: [stepCountIs(MAX_STEPS), hasToolCall(ASK_USER)] } : {}),
         providerOptions: built.providerOptions as never,

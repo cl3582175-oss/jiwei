@@ -439,3 +439,64 @@ it('continues all oversized goal stages, milestones and permitted references thr
   expect(seenSources).toEqual(sourceIds.slice(30))
   expect(seenGoalNotes).toEqual(noteIds.slice(30))
 })
+
+it('reads image markers and asset OCR instead of treating an image-only row as empty', async () => {
+  note('image-note')
+  const { jsonToYState } = await import('../../../lib/yjson')
+  const assetId = 'a'.repeat(64)
+  env
+    .db!.insert(schema.noteDocs)
+    .values({
+      noteId: 'image-note',
+      state: Buffer.from(
+        jsonToYState({
+          type: 'doc',
+          content: [
+            {
+              type: 'cornellRow',
+              attrs: { id: 'row-image' },
+              content: [
+                { type: 'cornellCue', content: [{ type: 'paragraph', attrs: { id: 'cue-image' } }] },
+                {
+                  type: 'cornellBody',
+                  content: [{ type: 'image', attrs: { id: 'image-1', src: `jiwei://asset/${assetId}.png`, alt: '叶片' } }]
+                }
+              ]
+            },
+            { type: 'cornellSummary', content: [{ type: 'paragraph' }] }
+          ]
+        })
+      ),
+      updatedAt: 100
+    })
+    .run()
+  env.db!.insert(schema.assets).values({ id: assetId, ext: 'png', mime: 'image/png', size: 10, createdAt: 100 }).run()
+  env
+    .db!.insert(schema.assetTexts)
+    .values({ assetId, text: '光合作用的产物是葡萄糖和氧气' + '字'.repeat(2000), engine: 'fixture', updatedAt: 100 })
+    .run()
+  const text = await call(buildTools({ ...session(), zh: true }), 'note_read', { noteId: 'image-note' })
+  expect(text).toContain('[图片 image-1] 叶片')
+  expect(text).toContain('光合作用的产物是葡萄糖和氧气')
+  expect(text).not.toContain('字'.repeat(1500))
+  env.db!.delete(schema.assetTexts).run()
+  const missing = await call(buildTools({ ...session(), zh: true }), 'note_read', { noteId: 'image-note' })
+  expect(missing).toContain('图片尚未识别文字')
+  expect(missing).toContain('第 1 行是图片')
+  expect(missing).toContain('不得编造')
+})
+it('registers image viewing only for vision; rejects excluded and out-of-scope notes before reading bytes', async () => {
+  note('private-image', { aiExcluded: true })
+  note('outside-image')
+  const tools = buildTools({ ...session(), vision: true })
+  expect(buildTools(session()).note_image_view).toBeUndefined()
+  expect(tools.note_image_view).toBeDefined()
+  await expect(call(tools, 'note_image_view', { noteId: 'private-image', imageId: 'image' })).rejects.toThrow(/excluded/)
+  await expect(
+    call(buildTools({ ...session({ type: 'items', notes: [], sources: [] }), vision: true }), 'note_image_view', {
+      noteId: 'outside-image',
+      imageId: 'image'
+    })
+  ).rejects.toThrow(/scope/)
+  expect(BUILTIN_META.note_image_view.level).toBe('read')
+})

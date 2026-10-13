@@ -13,6 +13,8 @@ import { listSegments } from '../segments'
 import { loadDoc, stateToContent } from '../docs'
 import { createProposal } from '../proposals'
 import { nodeText } from '../../lib/derive'
+import { imageAssetId, imagesIn, noteContentText } from '../../lib/noteImageText'
+import { ensureNoteImageText, imageRecognizedText, noteImageData } from '../noteImages'
 import { markdownToNodes } from '../../lib/markdown'
 import { fromNested, type NestedNode } from '@shared/embeds/mindmap'
 import { ChartDataSchema, checkChart, checkInteractive, checkSteps, InteractiveDataSchema, StepsDataSchema } from '@shared/embeds/visuals'
@@ -39,6 +41,7 @@ export interface AgentSession {
   model: string
   /** 模型能力分级（用户设定优先，否则按名称判断） */
   tier: ModelTier
+  vision?: boolean
   scope: ChatScope
   incognito: boolean
   conversationId: string
@@ -104,11 +107,18 @@ export function numberHits(session: AgentSession, hits: SearchHit[]): string {
 }
 
 /** 笔记结构（供 AI 定位行与段落） */
-function describeNote(noteId: string, zh: boolean): string {
+export async function describeNote(noteId: string, zh: boolean, vision = false): Promise<string> {
+  if (!vision) {
+    const deadline = Date.now() + 30_000
+    for (const image of imagesIn(stateToContent(loadDoc(noteId)).doc))
+      if (typeof image.attrs?.id === 'string') await ensureNoteImageText(noteId, image.attrs.id, deadline - Date.now())
+    mustNote(noteId, zh)
+  }
   const { doc, embeds } = stateToContent(loadDoc(noteId))
   const out: string[] = []
   const blockLine = (n: DocNode, label: string): string => {
-    const text = n.type === 'embed' ? `[${String(embeds[String(n.attrs?.id)]?.kind ?? 'embed')}]` : nodeText(n).trim()
+    const text =
+      n.type === 'embed' ? `[${String(embeds[String(n.attrs?.id)]?.kind ?? 'embed')}]` : noteContentText(n, zh, imageRecognizedText)
     return `  ${label}[${n.attrs?.id ?? '?'}] ${text || (zh ? '（空）' : '(empty)')}`
   }
   let i = 0
@@ -120,6 +130,19 @@ function describeNote(noteId: string, zh: boolean): string {
       const body = top.content?.find((c) => c.type === 'cornellBody')
       for (const c of cue?.content ?? []) out.push(blockLine(c, zh ? '线索' : 'cue'))
       for (const c of body?.content ?? []) out.push(blockLine(c, zh ? '笔记' : 'note'))
+      if (
+        !vision &&
+        body &&
+        imagesIn(body).some((n) => {
+          const id = imageAssetId(n)
+          return !id || !imageRecognizedText(id)?.trim()
+        })
+      )
+        out.push(
+          zh
+            ? `第 ${i} 行是图片，暂时读不出内容：可以在设置里开启图片识别，或换用能看图的模型。请在回复中告诉用户，不得编造这张图片的题目。`
+            : `Row ${i} contains an image whose content cannot be read yet. Tell the user to enable image recognition in Settings or switch to a vision model. Do not invent questions about the image.`
+        )
     } else if (top.type === 'cornellSummary') {
       out.push(zh ? '总结' : 'Summary')
       for (const c of top.content ?? []) out.push(blockLine(c, ''))
@@ -287,7 +310,8 @@ export function buildTools(s: AgentSession): ToolSet {
         inputSchema: z.object({ noteId: z.string().max(64), includeMetadata: z.boolean().optional() }),
         execute: async ({ noteId, includeMetadata }) => {
           if (s.scope.type === 'items' && !s.scope.notes.includes(noteId)) throw new Error('Note is outside the selected scope')
-          return `《${mustNote(noteId, zh)}》\n${includeMetadata ? JSON.stringify(noteMetadata(noteId, s.scope)) + '\n' : ''}${describeNote(noteId, zh)}`
+          const title = mustNote(noteId, zh)
+          return `《${title}》\n${includeMetadata ? JSON.stringify(noteMetadata(noteId, s.scope)) + '\n' : ''}${await describeNote(noteId, zh, s.vision)}`
         }
       }),
       source_read: tool({
@@ -328,6 +352,24 @@ export function buildTools(s: AgentSession): ToolSet {
         }
       })
     })
+    if (s.vision)
+      tools.note_image_view = tool({
+        description: zh
+          ? '查看当前笔记中的图片；note_read 没有识别文字时用 imageId 调用。'
+          : 'View an image in a note using its imageId when note_read has no recognized text.',
+        inputSchema: z.object({ noteId: z.string().max(64), imageId: z.string().max(64) }),
+        execute: async ({ noteId, imageId }) => {
+          if (s.scope.type === 'items' && !s.scope.notes.includes(noteId)) throw new Error('Note is outside the selected scope')
+          mustNote(noteId, zh)
+          const output = await noteImageData(noteId, imageId)
+          mustNote(noteId, zh)
+          return output
+        },
+        toModelOutput: ({ output }) => ({
+          type: 'content',
+          value: [{ type: 'file', mediaType: output.mediaType, data: { type: 'data', data: output.data } }]
+        })
+      })
   }
 
   Object.assign(tools, {
@@ -747,6 +789,7 @@ export function stepLabel(name: string, input: unknown, zh: boolean): Pick<Agent
     knowledge_search: [`检索知识库：${q('query')}`, `Searching: ${q('query')}`],
     note_find: [`查找笔记：${q('query')}`, `Finding notes: ${q('query')}`],
     note_read: ['阅读笔记', 'Reading note'],
+    note_image_view: ['查看笔记图片', 'Viewing note image'],
     source_read: ['阅读资料', 'Reading source'],
     note_add_rows: [`提案：${q('title')}`, `Proposal: ${q('title')}`],
     note_set_cues: ['提案：生成线索问题', 'Proposal: cue questions'],

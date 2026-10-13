@@ -13,6 +13,9 @@ metadata:
 ## 步骤
 
 1. 用 `note_read` 读取笔记，找出**线索栏为空**的行。已有线索的行不要改。
+   - 笔记栏只有图片的行不算空行：先读图片标记后已识别的文字；没有文字且 `note_image_view` 可用时，传 `noteId` 和 `imageId` 看图，再据此出题。
+   - 识别文字与看图两者都不可用时，不得编造题目、不得无声跳过。在回复中逐行说明：“第 N 行是图片，暂时读不出内容：可以在设置里开启图片识别，或换用能看图的模型”。
+   - Image-only rows are not empty. Use recognized text from `note_read`, otherwise use `note_image_view` when available. If neither works, explain which row could not be read and suggest enabling image recognition or switching to a vision model; never invent questions or silently skip it.
 2. 为每一行写**一个**问题：
    - 能用这一行的笔记内容回答；
    - 优先问“为什么 / 怎么做 / 有什么区别 / 举例说明”，少问“是什么”；

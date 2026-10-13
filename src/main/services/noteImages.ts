@@ -1,5 +1,6 @@
 import { and, eq, isNull } from 'drizzle-orm'
 import { nativeImage } from 'electron'
+import { readFile } from 'fs/promises'
 import { getDb } from '../db'
 import { assets, assetTexts, jobs, noteAssetBlocks, notes } from '../db/schema'
 import { assetPath } from './assets'
@@ -9,7 +10,74 @@ import { requestIndex } from './ai/indexer'
 import { emit } from '../events'
 import { loadDoc, stateToJSON } from './docs'
 import { deriveDoc } from '../lib/derive'
+import { imageAssetId, imagesIn } from '../lib/noteImageText'
 import type { RegionRecognition } from '@shared/types'
+
+export const imageRecognizedText = (assetId: string): string | null =>
+  getDb().select().from(assetTexts).where(eq(assetTexts.assetId, assetId)).get()?.text ?? null
+
+function currentNoteImage(noteId: string, imageId: string) {
+  const note = getDb().select().from(notes).where(eq(notes.id, noteId)).get()
+  if (!note || note.aiExcluded || note.deletedAt) return null
+  return imagesIn(stateToJSON(loadDoc(noteId))).find((n) => n.attrs?.id === imageId) ?? null
+}
+
+/** 对话按需识别复用现有本地识别器；等待有上限，完成后再次校验笔记授权和图片引用。 */
+const recognizing = new Map<string, Promise<void>>()
+export async function ensureNoteImageText(noteId: string, imageId: string, waitMs: number): Promise<void> {
+  const node = currentNoteImage(noteId, imageId)
+  const assetId = node && imageAssetId(node)
+  if (!assetId || imageRecognizedText(assetId) || recognitionSettings().mode === 'off' || !localRecognizerInstalled() || waitMs <= 0) return
+  let pending = recognizing.get(assetId)
+  if (!pending) {
+    pending = recognizeAsset(assetId)
+      .then((result) => {
+        const current = currentNoteImage(noteId, imageId)
+        if (result && current && imageAssetId(current) === assetId) persistImageText(assetId, result)
+      })
+      .catch(() => undefined)
+      .finally(() => recognizing.delete(assetId))
+    recognizing.set(assetId, pending)
+  }
+  let timer: ReturnType<typeof setTimeout> | undefined
+  await Promise.race([
+    pending,
+    new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, waitMs)
+    })
+  ]).finally(() => clearTimeout(timer))
+}
+
+/** 工具先校验 scope；这里校验当前正文的图片归属与隐私，并仅读取内容寻址素材。 */
+export async function noteImageData(noteId: string, imageId: string): Promise<{ data: string; mediaType: string }> {
+  const node = currentNoteImage(noteId, imageId)
+  const assetId = node && imageAssetId(node)
+  const asset = assetId ? getDb().select().from(assets).where(eq(assets.id, assetId)).get() : null
+  if (!asset || !/^[a-z0-9]{1,10}$/.test(asset.ext) || !asset.mime?.startsWith('image/'))
+    throw new Error('Note image not found or access revoked')
+  const path = assetPath(asset.id, asset.ext)
+  const bytes = await readFile(path)
+  const current = currentNoteImage(noteId, imageId)
+  if (!current || imageAssetId(current) !== assetId) throw new Error('Note image access revoked')
+  if (bytes.byteLength <= 4 * 1024 * 1024) return { data: bytes.toString('base64'), mediaType: asset.mime }
+  const image = nativeImage.createFromBuffer(bytes)
+  if (image.isEmpty()) throw new Error('Unable to resize note image')
+  const { width, height } = image.getSize()
+  const scaled = image.resize(width >= height ? { width: Math.min(width, 1600) } : { height: Math.min(height, 1600) })
+  return { data: scaled.toJPEG(85).toString('base64'), mediaType: 'image/jpeg' }
+}
+
+function persistImageText(assetId: string, result: RegionRecognition): void {
+  const refs = liveImageReferences(assetId)
+  if (!refs.length) return
+  getDb()
+    .insert(assetTexts)
+    .values({ assetId, text: result.text, engine: result.engine, updatedAt: Date.now() })
+    .onConflictDoUpdate({ target: assetTexts.assetId, set: { text: result.text, engine: result.engine, updatedAt: Date.now() } })
+    .run()
+  requestIndex()
+  emit('notes:changed', { ids: [...new Set(refs.map((r) => r.ref.noteId))] })
+}
 
 /** 同一资产可以出现在多个笔记，是否允许处理取当前有效引用；完成后再次检查。 */
 export function liveImageReferences(assetId?: string, forIndex = true) {
@@ -76,13 +144,7 @@ export function registerNoteImageJob(): void {
       const result = await recognizeAsset(assetId)
       const refs = liveImageReferences(assetId)
       if (!result || !refs.length) return { skipped: true }
-      getDb()
-        .insert(assetTexts)
-        .values({ assetId, text: result.text, engine: result.engine, updatedAt: Date.now() })
-        .onConflictDoUpdate({ target: assetTexts.assetId, set: { text: result.text, engine: result.engine, updatedAt: Date.now() } })
-        .run()
-      requestIndex()
-      emit('notes:changed', { ids: [...new Set(refs.map((r) => r.ref.noteId))] })
+      persistImageText(assetId, result)
       return { recognized: true }
     }
   })

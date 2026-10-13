@@ -59,7 +59,9 @@ const SUBJECT_ZH: Record<string, string> = { math: '数学', physics: '物理', 
 export function buildDoTools(zh: boolean): { tools: ToolSet; meta: Record<string, ToolMeta> } {
   const tools: ToolSet = {
     task_create: tool({
-      description: zh ? '请求用户确认触发、指令、工具与结果去向后创建 AI 任务。' : 'Create an AI task after confirming its trigger, instruction, tools and outputs.',
+      description: zh
+        ? '请求用户确认触发、指令、工具与结果去向后创建 AI 任务。'
+        : 'Create an AI task after confirming its trigger, instruction, tools and outputs.',
       inputSchema: TaskSave.omit({ id: true }),
       execute: async (input) => {
         const task = await saveTask(input)
@@ -67,23 +69,49 @@ export function buildDoTools(zh: boolean): { tools: ToolSet; meta: Record<string
       }
     }),
     plan_list: tool({
-      description: zh ? '查询某段时间的日程与复习负荷；可指定方向。排计划需到方向详情的排计划按钮预览。' : 'Read calendar and review load for a time range, optionally for a direction. Scheduling requires the preview in Directions.',
+      description: zh
+        ? '查询某段时间的日程与复习负荷；可指定方向。排计划需到方向详情的排计划按钮预览。'
+        : 'Read calendar and review load for a time range, optionally for a direction. Scheduling requires the preview in Directions.',
       inputSchema: EventRange.extend({ goalId: z.string().optional() }),
-      execute: async ({ startAt, endAt, goalId }) => JSON.stringify({ goalId, guidance: zh ? '在方向详情点“排计划”，预览后确认写入。' : 'Open the direction and choose Schedule a plan; confirm the preview.', events: plan.events({ startAt, endAt }).filter((e) => !goalId || e.goalId === goalId), forecast: plan.forecast(Math.min(366, Math.max(1, Math.ceil((endAt - Date.now()) / 86400000)))) })
+      execute: async ({ startAt, endAt, goalId }) =>
+        JSON.stringify({
+          goalId,
+          guidance: zh ? '在方向详情点“排计划”，预览后确认写入。' : 'Open the direction and choose Schedule a plan; confirm the preview.',
+          events: plan.events({ startAt, endAt }).filter((e) => !goalId || e.goalId === goalId),
+          forecast: plan.forecast(Math.min(366, Math.max(1, Math.ceil((endAt - Date.now()) / 86400000))))
+        })
     }),
     plan_event_create: tool({
       description: zh ? '用户确认后在日历上新建日程。' : 'Create a calendar event after the user confirms.',
-      inputSchema: z.object({ title: z.string().min(1).max(300), startAt: z.number().int(), endAt: z.number().int(), kind: z.enum(['study', 'exam', 'deadline', 'event']).default('study'), goalId: z.string().nullable().optional() }),
-      execute: async (input) => { const e = plan.eventSave(input); return zh ? `已创建日程（${e.id}）。` : `Event created (${e.id}).` }
+      inputSchema: z.object({
+        title: z.string().min(1).max(300),
+        startAt: z.number().int(),
+        endAt: z.number().int(),
+        kind: z.enum(['study', 'exam', 'deadline', 'event']).default('study'),
+        goalId: z.string().nullable().optional()
+      }),
+      execute: async (input) => {
+        const e = plan.eventSave(input)
+        return zh ? `已创建日程（${e.id}）。` : `Event created (${e.id}).`
+      }
     }),
     actions_list: tool({
-      description: zh ? '列出行动项；默认open。可按status/goalId/dateRange/dateField(createdAt/doneAt/dueAt)过滤，毫秒半开区间，includeMetadata返回真实完成时间、负责人、笔记链接；limit/offset分页。' : 'List actions (default open); optional status/goalId/dateRange/dateField createdAt/doneAt/dueAt (epoch ms, exclusive endAt). includeMetadata returns completion, owner, note links. limit/offset pagination.',
+      description: zh
+        ? '列出行动项；默认open。可按status/goalId/dateRange/dateField(createdAt/doneAt/dueAt)过滤，毫秒半开区间，includeMetadata返回真实完成时间、负责人、笔记链接；limit/offset分页。'
+        : 'List actions (default open); optional status/goalId/dateRange/dateField createdAt/doneAt/dueAt (epoch ms, exclusive endAt). includeMetadata returns completion, owner, note links. limit/offset pagination.',
       inputSchema: ActionListInput,
       execute: async (input) => {
         const result = readActions(input)
         if (input.includeMetadata) return JSON.stringify({ ...result, missingHistory: ['reply history', 'past ownership snapshots'] })
         const list = result.items
-        if (!list.length) return input.status === 'open' ? (zh ? '没有未完成的行动项。' : 'No open actions.') : (zh ? '没有符合条件的行动项。' : 'No matching actions.')
+        if (!list.length)
+          return input.status === 'open'
+            ? zh
+              ? '没有未完成的行动项。'
+              : 'No open actions.'
+            : zh
+              ? '没有符合条件的行动项。'
+              : 'No matching actions.'
         return list
           .slice(0, 50)
           .map((a) => `${a.id} · ${a.title}${a.dueAt ? ` · ${zh ? '截止' : 'due'} ${localDate(new Date(a.dueAt))}` : ''}`)
@@ -91,7 +119,9 @@ export function buildDoTools(zh: boolean): { tools: ToolSet; meta: Record<string
       }
     }),
     goals_list: tool({
-      description: zh ? '列出方向：掌握度、剩余天数、关联笔记数。includeMetadata:true 返回已存阶段/里程碑和当前进度；没有历史目标快照，日期仅为计划。limit/offset分页；嵌套覆盖量与next为继续读取参数，逐个交回本工具。' : 'List goals with mastery and days left. includeMetadata:true adds stored phases/milestones/current progress; no past goal snapshots. Dates alone are plans. limit/offset pagination; nested coverage and next provide continuation arguments for this same tool.',
+      description: zh
+        ? '列出方向：掌握度、剩余天数、关联笔记数。includeMetadata:true 返回已存阶段/里程碑和当前进度；没有历史目标快照，日期仅为计划。limit/offset分页；嵌套覆盖量与next为继续读取参数，逐个交回本工具。'
+        : 'List goals with mastery and days left. includeMetadata:true adds stored phases/milestones/current progress; no past goal snapshots. Dates alone are plans. limit/offset pagination; nested coverage and next provide continuation arguments for this same tool.',
       inputSchema: GoalListInput,
       execute: async (input) => {
         if (input.includeMetadata) return JSON.stringify(readGoalMetadata(input))
@@ -117,10 +147,12 @@ export function buildDoTools(zh: boolean): { tools: ToolSet; meta: Record<string
         const result = readMistakes(input)
         if (input.includeMetadata) return JSON.stringify(result)
         if (!result.items.length) return zh ? '没有符合条件的错题。' : 'No matching mistakes.'
-        return result.items.map((m, i) => {
-          const head = `${i + 1}. [${zh ? (SUBJECT_ZH[m.subject] ?? m.subject) : m.subject}] ${m.concepts.join('、') || '—'} · ${localDate(new Date(m.createdAt))}`
-          return `${head}\n${zh ? '题目' : 'Q'}：${m.question}${m.questionTruncated ? `… [truncated; mistakes_list includeMetadata, questionLimit:12000; id:${m.id}]` : ''}\n${zh ? '正确答案' : 'Answer'}：${m.correctAnswer || '—'}${m.causeReason ? `\n${zh ? '错因' : 'Cause'}：${m.causeReason}` : ''}`
-        }).join('\n\n')
+        return result.items
+          .map((m, i) => {
+            const head = `${i + 1}. [${zh ? (SUBJECT_ZH[m.subject] ?? m.subject) : m.subject}] ${m.concepts.join('、') || '—'} · ${localDate(new Date(m.createdAt))}`
+            return `${head}\n${zh ? '题目' : 'Q'}：${m.question}${m.questionTruncated ? `… [truncated; mistakes_list includeMetadata, questionLimit:12000; id:${m.id}]` : ''}\n${zh ? '正确答案' : 'Answer'}：${m.correctAnswer || '—'}${m.causeReason ? `\n${zh ? '错因' : 'Cause'}：${m.causeReason}` : ''}`
+          })
+          .join('\n\n')
       }
     }),
     action_create: tool({
@@ -194,14 +226,22 @@ export function buildDoTools(zh: boolean): { tools: ToolSet; meta: Record<string
   const meta: Record<string, ToolMeta> = {
     ...mail.meta,
     task_create: {
-      level: 'write', confirm: true,
+      level: 'write',
+      confirm: true,
       describe: (i) => ({
         title: zh ? `创建 AI 任务「${cut(String(i.name ?? ''), 60)}」` : `Create AI task “${cut(String(i.name ?? ''), 60)}”`,
         detail: taskConfirmation(TaskSave.parse(i), zh)
       })
     },
     plan_list: { level: 'read', untrusted: true },
-    plan_event_create: { level: 'write', confirm: true, describe: (i) => ({ title: zh ? `新建日程「${cut(String(i.title ?? ''), 60)}」` : `Create event “${cut(String(i.title ?? ''), 60)}”`, detail: `${new Date(Number(i.startAt)).toLocaleString()} — ${new Date(Number(i.endAt)).toLocaleString()}` }) },
+    plan_event_create: {
+      level: 'write',
+      confirm: true,
+      describe: (i) => ({
+        title: zh ? `新建日程「${cut(String(i.title ?? ''), 60)}」` : `Create event “${cut(String(i.title ?? ''), 60)}”`,
+        detail: `${new Date(Number(i.startAt)).toLocaleString()} — ${new Date(Number(i.endAt)).toLocaleString()}`
+      })
+    },
     actions_list: { level: 'read', untrusted: true },
     goals_list: { level: 'read', untrusted: true },
     mistakes_list: { level: 'read', untrusted: true },
@@ -268,6 +308,7 @@ export function buildDoTools(zh: boolean): { tools: ToolSet; meta: Record<string
 /** 现有内置工具的级别：改笔记与记住偏好本身是提案，网页内容不可信 */
 export const BUILTIN_META: Record<string, ToolMeta> = {
   note_find: { level: 'read', untrusted: true },
+  note_image_view: { level: 'read', untrusted: true },
   memory_remember: { level: 'write', proposal: true },
   browser_read_page: { level: 'read', untrusted: true },
   browser_find: { level: 'read', untrusted: true },
@@ -275,4 +316,4 @@ export const BUILTIN_META: Record<string, ToolMeta> = {
   browser_open: { level: 'read' }
 }
 export const isProposalTool = (name: string): boolean =>
-  name.startsWith('note_') && name !== 'note_find' && name !== 'note_read' && name !== 'note_create'
+  name.startsWith('note_') && !['note_find', 'note_read', 'note_image_view', 'note_create'].includes(name)
