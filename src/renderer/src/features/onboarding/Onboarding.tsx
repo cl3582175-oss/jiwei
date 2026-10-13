@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Dialog as D } from 'radix-ui'
 import { motion, AnimatePresence } from 'motion/react'
-import { PenLine, Library, Sparkles, ArrowRight, Monitor, Sun, Moon } from 'lucide-react'
+import { Library, Sparkles, ShieldCheck, ArrowRight, Monitor, Sun, Moon } from 'lucide-react'
 import type { Palette, ThemeMode } from '@shared/types'
 import { useSettings, useUpdateSettings, invalidate } from '@/lib/queries'
 import { api, cn } from '@/lib/utils'
@@ -50,9 +50,9 @@ export function Onboarding() {
   }
 
   const pillars = [
-    { icon: <PenLine />, tint: 'bamboo', title: t('onboarding.p1'), desc: t('onboarding.p1d') },
-    { icon: <Library />, tint: 'sky', title: t('onboarding.p2'), desc: t('onboarding.p2d') },
-    { icon: <Sparkles />, tint: 'apricot', title: t('onboarding.p3'), desc: t('onboarding.p3d') }
+    { icon: <Library />, tint: 'bamboo', title: t('onboarding.p1'), desc: t('onboarding.p1d') },
+    { icon: <Sparkles />, tint: 'sky', title: t('onboarding.p2'), desc: t('onboarding.p2d') },
+    { icon: <ShieldCheck />, tint: 'apricot', title: t('onboarding.p3'), desc: t('onboarding.p3d') }
   ]
 
   return (

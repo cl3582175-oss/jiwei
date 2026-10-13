@@ -7,7 +7,7 @@
 **懂你的个人智能体**
 
 它读过你的笔记、资料和录音，能替你整理、计划、写作、分析，也能按你定的规矩定期办事。<br>
-每一个改动都先问你，数据都留在你的电脑上。
+每一个改动都先问你，数据存在你自己的电脑上。
 
 积微成著，日进有功 · 青风铃 出品
 
@@ -79,7 +79,7 @@
 - **防提示注入**：网页、邮件和外部工具返回的内容只当作数据，不当作指令；读过外部内容之后的写入一律需要确认。
 - **费用透明**：显示本月、今天和每次的花费，可以分别设置单次、每天、每月上限，币种任选；DeepSeek 的低谷时段可以自动排队省钱。
 - **操作可查**：“最近做了什么”记录每一次工具调用和外部访问，可以筛选和导出。
-- **数据在本机**：没有积微账号，也没有积微服务器。数据每天自动备份，可以导出为单个 `.jiwei` 文件，换电脑时完整搬走。
+- **数据在本机**：没有积微账号，也没有积微服务器；只有你调用云端模型时，相关内容才会发给你选的服务商，标为“不给 AI”的内容不会发出。数据每天自动备份，可以导出为单个 `.jiwei` 文件，换电脑时完整搬走。
 
 **模型**：DeepSeek（默认）、通义千问、Kimi、智谱、OpenAI、Claude、Gemini，或任何兼容 OpenAI 接口的服务；也可以用 Ollama 在本机运行模型。API 密钥加密保存在本机。
 
@@ -157,7 +157,7 @@ Required Notice: Copyright (c) 2026 cl3582175-oss (https://github.com/cl3582175-
 
 **Jiwei is a personal AI agent that knows you.** It builds a local knowledge base from your notes, documents, web reading, recordings, photos and email, and then works on top of it. It can plan your schedule, run recurring AI tasks (for example, triggered by new email), draft articles, slides and narrated explainer videos, analyse decisions with evidence from your own notes, and turn meetings into minutes and action items.
 
-Every change to your data is shown to you before it happens. Content from the web and external tools is treated as data, never as instructions. Spending limits and an activity log keep costs and actions visible. Your data stays on your computer: there is no Jiwei account or server.
+Every change to your data is shown to you before it happens. Content from the web and external tools is treated as data, never as instructions. Spending limits and an activity log keep costs and actions visible. Your data is stored on your own computer: there is no Jiwei account or server, and content is only sent to the model provider you choose when AI is used.
 
 Under the hood it is still a learning app at heart: Cornell notes, FSRS spaced repetition, a mistake notebook, the Feynman technique and a knowledge funnel. It speaks MCP both ways, works with Claude Code–compatible plugins, and supports DeepSeek, Qwen, Kimi, Zhipu, OpenAI, Claude, Gemini, any OpenAI-compatible API and local models via Ollama.
 
