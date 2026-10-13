@@ -15,6 +15,7 @@
 [更新日志](CHANGELOG.md) ·
 [路线图](docs/ROADMAP.md) ·
 [插件开发](docs/plugins/authoring.md) ·
+[关注与交流](#关注与交流) ·
 [English](#english)
 
 [![Release](https://img.shields.io/github/v/release/cl3582175-oss/jiwei-releases?label=%E7%89%88%E6%9C%AC&color=1f6f69)](https://github.com/cl3582175-oss/jiwei-releases/releases/latest)
@@ -138,6 +139,22 @@ docs/            架构、文件格式、路线图、插件开发、发布流程
 
 更多见 [架构说明](docs/ARCHITECTURE.md)、[数据格式](docs/FORMAT.md) 和 [发布流程](docs/release.md)。
 
+## 关注与交流
+
+<img src="docs/images/douyin-qingfengling.jpg" width="240" alt="抖音 @青风铃 二维码" align="right">
+
+积微的新版本、新功能和使用技巧会第一时间在抖音 **@青风铃** 发布。这里也是和我直接交流的窗口：
+
+- 📣 **获取最新消息**：新版本发布、功能预告和演示视频
+- 💬 **交流反馈**：使用中遇到问题、想要的新功能、对产品的想法，欢迎私信或评论
+- 🤖 **AI 产业深度解读**：看懂 AI，也看懂怎么把 AI 用进业务
+
+**抖音号：`qingfenglingSW`**
+
+保存右侧二维码到相册，打开抖音搜索页扫一扫，或直接搜索抖音号即可关注。代码相关的问题也可以在本仓库提交 Issue。
+
+<br clear="right">
+
 ## 许可证
 
 [PolyForm Noncommercial 1.0.0](LICENSE.md)
@@ -145,7 +162,7 @@ docs/            架构、文件格式、路线图、插件开发、发布流程
 - ✅ 个人、学习、研究和非营利组织使用：**免费**
 - ❌ 不允许任何商业用途，包括销售、提供商业服务，或用在营利性产品中
 
-如需商业授权，请在本仓库提交 Issue 联系。
+如需商业授权，请在本仓库提交 Issue，或通过抖音 @青风铃（`qingfenglingSW`）联系。
 
 Required Notice: Copyright (c) 2026 cl3582175-oss (https://github.com/cl3582175-oss/jiwei)
 
@@ -162,3 +179,5 @@ Every change to your data is shown to you before it happens. Content from the we
 Under the hood it is still a learning app at heart: Cornell notes, FSRS spaced repetition, a mistake notebook, the Feynman technique and a knowledge funnel. It speaks MCP both ways, works with Claude Code–compatible plugins, and supports DeepSeek, Qwen, Kimi, Zhipu, OpenAI, Claude, Gemini, any OpenAI-compatible API and local models via Ollama.
 
 [Download](https://github.com/cl3582175-oss/jiwei-releases/releases/latest) for macOS (Apple silicon / Intel), Windows or Linux. The app is not yet code-signed with a paid certificate. On first launch, macOS needs **System Settings → Privacy & Security → Open Anyway**, and Windows needs **More info → Run anyway**. Free for personal and non-commercial use under [PolyForm Noncommercial 1.0.0](LICENSE.md). Made by Qingfengling (青风铃).
+
+Follow **@青风铃** on Douyin (ID: `qingfenglingSW`) for release news and to get in touch — see the QR code [above](#关注与交流).
