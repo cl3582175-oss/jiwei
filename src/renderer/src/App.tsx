@@ -30,6 +30,7 @@ import { GraphView } from './features/graph/GraphView'
 import { SettingsDialog } from './features/settings/SettingsDialog'
 import { UpdateNotice } from './features/update/UpdateNotice'
 import { CommandPalette } from './features/palette/CommandPalette'
+import { ModelSetupBanner, ModelSetupDialog } from './features/onboarding/ModelSetup'
 import { Onboarding } from './features/onboarding/Onboarding'
 import { useGlobalShortcuts } from './lib/shortcuts'
 import { useCelebrations } from './lib/celebrate'
@@ -103,7 +104,14 @@ function useMainEvents(): void {
     []
   )
   useEffect(() => window.jiweiEvents.on('nav:inbox', () => useApp.getState().setView('inbox')), [])
-  useEffect(() => window.jiweiEvents.on('nav:tasks', ({ taskId }) => { useApp.setState({ taskFocusId: taskId }); useApp.getState().openSettings('tasks') }), [])
+  useEffect(
+    () =>
+      window.jiweiEvents.on('nav:tasks', ({ taskId }) => {
+        useApp.setState({ taskFocusId: taskId })
+        useApp.getState().openSettings('tasks')
+      }),
+    []
+  )
   // 复盘提醒被点击：每日 → 复盘首页（就地填写）；每周 → 打开本周复盘
   useEffect(
     () =>
@@ -165,7 +173,20 @@ function useMainEvents(): void {
         })
       }),
       window.jiweiEvents.on('plugins:changed', () => {
-        for (const key of ['plugins', 'skills', 'skill', 'lenses', 'templates', 'frameworks', 'recipes', 'task-recipes', 'tasks', 'mcp', 'discover']) void qc.invalidateQueries({ queryKey: [key] })
+        for (const key of [
+          'plugins',
+          'skills',
+          'skill',
+          'lenses',
+          'templates',
+          'frameworks',
+          'recipes',
+          'task-recipes',
+          'tasks',
+          'mcp',
+          'discover'
+        ])
+          void qc.invalidateQueries({ queryKey: [key] })
       }),
       window.jiweiEvents.on('mcp:changed', () => {
         void qc.invalidateQueries({ queryKey: ['mcp'] })
@@ -225,40 +246,43 @@ export function App() {
     <TooltipProvider>
       <div className="flex h-full">
         <NavRail />
-        <main className="relative flex min-w-0 flex-1">
-          <div className="relative h-full min-w-0 flex-1">
-            {view === 'today' && <TodayView />}
-            {view === 'notes' && <NotesView />}
-            {view === 'inbox' && <InboxView />}
-            {view === 'recording' && <RecordingView />}
-            {view === 'notes' && recording?.noteId && (
-              <div className="absolute inset-x-0 bottom-2 z-20">
-                <RecorderBar compact />
-              </div>
+        <div className="flex min-w-0 flex-1 flex-col">
+          <main className="relative flex min-h-0 min-w-0 flex-1">
+            <div className="relative h-full min-w-0 flex-1">
+              {view === 'today' && <TodayView />}
+              {view === 'notes' && <NotesView />}
+              {view === 'inbox' && <InboxView />}
+              {view === 'recording' && <RecordingView />}
+              {view === 'notes' && recording?.noteId && (
+                <div className="absolute inset-x-0 bottom-2 z-20">
+                  <RecorderBar compact />
+                </div>
+              )}
+              {view === 'library' && <LibraryView />}
+              {view === 'chat' && <ChatView />}
+              {view === 'review' && <ReviewView />}
+              {view === 'calendar' && <CalendarView />}
+              {view === 'goals' && <GoalsPage />}
+              {view === 'advisor' && <AdvisorView />}
+              {view === 'works' && <WorksView />}
+              {view === 'usage' && <UsageDashboard />}
+              {view === 'feynman' && <FeynmanView />}
+              {view === 'reflect' && <ReflectView />}
+              {view === 'graph' && <GraphView />}
+              {view === 'trash' && <TrashView />}
+              {shellPanel && <AiPanelFloat />}
+            </div>
+            {shellPanel && pinned && (
+              <aside
+                className="h-full w-[min(420px,34vw)] min-w-[300px] shrink-0 border-l border-border/70 bg-sunken/40"
+                data-testid="assistant-pinned"
+              >
+                <AiPanelBody pinned />
+              </aside>
             )}
-            {view === 'library' && <LibraryView />}
-            {view === 'chat' && <ChatView />}
-            {view === 'review' && <ReviewView />}
-            {view === 'calendar' && <CalendarView />}
-            {view === 'goals' && <GoalsPage />}
-            {view === 'advisor' && <AdvisorView />}
-            {view === 'works' && <WorksView />}
-            {view === 'usage' && <UsageDashboard />}
-            {view === 'feynman' && <FeynmanView />}
-            {view === 'reflect' && <ReflectView />}
-            {view === 'graph' && <GraphView />}
-            {view === 'trash' && <TrashView />}
-            {shellPanel && <AiPanelFloat />}
-          </div>
-          {shellPanel && pinned && (
-            <aside
-              className="h-full w-[min(420px,34vw)] min-w-[300px] shrink-0 border-l border-border/70 bg-sunken/40"
-              data-testid="assistant-pinned"
-            >
-              <AiPanelBody pinned />
-            </aside>
-          )}
-        </main>
+          </main>
+          <ModelSetupBanner />
+        </div>
       </div>
       <RecordingDialog />
       <LensPages />
@@ -267,6 +291,7 @@ export function App() {
       <UpdateNotice />
       <CommandPalette />
       <Onboarding />
+      <ModelSetupDialog />
       <DialogHost />
       <SelectionToolbar />
       <AnnotationCard />

@@ -193,6 +193,9 @@ interface AppState extends Location {
   settingsPluginId?: string | null
   settingsTab: string | null
   openSettings: (tab?: string) => void
+  /** 模型配置引导对话框（未配置 AI 时从横幅、功能入口打开） */
+  modelSetupOpen: boolean
+  openModelSetup: () => void
   paletteOpen: boolean
   setPaletteOpen: (o: boolean) => void
 }
@@ -408,7 +411,9 @@ export const useApp = create<AppState>((set, get) => {
     settingsOpen: false,
     setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
     settingsTab: null,
-    openSettings: (tab) => set({ settingsOpen: true, settingsTab: tab ?? null }),
+    openSettings: (tab) => set({ settingsOpen: true, settingsTab: tab ?? null, modelSetupOpen: false }),
+    modelSetupOpen: false,
+    openModelSetup: () => set({ modelSetupOpen: true, settingsOpen: false }),
     paletteOpen: false,
     setPaletteOpen: (paletteOpen) => set({ paletteOpen })
   }

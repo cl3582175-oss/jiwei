@@ -20,6 +20,11 @@ test('AI settings and chat UI without a key', async () => {
   await navTo(page, /AI 对话/)
   await expect(page.getByRole('heading', { name: '问积微，或交代一件事' })).toBeVisible()
   await page.getByRole('button', { name: '去设置模型服务' }).click()
+  // 先打开新手配置卡片；需要更多控制时从「更多选择」进入完整设置
+  await expect(page.getByTestId('model-setup')).toBeVisible()
+  await page.getByRole('button', { name: /更多选择/ }).click()
+  await page.getByRole('menuitem', { name: /高级设置/ }).click()
+  await expect(page.getByTestId('model-setup')).toHaveCount(0)
 
   // 设置 → AI：添加 DeepSeek
   await expect(page.getByText('模型服务', { exact: true })).toBeVisible()

@@ -79,7 +79,7 @@ export async function askInline(
       ...(extra.length ? { extra } : {})
     })
     toast.error(i18n.t('chat.needModel'), {
-      action: { label: i18n.t('chat.setupModel'), onClick: () => useApp.getState().openSettings('ai') }
+      action: { label: i18n.t('chat.setupModel'), onClick: () => useApp.getState().openModelSetup() }
     })
     return
   }

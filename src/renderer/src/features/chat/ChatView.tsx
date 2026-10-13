@@ -307,7 +307,7 @@ function ChatPanel() {
               <h2 className="mt-6 font-display text-xl font-semibold tracking-wide text-fg">{t('chat.emptyTitle')}</h2>
               <p className="mt-2 max-w-[420px] text-sm leading-relaxed text-muted">{t('chat.emptyHint')}</p>
               {noProvider ? (
-                <Button variant="primary" className="mt-6" onClick={() => openSettings('ai')}>
+                <Button variant="primary" className="mt-6" onClick={() => useApp.getState().openModelSetup()}>
                   <Settings2 />
                   {t('chat.setupModel')}
                 </Button>

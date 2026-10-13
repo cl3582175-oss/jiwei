@@ -341,6 +341,6 @@ test('未配置模型时入口保留但不翻译，提示设置模型',async()=>
     expect((await sample.page.evaluate((target)=>window.jiwei.reading.state(target),target)).mode).toBe('original');expect(sample.readingRequests).toHaveLength(0)
     await shot('reading-no-model-light.png',sample,undefined,attempt)
     await attempt();await sample.page.getByRole('button',{name:'去设置模型服务',exact:true}).last().dispatchEvent('click')
-    await expect(sample.page.getByRole('dialog',{name:'设置',exact:true})).toBeVisible()
+    await expect(sample.page.getByTestId('model-setup')).toBeVisible()
   } finally {await sample.close()}
 })

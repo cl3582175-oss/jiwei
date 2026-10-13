@@ -117,7 +117,7 @@ export function InboxView() {
                   ? t('inbox.costUnknown')
                   : t('inbox.cost', { cost: money.format(cost) })
             }
-            onClick={() => (settings?.ai.chat.model ? void run(() => api.inbox.triage()) : useApp.getState().openSettings('ai'))}
+            onClick={() => (settings?.ai.chat.model ? void run(() => api.inbox.triage()) : useApp.getState().openModelSetup())}
           >
             <Sparkles />
             {t('inbox.triage')}

@@ -14,11 +14,15 @@ import { Logo } from '@/components/Logo'
 import { InkWelcome } from '@/components/Illustrations'
 import { PaletteCard, Segmented } from '../settings/SettingsDialog'
 import { RoleBatchDialog, RoleGrid } from '../plugins/RolePicker'
+import { ModelSetupCard, PrepChecklist, useAiReady } from './ModelSetup'
 
-const STEPS = 4
-const ROLES = 2
+const STEPS = 5
+const AI = 1
+const PERSONAL = 2
+const ROLES = 3
+const CORNELL = 4
 
-/** 首次启动引导：认识积微 → 个性化 → 选角色（v0.10）→ 康奈尔笔记法（创建示例笔记） */
+/** 首次启动引导：认识积微 → 接上 AI 大脑 → 个性化 → 选角色（v0.10）→ 康奈尔笔记法（创建示例笔记） */
 export function Onboarding() {
   const { t, i18n } = useTranslation()
   const qc = useQueryClient()
@@ -28,6 +32,7 @@ export function Onboarding() {
   const [step, setStep] = useState(0)
   const [name, setName] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const { ready: aiReady } = useAiReady()
   const [roles, setRoles] = useState<string[]>([]),
     [confirmRoles, setConfirmRoles] = useState(false)
   if (!s || s.onboarded) return null
@@ -63,7 +68,7 @@ export function Onboarding() {
           onEscapeKeyDown={(e) => e.preventDefault()}
           onOpenAutoFocus={(e) => e.preventDefault()}
           onPointerDownOutside={(e) => e.preventDefault()}
-          className="paper fixed top-1/2 left-1/2 z-50 flex h-[min(90vh,560px)] w-[min(94vw,906px)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-3xl shadow-[var(--shadow-4)] outline-none"
+          className="paper fixed top-1/2 left-1/2 z-50 flex h-[min(90vh,620px)] w-[min(94vw,906px)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-3xl shadow-[var(--shadow-4)] outline-none"
         >
           <D.Title className="sr-only">{t('onboarding.dialogTitle')}</D.Title>
           <D.Description className="sr-only">{t('app.slogan')}</D.Description>
@@ -110,7 +115,21 @@ export function Onboarding() {
                   </>
                 )}
 
-                {step === 1 && (
+                {step === AI && (
+                  <div className="-mx-2 min-h-0 flex-1 overflow-y-auto px-2 pb-6">
+                    <h2 className="font-display text-xl font-semibold tracking-[0.06em] text-fg">{t('modelSetup.title')}</h2>
+                    <p className="mt-2 mb-6 max-w-[640px] text-sm leading-relaxed text-muted">{t('modelSetup.desc')}</p>
+                    <ModelSetupCard />
+                    {aiReady && (
+                      <>
+                        <h3 className="mt-6 mb-3 text-sm font-medium text-fg">{t('modelSetup.prep.title')}</h3>
+                        <PrepChecklist />
+                      </>
+                    )}
+                  </div>
+                )}
+
+                {step === PERSONAL && (
                   <>
                     <h2 className="font-display text-xl font-semibold tracking-[0.06em] text-fg">{t('onboarding.personalize')}</h2>
                     <p className="mt-2 text-sm text-muted">{t('onboarding.personalizeDesc')}</p>
@@ -188,7 +207,7 @@ export function Onboarding() {
                   </>
                 )}
 
-                {step === 3 && (
+                {step === CORNELL && (
                   <>
                     <h2 className="font-display text-xl font-semibold tracking-[0.06em] text-fg">{t('onboarding.cornell')}</h2>
                     <p className="mt-2 max-w-[600px] text-sm leading-relaxed text-muted">{t('onboarding.cornellDesc')}</p>
@@ -232,7 +251,12 @@ export function Onboarding() {
                   {t('onboarding.back')}
                 </Button>
               )}
-              {step === ROLES ? (
+              {step === AI && !aiReady ? (
+                <Button variant="ghost" onClick={() => setStep(step + 1)} data-testid="setup-later">
+                  {t('modelSetup.later')}
+                  <ArrowRight />
+                </Button>
+              ) : step === ROLES ? (
                 <Button variant="primary" onClick={() => (roles.length ? setConfirmRoles(true) : setStep(step + 1))}>
                   {roles.length ? t('onboarding.installRoles', { count: roles.length }) : t('onboarding.skipRoles')}
                   <ArrowRight />

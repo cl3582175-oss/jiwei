@@ -27,7 +27,7 @@ export function ReadingControls({target,state:supplied}:{target:ReadingTarget;st
     try {
       const settings=await api.settings.get()
       if((mode!=='original'||annotations)&&(!settings.ai.chat.providerId||!settings.ai.chat.model)) {
-        toast.error(t('chat.needModel'),{action:{label:t('chat.setupModel'),onClick:()=>useApp.getState().openSettings('ai')}});return
+        toast.error(t('chat.needModel'),{action:{label:t('chat.setupModel'),onClick:()=>useApp.getState().openModelSetup()}});return
       }
       const profile=await api.reading.profile()
       if((mode!=='original'||annotations)&&(!state?.skipCostPrompt||!profile.initialized)&&state?.mode==='original'&&!state.annotations) {
