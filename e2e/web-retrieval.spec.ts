@@ -202,7 +202,9 @@ async function removeFixtureSnapshot(id: string, url: string): Promise<number> {
   expect(new URL(url).origin).toBe(fixture.base)
   return app.evaluate(
     ({ app }, { userData, id, url }) => {
-      if (app.getPath('userData') !== userData) throw new Error('Unexpected fixture user-data directory')
+      // macOS 的临时目录有 /var 与 /private/var 两种写法，比较真实路径
+      const real = (p: string): string => process.getBuiltinModule('fs').realpathSync(p)
+      if (real(app.getPath('userData')) !== real(userData)) throw new Error('Unexpected fixture user-data directory')
       const load = process.getBuiltinModule('module').createRequire(app.getAppPath() + '/package.json')
       const Db = load('better-sqlite3'),
         db = new Db(userData + '/data/jiwei.db')

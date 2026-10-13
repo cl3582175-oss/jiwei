@@ -191,7 +191,7 @@ describe('web tool availability and public contract', () => {
     })
     const text = await call(built.tools, 'web_search', { query: ' public fixture ' })
     expect(text).not.toContain('<external-data')
-    expect(text).toContain('（来自：' + BACKEND_INFO.tavily.name + '；本轮还可搜索 2 次）')
+    expect(text).toContain('（给助手的说明，不要转述给用户：结果来自 ' + BACKEND_INFO.tavily.name + '；本轮还可搜索 2 次）')
     expect(s.hits).toHaveLength(1)
     expect(s.hits[0]).toMatchObject({ parentType: 'web', snippetOnly: true, ownerId: 'snip:' + urlKey(result().url) })
   })
@@ -210,10 +210,10 @@ describe('web tool availability and public contract', () => {
       "Search the public web or academic literature. Use when the knowledge base is insufficient or the question needs current information. Keep queries short (keywords, at most 100 characters) and never include the user's private information. Results are numbered and citable as [n], but snippets are search-engine excerpts: read the page with read_url before citing numbers, dates or key conclusions. type=academic searches papers; type=news searches recent news."
     )
     expect(zh.tools.read_url.description).toBe(
-      '读取一个网页或 PDF 的正文，返回与问题最相关的段落（带编号，可以引用）。url 只能来自本轮 web_search 的结果、用户给出的网址或上一轮引用过的网页。focus 写你想在页面里找什么。'
+      '读取一个网页或 PDF 的正文，返回与问题最相关的段落（带编号，可以引用）。url 只能来自本轮 web_search 的结果、用户给出的网址或上一轮引用过的网页。focus 写你想在页面里找什么，用网页本身的语言写（英文网页用英文）。'
     )
     expect(en.tools.read_url.description).toBe(
-      "Read a web page or PDF and return the passages most relevant to the question (numbered, citable). The url must come from this turn's web_search results, a URL the user gave, or a page cited in the previous answer. Use focus to say what you are looking for."
+      "Read a web page or PDF and return the passages most relevant to the question (numbered, citable). The url must come from this turn's web_search results, a URL the user gave, or a page cited in the previous answer. Use focus to say what you are looking for, written in the page's own language."
     )
     expect(en.meta.web_search.describe?.({})).toEqual({ title: 'Web search', detail: '' })
     expect(en.meta.read_url.describe?.({})).toEqual({ title: 'Read web page', detail: '' })
@@ -361,13 +361,27 @@ describe('read whitelist, request reservations and numbered excerpts', () => {
       locator: 'chars=' + out.selected[0].start + '-' + out.selected[0].end
     })
   })
-  it('does not accept a user-URL prefix or an unlisted DOI redirect', async () => {
+  it('does not accept a user-URL prefix', async () => {
     const prefix = session()
     prefix.web.userText = 'https://example.org/article-private'
     await expect(run(() => readForSession(prefix, 'https://example.org/article'))).rejects.toThrow('只能读取')
     expect(state.fetch).not.toHaveBeenCalled()
+  })
+  it('follows a server redirect from an allowed URL (DOI to publisher) and allowlists the target', async () => {
     const s = session()
     s.web.allowedUrls.add(urlKey('https://doi.org/10.1000/fixture')!)
+    state.fetch.mockImplementation(async (url, opts) => {
+      opts?.validateUrl?.(url)
+      opts?.validateUrl?.('https://publisher.example.org/article')
+      return response()
+    })
+    await expect(run(() => readForSession(s, 'https://doi.org/10.1000/fixture'))).resolves.toHaveProperty('read.page')
+    expect(s.web.allowedUrls.has(urlKey('https://publisher.example.org/article')!)).toBe(true)
+  })
+  it('still applies site policy to redirect targets', async () => {
+    const s = session()
+    s.web.allowedUrls.add(urlKey('https://doi.org/10.1000/fixture')!)
+    state.blocked = ['publisher.example.org']
     state.fetch.mockImplementation(async (url, opts) => {
       opts?.validateUrl?.(url)
       opts?.validateUrl?.('https://publisher.example.org/article')
@@ -447,8 +461,9 @@ describe('read whitelist, request reservations and numbered excerpts', () => {
     expect(text).toMatch(/\(\d+ passages in total; these are the \d+ most relevant\)/)
     expect(text).not.toContain('low relevance')
   })
-  it('rejects a rendered main-frame redirect through the same whitelist', async () => {
+  it('rejects a rendered main-frame redirect to a blocked site', async () => {
     state.fetch.mockResolvedValue({ ...response('<html><body>Render bootstrap.</body></html>'), status: 403 })
+    state.blocked = ['other.example.org']
     state.render.mockImplementation(async (_url, opts) => {
       opts.validateUrl('https://other.example.org/page')
       return { html, finalUrl: 'https://other.example.org/page' }

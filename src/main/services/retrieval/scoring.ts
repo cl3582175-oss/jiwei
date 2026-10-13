@@ -9,7 +9,11 @@ import { urlKey } from './backends/normalize'
 export const TUNING = {
   // P6固定原创语料+本地EmbeddingGemma校准；选择规则和局限见web-eval与架构第48节。
   REL: 0.65,
+  // 知识库片段的入选下限：按加权分计，已过时（×0.55）的旧笔记仍要能入选，才能讲清“你笔记写的是 X”。
   FLOOR: 0.4,
+  // 网页段落的入选下限：校准语料里不相关段落 180 个全部高于 0.40、金标准最低 0.64、相关最低 0.595，
+  // 0.50 约能去掉一成五的不相关段落且不碰相关段落（Claude 审查 2026-10-14）。
+  WEB_FLOOR: 0.5,
   SLOTS: 12,
   KB_MIN: 3,
   WEB_MIN: 3,
@@ -248,18 +252,18 @@ export async function scoreWeb(
   }))
 }
 
-function floor(fallback?: boolean): number {
-  return fallback ? 0.2 : TUNING.FLOOR
+function floor(fallback?: boolean, web = false): number {
+  return fallback ? 0.2 : web ? TUNING.WEB_FLOOR : TUNING.FLOOR
 }
 
 function positiveCount(value: number): number {
   return finite(value) ? Math.max(0, Math.floor(value)) : 0
 }
 
-function ranked<T extends { score: number; fallback?: boolean }>(hits: T[], limit: number, keyOf: (hit: T) => string): T[] {
+function ranked<T extends { score: number; fallback?: boolean }>(hits: T[], limit: number, keyOf: (hit: T) => string, web = false): T[] {
   const count = new Map<string, number>()
   return hits
-    .filter((hit) => finite(hit.score) && hit.score >= floor(hit.fallback))
+    .filter((hit) => finite(hit.score) && hit.score >= floor(hit.fallback, web))
     .sort((a, b) => b.score - a.score)
     .filter((hit) => {
       const key = keyOf(hit)
@@ -275,8 +279,11 @@ export function allocate(kb: ScoredKb[], web: ScoredWeb[], slots: number = TUNIN
   const total = positiveCount(slots)
   if (!total) return result
   const kbQueue = ranked(kb, TUNING.PER_PARENT, (entry) => entry.hit.parentId)
-  const webQueue = ranked(web, TUNING.PER_PAGE, (entry) =>
-    entry.hit.pageId.trim() ? `id:${entry.hit.pageId}` : `url:${urlKey(entry.hit.url) ?? entry.hit.url}`
+  const webQueue = ranked(
+    web,
+    TUNING.PER_PAGE,
+    (entry) => (entry.hit.pageId.trim() ? `id:${entry.hit.pageId}` : `url:${urlKey(entry.hit.url) ?? entry.hit.url}`),
+    true
   )
   let kbIndex = 0,
     webIndex = 0
@@ -321,7 +328,7 @@ export async function selectPassages(
     opts
   )
   const ordered = scored.map((entry, position) => ({ entry, position })).sort((a, b) => b.entry.score - a.entry.score)
-  const qualified = ordered.filter(({ entry }) => entry.score >= floor(entry.fallback))
+  const qualified = ordered.filter(({ entry }) => entry.score >= floor(entry.fallback, true))
   const fallback = !qualified.length
   const selected = fallback ? ordered.slice(0, Math.min(3, k)) : qualified.slice(0, k)
   return selected

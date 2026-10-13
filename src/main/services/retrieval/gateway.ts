@@ -24,6 +24,7 @@ import { BACKENDS, BackendError, type BackendQuery } from './backends/index'
 import { backendStates, credentialsFor } from './backends/store'
 import { urlKey } from './backends/normalize'
 import { DailyLimitError, recordCall, reserveCall, todayCalls } from './calls'
+import { failures, pauses } from './breaker'
 
 export interface SearchWebOptions {
   type?: 'web' | 'news'
@@ -36,8 +37,6 @@ export interface SearchWebOptions {
   /** 仅旧 discover/search 的显式 service 兼容；仍经过全部请求守卫。 */
   legacyService?: 'bocha' | 'tavily' | 'brave'
 }
-const failures = new Map<BackendId, number>()
-const pauses = new Map<BackendId, number>()
 const available = (s: BackendState): boolean =>
   s.enabled && (!s.needsKey || s.keySet) && (s.id !== 'searxng' || !!s.baseUrl) && !s.pausedUntil
 const language = (q: string): 'zh' | 'en' =>

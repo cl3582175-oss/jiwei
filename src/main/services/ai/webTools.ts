@@ -194,8 +194,13 @@ export async function readForSession(
     const read = await readUrl(url, {
       signal,
       incognito: session.incognito,
+      // 重定向由已获准网址的服务器决定，不是模型自己拼出的网址（例如 DOI 跳到出版社页面）：
+      // 只按网站策略检查目的地，并把它加入本轮可读范围。模型直接给出的网址仍须在白名单里。
       validateUrl: (target) => {
-        validateSessionUrl(session, target)
+        assertReadableUrl(target)
+        const key = urlKey(target)
+        if (!key) throw new WebToolError(session.zh, 'scope')
+        session.web.allowedUrls.add(key)
         finalUrl = target
       }
     })
@@ -300,15 +305,19 @@ export function buildWebTools(session: AgentSession): { tools: ToolSet; meta: Re
             out +
             '\n\n' +
             (zh
-              ? '（来自：' + backendLabel + '；本轮还可搜索 ' + left + ' 次）'
-              : '(From: ' + backendLabel + '; ' + left + ' searches remaining this turn)')
+              ? '（给助手的说明，不要转述给用户：结果来自 ' + backendLabel + '；本轮还可搜索 ' + left + ' 次）'
+              : '(Note for the assistant, do not repeat to the user: results from ' +
+                backendLabel +
+                '; ' +
+                left +
+                ' searches remaining this turn)')
           )
         }
       }),
       read_url: tool({
         description: zh
-          ? '读取一个网页或 PDF 的正文，返回与问题最相关的段落（带编号，可以引用）。url 只能来自本轮 web_search 的结果、用户给出的网址或上一轮引用过的网页。focus 写你想在页面里找什么。'
-          : "Read a web page or PDF and return the passages most relevant to the question (numbered, citable). The url must come from this turn's web_search results, a URL the user gave, or a page cited in the previous answer. Use focus to say what you are looking for.",
+          ? '读取一个网页或 PDF 的正文，返回与问题最相关的段落（带编号，可以引用）。url 只能来自本轮 web_search 的结果、用户给出的网址或上一轮引用过的网页。focus 写你想在页面里找什么，用网页本身的语言写（英文网页用英文）。'
+          : "Read a web page or PDF and return the passages most relevant to the question (numbered, citable). The url must come from this turn's web_search results, a URL the user gave, or a page cited in the previous answer. Use focus to say what you are looking for, written in the page's own language.",
         inputSchema: ReadInput,
         execute: async ({ url, focus }, { abortSignal }) => {
           const { read, selected } = await readForSession(session, url, focus, abortSignal)

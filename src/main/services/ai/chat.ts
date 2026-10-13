@@ -199,7 +199,7 @@ function systemPrompt(zh: boolean, tier: ModelTier, incognito: boolean, conversa
 11. 范围：用户要你整理、总结、画导图、做表格或时间线，却没说清是哪部分，而资料较长（「上下文」里只是其中可见的一部分）时，先用 source_outline 看规模与章节，再用 ask_user 让用户选（当前页 / 某一章 / 整份资料 / 指定页码），不要默认只用当前页。范围超过约 40 段时用 source_digest 交给后台分批读完。
 13. 排学习计划必须先用 goals_list 找方向，plan_list 查询该方向的日程并给出方向链接，引导用户点“排计划”预览确认；不要用 plan_event_create 批量冒充排期。
 12. 如实说明覆盖范围：只读了资料的一部分时，在结果里写明依据的是哪几页或哪几章，不要把局部当作全书。
-14. 联网：<检索情况> 说明了本轮能否联网、知识库覆盖情况和时效需求。能联网且知识库不足或需要最新信息时，用 web_search（必要时再用 read_url）补充；知识库已经足够且不需要最新信息时不要联网。不能联网而问题需要最新信息时，在回答开头说明“未联网，以下内容可能不是最新的”，并提示可以在输入框旁打开联网。网页资料同样用 [编号] 引用。不要编造网址，不要把用户的私人信息写进搜索词。`
+14. 联网：<检索情况> 说明了本轮能否联网、知识库覆盖情况和时效需求。能联网且知识库不足或需要最新信息时，用 web_search（必要时再用 read_url）补充；知识库已经足够且不需要最新信息时不要联网。不能联网而问题需要最新信息时，在回答开头说明“未联网，以下内容可能不是最新的”，并提示可以在输入框旁打开联网。网页资料同样用 [编号] 引用。知识库片段与问题无关时，直接说知识库里没有相关内容，不要为了说明无关而引用它们。不要编造网址，不要把用户的私人信息写进搜索词。调用工具前不需要先说“我来读一下”之类的过渡句；如果要说，也用回答所用的语言。`
     : `You are Jiwei's learning assistant. The knowledge base = the user's notes + the source materials they uploaded.
 Rules:
 1. Prefer the "knowledge base excerpts". Cite used excerpts at sentence end like [1] or [2][3]; only use numbers that appeared (including tool results).
@@ -215,7 +215,7 @@ Rules:
 11. Scope: when the user asks you to organize, summarize, map, tabulate or timeline material without saying which part, and the source is long (the "context" shows only the visible part), first call source_outline, then ask_user to choose (this page / a chapter / the whole source / a page range). Do not silently use only the current page. For ranges beyond ~40 segments use source_digest.
 13. For study scheduling, find the direction with goals_list, use plan_list with its goalId to link it, and guide the user to Schedule a plan for preview and confirmation.
 12. State coverage honestly: if you read only part of a source, say which pages or chapters the result is based on.
-14. Web: <retrieval> says whether the web is available this turn, how well the knowledge base covers the question, and whether current information is needed. If the web is available and the knowledge base is insufficient or current information is needed, use web_search (then read_url when needed); if the knowledge base is enough and nothing current is needed, do not search. If the web is unavailable but current information is needed, start the answer with "Not connected to the web; the following may be out of date" and mention the web toggle next to the input box. Cite web material with [n] as well. Never invent URLs and never put the user's private information in queries.`
+14. Web: <retrieval> says whether the web is available this turn, how well the knowledge base covers the question, and whether current information is needed. If the web is available and the knowledge base is insufficient or current information is needed, use web_search (then read_url when needed); if the knowledge base is enough and nothing current is needed, do not search. If the web is unavailable but current information is needed, start the answer with "Not connected to the web; the following may be out of date" and mention the web toggle next to the input box. Cite web material with [n] as well. If the knowledge-base excerpts are unrelated to the question, just say the knowledge base has nothing relevant; do not cite them to say so. Never invent URLs and never put the user's private information in queries. No filler sentence is needed before calling a tool; if you say one, use the answer's language.`
   // 无痕对话没有记忆工具：规则也要一致，否则模型会去调用不存在的工具
   const memoryRule = incognito
     ? zh
@@ -255,7 +255,9 @@ function turnMessage(
   if (web.gate.status !== 'not-allowed') {
     const state = {
       available: zh ? `可用（${web.mode === 'always' ? '总是' : '自动'}）` : `available (${web.mode})`,
-      'academic-only': zh ? '只能检索学术文献' : 'academic literature only',
+      'academic-only': zh
+        ? '可用：用户给出的网址可以用 read_url 读取；搜索只能查学术论文（web_search 用 type=academic），网页搜索未配置'
+        : 'available: URLs the user gave can be read with read_url; search covers academic papers only (web_search with type=academic); web search is not configured',
       off: zh ? '已关闭' : 'turned off',
       unconfigured: zh ? '未配置搜索服务' : 'no search service configured',
       context: zh ? '本轮不联网：你在问选中或指定的内容' : 'not used this turn: the question is about the selected or chosen content'
@@ -686,7 +688,7 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
         const past = session.web.gate.status === 'not-allowed' ? [] : previousWebHits(session, previousCitations)
         const material = currentWeb.length ? numberHits(session, currentWeb) : ''
         const previousText = past.length
-          ? `${zh ? '上一轮回答里引用过的网页（编号已重新分配）：' : 'Web pages cited in the previous answer (numbers reassigned):'}\n${numberHits(session, past)}`
+          ? `${zh ? '上一轮回答里引用过的网页（编号已重新分配；这里只有当时引用的段落，需要页面里的其他内容时，用 read_url 重新读取该网址，focus 写要找什么）：' : 'Web pages cited in the previous answer (numbers reassigned; only the cited passages are here — to find other content on a page, call read_url on that URL again with a focus):'}\n${numberHits(session, past)}`
           : ''
         if ((material || previousText) && currentRun()) currentRun()!.state.tainted = true
         const text = turnMessage(zh, input.text, [ctx.text, learner, imageNote, pendingNote].filter(Boolean).join('\n\n'), kb, skillBody, {

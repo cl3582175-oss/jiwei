@@ -112,6 +112,7 @@ describe('retrieval score tuning and coverage', () => {
     expect(TUNING).toEqual({
       REL: 0.65,
       FLOOR: 0.4,
+      WEB_FLOOR: 0.5,
       SLOTS: 12,
       KB_MIN: 3,
       WEB_MIN: 3,
@@ -384,14 +385,14 @@ describe('web scoring and controlled embedding boundary', () => {
 describe('context slot allocation', () => {
   it('reserves three qualifying entries for each side before filling by score', () => {
     const knowledge = Array.from({ length: 12 }, (_, i) => scoredKb(`k${i}`, 1 - i / 100)),
-      webpages = [scoredWeb('w0', 0.45), scoredWeb('w1', 0.44), scoredWeb('w2', 0.43), scoredWeb('w3', 0.42)]
+      webpages = [scoredWeb('w0', 0.55), scoredWeb('w1', 0.54), scoredWeb('w2', 0.53), scoredWeb('w3', 0.52)]
     const result = allocate(knowledge, webpages)
     expect(result.kb).toHaveLength(9)
     expect(result.web.map((entry) => entry.hit.pageId)).toEqual(['w0', 'w1', 'w2'])
   })
   it('allows one side to fill all slots when the other side is below its floor', () => {
     const knowledge = Array.from({ length: 12 }, (_, i) => scoredKb(`k${i}`, 0.8))
-    expect(allocate(knowledge, [scoredWeb('low', 0.39)]).kb).toHaveLength(12)
+    expect(allocate(knowledge, [scoredWeb('low', 0.49)]).kb).toHaveLength(12)
     const webpages = Array.from({ length: 12 }, (_, i) => scoredWeb(`w${i}`, 0.8))
     expect(allocate([scoredKb('low', 0.39)], webpages).web).toHaveLength(12)
   })
@@ -462,8 +463,8 @@ describe('reading passage selection', () => {
     expect(result[0]).toMatchObject({ text: 'one', start: 6, end: 9, suspicious: true })
     expect(read.passages[1]).not.toHaveProperty('score')
   })
-  it('uses the semantic floor inclusively', async () => {
-    vectorScores([0.4, 0.39])
+  it('uses the web floor inclusively', async () => {
+    vectorScores([0.5, 0.49])
     expect(
       (await selectPassages(page(['one', 'two']), 'Controlled query', { timeSensitive: false })).map((passage) => passage.index)
     ).toEqual([0])
@@ -473,7 +474,7 @@ describe('reading passage selection', () => {
     expect(await selectPassages(page(['0', '1', '2', '3', '4', '5', '6']), 'Controlled query', { timeSensitive: false })).toHaveLength(6)
   })
   it('returns the best three as low relevance when every semantic score is below the floor', async () => {
-    vectorScores([0.1, 0.3, 0.2, 0.25, 0.29])
+    vectorScores([0.1, 0.45, 0.2, 0.25, 0.29])
     const result = await selectPassages(page(['0', '1', '2', '3', '4']), 'Controlled query', { timeSensitive: false })
     expect(result.map((passage) => passage.index)).toEqual([1, 3, 4])
     expect(result.every((passage) => passage.fallback === true)).toBe(true)

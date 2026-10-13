@@ -74,6 +74,16 @@ describe('search backend state and upgrade', () => {
     expect(context.sqlite!.prepare('SELECT id FROM search_backends WHERE id=?').get('brave')).toBeUndefined()
     expect(context.sqlite!.prepare('SELECT COUNT(*) AS n FROM search_connections').get()).toEqual({ n: 3 })
   })
+  it('clears a paused backend when the user saves a new configuration', async () => {
+    const store = await import('../backends/store')
+    const breaker = await import('../breaker')
+    breaker.failures.set('bocha', 3)
+    breaker.pauses.set('bocha', Date.now() + 1_800_000)
+    expect(store.backendStates(breaker.pauses).find((s) => s.id === 'bocha')!.pausedUntil).not.toBeNull()
+    store.saveBackend({ id: 'bocha', key: 'new-synthetic-key', enabled: true })
+    expect(breaker.failures.has('bocha')).toBe(false)
+    expect(store.backendStates(breaker.pauses).find((s) => s.id === 'bocha')!.pausedUntil).toBeNull()
+  })
   it('keeps multiple backends enabled, preserves an omitted key and never exposes it in states', async () => {
     const store = await import('../backends/store')
     store.saveBackend({ id: 'bocha', key: 'synthetic-bocha-key', enabled: true })

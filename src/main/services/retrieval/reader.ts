@@ -113,6 +113,8 @@ export async function savePage(id: string): Promise<{ sourceId: string }> {
   const source = await saveWebPage({ url: page.url, title: page.title, html })
   return { sourceId: source.id }
 }
+const PASSAGE_TARGET = 400,
+  PASSAGE_MAX = 1200
 function passages(text: string): Passage[] {
   const pieces = segmentText(text, 'plain').map((segment) => {
     let start = segment.locator.start,
@@ -132,7 +134,15 @@ function passages(text: string): Passage[] {
       pieces.splice(i, 1)
     }
   }
-  return pieces.map((piece, index) => ({ ...piece, index, suspicious: isSuspicious(piece.text) }))
+  // 再把相邻短段合并到 400 字左右（不超过 1200 字）：PDF 常常一行一段，段太碎时挑出的几段装不下完整的意思。
+  const merged: typeof pieces = []
+  for (const piece of pieces) {
+    const last = merged.at(-1)
+    if (last && last.text.length < PASSAGE_TARGET && piece.end - last.start <= PASSAGE_MAX)
+      merged[merged.length - 1] = { start: last.start, end: piece.end, text: text.slice(last.start, piece.end) }
+    else merged.push(piece)
+  }
+  return merged.map((piece, index) => ({ ...piece, index, suspicious: isSuspicious(piece.text) }))
 }
 function withAbort<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
   if (!signal) return promise
@@ -172,6 +182,16 @@ function persist(snapshot: Snapshot): WebPageView {
     return toView(row)
   })
 }
+function pdfTitle(lines: string[]): string {
+  let title = ''
+  for (const line of lines.slice(0, 4)) {
+    const clean = line.replace(/\s+/g, ' ').trim()
+    if (!clean) continue
+    title = title ? title + ' ' + clean : clean
+    if (title.length >= 30) break
+  }
+  return title.slice(0, 120)
+}
 async function parsePdf(bytes: Uint8Array, url: string, signal?: AbortSignal): Promise<ReadablePage> {
   const path = join(app.getPath('temp'), 'jiwei-reader-' + randomUUID() + '.pdf')
   const file = await open(path, 'wx', 0o600)
@@ -187,7 +207,8 @@ async function parsePdf(bytes: Uint8Array, url: string, signal?: AbortSignal): P
       .trim()
     if (text.length < 200) throw new ReadError('scanned')
     return {
-      title: result.segments[0]?.text.trim().slice(0, 80) || new URL(url).pathname.split('/').at(-1) || new URL(url).hostname,
+      // 论文标题常被排版拆成几行：取开头几段拼到 30 字以上，最长 120 字。
+      title: pdfTitle(result.segments.map((segment) => segment.text)) || new URL(url).pathname.split('/').at(-1) || new URL(url).hostname,
       siteName: new URL(url).hostname,
       publishedAt: null,
       lang: null,
