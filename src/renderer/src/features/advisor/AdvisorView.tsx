@@ -669,11 +669,11 @@ function Memo({ d, memo }: { d: Decision; memo: DecisionMemo }) {
           <table className="w-full min-w-[520px] text-sm">
             <thead>
               <tr className="border-y border-border/70 text-2xs text-subtle">
-                <th className="px-5 py-2 text-left font-medium">{t('advisor.criterion')}</th>
+                <th className="min-w-[10rem] px-5 py-2 text-left font-medium">{t('advisor.criterion')}</th>
                 <th className="w-28 px-2 py-2 text-left font-medium">{t('advisor.weight')}</th>
                 {memo.options.map((o) => (
                   <th key={o.id} className="px-2 py-2 text-center font-medium" title={o.title}>
-                    {o.id.slice(1)} · <span className="inline-block max-w-[8rem] truncate align-bottom">{o.title}</span>
+                    {o.id.slice(1)} · <span className="inline-block max-w-[6.5rem] truncate align-bottom">{o.title}</span>
                   </th>
                 ))}
               </tr>
@@ -681,7 +681,7 @@ function Memo({ d, memo }: { d: Decision; memo: DecisionMemo }) {
             <tbody>
               {memo.criteria.map((c) => (
                 <tr key={c.name} className="border-b border-border/50">
-                  <td className="px-5 py-2.5 text-fg" title={plain(c.why)}>
+                  <td className="min-w-[10rem] px-5 py-2.5 leading-snug text-fg" title={plain(c.why)}>
                     {c.name}
                   </td>
                   <td className="px-2 py-2">
