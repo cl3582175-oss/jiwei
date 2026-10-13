@@ -110,8 +110,8 @@ function vectorScores(scores: number[]): void {
 describe('retrieval score tuning and coverage', () => {
   it('uses the exact calibration defaults', () => {
     expect(TUNING).toEqual({
-      REL: 0.55,
-      FLOOR: 0.35,
+      REL: 0.65,
+      FLOOR: 0.4,
       SLOTS: 12,
       KB_MIN: 3,
       WEB_MIN: 3,
@@ -125,10 +125,10 @@ describe('retrieval score tuning and coverage', () => {
   it('returns none for an empty knowledge set', () => expect(coverage([])).toBe('none'))
   it('returns partial when all hits lack semantic similarity', () => expect(coverage([kb(), kb({ score: 2 })])).toBe('partial'))
   it('returns enough for two semantic hits at the inclusive REL threshold', () =>
-    expect(coverage([kb({ sim: 0.55 }), kb({ sim: 0.8 })])).toBe('enough'))
+    expect(coverage([kb({ sim: 0.65 }), kb({ sim: 0.8 })])).toBe('enough'))
   it('returns partial for exactly one semantic hit above REL', () =>
-    expect(coverage([kb({ sim: 0.55 }), kb({ sim: 0.54 }), kb()])).toBe('partial'))
-  it('returns none when existing semantic similarities are all below REL', () => expect(coverage([kb({ sim: 0.54 }), kb()])).toBe('none'))
+    expect(coverage([kb({ sim: 0.65 }), kb({ sim: 0.64 }), kb()])).toBe('partial'))
+  it('returns none when existing semantic similarities are all below REL', () => expect(coverage([kb({ sim: 0.64 }), kb()])).toBe('none'))
 })
 
 describe('freshness coefficient', () => {
@@ -384,16 +384,16 @@ describe('web scoring and controlled embedding boundary', () => {
 describe('context slot allocation', () => {
   it('reserves three qualifying entries for each side before filling by score', () => {
     const knowledge = Array.from({ length: 12 }, (_, i) => scoredKb(`k${i}`, 1 - i / 100)),
-      webpages = [scoredWeb('w0', 0.4), scoredWeb('w1', 0.39), scoredWeb('w2', 0.38), scoredWeb('w3', 0.37)]
+      webpages = [scoredWeb('w0', 0.45), scoredWeb('w1', 0.44), scoredWeb('w2', 0.43), scoredWeb('w3', 0.42)]
     const result = allocate(knowledge, webpages)
     expect(result.kb).toHaveLength(9)
     expect(result.web.map((entry) => entry.hit.pageId)).toEqual(['w0', 'w1', 'w2'])
   })
   it('allows one side to fill all slots when the other side is below its floor', () => {
     const knowledge = Array.from({ length: 12 }, (_, i) => scoredKb(`k${i}`, 0.8))
-    expect(allocate(knowledge, [scoredWeb('low', 0.34)]).kb).toHaveLength(12)
+    expect(allocate(knowledge, [scoredWeb('low', 0.39)]).kb).toHaveLength(12)
     const webpages = Array.from({ length: 12 }, (_, i) => scoredWeb(`w${i}`, 0.8))
-    expect(allocate([scoredKb('low', 0.34)], webpages).web).toHaveLength(12)
+    expect(allocate([scoredKb('low', 0.39)], webpages).web).toHaveLength(12)
   })
   it('caps one knowledge parent at three and one webpage at two', () => {
     const result = allocate(
@@ -463,7 +463,7 @@ describe('reading passage selection', () => {
     expect(read.passages[1]).not.toHaveProperty('score')
   })
   it('uses the semantic floor inclusively', async () => {
-    vectorScores([0.35, 0.34])
+    vectorScores([0.4, 0.39])
     expect(
       (await selectPassages(page(['one', 'two']), 'Controlled query', { timeSensitive: false })).map((passage) => passage.index)
     ).toEqual([0])

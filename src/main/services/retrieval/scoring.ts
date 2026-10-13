@@ -7,8 +7,9 @@ import { getSettings } from '../settings'
 import { urlKey } from './backends/normalize'
 
 export const TUNING = {
-  REL: 0.55,
-  FLOOR: 0.35,
+  // P6固定原创语料+本地EmbeddingGemma校准；选择规则和局限见web-eval与架构第48节。
+  REL: 0.65,
+  FLOOR: 0.4,
   SLOTS: 12,
   KB_MIN: 3,
   WEB_MIN: 3,

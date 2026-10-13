@@ -259,7 +259,7 @@ test.beforeAll(async () => {
   await expect
     .poll(async () => {
       const hits = await page.evaluate(() => window.jiwei.knowledge.search('间隔重复的稳定原理', { type: 'all' }, 8))
-      return hits.filter((hit) => hit.status === 'active' && (hit.sim ?? 0) >= 0.55).length
+      return hits.filter((hit) => hit.status === 'active' && (hit.sim ?? 0) >= 0.65).length
     })
     .toBeGreaterThanOrEqual(2)
 })
