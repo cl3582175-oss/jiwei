@@ -107,7 +107,7 @@ const BATCH = 16
 /**
  * 计算向量。kind = query 用于检索问题，doc 用于知识库内容（EmbeddingGemma 要求不同的提示前缀）。
  */
-export async function embed(texts: string[], kind: 'query' | 'doc', titles?: string[]): Promise<number[][]> {
+export async function embed(texts: string[], kind: 'query' | 'doc', titles?: string[], beforeSend?: () => void): Promise<number[][]> {
   const e = getSettings().ai.embedding
   const inputs =
     e.mode === 'local'
@@ -116,7 +116,10 @@ export async function embed(texts: string[], kind: 'query' | 'doc', titles?: str
   const out: number[][] = []
   for (let i = 0; i < inputs.length; i += BATCH) {
     const batch = inputs.slice(i, i + BATCH)
+    // 网页权限可能在上一批等待期间改变；每批发送前及完成后重查，旧调用不传守卫。
+    beforeSend?.()
     const vecs = e.mode === 'local' ? await local.embedRaw(batch) : await embedCloud(batch)
+    beforeSend?.()
     out.push(...vecs.map(normalize))
   }
   return out

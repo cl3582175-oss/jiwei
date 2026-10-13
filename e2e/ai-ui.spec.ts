@@ -48,6 +48,12 @@ test('AI settings and chat UI without a key', async () => {
   // 再点一次：回到自动判断，不留下设定
   await page.getByRole('button', { name: 'deepseek-flash 强模型' }).click()
   await expect.poll(async () => (await page.evaluate(() => window.jiwei.providers.list()))[0].modelCaps).toEqual({})
+  await expect(page.getByRole('button', { name: 'deepseek-flash 工具调用：可靠' })).toHaveAttribute('aria-pressed', 'true')
+  await page.getByRole('button', { name: 'deepseek-flash 工具调用：可靠' }).click()
+  await expect.poll(async () => (await page.evaluate(() => window.jiwei.providers.list()))[0].modelCaps).toEqual({ 'deepseek-flash': { tools: false } })
+  await expect(page.getByRole('button', { name: 'deepseek-flash 工具调用：不可靠' })).toHaveAttribute('aria-pressed', 'false')
+  await page.getByRole('button', { name: 'deepseek-flash 工具调用：不可靠' }).click()
+  await expect.poll(async () => (await page.evaluate(() => window.jiwei.providers.list()))[0].modelCaps).toEqual({})
   if (shots) await page.screenshot({ path: join(shots, '51-ai-settings.png') })
   // API Key 不会以明文出现在任何接口返回中
   const providers = await page.evaluate(() => window.jiwei.providers.list())

@@ -37,7 +37,14 @@ const session = (scope: AgentSession['scope'] = { type: 'all' }): AgentSession =
   conversationId: '',
   messageId: '',
   hits: [],
-  skills: []
+  skills: [],
+  web: {
+    gate: { status: 'not-allowed', offerTools: false, preSearch: false, timeSensitive: false, explicitAsk: false, coverage: 'none' },
+    searches: 0,
+    reads: 0,
+    allowedUrls: new Set(),
+    userText: ''
+  }
 })
 async function call(tools: ToolSet, name: string, input: unknown): Promise<string> {
   const t = tools[name]

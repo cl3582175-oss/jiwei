@@ -14,6 +14,7 @@ import { mistakesZh } from '../features/mistakes/messages'
 import { todayZh } from '../features/today/messages'
 import { safetyZh } from '../features/settings/safetyMessages'
 import { readingZh } from '../features/reading/messages'
+import { retrievalZh } from '../features/retrieval/messages'
 
 const zhCN = {
   updates: updatesZh,
@@ -32,6 +33,7 @@ const zhCN = {
   agent: agentZh,
   spend: spendZh,
   reading: readingZh,
+  retrieval: retrievalZh,
   learning: {
     pendingProposal: '此提案须在错题或阅读入口完成审阅与确认。',
     returnReading: '返回阅读资料',

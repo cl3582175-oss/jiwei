@@ -39,7 +39,8 @@ export interface ReadOptions {
 }
 type PageRow = typeof webPages.$inferSelect
 type Snapshot = Omit<PageRow, 'id'>
-const temporary = new Map<string, WebPageView>()
+// 最终地址仅供AI策略重查；不暴露到公共快照视图，也不让无痕快照落库。
+const temporary = new Map<string, { page: WebPageView; finalUrl: string }>()
 const messages = {
   invalid: ['网址无效', 'Invalid address'],
   canceled: ['读取已取消', 'Reading canceled'],
@@ -68,9 +69,9 @@ const toView = (row: PageRow | (Snapshot & { id: string })): WebPageView => ({
   method: row.method,
   text: row.text
 })
-function remember(page: WebPageView): WebPageView {
+function remember(page: WebPageView, finalUrl: string): WebPageView {
   const copy = { ...page, id: 'tmp-' + newId() }
-  temporary.set(copy.id, { ...copy })
+  temporary.set(copy.id, { page: { ...copy }, finalUrl })
   while (temporary.size > 50) {
     const oldest = temporary.keys().next().value
     if (oldest !== undefined) temporary.delete(oldest)
@@ -78,9 +79,22 @@ function remember(page: WebPageView): WebPageView {
   return copy
 }
 export function getPage(id: string): WebPageView | null {
-  if (id.startsWith('tmp-')) return temporary.has(id) ? { ...temporary.get(id)! } : null
+  if (id.startsWith('tmp-')) {
+    const snapshot = temporary.get(id)
+    return snapshot ? { ...snapshot.page } : null
+  }
   const row = getDb().select().from(webPages).where(eq(webPages.id, id)).get()
   return row ? toView(row) : null
+}
+/** 恢复旧引用/发送给模型前按当前策略检查两端地址；用户查看快照的合同不变。 */
+export function assertPageReadable(id: string): void {
+  const memory = id.startsWith('tmp-') ? temporary.get(id) : undefined
+  const snapshot = id.startsWith('tmp-')
+    ? memory && { url: memory.page.url, finalUrl: memory.finalUrl }
+    : getDb().select({ url: webPages.url, finalUrl: webPages.finalUrl }).from(webPages).where(eq(webPages.id, id)).get()
+  if (!snapshot) return
+  assertReadableUrl(snapshot.url)
+  assertReadableUrl(snapshot.finalUrl)
 }
 const escapeHtml = (text: string): string =>
   text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
@@ -213,7 +227,7 @@ export async function readUrl(value: string, opts: ReadOptions = {}): Promise<Re
     .get()
   if (cached) {
     validate(cached.finalUrl)
-    const page = opts.incognito ? remember(toView(cached)) : toView(cached)
+    const page = opts.incognito ? remember(toView(cached), cached.finalUrl) : toView(cached)
     recordCall('reader', cached.method, true, true, start)
     return { page, passages: passages(page.text) }
   }
@@ -309,7 +323,7 @@ export async function readUrl(value: string, opts: ReadOptions = {}): Promise<Re
       text,
       textHash: createHash('sha256').update(text).digest('hex')
     }
-    const page = opts.incognito ? remember(toView({ ...snapshot, id: '' })) : persist(snapshot)
+    const page = opts.incognito ? remember(toView({ ...snapshot, id: '' }), snapshot.finalUrl) : persist(snapshot)
     const result = { page, passages: passages(page.text) }
     ok = true
     return result

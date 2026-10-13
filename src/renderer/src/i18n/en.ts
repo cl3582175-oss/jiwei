@@ -15,6 +15,7 @@ import { mistakesEn } from '../features/mistakes/messages'
 import { todayEn } from '../features/today/messages'
 import { safetyEn } from '../features/settings/safetyMessages'
 import { readingEn } from '../features/reading/messages'
+import { retrievalEn } from '../features/retrieval/messages'
 const en: Messages = {
   updates: updatesEn,
   importer: importerEn,
@@ -32,6 +33,7 @@ const en: Messages = {
   agent: agentEn,
   spend: spendEn,
   reading: readingEn,
+  retrieval: retrievalEn,
   learning: {
     pendingProposal: 'Complete this reviewed proposal from the mistake or reading view.',
     returnReading: 'Return to reading source',

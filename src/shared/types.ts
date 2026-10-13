@@ -1,6 +1,7 @@
 // 主进程与渲染进程共享的数据类型（输出类型）。
 // 输入类型由 zod 模式推导（schemas.ts），API 由能力注册表推导（capabilities.ts）。
 import type { Anchor } from './context'
+import type { WebMode } from './retrieval'
 import type {
   AiSettings,
   AnnotationInput,
@@ -458,6 +459,7 @@ export interface Conversation {
   id: string
   title: string
   scope: ChatScope
+  web: WebMode | null
   pinned: boolean
   /** 无痕：不使用、不形成记忆 */
   incognito: boolean
@@ -751,7 +753,7 @@ export interface AgentStep {
 export interface Citation {
   /** 回答中的引用编号 [n] */
   n: number
-  parentType: 'note' | 'source'
+  parentType: 'note' | 'source' | 'web'
   parentId: string
   /** 笔记块 ID 或资料片段 ID */
   ownerId: string
@@ -766,6 +768,11 @@ export interface Citation {
   origin: 'user' | 'ai' | 'ai_reviewed' | null
   /** 怎么找到的（v0.7.6） */
   via?: HitVia
+  url?: string
+  site?: string | null
+  snippetOnly?: boolean
+  suspicious?: boolean
+  meta?: { authors?: string[]; year?: number; venue?: string; citations?: number; doi?: string; pdfUrl?: string }
 }
 
 export interface ChatMessage {
@@ -964,7 +971,7 @@ export interface EmbeddingStatus {
 }
 
 export interface SearchHit {
-  parentType: 'note' | 'source'
+  parentType: 'note' | 'source' | 'web'
   parentId: string
   ownerId: string
   title: string
@@ -979,8 +986,13 @@ export interface SearchHit {
   origin: 'user' | 'ai' | 'ai_reviewed' | null
   /** 怎么找到的（v0.7.6）：关键词、语义（本地向量）、两者都命中、用户正指着的内容 */
   via?: HitVia
+  url?: string
+  site?: string | null
+  snippetOnly?: boolean
+  suspicious?: boolean
+  meta?: Citation['meta']
 }
-export type HitVia = 'keyword' | 'semantic' | 'both' | 'context'
+export type HitVia = 'keyword' | 'semantic' | 'both' | 'context' | 'web'
 
 /** 语音转写引擎状态 */
 export interface AsrStatus {

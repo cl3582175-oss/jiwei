@@ -12,9 +12,26 @@ describe('model capabilities', () => {
 
   it('user settings win, auto is kept for display', () => {
     const c = resolveCaps('deepseek-flash', { 'deepseek-flash': { tier: 'strong' }, other: { vision: true } })
-    expect(c).toEqual({ vision: true, tier: 'strong', auto: { vision: true, tier: 'basic' } })
+    expect(c).toEqual({ vision: true, tools: true, tier: 'strong', auto: { vision: true, tools: true, tier: 'basic' } })
     expect(resolveCaps('my-local-llava-ish', { 'my-local-llava-ish': { vision: true } }).vision).toBe(true)
     expect(resolveCaps('gpt-5', { 'gpt-5': { vision: false } }).vision).toBe(false)
+  })
+
+  it.each(['deepseek-flash', 'gpt-5', 'some-unknown-model', ''])('defaults tools to reliable for any model name %s', (model) => {
+    expect(resolveCaps(model)).toMatchObject({ tools: true, auto: { tools: true } })
+  })
+
+  it('keeps auto tools reliable while honoring false and true overrides for the exact model', () => {
+    expect(resolveCaps('controlled', { controlled: { tools: false }, other: { tools: true } })).toMatchObject({
+      tools: false,
+      auto: { tools: true }
+    })
+    expect(resolveCaps('controlled', { controlled: { tools: true }, other: { tools: false } })).toMatchObject({
+      tools: true,
+      auto: { tools: true }
+    })
+    expect(resolveCaps('controlled', { other: { tools: false } })).toMatchObject({ tools: true, auto: { tools: true } })
+    expect(resolveCaps('controlled', null)).toMatchObject({ tools: true, auto: { tools: true } })
   })
 })
 

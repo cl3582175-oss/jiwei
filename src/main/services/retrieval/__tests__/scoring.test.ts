@@ -295,6 +295,38 @@ describe('knowledge scoring', () => {
 })
 
 describe('web scoring and controlled embedding boundary', () => {
+  it('rechecks current privacy after query embedding and blocks document sending without lexical fallback', async () => {
+    let allowed = true
+    const denied = new Error('Controlled privacy denial')
+    fixture.ready.mockResolvedValue(true)
+    fixture.embed.mockImplementationOnce(async () => {
+      allowed = false
+      return [[1, 0]]
+    })
+    await expect(
+      scoreWeb([web()], 'Controlled query', {
+        timeSensitive: false,
+        beforeSend: () => {
+          if (!allowed) throw denied
+        }
+      })
+    ).rejects.toBe(denied)
+    expect(fixture.embed).toHaveBeenCalledTimes(1)
+  })
+
+  it('rejects current privacy denial even when embeddings are unavailable', async () => {
+    const denied = new Error('Controlled privacy denial')
+    await expect(
+      scoreWeb([web()], 'Controlled query', {
+        timeSensitive: false,
+        beforeSend: () => {
+          throw denied
+        }
+      })
+    ).rejects.toBe(denied)
+    expect(fixture.embed).not.toHaveBeenCalled()
+  })
+
   it('calls query embedding once and document embedding once in a batch with titles, then applies dot/authority/fresh', async () => {
     fixture.ready.mockResolvedValue(true)
     fixture.embed.mockResolvedValueOnce([[0.6, 0.8]]).mockResolvedValueOnce([

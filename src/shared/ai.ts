@@ -317,24 +317,27 @@ export function offPeakSaving(p: ModelPrice, u: Usage, at: number, money?: Pick<
 /* ——— 模型能力 ——— */
 
 /**
- * 两项能力决定积微怎么用一个模型：
+ * 三项能力决定积微怎么用一个模型：
  *   - tier：strong / basic，决定可用的技能（如自由 HTML 交互只对强模型开放），以及后台小任务是否换用快速模型；
  *   - vision：能否看图，决定框选区域 / 视频画面提问时是否发送图像（否则只发送区域内的文字）。
+ *   - tools：工具调用是否可靠；不可靠时可由代码先搜索，再把结果交给模型。
  * 默认按名称自动判断（下面两张表）；服务商经常改名、升级，所以用户可以在「AI 模型」设置中逐个模型改写，
  * 改写存于服务商的 modelCaps，优先于自动判断。
  */
 export type ModelTier = 'basic' | 'strong'
 export interface ModelCapsOverride {
   vision?: boolean
+  tools?: boolean
   tier?: ModelTier
   /** 用户填写的价格（v0.7.5），优先于内置价格 */
   price?: ModelPrice
 }
 export interface ModelCaps {
   vision: boolean
+  tools: boolean
   tier: ModelTier
   /** 按名称自动判断的结果（界面上显示“自动”时用） */
-  auto: { vision: boolean; tier: ModelTier }
+  auto: { vision: boolean; tools: boolean; tier: ModelTier }
 }
 
 /** 按名称识别的旗舰模型；无法识别的视为 basic（宁可降级为模板，也不产出低质量结果） */
@@ -375,9 +378,9 @@ export const autoVision = (model: string): boolean => VISION_MODELS.some((r) => 
 
 /** 模型的实际能力：用户设定优先，否则按名称自动判断 */
 export function resolveCaps(model: string, overrides?: Record<string, ModelCapsOverride> | null): ModelCaps {
-  const auto = { vision: autoVision(model), tier: autoTier(model) }
+  const auto = { vision: autoVision(model), tools: true, tier: autoTier(model) }
   const o = overrides?.[model]
-  return { vision: o?.vision ?? auto.vision, tier: o?.tier ?? auto.tier, auto }
+  return { vision: o?.vision ?? auto.vision, tools: o?.tools ?? auto.tools, tier: o?.tier ?? auto.tier, auto }
 }
 
 /* ——— 向量模型 ——— */

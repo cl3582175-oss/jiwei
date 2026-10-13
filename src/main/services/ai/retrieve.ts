@@ -19,6 +19,8 @@ const RRF_K = 60
 const DAY = 86_400_000
 
 type Key = string // `${ownerType}:${ownerId}`
+/** 知识库入口只产生笔记和资料，网页命中由联网工具提供。 */
+export type KnowledgeHit = SearchHit & { parentType: 'note' | 'source' }
 
 function keywordHits(q: string, limit: number, filters: RecordingFilters = {}): Key[] {
   const fq = ftsQuery(q)
@@ -130,9 +132,9 @@ async function vectorHits(q: string, limit: number, filters: RecordingFilters = 
 }
 
 /** 读取候选分片的内容与元数据（同时完成隐私与范围过滤） */
-function hydrate(keys: Key[], scope: ChatScope): Map<Key, SearchHit> {
+function hydrate(keys: Key[], scope: ChatScope): Map<Key, KnowledgeHit> {
   const db = getDb()
-  const out = new Map<Key, SearchHit>()
+  const out = new Map<Key, KnowledgeHit>()
   const blockIds = keys.filter((k) => k.startsWith('block:')).map((k) => k.slice(6))
   const segIds = keys.filter((k) => k.startsWith('segment:')).map((k) => k.slice(8))
   const noteScope = scope.type === 'items' ? new Set(scope.notes) : null
@@ -275,7 +277,7 @@ export async function retrieve(
   limit = 8,
   filters: RecordingFilters = {},
   prefer?: string | null
-): Promise<SearchHit[]> {
+): Promise<KnowledgeHit[]> {
   if (scope.type === 'none' || !query.trim()) return []
   const [kw, vec] = await Promise.all([
     Promise.resolve(keywordHits(query, limit, filters)),
@@ -353,7 +355,7 @@ export async function similarTo(
   limit: number,
   minSim: number,
   options?: { distinctCornellNotes?: boolean; guard?: () => void }
-): Promise<(SearchHit & { sim: number })[]> {
+): Promise<(KnowledgeHit & { sim: number })[]> {
   if (!text.trim() || !(await isReady())) return []
   options?.guard?.()
   const [v] = await embed([text.slice(0, 2000)], 'doc')

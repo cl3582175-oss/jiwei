@@ -195,29 +195,48 @@ function validVector(vector: unknown, dimensions?: number): vector is number[] {
 }
 
 /** 一次查询向量、一次文档批量。失败或格式不完整时整批退回词法，不记录查询或服务商错误内容。 */
-async function semanticSimilarities(hits: WebCandidate[], query: string): Promise<number[] | null> {
+async function semanticSimilarities(hits: WebCandidate[], query: string, beforeSend?: () => void): Promise<number[] | null> {
+  let guardRejected = false
+  const assertAllowed = () => {
+    try {
+      beforeSend?.()
+    } catch (error) {
+      guardRejected = true
+      throw error
+    }
+  }
   try {
+    assertAllowed()
     if (!(await isReady())) return null
-    const queryVectors = await embed([query], 'query')
+    assertAllowed()
+    const queryVectors = beforeSend ? await embed([query], 'query', undefined, assertAllowed) : await embed([query], 'query')
+    assertAllowed()
     if (!Array.isArray(queryVectors) || queryVectors.length !== 1 || !validVector(queryVectors[0])) return null
     const vector = queryVectors[0]
-    const documents = await embed(
-      hits.map((hit) => hit.text),
-      'doc',
-      hits.map((hit) => hit.title)
-    )
+    const texts = hits.map((hit) => hit.text)
+    const titles = hits.map((hit) => hit.title)
+    const documents = beforeSend ? await embed(texts, 'doc', titles, assertAllowed) : await embed(texts, 'doc', titles)
+    assertAllowed()
     if (!Array.isArray(documents) || documents.length !== hits.length || !documents.every((doc) => validVector(doc, vector.length)))
       return null
     const scores = documents.map((doc) => doc.reduce((sum, value, i) => sum + value * vector[i], 0))
     return scores.every(finite) ? scores : null
-  } catch {
+  } catch (error) {
+    // 隐私拒绝不能被当作向量服务故障，否则词法退路仍会把已禁用内容交给模型。
+    if (guardRejected) throw error
+    assertAllowed()
     return null
   }
 }
 
-export async function scoreWeb(hits: WebCandidate[], query: string, opts: { timeSensitive: boolean }): Promise<ScoredWeb[]> {
+export async function scoreWeb(
+  hits: WebCandidate[],
+  query: string,
+  opts: { timeSensitive: boolean; beforeSend?: () => void }
+): Promise<ScoredWeb[]> {
   if (!hits.length) return []
-  const similarities = await semanticSimilarities(hits, query)
+  const similarities = await semanticSimilarities(hits, query, opts.beforeSend)
+  opts.beforeSend?.()
   return hits.map((hit, i) => ({
     hit,
     score:
@@ -283,7 +302,7 @@ export function allocate(kb: ScoredKb[], web: ScoredWeb[], slots: number = TUNIN
 export async function selectPassages(
   read: ReadPage,
   query: string,
-  opts: { timeSensitive: boolean; k?: number }
+  opts: { timeSensitive: boolean; k?: number; beforeSend?: () => void }
 ): Promise<(Passage & { score: number; fallback: boolean })[]> {
   const k = positiveCount(opts.k ?? 6)
   if (!k || !read.passages.length) return []

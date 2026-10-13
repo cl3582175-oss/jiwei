@@ -1,4 +1,5 @@
 import { AnimationSchema } from './manim'
+import { WebModeSchema } from './retrieval'
 import {
   MarketInputSchema,
   MarketNameSchema,
@@ -666,7 +667,7 @@ export const capabilities = {
       description: '修改对话标题、检索范围或置顶',
       params: [
         id(),
-        ['patch', z.object({ title: z.string().max(200).optional(), scope: S.ChatScopeSchema.optional(), pinned: z.boolean().optional() })]
+        ['patch', z.object({ title: z.string().max(200).optional(), scope: S.ChatScopeSchema.optional(), pinned: z.boolean().optional(), web: WebModeSchema.nullable().optional() })]
       ]
     }),
     remove: cap<void>()({ description: '删除对话', params: [id()] })

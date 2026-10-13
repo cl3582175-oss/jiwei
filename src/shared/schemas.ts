@@ -10,7 +10,7 @@ import { DomainSchema, NetworkRuleSchema } from './browserSafety'
 import { AnchorSchema, ContextPacketSchema } from './context'
 import { RecordingFiltersSchema } from './lens'
 import { UpdateSettingsSchema } from './updates'
-import { RetrievalSettingsSchema } from './retrieval'
+import { RetrievalSettingsSchema, WebModeSchema } from './retrieval'
 
 // 所有跨进程输入的 zod 模式。类型由模式推导，保证“声明一次、处处一致”。
 
@@ -227,6 +227,7 @@ export const ProviderInputSchema = z.object({
       z.string().max(200),
       z.object({
         vision: z.boolean().optional(),
+        tools: z.boolean().optional(),
         tier: z.enum(['basic', 'strong']).optional(),
         /** 每百万 token 单价（v0.7.5） */
         price: z
@@ -259,6 +260,7 @@ export const ChatSendSchema = z.object({
   model: z.string().min(1).max(200),
   effort: EffortSchema,
   scope: ChatScopeSchema,
+  web: WebModeSchema.optional(),
   context: ContextPacketSchema.optional(),
   /** 由快捷操作直接指定的技能（省去路由） */
   skill: z.string().max(64).optional(),
