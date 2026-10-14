@@ -69,6 +69,7 @@ export function tableSegments(sheet: string, rows: TableRow[]): SegmentInput[] {
       kind: 'table',
       locator: {
         sheet,
+        dataStart: i,
         rowStart: batch[0]?.row ?? header.row,
         rowEnd: batch.at(-1)?.row ?? header.row,
         totalRows: data.length,

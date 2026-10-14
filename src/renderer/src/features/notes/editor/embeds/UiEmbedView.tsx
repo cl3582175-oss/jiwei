@@ -6,6 +6,7 @@ import type { Citation } from '@shared/types'
 import { useSettings } from '@/lib/queries'
 import { UiNodeView } from '@/features/ui/UiNodeView'
 import type { UiContext, UiState } from '@/features/ui/context'
+import { useUiSharedWrites } from '@/features/ui/context'
 import { registerEmbedView, type EmbedViewProps } from './registry'
 import { toY } from './ydata'
 
@@ -15,6 +16,7 @@ function View({ entry, id, editable }: EmbedViewProps) {
     { data: settings } = useSettings()
   const data = entry.get('data')
   const parsed = UiEmbedSchema.safeParse(data instanceof Y.Map ? data.toJSON() : data)
+  const sharedWritesAllowed = useUiSharedWrites(parsed.success ? (parsed.data.from?.messageId ?? id) : id)
   if (!parsed.success) return <p className="px-4 py-3 text-xs text-danger">{t('ui.failed')}</p>
   const value = parsed.data,
     state = record(value.state),
@@ -29,6 +31,7 @@ function View({ entry, id, editable }: EmbedViewProps) {
     compact: false,
     context: 'note',
     settings: settings?.ai.ui ?? UI_DEFAULTS,
+    sharedWritesAllowed,
     citations: Array.isArray(state.citations)
       ? state.citations.filter(
           (c): c is Citation =>

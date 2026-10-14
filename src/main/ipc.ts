@@ -951,6 +951,7 @@ const handlers: Handlers = {
     undo: (_, id) => importer.undoImport(id)
   },
   ui: {
+    canShareDerived: (_, id) => ui.canShareDerived(id),
     states: (_, id) => ui.states(id),
     saveState: (_, id, key, state) => ui.saveState(id, key, state),
     saveToNote: (_, input) => ui.saveToNote(input)

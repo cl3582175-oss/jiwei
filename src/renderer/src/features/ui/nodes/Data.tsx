@@ -48,7 +48,7 @@ export function DataNodeView({ node, uiKey, ctx }: { node: DataNode; uiKey: stri
     ]
     return () => off.forEach((f) => f())
   }, [])
-  const disabled = ctx.streaming || ctx.stopped
+  const disabled = ctx.streaming || ctx.stopped || ctx.sharedWritesAllowed === false
   const data = enabled ? query.data : undefined
   const created = (state.created ?? {}) as Record<string, string>,
     completed = (state.completed ?? {}) as Record<string, boolean>
@@ -58,6 +58,7 @@ export function DataNodeView({ node, uiKey, ctx }: { node: DataNode; uiKey: stri
   }
   const confirm = async (ids: string[]): Promise<void> => {
     if (!pending) return
+    if (!(await api.ui.canShareDerived(ctx.messageId))) throw new Error(t('attach.reason.sharedWrite'))
     const written = { ...created },
       done = { ...completed }
     for (const id of ids) {

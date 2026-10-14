@@ -20,6 +20,7 @@ import {
 import { emit, onMainEvent } from '../events'
 import { newId } from '../lib/ids'
 import { tr } from '../lib/messages'
+import { attachEn, attachZh } from '../../renderer/src/features/attachments/messages'
 import type { Attachment } from '@shared/types'
 import type { z } from 'zod'
 import type { AttachmentAddSchema } from '@shared/schemas'
@@ -33,6 +34,22 @@ import { recognizingSources } from './recognize'
 import { listSegments, replaceSegments } from './segments'
 import { requestIndex } from './ai/indexer'
 import { compressImage } from '../lib/imageResize'
+
+function attachmentFailureReason(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error)
+  const code = error && typeof error === 'object' ? String((error as { code?: unknown }).code ?? '') : ''
+  const key = /ENOENT|ENOTDIR/.test(code || raw)
+    ? 'fileMissing'
+    : /EACCES|EPERM/.test(code || raw)
+      ? 'readDenied'
+      : /encrypt|password/i.test(raw)
+        ? 'encrypted'
+        : /too large.*decomp|decomp.*too large/i.test(raw)
+          ? 'expandedSize'
+          : 'processing'
+  // 系统异常中的原始路径只用于诊断，不能直接当作用户可读的失败原因。
+  return tr(attachZh.attach.reason[key], attachEn.attach.reason[key])
+}
 
 const PRIVATE_DRAFT = 'incognito-draft:'
 const ORPHAN = 'orphan:'
@@ -93,9 +110,7 @@ export function attachmentStatus(sourceIds: string[]): Attachment[] {
     const error = source.deletedAt
       ? tr('附件已删除', 'Attachment deleted')
       : failed?.error
-        ? /encrypt|password/i.test(failed.error)
-          ? tr('文件有密码保护', 'The file is password protected')
-          : failed.error
+        ? attachmentFailureReason(failed.error)
         : status === 'failed'
           ? tr('请先安装本地转写引擎，再重试转写', 'Install a local transcription engine and retry')
           : null
@@ -252,7 +267,7 @@ export async function addAttachments(input: z.infer<typeof AttachmentAddSchema>)
         if (input.conversationId) bindAttachments(input.conversationId, [id], null)
         result.push(...attachmentStatus([id]))
       } catch (e) {
-        result.push(failure(entry.name, size, 'failed', e instanceof Error ? e.message : String(e)))
+        result.push(failure(entry.name, size, 'failed', attachmentFailureReason(e)))
       }
     }
   } finally {

@@ -17,6 +17,7 @@ export interface UiContext {
   compact: boolean
   context: 'chat' | 'note'
   settings: UiSettings
+  sharedWritesAllowed?: boolean
   message?: ChatMessage
   citations?: Citation[]
   fenceIndex(meta?: string): number
@@ -26,6 +27,18 @@ export interface UiContext {
   snapshot?(key: string, text?: string): string | undefined
 }
 export const UiMessageContext = createContext<UiContext | null>(null)
+export function useUiSharedWrites(messageId: string): boolean {
+  const query = useQuery({ queryKey: ['ui-shared-writes', messageId], queryFn: () => api.ui.canShareDerived(messageId) })
+  const { refetch } = query
+  useEffect(() => {
+    const refresh = (): void => {
+      void refetch()
+    }
+    const off = window.jiweiEvents.on('attachments:changed', refresh)
+    return off
+  }, [refetch])
+  return query.data ?? false
+}
 export function useUiContext(): UiContext {
   const ctx = useContext(UiMessageContext)
   if (!ctx) throw new Error('Missing UI message context')
@@ -43,6 +56,7 @@ export function UiMessageProvider({
   children: ReactNode
 }) {
   const { data: settings } = useSettings()
+  const sharedWritesAllowed = useUiSharedWrites(message.id)
   const qc = useQueryClient()
   const queryKey = useMemo(() => ['ui-states', message.id], [message.id])
   const { data: saved } = useQuery({ queryKey, queryFn: () => api.ui.states(message.id), staleTime: Infinity })
@@ -111,6 +125,7 @@ export function UiMessageProvider({
       context: 'chat',
       message,
       settings: settings?.ai.ui ?? UI_DEFAULTS,
+      sharedWritesAllowed,
       states,
       fenceIndex: (meta) => Number(/jiwei-index=(\d+)/.exec(meta ?? '')?.[1] ?? 0),
       setState,
@@ -120,7 +135,7 @@ export function UiMessageProvider({
         return snapshots.current[key]
       }
     }),
-    [message, isLatest, compact, settings, states, setState, flushState]
+    [message, isLatest, compact, settings, states, setState, flushState, sharedWritesAllowed]
   )
   return createElement(UiMessageContext.Provider, { value }, children)
 }

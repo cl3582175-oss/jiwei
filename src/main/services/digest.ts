@@ -1,5 +1,6 @@
-import { protectProposalAttachments } from './attachmentDerived'
-import { canReadSource } from './attachmentsAccess'
+import { protectNoteAttachments, protectProposalAttachments } from './attachmentDerived'
+import { tablePreview } from '../lib/attachmentText'
+import { canReadSource, isConversationAttachment } from './attachmentsAccess'
 import { eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { getDb } from '../db'
@@ -68,8 +69,12 @@ export function sourceOutline(sourceId: string): { title: string; page: number |
   }))
 }
 
-function rangeOf(input: Pick<DigestInput, 'sourceId' | 'fromPage' | 'toPage'>): Segment[] {
-  const segs = listSegments(input.sourceId).filter((s) => s.text.trim() && s.kind !== 'code')
+function rangeOf(input: Pick<DigestInput, 'sourceId' | 'fromPage' | 'toPage' | 'conversationId'>): Segment[] {
+  const source = getDb().select({ space: sources.space }).from(sources).where(eq(sources.id, input.sourceId)).get()
+  const all = listSegments(input.sourceId)
+  const segs = (
+    source?.space === 'attachment' || isConversationAttachment(input.sourceId, input.conversationId ?? null) ? tablePreview(all) : all
+  ).filter((s) => s.text.trim() && s.kind !== 'code')
   if (input.fromPage == null && input.toPage == null) return segs
   const from = input.fromPage ?? 1
   const to = input.toPage ?? Number.MAX_SAFE_INTEGER
@@ -158,12 +163,19 @@ export function startDigest(input: DigestInput): { jobId: string; noteId: string
   if (!src || src.deletedAt) throw new Error('Source not found')
   if (!canReadSource(input.sourceId, input.conversationId ?? null)) throw new Error('This source is excluded from AI')
   if (!rangeOf(input).length) throw new Error(getSettings().language.startsWith('zh') ? '这个范围里没有文字内容' : 'No text in this range')
-  let noteId = input.noteId ?? null
-  if (!noteId) {
-    const zh = getSettings().language.startsWith('zh')
-    noteId = createNote({ title: zh ? `《${src.title}》${TASK_ZH[input.task]}` : `${src.title} — ${TASK_EN[input.task]}` }).id
-    relate(noteId, 'source', input.sourceId)
-  }
+  const noteId = getDb().transaction(() => {
+    let id = input.noteId ?? null
+    if (!id) {
+      const zh = getSettings().language.startsWith('zh')
+      id = createNote({
+        title: zh ? `《${src.title}》${TASK_ZH[input.task]}` : `${src.title} — ${TASK_EN[input.task]}`,
+        aiExcluded: src.space === 'attachment'
+      }).id
+      relate(id, 'source', input.sourceId)
+    }
+    if (src.space === 'attachment') protectNoteAttachments(id, [src.id])
+    return id
+  })
   const jobId = enqueue(JOB, { ...input, noteId })
   return { jobId, noteId }
 }
@@ -181,6 +193,7 @@ async function run(input: DigestInput & { noteId: string }, ctx: JobContext): Pr
   const zh = getSettings().language.startsWith('zh')
   const src = getDb().select().from(sources).where(eq(sources.id, input.sourceId)).get()
   if (!src || !canReadSource(input.sourceId, input.conversationId ?? null)) throw new Error('Source unavailable')
+  if (src.space === 'attachment') protectNoteAttachments(input.noteId, [src.id])
   const parts = chunks(rangeOf(input))
   const quick = quickModel(input.providerId, input.model)
   const mapped: Points[] = []
@@ -320,7 +333,9 @@ async function run(input: DigestInput & { noteId: string }, ctx: JobContext): Pr
 export function registerDigestJob(): void {
   registerJobKind<DigestInput & { noteId: string }>(JOB, {
     title: (p) => {
-      const title = getDb().select({ title: sources.title }).from(sources).where(eq(sources.id, p.sourceId)).get()?.title ?? ''
+      const src = getDb().select({ title: sources.title, space: sources.space }).from(sources).where(eq(sources.id, p.sourceId)).get()
+      const title =
+        src?.space === 'attachment' ? (getSettings().language.startsWith('zh') ? '对话附件' : 'chat attachment') : (src?.title ?? '')
       return getSettings().language.startsWith('zh') ? `整理《${title}》为${TASK_ZH[p.task]}` : `${TASK_EN[p.task]} of ${title}`
     },
     run

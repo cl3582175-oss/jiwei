@@ -674,3 +674,177 @@ test('P5 参谋短文全文、长文截断、图片、决策归属隔离与再�
     true
   )
 })
+
+async function themeShots(label: string, info: import('@playwright/test').TestInfo): Promise<void> {
+  for (const theme of ['light', 'dark'] as const) {
+    await page.evaluate((theme) => window.jiwei.settings.set({ theme }), theme)
+    await expect.poll(() => page.evaluate(() => document.documentElement.dataset.theme)).toBe(theme)
+    await page.screenshot({ path: info.outputPath(`${label}-${theme}.png`) })
+  }
+}
+test('P6 关键产品界面深浅主题截图，状态、覆盖层、消息、标题、空间与窄窗口', async ({ browserName: _browserName }, info) => {
+  await newChat()
+  await page.evaluate(() => window.jiwei.settings.set({ attachments: { cloudNoticeSeen: false } }))
+  const good = join(userDataDir, 'visual-short.txt'),
+    legacy = join(userDataDir, 'visual-legacy.doc')
+  writeFileSync(good, 'VISUAL-ATTACHMENT-CONTENT')
+  writeFileSync(legacy, 'legacy format')
+  await pickPaths([good, legacy, join(userDataDir, 'missing-for-status.txt')])
+  await expect(page.getByTestId('attachment-chip').filter({ hasText: 'visual-short.txt' })).toHaveAttribute('data-status', 'ready')
+  await expect(page.getByTestId('attachment-chip').filter({ hasText: 'visual-legacy.doc' })).toHaveAttribute('data-status', 'unsupported')
+  await expect(page.getByTestId('attachment-chip').filter({ hasText: 'missing-for-status.txt' })).toHaveAttribute('data-status', 'failed')
+  await expect(page.getByTestId('attachment-cloud-notice')).toBeVisible()
+  await themeShots('attachment-bar-and-cloud-notice', info)
+  const d = await page.evaluateHandle(() => {
+    const d = new DataTransfer()
+    d.items.add(new File(['drop'], 'visual-drop.txt'))
+    return d
+  })
+  await page.locator('textarea').last().dispatchEvent('dragenter', { dataTransfer: d })
+  await expect(page.getByTestId('attachment-drop-overlay')).toBeVisible()
+  await themeShots('attachment-drop-overlay', info)
+  await page.locator('textarea').last().dispatchEvent('dragleave', { relatedTarget: null })
+  await page.getByRole('button', { name: '知道了', exact: true }).click()
+  model.setAnswer('截图附件答复')
+  await page.locator('textarea').last().fill('截图检查附件')
+  await page.getByRole('button', { name: '发送', exact: true }).last().click()
+  await expect(page.getByText('截图附件答复', { exact: true })).toBeVisible()
+  await themeShots('attachment-message', info)
+  await page.getByRole('button', { name: '本对话附件 1', exact: true }).click()
+  await themeShots('conversation-attachments', info)
+  await page.keyboard.press('Escape')
+  await navTo(page, /资料库/)
+  await page.getByTestId('attachment-space-entry').click()
+  await themeShots('attachment-space-unarchived', info)
+  await page.getByRole('button', { name: '已归档', exact: true }).click()
+  await themeShots('attachment-space-archived', info)
+  await page.getByRole('textbox', { name: '搜索附件', exact: true }).fill('NO-ATTACHMENT-MATCH-EMPTY')
+  await expect(page.getByText('还没有附件。在积微助手里点 📎、拖入或粘贴文件即可添加。', { exact: true })).toBeVisible()
+  await themeShots('attachment-space-empty', info)
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(980, 760))
+  await themeShots('attachment-space-narrow', info)
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1440, 900))
+  await page.getByRole('textbox', { name: '搜索附件', exact: true }).fill('')
+})
+
+test('P6 复核回归：直接笔记工具持久隔离，任务工具拒绝，表格第二轮和source_read不越200行', async () => {
+  await newChat()
+  const path = join(userDataDir, 'do-tools-private.txt')
+  writeFileSync(path, 'DO-TOOLS-PRIVATE-MARKER')
+  await pickPaths([path])
+  await expect(page.getByTestId('attachment-chip')).toHaveAttribute('data-status', 'ready')
+  if (await page.getByTestId('attachment-cloud-notice').isVisible()) await page.getByRole('button', { name: '知道了', exact: true }).click()
+  model.tool('note_create', { title: '附件生成的私有笔记', rows: [{ cue: '重点', body: 'DO-TOOLS-PRIVATE-MARKER' }], summary: '私有总结' })
+  // 走Composer，让待审批的新会话进入真实列表/消息缓存，不依赖直接IPC后的旧侧栏缓存。
+  await page.locator('textarea').last().fill('生成一篇康奈尔笔记')
+  await page.getByRole('button', { name: '发送', exact: true }).last().click()
+  await page.getByTestId('approval-card').getByRole('button', { name: '允许', exact: true }).click()
+  const result = {
+    conversation: (await page.evaluate(() => window.jiwei.chat.conversations())).find((c) => c.title === '生成一篇康奈尔笔记')!
+  }
+  await expect
+    .poll(async () => (await page.evaluate((id) => window.jiwei.chat.messages(id), result.conversation.id)).at(-1)?.status)
+    .toBe('done')
+  const n = (await page.evaluate(() => window.jiwei.notes.list({}))).find((n) => n.title === '附件生成的私有笔记')!
+  expect(n.aiExcluded).toBe(true)
+  expect(
+    await page.evaluate(
+      (id) =>
+        window.jiwei.notes.update(id, { aiExcluded: false }).then(
+          () => false,
+          () => true
+        ),
+      n.id
+    )
+  ).toBe(true)
+  model.setAnswer('普通对话回复')
+  model.tool('note_find', { query: '附件生成的私有笔记' })
+  await send('查询刚才生成的笔记', [], null, true)
+  expect(lastRequestText()).not.toContain('DO-TOOLS-PRIVATE-MARKER')
+  const own = await send('不创建后台任务', [], result.conversation.id, true)
+  expect(model.requests.at(-1)?.tools?.some((t) => t.function.name === 'task_create')).toBe(false)
+  expect(own.conversation.id).toBe(result.conversation.id)
+  const csv = 'name,value\n' + Array.from({ length: 300 }, (_, i) => `${i === 249 ? 'ROW250-NOT-FOR-MODEL' : 'row' + i},${i}`).join('\n')
+  const table = await add('limit-300.csv', csv),
+    first = await send('看看数据', [table])
+  await send('检索ROW250-NOT-FOR-MODEL', [], first.conversation.id)
+  expect(lastRequestText()).not.toContain('| ROW250-NOT-FOR-MODEL |')
+  const seg = (await page.evaluate((id) => window.jiwei.segments.list(id), table)).find((s) => s.text.includes('ROW250-NOT-FOR-MODEL'))!
+  model.tool('source_read', { sourceId: table, from: seg.ordinal, count: 1 })
+  await send('读后面的行', [], first.conversation.id)
+  expect(lastRequestText()).not.toContain('| ROW250-NOT-FOR-MODEL |')
+  await page.evaluate((id) => window.jiwei.attachments.archive([id], null), table)
+  await send('检索ROW250-NOT-FOR-MODEL', [], first.conversation.id)
+  expect(lastRequestText()).not.toContain('| ROW250-NOT-FOR-MODEL |')
+  model.tool('source_read', { sourceId: table, from: seg.ordinal, count: 1 })
+  await send('读已归档表格后面的行', [], first.conversation.id)
+  expect(lastRequestText()).not.toContain('| ROW250-NOT-FOR-MODEL |')
+})
+
+test('P6 私有附件回答的组件不能写入共享待办，归档后可操作', async () => {
+  const id = await add('ui-private.txt', 'UI-WRITE-PRIVATE-MARKER')
+  model.setAnswer(
+    '```jiwei-ui\n' + JSON.stringify({ type: 'list', checkable: true, items: [{ text: 'UI-WRITE-PRIVATE-MARKER' }] }) + '\n```'
+  )
+  const result = await send('整理行动清单', [id])
+  await showConversation(result.conversation.title)
+  await expect(page.getByRole('button', { name: '变成待办', exact: true })).toBeDisabled()
+  await page.evaluate((id) => window.jiwei.attachments.archive([id], null), id)
+  await expect(page.getByRole('button', { name: '变成待办', exact: true })).toBeEnabled()
+})
+
+test('P6 私有附件练习不能送入错题提取模型，归档后可操作', async () => {
+  const id = await add('quiz-private.txt', 'QUIZ-PRIVATE-MARKER')
+  model.setAnswer(
+    '```jiwei-ui\n' +
+      JSON.stringify({ type: 'quiz', items: [{ q: 'QUIZ-PRIVATE-MARKER', options: ['甲', '乙'], answer: 1, explain: '选择乙' }] }) +
+      '\n```'
+  )
+  const result = await send('生成练习题', [id])
+  await showConversation(result.conversation.title)
+  await page.getByRole('radio', { name: '甲', exact: true }).check()
+  await page.getByRole('button', { name: '核对', exact: true }).click()
+  await expect(page.getByRole('button', { name: '把做错的加入错题本', exact: true })).toBeDisabled()
+  await page.evaluate((id) => window.jiwei.attachments.archive([id], null), id)
+  await expect(page.getByRole('button', { name: '把做错的加入错题本', exact: true })).toBeEnabled()
+})
+
+test('P6 处理状态视觉夹具：真实附件组件的添加解析识别转写状态，深浅主题', async ({ browserName: _browserName }, info) => {
+  await newChat()
+  const id = await add('visual-status.txt', 'VISUAL-STATUS-FIXTURE')
+  const fixture = (await page.evaluate((id) => window.jiwei.attachments.status([id]), id))[0]
+  // 只替换测试进程的两个IPC返回值；检验生产组件呈现，不把状态夹具计作OCR/ASR验收。
+  await app.evaluate(({ ipcMain }, fixture) => {
+    const handlers = (ipcMain as unknown as { _invokeHandlers: Map<string, unknown> })._invokeHandlers
+    Reflect.set(globalThis, 'attachmentVisualHandlers', [handlers.get('attachments:add'), handlers.get('attachments:status')])
+    Reflect.set(globalThis, 'attachmentVisualStatus', 'adding')
+    ipcMain.removeHandler('attachments:add')
+    ipcMain.handle('attachments:add', () => [{ ...fixture, status: Reflect.get(globalThis, 'attachmentVisualStatus'), progress: 0.4 }])
+    ipcMain.removeHandler('attachments:status')
+    ipcMain.handle('attachments:status', () => [{ ...fixture, status: Reflect.get(globalThis, 'attachmentVisualStatus'), progress: 0.4 }])
+  }, fixture)
+  try {
+    const path = join(userDataDir, 'visual-status.txt')
+    writeFileSync(path, 'VISUAL-STATUS-FIXTURE')
+    await pickPaths([path])
+    for (const status of ['adding', 'parsing', 'recognizing', 'transcribing'] as const) {
+      await app.evaluate((_electron, status) => Reflect.set(globalThis, 'attachmentVisualStatus', status), status)
+      if (status === 'parsing') {
+        await page.getByRole('button', { name: '移除附件 visual-status.txt', exact: true }).click()
+        await pickPaths([path])
+      }
+      await expect(page.getByTestId('attachment-chip')).toHaveAttribute('data-status', status)
+      await themeShots(`controlled-status-${status}`, info)
+    }
+  } finally {
+    await app.evaluate(({ ipcMain }) => {
+      const saved = Reflect.get(globalThis, 'attachmentVisualHandlers')
+      ipcMain.removeHandler('attachments:add')
+      ipcMain.removeHandler('attachments:status')
+      ipcMain.handle('attachments:add', saved[0])
+      ipcMain.handle('attachments:status', saved[1])
+      Reflect.deleteProperty(globalThis, 'attachmentVisualHandlers')
+      Reflect.deleteProperty(globalThis, 'attachmentVisualStatus')
+    })
+  }
+})

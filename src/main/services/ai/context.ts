@@ -1,4 +1,4 @@
-import { canReadSource } from '../attachmentsAccess'
+import { canReadSource, isConversationAttachment } from '../attachmentsAccess'
 import { asExternalData } from '../agent/wrap'
 import { eq } from 'drizzle-orm'
 import { getDb, getSqlite } from '../../db'
@@ -12,6 +12,7 @@ import { MindmapDataSchema, toTree, type MindmapTree } from '@shared/embeds/mind
 import { fmtTime, type Anchor, type ContextPacket } from '@shared/context'
 import type { DocNode, SearchHit, Segment } from '@shared/types'
 import { sourceContextHits, type ContextSource } from '../../lib/sourceContext'
+import { tablePreview } from '../../lib/attachmentText'
 
 // 上下文包 → 提示词：把用户“指着”的内容连同必要的前后文交给模型。
 // 隐私：标记为“不让 AI 读取”或已删除的笔记 / 资料一律跳过。
@@ -95,7 +96,8 @@ function sourceAnchor(anchor: Anchor, zh: boolean, conversationId: string | null
   const a: Anchor = anchor.kind === 'viewport' && anchor.t ? { ...anchor, t: [Math.max(0, anchor.t[0] - 30), anchor.t[0] + 5] } : anchor
   const src = sourceRow(a.parentId, conversationId)
   if (!src) return null
-  const segs = listSegments(a.parentId)
+  const all = listSegments(a.parentId)
+  const segs = src.space === 'attachment' || isConversationAttachment(a.parentId, conversationId) ? tablePreview(all) : all
   const head = `${zh ? '资料' : 'Source'}《${src.title}》（ID：${a.parentId}）`
   const kindLabel: Record<Anchor['kind'], [string, string]> = {
     'source-text': ['用户在资料中选中的文字', 'Text the user selected in the source'],
@@ -153,7 +155,13 @@ export function contextSourceEvidence(packet: ContextPacket | undefined, convers
   const selected: ContextSource[] = []
   for (const id of new Set(anchors.map((anchor) => anchor.parentId))) {
     const source = sourceRow(id, conversationId)
-    if (source) selected.push({ ...source, segments: listSegments(id) })
+    if (source) {
+      const segments = listSegments(id)
+      selected.push({
+        ...source,
+        segments: source.space === 'attachment' || isConversationAttachment(id, conversationId) ? tablePreview(segments) : segments
+      })
+    }
   }
   return sourceContextHits(selected).map((h) => ({ ...h, via: 'context' as const }))
 }

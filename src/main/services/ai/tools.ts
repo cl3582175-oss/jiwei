@@ -81,9 +81,9 @@ function readableNote(id: string): NoteCheck {
     .get()
   return n && !n.aiExcluded && !n.deletedAt ? { title: n.title } : null
 }
-function readableSource(id: string, zh: boolean, conversationId: string | null = null): { title: string } {
+function readableSource(id: string, zh: boolean, conversationId: string | null = null): { title: string; space: 'library' | 'attachment' } {
   const s = getDb()
-    .select({ title: sources.title, aiExcluded: sources.aiExcluded, deletedAt: sources.deletedAt })
+    .select({ title: sources.title, space: sources.space, aiExcluded: sources.aiExcluded, deletedAt: sources.deletedAt })
     .from(sources)
     .where(eq(sources.id, id))
     .get()
@@ -95,7 +95,7 @@ function readableSource(id: string, zh: boolean, conversationId: string | null =
     )
   if (!canReadSource(id, conversationId))
     throw new Error(zh ? '用户设置了这份资料不给 AI 读取。' : 'The user excluded this source from AI.')
-  return { title: s.title }
+  return { title: s.title, space: s.space }
 }
 
 const fmtDate = (ts: number | null): string =>
@@ -400,7 +400,10 @@ export function buildTools(s: AgentSession): ToolSet {
             throw new Error('Source is outside the selected scope')
           const src = readableSource(sourceId, zh, s.conversationId)
           const segs = listSegments(sourceId)
-          const part = tablePreview(segs).slice(from, from + count)
+          const part =
+            src.space === 'attachment' || s.attachmentSourceIds?.includes(sourceId)
+              ? tablePreview(segs.slice(from, from + count))
+              : segs.slice(from, from + count)
           const loc = (l: Record<string, unknown>): string => (l.value ? ` · ${String(l.value)}` : '')
           const metadata = includeMetadata
             ? getDb()

@@ -2,6 +2,7 @@ import { prepareAttachmentTurn, markAttachmentTurnSent, assertAttachmentTurn, ty
 import { bindAttachments, bindAttachmentNotes, attachmentStatus, conversationAttachments, noteReference } from '../attachments'
 import { attachmentHistoryReadable, canReadSource, hasPrivateAttachmentHistory, hasAttachmentHistory } from '../attachmentsAccess'
 import { listSegments } from '../segments'
+import { conversationAttachmentIds } from '../attachmentDerived'
 import { tr } from '../../lib/messages'
 import { detachConversationAttachments } from '../attachments'
 import { collectGarbage } from '../assets'
@@ -575,8 +576,12 @@ async function agentTools(
   Object.assign(meta, web.meta)
   for (const name of Object.keys(tools)) if (isProposalTool(name)) meta[name] = { level: 'write', proposal: true }
   if (session.scope.type !== 'none' || session.attachmentSourceIds?.length) {
-    if (session.scope.type !== 'none') {
-      const doing = buildDoTools(zh)
+    {
+      const doing = buildDoTools(zh, {
+        sourceIds: conversationAttachmentIds(session.conversationId),
+        privateAttachments: hasPrivateAttachmentHistory(session.conversationId),
+        notesOnly: session.scope.type === 'none'
+      })
       Object.assign(tools, doing.tools)
       Object.assign(meta, doing.meta)
     }

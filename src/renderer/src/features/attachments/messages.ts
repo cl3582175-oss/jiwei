@@ -12,6 +12,11 @@ export const attachZh = {
       unsupported: '不支持：{{reason}}'
     },
     reason: {
+      fileMissing: '文件不存在或已移动，请重新选择。',
+      readDenied: '无法读取文件，请检查读取权限。',
+      processing: '文件处理失败，请检查格式和所需引擎后重试。',
+      expandedSize: '文件解压后过大，无法处理。',
+      sharedWrite: '请先归档附件，再把这些内容写入待办、日程或错题本。',
       tooLarge: '文件太大（{{limit}} 以内）',
       legacy: '请另存为 {{format}} 再添加',
       encrypted: '文件有密码保护',
@@ -87,6 +92,11 @@ export const attachEn = {
       unsupported: 'Unsupported: {{reason}}'
     },
     reason: {
+      fileMissing: 'The file is missing or has moved. Please select it again.',
+      readDenied: 'Cannot read the file. Check its access permissions.',
+      processing: 'File processing failed. Check the format and required engine, then retry.',
+      expandedSize: 'The decompressed file is too large to process.',
+      sharedWrite: 'Archive the attachments before adding this content to actions, events, or mistakes.',
       tooLarge: 'File too large (up to {{limit}})',
       legacy: 'Save as {{format}} and try again',
       encrypted: 'File is password protected',

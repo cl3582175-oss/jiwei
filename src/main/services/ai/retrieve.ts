@@ -1,3 +1,4 @@
+import { tablePreview } from '../../lib/attachmentText'
 import { getSettings } from '../settings'
 import { and, eq, inArray, isNull, or } from 'drizzle-orm'
 import { getDb, getSqlite } from '../../db'
@@ -209,13 +210,16 @@ function hydrate(keys: Key[], scope: ChatScope, allow?: { sourceIds: string[] })
       .all()
     for (const { g, s } of rows) {
       if (srcScope && !srcScope.has(s.id)) continue
-      const loc = JSON.parse(g.locator) as { value?: string }
+      const loc = JSON.parse(g.locator) as Record<string, unknown>
+      const limited = s.space === 'attachment' || !!allow?.sourceIds.includes(s.id)
+      const preview = limited ? tablePreview([{ ...g, locator: loc }])[0] : null
+      if (limited && !preview) continue
       out.set(`segment:${g.id}`, {
         parentType: 'source',
         parentId: s.id,
         ownerId: g.id,
         title: s.title,
-        text: g.text,
+        text: preview?.text ?? g.text,
         locator: typeof loc.value === 'string' ? loc.value : null,
         score: 0,
         learnedAt: s.publishedAt ?? s.accessedAt,

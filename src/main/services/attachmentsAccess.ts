@@ -18,6 +18,24 @@ export function attachmentOwner(id: string): { incognito: boolean; title: string
   return d ? { incognito: false, title: d.question } : null
 }
 
+/** 资料归档或资料库引用不改变“本对话附件”的上下文上限。 */
+export function isConversationAttachment(sourceId: string, conversationId: string | null): boolean {
+  return (
+    !!conversationId &&
+    !!getDb()
+      .select({ id: conversationAttachmentsTable.sourceId })
+      .from(conversationAttachmentsTable)
+      .where(
+        and(
+          eq(conversationAttachmentsTable.conversationId, conversationId),
+          eq(conversationAttachmentsTable.sourceId, sourceId),
+          isNull(conversationAttachmentsTable.removedAt)
+        )
+      )
+      .get()
+  )
+}
+
 /** 所属会话之外永不放行；归档后用户再次关闭 AI 权限时，旧关系不能绕过开关。 */
 export function canReadSource(sourceId: string, conversationId: string | null): boolean {
   const s = getDb().select().from(sources).where(eq(sources.id, sourceId)).get()

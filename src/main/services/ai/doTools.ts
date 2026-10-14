@@ -17,6 +17,8 @@ import { TaskSave, taskConfirmation } from '@shared/tasks'
 import { saveTask } from '../tasks/service'
 import * as plan from '../plan/calendar'
 import { mailTools } from '../mail/tools'
+import { getDb } from '../../db'
+import { protectNoteAttachments } from '../attachmentDerived'
 
 // 助手“办事”（v0.7）：跨模块的读与写。写入工具执行前在对话中弹出确认卡片（wrap.ts），
 // 卡片上的文字由 describe 生成，写清楚要做什么，而不是工具名和参数。
@@ -56,7 +58,10 @@ const cut = (s: string, n: number): string => (s.length > n ? `${s.slice(0, n - 
 
 const SUBJECT_ZH: Record<string, string> = { math: '数学', physics: '物理', chemistry: '化学', english: '英语', other: '其他' }
 
-export function buildDoTools(zh: boolean): { tools: ToolSet; meta: Record<string, ToolMeta> } {
+export function buildDoTools(
+  zh: boolean,
+  privacy?: { sourceIds: string[]; privateAttachments: boolean; notesOnly?: boolean }
+): { tools: ToolSet; meta: Record<string, ToolMeta> } {
   const tools: ToolSet = {
     task_create: tool({
       description: zh
@@ -204,7 +209,11 @@ export function buildDoTools(zh: boolean): { tools: ToolSet; meta: Record<string
         summary: z.string().max(4000).optional()
       }),
       execute: async ({ title, rows, summary }) => {
-        const note = createNote({ title: bare(title) })
+        const note = getDb().transaction(() => {
+          const note = createNote({ title: bare(title), aiExcluded: privacy?.privateAttachments ?? false })
+          if (privacy?.sourceIds.length) protectNoteAttachments(note.id, privacy.sourceIds)
+          return note
+        })
         const para: DocNode = { type: 'paragraph' }
         const md = (x: string): DocNode[] => markdownToNodes(unescapeNewlines(x))
         const content: DocNode[] = rows.map((r) => ({
@@ -300,6 +309,16 @@ export function buildDoTools(zh: boolean): { tools: ToolSet; meta: Record<string
             .join('\n')
         }
       }
+    }
+  }
+  // 普通确认只批准办事，不能把未归档附件公开到任务、日历、收集等共享模块。
+  for (const name of Object.keys(tools)) {
+    if (
+      (privacy?.notesOnly && name !== 'note_create') ||
+      (privacy?.privateAttachments && meta[name]?.level !== 'read' && name !== 'note_create')
+    ) {
+      delete tools[name]
+      delete meta[name]
     }
   }
   return { tools, meta }

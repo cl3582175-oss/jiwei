@@ -1488,6 +1488,7 @@ export const capabilities = {
     usage: cap<RetrievalUsage>()({ description: '联网搜索与读取次数', params: [['range', z.enum(['today', 'month'])]] })
   },
   ui: {
+    canShareDerived: cap<boolean>()({ description: '检查回答的派生内容是否可写入共享模块', params: [id('messageId')] }),
     states: cap<Record<string, unknown>>()({ description: '读取某条回答里组件的状态', params: [id('messageId')] }),
     saveState: cap<void>()({
       description: '保存组件状态（滑块、勾选、作答）',

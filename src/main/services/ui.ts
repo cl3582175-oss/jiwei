@@ -1,4 +1,5 @@
 import { conversationAttachmentIds, protectProposalAttachments } from './attachmentDerived'
+import { hasPrivateAttachmentHistory } from './attachmentsAccess'
 import { and, eq, isNull } from 'drizzle-orm'
 import log from 'electron-log/main'
 import { getDb } from '../db'
@@ -11,6 +12,15 @@ import { visual } from './ai/embedProposal'
 import { markdownToNodes } from '../lib/markdown'
 import { getSettings } from './settings'
 import type { Citation, Origin } from '@shared/types'
+
+/** 组件的普通确认不能把附件复述写入共享待办、日程等其他 AI 可见的模块。 */
+export function canShareDerived(messageId: string): boolean {
+  try {
+    return !hasPrivateAttachmentHistory(answer(messageId).conversationId)
+  } catch {
+    return false
+  }
+}
 
 function answer(messageId: string) {
   const row = getDb()

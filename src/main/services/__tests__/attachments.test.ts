@@ -401,3 +401,89 @@ it('无痕草稿同一输入框去重，不同输入框独立，归档后删除�
   s.detachConversationAttachments('c1')
   expect(s.listAttachmentSpace({ state: 'archived' }).map((a) => a.sourceId)).toContain(ordinary.sourceId)
 })
+
+it('直接写入的附件派生笔记来源持久隔离，失败整理的标题也不能打开AI', async () => {
+  const a = await attachment('c1')
+  f.sql!.exec(
+    "INSERT INTO notes(id,title,doc_version,learned_at,created_at,edited_at,updated_at,updated_by) VALUES('direct','PRIVATE-TITLE-MARKER',1,1,1,1,1,'test')"
+  )
+  const { protectNoteAttachments, noteHasPrivateAttachments } = await import('../attachmentDerived')
+  protectNoteAttachments('direct', [a.sourceId])
+  expect(f.sql!.prepare("SELECT ai_excluded FROM notes WHERE id='direct'").get()).toEqual({ ai_excluded: 1 })
+  expect(noteHasPrivateAttachments('direct')).toBe(true)
+  await (await svc()).deleteAttachments([a.sourceId])
+  expect(noteHasPrivateAttachments('direct')).toBe(true)
+})
+
+it('表格检索只回前200个数据行，后面的片段不能单独绕过限制', async () => {
+  const a = await attachment('c1')
+  const { tableSegments } = await import('../parsers/ooxml')
+  replaceSegments(
+    a.sourceId,
+    tableSegments('sparse', [
+      { row: 1, cells: ['name', 'value'] },
+      ...Array.from({ length: 300 }, (_, i) => ({
+        row: (i + 1) * 10,
+        cells: [i === 249 ? 'ROW250-NOT-FOR-MODEL' : `row${i}`, String(i)]
+      }))
+    ])
+  )
+  const hits = await retrieve('ROW250-NOT-FOR-MODEL', { type: 'all' }, 12, {}, null, { sourceIds: [a.sourceId] })
+  expect(JSON.stringify(hits)).not.toContain('ROW250-NOT-FOR-MODEL')
+  const { tablePreview } = await import('../../lib/attachmentText')
+  const { listSegments } = await import('../segments')
+  const all = listSegments(a.sourceId)
+  expect(
+    tablePreview(all)
+      .map((s) => s.text)
+      .join('\n')
+  ).toContain('| row199 | 199 |')
+  expect(
+    tablePreview([all[4]])
+      .map((s) => s.text)
+      .join('\n')
+  ).not.toContain('ROW250-NOT-FOR-MODEL')
+})
+
+it('组件写入共享待办与日程不能绕过附件隔离，归档后才放行', async () => {
+  const a = await attachment('c1')
+  f.sql!.exec(
+    "INSERT INTO messages(id,conversation_id,role,content,created_at,updated_at) VALUES('answer','c1','assistant','private reply',1,1)"
+  )
+  const { canShareDerived } = await import('../ui')
+  expect(canShareDerived('answer')).toBe(false)
+  ;(await svc()).archiveAttachments([a.sourceId], null)
+  expect(canShareDerived('answer')).toBe(true)
+  expect(canShareDerived('missing')).toBe(false)
+})
+
+it('附件失败原因中英本地化，不向界面回传系统路径', async () => {
+  const { setMessageLanguage } = await import('../../lib/messages')
+  const s = await svc(),
+    path = join(f.dir, 'missing.txt')
+  try {
+    setMessageLanguage('zh-CN')
+    expect((await s.addAttachments({ paths: [path] }))[0].error).toBe('文件不存在或已移动，请重新选择。')
+    setMessageLanguage('en')
+    expect((await s.addAttachments({ paths: [path] }))[0].error).toBe('The file is missing or has moved. Please select it again.')
+  } finally {
+    setMessageLanguage('zh-CN')
+  }
+})
+
+it('资料库引用和已归档的表格在附件会话里仍受200行限制，普通库检索保持原行为', async () => {
+  const a = await attachment('c1')
+  const { tableSegments } = await import('../parsers/ooxml')
+  replaceSegments(
+    a.sourceId,
+    tableSegments('Sheet', [
+      { row: 1, cells: ['name'] },
+      ...Array.from({ length: 300 }, (_, i) => ({ row: i + 2, cells: [i === 249 ? 'LIBRARY-ROW250-BOUND' : `row${i}`] }))
+    ])
+  )
+  ;(await svc()).archiveAttachments([a.sourceId], null)
+  expect(JSON.stringify(await retrieve('LIBRARY-ROW250-BOUND', { type: 'all' }))).toContain('LIBRARY-ROW250-BOUND')
+  expect(JSON.stringify(await retrieve('LIBRARY-ROW250-BOUND', { type: 'all' }, 12, {}, null, { sourceIds: [a.sourceId] }))).not.toContain(
+    'LIBRARY-ROW250-BOUND'
+  )
+})
