@@ -464,8 +464,18 @@ export function partialUiNode(value: unknown): { type?: UiType; node: Record<str
       const r = field.safeParse(candidate[key])
       if (r.success && r.data !== undefined) node[key] = r.data
     }
-    if (type === 'tabs' && Array.isArray(candidate.tabs)) node.tabs = candidate.tabs
-    if ((type === 'columns' || type === 'details') && Array.isArray(candidate.children)) node.children = candidate.children
+    const validChildren = (items: unknown[]): UiNode[] =>
+      items.slice(0, 3).flatMap((item) => {
+        const r = parseUiNode(item)
+        return r.ok ? [r.node] : []
+      })
+    if (type === 'tabs' && Array.isArray(candidate.tabs))
+      node.tabs = candidate.tabs.slice(0, 5).flatMap((tab) => {
+        if (!tab || typeof tab !== 'object' || typeof tab.label !== 'string' || tab.label.length > 20 || !Array.isArray(tab.children))
+          return []
+        return [{ label: tab.label, children: validChildren(tab.children) }]
+      })
+    if ((type === 'columns' || type === 'details') && Array.isArray(candidate.children)) node.children = validChildren(candidate.children)
     if (type === 'details' && typeof candidate.summary === 'string') node.summary = candidate.summary.slice(0, 80)
   }
   return { type, node }

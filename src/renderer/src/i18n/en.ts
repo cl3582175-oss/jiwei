@@ -1,3 +1,4 @@
+import { uiEn } from '../features/ui/messages'
 import { pluginsEn } from '../features/plugins/pluginMessages'
 import { updatesEn } from '../features/update/updateMessages'
 import { importerEn } from '../features/import/importMessages'
@@ -17,6 +18,7 @@ import { safetyEn } from '../features/settings/safetyMessages'
 import { readingEn } from '../features/reading/messages'
 import { retrievalEn } from '../features/retrieval/messages'
 const en: Messages = {
+  ui: uiEn,
   updates: updatesEn,
   importer: importerEn,
   discover: discoverEn,
@@ -817,7 +819,8 @@ const en: Messages = {
       ollama: ''
     },
     s2: 'Click "Create API key", then "Copy"',
-    s2Hint: 'An API key is a string like sk-…. It works like a key that lets Jiwei use the AI service for you. It is shown only once, so keep a copy somewhere safe.',
+    s2Hint:
+      'An API key is a string like sk-…. It works like a key that lets Jiwei use the AI service for you. It is shown only once, so keep a copy somewhere safe.',
     s3: 'Come back and paste the key below',
     connect: 'Connect',
     testing: 'Connecting…',

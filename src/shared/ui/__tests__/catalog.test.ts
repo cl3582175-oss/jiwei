@@ -66,4 +66,12 @@ describe('组件目录与文字退回', () => {
     expect(embedText('ui', data)).toBe('- [ ] 检查证据')
     expect(UiEmbedSchema.safeParse({ node: invalid.calc, savedAt: 1 }).success).toBe(false)
   })
+  it('流式布局丢弃完整但非法的子节点，避免渲染空值崩溃', () => {
+    expect(partialUiNode({ type: 'columns', children: [null, 1, samples.list, { type: 'list', items: [] }] }).node.children).toEqual([
+      samples.list
+    ])
+    expect(partialUiNode({ type: 'tabs', tabs: [{ label: '甲', children: [null, samples.list] }] }).node.tabs).toEqual([
+      { label: '甲', children: [samples.list] }
+    ])
+  })
 })

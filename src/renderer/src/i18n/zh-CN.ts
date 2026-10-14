@@ -1,3 +1,4 @@
+import { uiZh } from '../features/ui/messages'
 import { pluginsZh } from '../features/plugins/pluginMessages'
 import { updatesZh } from '../features/update/updateMessages'
 import { importerZh } from '../features/import/importMessages'
@@ -17,6 +18,7 @@ import { readingZh } from '../features/reading/messages'
 import { retrievalZh } from '../features/retrieval/messages'
 
 const zhCN = {
+  ui: uiZh,
   updates: updatesZh,
   importer: importerZh,
   discover: discoverZh,
