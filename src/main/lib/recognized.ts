@@ -202,12 +202,25 @@ export function mergeRecognizedStructured(
 ): SegmentLike[] {
   const out = segments.filter((s) => !s.kind.startsWith(OCR_KIND_PREFIX))
   const stack = [...initialHeadings]
+  const part = /^第[〇零一二两三四五六七八九十百千\d]+(?:编|部分)/
+  const hasParts =
+    stack.some((b) => part.test(b.text.trim())) ||
+    recs.some(
+      (r) =>
+        r.need === 'scan' && structuredTextBlocks(normalizeExtracted(r.text)).some((b) => b.type === 'heading' && part.test(b.text.trim()))
+    )
   for (const r of [...recs].sort((a, b) => a.page - b.page)) {
     const text = normalizeExtracted(r.text)
     const kind = `${OCR_KIND_PREFIX}${r.need}`,
       locator = pageLocator(r.page)
     const add: SegmentLike[] = []
-    const blocks = structuredTextBlocks(text)
+    // 章节的有效层级也必须保存在延续栈中，否则下一页会把“编”父节点弹掉。
+    const blocks = structuredTextBlocks(text).map((b) => {
+      if (b.type !== 'heading' || !hasParts) return b
+      if (/^第[〇零一二两三四五六七八九十百千\d]+章/.test(b.text.trim())) return { ...b, level: 2 }
+      if (/^第[〇零一二两三四五六七八九十百千\d]+节/.test(b.text.trim())) return { ...b, level: 3 }
+      return b
+    })
     let pending: DocBlock[] = []
     const path = (): string =>
       stack

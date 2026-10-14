@@ -2,6 +2,16 @@ import { describe, expect, it } from 'vitest'
 import { mergeRecognizedStructured, htmlTableToMarkdown, pageLocator } from '../recognized'
 import { classifyPageNeeds } from '../../../worker/pdfTriage'
 describe('structured recognition', () => {
+  it('retains the part/chapter/section hierarchy when a scan continues on the next page', () => {
+    const chunks = mergeRecognizedStructured(
+      [],
+      [
+        { page: 1, need: 'scan', text: '第一编 合成\n第一章 条件\n第一节 范围\n正文内容。' },
+        { page: 2, need: 'scan', text: '接续内容。' }
+      ]
+    )
+    expect(chunks.map((c) => c.heading)).toEqual(['第一编 合成 › 第一章 条件 › 第一节 范围', '第一编 合成 › 第一章 条件 › 第一节 范围'])
+  })
   it('handles an empty table without throwing or fabricating content', () => {
     expect(htmlTableToMarkdown('<table><tr><td></td></tr></table>')).toBe('')
   })
