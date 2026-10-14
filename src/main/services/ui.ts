@@ -1,3 +1,4 @@
+import { conversationAttachmentIds, protectProposalAttachments } from './attachmentDerived'
 import { and, eq, isNull } from 'drizzle-orm'
 import log from 'electron-log/main'
 import { getDb } from '../db'
@@ -153,6 +154,7 @@ export function saveToNote(input: UiSaveToNote): { noteId: string; created: bool
           )
       }
     }
+    protectProposalAttachments(proposal.id, conversationAttachmentIds(source.conversationId))
     return { noteId: target.id, created, proposalId: proposal.id }
   })
 }

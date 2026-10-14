@@ -281,31 +281,36 @@ export const ChatScopeSchema = z.discriminatedUnion('type', [
 ])
 export type ChatScope = z.infer<typeof ChatScopeSchema>
 
-export const ChatSendSchema = z.object({
-  uiEvent: UiEventSchema.optional(),
-  conversationId: Id.nullable(),
-  text: z.string().min(1).max(20000),
-  providerId: Id,
-  model: z.string().min(1).max(200),
-  effort: EffortSchema,
-  scope: ChatScopeSchema,
-  web: WebModeSchema.optional(),
-  context: ContextPacketSchema.optional(),
-  /** 由快捷操作直接指定的技能（省去路由） */
-  skill: z.string().max(64).optional(),
-  /** 无痕：不读取、不形成记忆（仅新建对话时生效） */
-  incognito: z.boolean().optional(),
-  /** 对话类型（仅新建时生效）：chat 对话页；workspace 工作区面板；inline 选区就地提问 */
-  kind: z.enum(['chat', 'workspace', 'inline', 'feynman', 'reflection']).optional(),
-  /** 复盘追问（仅新建时生效）：所属的复盘 */
-  reflectionId: Id.optional(),
-  /** 费曼练习（仅新建时生效）：要讲的概念、关联笔记 / 卡片 */
-  feynman: z.object({ concept: z.string().min(1).max(200), noteId: Id.nullable().optional(), cardId: Id.nullable().optional() }).optional(),
-  /** 就地提问的锚点（仅新建时生效） */
-  anchor: AnchorSchema.optional(),
-  /** 框选区域 / 视频画面（PNG data URL）；只发送给能看图的模型 */
-  images: z.array(z.string().max(8_000_000).startsWith('data:image/')).max(4).optional()
-})
+export const ChatSendSchema = z
+  .object({
+    uiEvent: UiEventSchema.optional(),
+    conversationId: Id.nullable(),
+    text: z.string().min(0).max(20000),
+    attachments: z.array(Id).max(10).optional(),
+    providerId: Id,
+    model: z.string().min(1).max(200),
+    effort: EffortSchema,
+    scope: ChatScopeSchema,
+    web: WebModeSchema.optional(),
+    context: ContextPacketSchema.optional(),
+    /** 由快捷操作直接指定的技能（省去路由） */
+    skill: z.string().max(64).optional(),
+    /** 无痕：不读取、不形成记忆（仅新建对话时生效） */
+    incognito: z.boolean().optional(),
+    /** 对话类型（仅新建时生效）：chat 对话页；workspace 工作区面板；inline 选区就地提问 */
+    kind: z.enum(['chat', 'workspace', 'inline', 'feynman', 'reflection']).optional(),
+    /** 复盘追问（仅新建时生效）：所属的复盘 */
+    reflectionId: Id.optional(),
+    /** 费曼练习（仅新建时生效）：要讲的概念、关联笔记 / 卡片 */
+    feynman: z
+      .object({ concept: z.string().min(1).max(200), noteId: Id.nullable().optional(), cardId: Id.nullable().optional() })
+      .optional(),
+    /** 就地提问的锚点（仅新建时生效） */
+    anchor: AnchorSchema.optional(),
+    /** 框选区域 / 视频画面（PNG data URL）；只发送给能看图的模型 */
+    images: z.array(z.string().max(8_000_000).startsWith('data:image/')).max(4).optional()
+  })
+  .refine((v) => !!v.text.trim() || !!v.attachments?.length, 'Provide text or an attachment')
 export type ChatSend = z.infer<typeof ChatSendSchema>
 
 export const AiSettingsSchema = z.object({
@@ -376,6 +381,7 @@ export const UserProfileSchema = z.object({
 
 /** 「存入笔记」：把 AI 的回答（连同出处）写成笔记中的一行 */
 export const SaveAnswerSchema = z.object({
+  conversationId: Id.optional(),
   /** 目标笔记；null 时新建一篇（以资料名命名） */
   noteId: Id.nullable(),
   sourceId: Id.nullable().optional(),

@@ -1,0 +1,112 @@
+import { createServer, type Server } from 'node:http'
+
+export interface ModelRequest {
+  messages: { role: string; content: unknown }[]
+  tools?: { function: { name: string; parameters?: Record<string, unknown> } }[]
+  stream?: boolean
+}
+export const textOf = (value: unknown): string =>
+  typeof value === 'string' ? value : Array.isArray(value) ? value.map((part) => part.text ?? '').join('') : ''
+export async function attachmentModel(): Promise<{
+  server: Server
+  url: string
+  requests: ModelRequest[]
+  setAnswer(text: string): void
+  tool(name: string, input: unknown): void
+}> {
+  const requests: ModelRequest[] = []
+  let answer = '已根据提供的内容回答。',
+    next: { name: string; input: unknown } | null = null
+  const server = createServer((req, res) => {
+    if (req.method === 'GET' && req.url === '/feed') {
+      const port = (server.address() as { port: number }).port
+      res
+        .writeHead(200, { 'content-type': 'application/rss+xml' })
+        .end(
+          `<rss version="2.0"><channel><title>Controlled feed</title><link>http://127.0.0.1:${port}/article</link><description>Fixture</description><item><guid>controlled-evidence</guid><title>Learning evidence</title><link>http://127.0.0.1:${port}/article</link><description>Practice with controlled source evidence</description></item></channel></rss>`
+        )
+      return
+    }
+
+    let body = ''
+    req.on('data', (chunk) => {
+      body += chunk
+    })
+    req.on('end', () => {
+      const input = JSON.parse(body || '{}') as ModelRequest
+      requests.push(input)
+      const submit = input.tools?.find((t) => t.function.name === 'submit')
+      if (!input.stream) {
+        const properties = (submit?.function.parameters?.properties ?? {}) as Record<string, unknown>
+        const output =
+          'memories' in properties
+            ? { memories: [], concepts: [], episode: null }
+            : 'picks' in properties
+              ? { picks: [] }
+              : 'items' in properties
+                ? { items: [] }
+                : { picks: [], items: [], memories: [], concepts: [], episode: null }
+        res.writeHead(200, { 'content-type': 'application/json' }).end(
+          JSON.stringify({
+            id: 'controlled-structured',
+            object: 'chat.completion',
+            created: 1,
+            model: 'attachments-controlled',
+            choices: [
+              {
+                index: 0,
+                message: {
+                  role: 'assistant',
+                  content: null,
+                  tool_calls: [{ id: 'submit', type: 'function', function: { name: 'submit', arguments: JSON.stringify(output) } }]
+                },
+                finish_reason: 'tool_calls'
+              }
+            ],
+            usage: { prompt_tokens: 4, completion_tokens: 2, total_tokens: 6 }
+          })
+        )
+        return
+      }
+      res.writeHead(200, { 'content-type': 'text/event-stream' })
+      const send = (delta: unknown, finish: string | null): void => {
+        res.write(
+          `data: ${JSON.stringify({ id: 'controlled-attachments', object: 'chat.completion.chunk', created: 1, model: 'attachments-controlled', choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`
+        )
+      }
+      if (next) {
+        const tool = next
+        next = null
+        send(
+          {
+            role: 'assistant',
+            tool_calls: [
+              { index: 0, id: 'attachment-tool', type: 'function', function: { name: tool.name, arguments: JSON.stringify(tool.input) } }
+            ]
+          },
+          null
+        )
+        send({}, 'tool_calls')
+      } else {
+        for (let i = 0; i < answer.length; i += 12) send({ content: answer.slice(i, i + 12) }, null)
+        send({}, 'stop')
+      }
+      res.write(
+        `data: ${JSON.stringify({ id: 'controlled-attachments', object: 'chat.completion.chunk', created: 1, model: 'attachments-controlled', choices: [], usage: { prompt_tokens: 4, completion_tokens: 2, total_tokens: 6 } })}\n\n`
+      )
+      res.end('data: [DONE]\n\n')
+    })
+  })
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  return {
+    server,
+    url: `http://127.0.0.1:${(server.address() as { port: number }).port}/v1`,
+    requests,
+    setAnswer: (text) => {
+      answer = text
+    },
+    tool: (name, input) => {
+      next = { name, input }
+    }
+  }
+}

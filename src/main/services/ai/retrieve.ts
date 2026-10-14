@@ -1,3 +1,4 @@
+import { getSettings } from '../settings'
 import { and, eq, inArray, isNull, or } from 'drizzle-orm'
 import { getDb, getSqlite } from '../../db'
 import { annotations, assetTexts, noteAssetBlocks, blocks, chunks, notes, sourceSegments, sources } from '../../db/schema'
@@ -289,9 +290,17 @@ export async function retrieve(
   allow?: { sourceIds: string[] }
 ): Promise<KnowledgeHit[]> {
   if (scope.type === 'none' || !query.trim()) return []
+  const privateAllowed =
+    allow?.sourceIds.length &&
+    getDb()
+      .select({ id: sources.id })
+      .from(sources)
+      .where(and(inArray(sources.id, allow.sourceIds), eq(sources.space, 'attachment')))
+      .get()
+  const onlyKeywords = !!privateAllowed && getSettings().ai.embedding?.mode === 'cloud'
   const [kw, vec] = await Promise.all([
     Promise.resolve(keywordHits(query, limit, filters)),
-    vectorHits(query, limit, filters).catch(noVectors)
+    onlyKeywords ? Promise.resolve(noVectors()) : vectorHits(query, limit, filters).catch(noVectors)
   ])
   const rrf = new Map<Key, number>()
   kw.forEach((k, i) => rrf.set(k, (rrf.get(k) ?? 0) + 1 / (RRF_K + i)))

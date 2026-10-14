@@ -1,4 +1,5 @@
-import { canReadSource } from '../attachmentsAccess'
+import { tablePreview } from '../../lib/attachmentText'
+import { canReadSource, hasAttachmentHistory } from '../attachmentsAccess'
 import { manimAvailable } from '../plugins/manim'
 import { visual as embedVisual } from './embedProposal'
 import { neutralizeUiFences } from '@shared/ui/sanitize'
@@ -47,6 +48,9 @@ export interface AgentSession {
   tier: ModelTier
   vision?: boolean
   scope: ChatScope
+  attachmentSourceIds?: string[]
+  suppressAttachmentMemory?: boolean
+  retrieveAttachments?: (query: string, filters: import('@shared/lens').RecordingFilters, limit: number) => Promise<SearchHit[]>
   incognito: boolean
   conversationId: string
   messageId: string
@@ -327,7 +331,7 @@ export function buildTools(s: AgentSession): ToolSet {
     })
   }
 
-  if (s.scope.type !== 'none') {
+  if (s.scope.type !== 'none' || s.attachmentSourceIds?.length) {
     Object.assign(tools, {
       today_overview: tool({
         description: zh
@@ -352,7 +356,9 @@ export function buildTools(s: AgentSession): ToolSet {
           ),
         execute: async ({ query, importedRange, limit, offset, ...filters }) => {
           if (importedRange) return JSON.stringify(importedSources(importedRange, s.scope, query, limit, offset))
-          const hits = await retrieve(query!, s.scope, 6, filters, s.preferSource)
+          const hits = s.retrieveAttachments
+            ? await s.retrieveAttachments(query!, filters, 6)
+            : await retrieve(query!, s.scope, 6, filters, s.preferSource)
           return hits.length ? numberHits(s, hits) : zh ? '没有找到相关内容。' : 'Nothing found.'
         }
       }),
@@ -389,10 +395,12 @@ export function buildTools(s: AgentSession): ToolSet {
           includeMetadata: z.boolean().optional()
         }),
         execute: async ({ sourceId, from = 0, count = 12, includeMetadata }) => {
-          if (s.scope.type === 'items' && !s.scope.sources.includes(sourceId)) throw new Error('Source is outside the selected scope')
+          if (s.scope.type === 'none' && !s.attachmentSourceIds?.includes(sourceId)) throw new Error('Source is outside the selected scope')
+          if (s.scope.type === 'items' && !s.scope.sources.includes(sourceId) && !s.attachmentSourceIds?.includes(sourceId))
+            throw new Error('Source is outside the selected scope')
           const src = readableSource(sourceId, zh, s.conversationId)
           const segs = listSegments(sourceId)
-          const part = segs.slice(from, from + count)
+          const part = tablePreview(segs).slice(from, from + count)
           const loc = (l: Record<string, unknown>): string => (l.value ? ` · ${String(l.value)}` : '')
           const metadata = includeMetadata
             ? getDb()
@@ -408,6 +416,24 @@ export function buildTools(s: AgentSession): ToolSet {
                 .where(eq(sources.id, sourceId))
                 .get()
             : null
+          if (s.attachmentSourceIds?.includes(sourceId)) {
+            return numberHits(
+              s,
+              part.map((g) => ({
+                parentType: 'source',
+                parentId: sourceId,
+                ownerId: g.id,
+                title: src.title,
+                text: g.text,
+                locator: typeof g.locator.value === 'string' ? g.locator.value : null,
+                score: 1,
+                learnedAt: null,
+                updatedAt: null,
+                status: null,
+                origin: null
+              }))
+            )
+          }
           return [
             ...(metadata ? [JSON.stringify({ ...metadata, totalSegments: segs.length, from, count: part.length })] : []),
             `《${src.title}》${zh ? `共 ${segs.length} 段，当前 ${from}–${from + part.length - 1}` : ` ${segs.length} segments`}`,
@@ -435,6 +461,8 @@ export function buildTools(s: AgentSession): ToolSet {
         })
       })
   }
+
+  if (s.scope.type === 'none') for (const name of ['today_overview', 'note_find', 'note_read', 'note_image_view']) delete tools[name]
 
   Object.assign(tools, {
     note_add_rows: tool({
@@ -736,7 +764,7 @@ export function buildTools(s: AgentSession): ToolSet {
     })
   }
 
-  if (!s.incognito) {
+  if (!s.incognito && !s.suppressAttachmentMemory) {
     Object.assign(tools, {
       memory_remember: tool({
         description: zh
@@ -761,6 +789,8 @@ export function buildTools(s: AgentSession): ToolSet {
             .describe(zh ? '涉及健康、财务、人际关系、身份证件等敏感信息时为 true' : 'True for health, finance, relationships, IDs')
         }),
         execute: async ({ kind, content, skill, sensitive }) => {
+          if (hasAttachmentHistory(s.conversationId))
+            throw new Error(zh ? '附件对话不参与记忆整理' : 'Attachment conversations are not used for memory')
           const m = saveMemory({ kind, content, skill, sensitive }, 'ai', { conversationId: s.conversationId, messageId: s.messageId })
           return m.status === 'pending'
             ? zh

@@ -241,6 +241,7 @@ export function AnswerCard() {
               onClick={() =>
                 answer &&
                 void saveToNote({
+                  conversationId: card.conversationId ?? undefined,
                   cue: cueFor(card.action, card.question, quote),
                   answer: answer.content,
                   anchor: card.anchor,

@@ -1,3 +1,4 @@
+import { protectProposalAttachments } from './attachmentDerived'
 import { canReadSource } from './attachmentsAccess'
 import { eq } from 'drizzle-orm'
 import { z } from 'zod'
@@ -303,7 +304,7 @@ async function run(input: DigestInput & { noteId: string }, ctx: JobContext): Pr
     }))
   }
   if (ctx.isCanceled()) throw new Error('canceled')
-  createProposal({
+  const proposal = createProposal({
     noteId: input.noteId,
     title: zh ? `${TASK_ZH[input.task]}：《${src.title}》${range}` : `${TASK_EN[input.task]}: ${src.title}`,
     ops,
@@ -311,6 +312,7 @@ async function run(input: DigestInput & { noteId: string }, ctx: JobContext): Pr
     embeds,
     sources: cited.length ? [...new Set(cited)].map((id) => ({ type: 'segment' as const, id })) : undefined
   })
+  protectProposalAttachments(proposal.id, [input.sourceId])
   emit('digest:done', { noteId: input.noteId, title: src.title, task: input.task })
   return { noteId: input.noteId }
 }

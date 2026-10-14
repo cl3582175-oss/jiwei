@@ -1,3 +1,4 @@
+import { noteHasPrivateAttachments } from './attachmentDerived'
 import { and, asc, desc, eq, inArray, isNull, like, or, type SQL } from 'drizzle-orm'
 import { getDb, getSqlite } from '../db'
 import { emit } from '../events'
@@ -151,6 +152,8 @@ export function createSampleNote(lang: string): Note {
 export function updateNote(id: string, patch: NoteMetaUpdate): NoteSummary {
   const db = getDb()
   const now = Date.now()
+  if (patch.aiExcluded === false && noteHasPrivateAttachments(id))
+    throw new Error('Archive the original attachments before enabling AI for this note')
   const set: Partial<typeof notes.$inferSelect> = { updatedAt: now, updatedBy: deviceId() }
   for (const k of ['title', 'categoryId', 'pinned', 'learnedAt', 'status', 'supersededBy', 'aiExcluded', 'reviewExcluded'] as const) {
     if (patch[k] !== undefined) (set as Record<string, unknown>)[k] = patch[k]

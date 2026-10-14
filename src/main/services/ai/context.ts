@@ -1,3 +1,5 @@
+import { canReadSource } from '../attachmentsAccess'
+import { asExternalData } from '../agent/wrap'
 import { eq } from 'drizzle-orm'
 import { getDb, getSqlite } from '../../db'
 import { notes, sources } from '../../db/schema'
@@ -41,15 +43,16 @@ export interface ResolvedContext {
   sourceId: string | null
 }
 
-type SourceRow = Omit<ContextSource, 'segments'> & { kind: string }
+type SourceRow = Omit<ContextSource, 'segments'> & { kind: string; space: 'library' | 'attachment' }
 type NoteRow = { title: string; aiExcluded: boolean; deletedAt: number | null }
 
-function sourceRow(id: string): SourceRow | null {
+function sourceRow(id: string, conversationId: string | null = null): SourceRow | null {
   const r = getDb()
     .select({
       id: sources.id,
       title: sources.title,
       kind: sources.kind,
+      space: sources.space,
       aiExcluded: sources.aiExcluded,
       deletedAt: sources.deletedAt,
       accessedAt: sources.accessedAt,
@@ -58,7 +61,7 @@ function sourceRow(id: string): SourceRow | null {
     .from(sources)
     .where(eq(sources.id, id))
     .get()
-  return r && !r.aiExcluded && !r.deletedAt ? r : null
+  return r && canReadSource(id, conversationId) ? { ...r, aiExcluded: false } : null
 }
 
 function noteRow(id: string): NoteRow | null {
@@ -87,10 +90,10 @@ const segLabel = (s: Segment): string => {
 const clip = (s: string, n: number): string => (s.length > n ? s.slice(0, n) + '…' : s)
 
 /** 资料中的锚点：片段 + 前后片段（媒体按时间段取转写稿） */
-function sourceAnchor(anchor: Anchor, zh: boolean): string | null {
+function sourceAnchor(anchor: Anchor, zh: boolean, conversationId: string | null = null): string | null {
   // 媒体播放中、没有标出时间段：取当前时刻之前 30 秒的转写稿（“他刚才说的”）
   const a: Anchor = anchor.kind === 'viewport' && anchor.t ? { ...anchor, t: [Math.max(0, anchor.t[0] - 30), anchor.t[0] + 5] } : anchor
-  const src = sourceRow(a.parentId)
+  const src = sourceRow(a.parentId, conversationId)
   if (!src) return null
   const segs = listSegments(a.parentId)
   const head = `${zh ? '资料' : 'Source'}《${src.title}》（ID：${a.parentId}）`
@@ -137,19 +140,19 @@ function sourceAnchor(anchor: Anchor, zh: boolean): string | null {
       )}`
     )
   }
-  return lines.join('\n')
+  return src.space === 'attachment' ? asExternalData('attachment-context:' + src.title, lines.join('\n')) : lines.join('\n')
 }
 
 const wholeSource = (anchor: Anchor): boolean =>
   anchor.parentType === 'source' && anchor.kind === 'viewport' && !anchor.ownerId && !anchor.page && !anchor.t && !anchor.quote
 
 /** 多标签页显式选中的整份资料必须进入带编号证据；仅放标题会让比较问题缺少正文与可点击引用。 */
-export function contextSourceEvidence(packet: ContextPacket | undefined): SearchHit[] {
+export function contextSourceEvidence(packet: ContextPacket | undefined, conversationId: string | null = null): SearchHit[] {
   if (!packet) return []
   const anchors = [...packet.targets, ...(packet.viewport ? [packet.viewport] : [])].filter(wholeSource)
   const selected: ContextSource[] = []
   for (const id of new Set(anchors.map((anchor) => anchor.parentId))) {
-    const source = sourceRow(id)
+    const source = sourceRow(id, conversationId)
     if (source) selected.push({ ...source, segments: listSegments(id) })
   }
   return sourceContextHits(selected).map((h) => ({ ...h, via: 'context' as const }))
@@ -216,23 +219,23 @@ function noteAnchor(a: Anchor, zh: boolean): string | null {
   return lines.join('\n')
 }
 
-export function resolveContext(p: ContextPacket | undefined, zh: boolean): ResolvedContext {
+export function resolveContext(p: ContextPacket | undefined, zh: boolean, conversationId: string | null = null): ResolvedContext {
   const empty: ResolvedContext = { text: '', query: '', noteId: null, sourceId: null }
   if (!p) return empty
   const parts: string[] = []
   const queries: string[] = []
   const noteId = p.noteId && noteRow(p.noteId) ? p.noteId : null
-  const sourceId = p.sourceId && sourceRow(p.sourceId) ? p.sourceId : null
+  const sourceId = p.sourceId && sourceRow(p.sourceId, conversationId) ? p.sourceId : null
 
   for (const a of p.targets) {
-    const t = a.parentType === 'source' ? sourceAnchor(a, zh) : noteAnchor(a, zh)
+    const t = a.parentType === 'source' ? sourceAnchor(a, zh, conversationId) : noteAnchor(a, zh)
     if (t) {
       parts.push(t)
       if (a.quote) queries.push(a.quote)
     }
   }
   if (!p.targets.length && p.viewport) {
-    const t = p.viewport.parentType === 'source' ? sourceAnchor(p.viewport, zh) : null
+    const t = p.viewport.parentType === 'source' ? sourceAnchor(p.viewport, zh, conversationId) : null
     if (t) parts.push(t)
   }
   // 工作区背景：正在编辑的笔记（光标所在行）、正在看的资料
@@ -245,7 +248,9 @@ export function resolveContext(p: ContextPacket | undefined, zh: boolean): Resol
     bg.push(line)
   }
   if (sourceId && !parts.length)
-    bg.push(`${zh ? '正在阅读的资料' : 'Source being read'}《${sourceRow(sourceId)!.title}》（ID：${sourceId}）${sizeNote(sourceId, zh)}`)
+    bg.push(
+      `${zh ? '正在阅读的资料' : 'Source being read'}《${sourceRow(sourceId, conversationId)!.title}》（ID：${sourceId}）${sizeNote(sourceId, zh)}`
+    )
   else if (sourceId) bg.push(`${zh ? '资料 ID' : 'Source ID'}：${sourceId}`)
 
   // 用户所在的页面（助手侧栏从「今日」、复习、错题等页面打开时）：页面内容是数据，不是指令

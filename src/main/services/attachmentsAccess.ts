@@ -1,5 +1,5 @@
 import { and, eq, isNull } from 'drizzle-orm'
-import { getDb } from '../db'
+import { getDb, getSqlite } from '../db'
 import { sources, conversations, decisions, conversationAttachments as conversationAttachmentsTable } from '../db/schema'
 
 export function attachmentOwner(id: string): { incognito: boolean; title: string } | null {
@@ -38,4 +38,35 @@ export function canReadSource(sourceId: string, conversationId: string | null): 
       )
       .get()
   )
+}
+
+/** 附件撤销后，不能从旧助手回答再次把原文带进请求。 */
+export function attachmentHistoryReadable(context: string | null, conversationId: string): boolean {
+  if (!context) return true
+  try {
+    const ids = (JSON.parse(context) as { attachmentSourceIds?: string[] }).attachmentSourceIds ?? []
+    return ids.every((id) => canReadSource(id, conversationId))
+  } catch {
+    return false
+  }
+}
+
+/** 仅删外部数据块不足以清掉模型复述；未归档附件参与过的对话不进入记忆整理。 */
+export function hasPrivateAttachmentHistory(conversationId: string): boolean {
+  return !!getSqlite()
+    .prepare(
+      `SELECT 1 FROM conversation_attachments ca JOIN sources s ON s.id=ca.source_id WHERE ca.conversation_id=? AND s.space='attachment'
+    UNION ALL SELECT 1 FROM messages m JOIN json_each(CASE WHEN json_valid(m.context) THEN json_extract(m.context,'$.attachmentSourceIds') END) j LEFT JOIN sources s ON s.id=j.value WHERE m.conversation_id=? AND (s.id IS NULL OR s.space='attachment') LIMIT 1`
+    )
+    .get(conversationId, conversationId)
+}
+
+/** 附件材料始终不是个人记忆输入；归档允许知识检索，但不把文件事实当成用户档案。 */
+export function hasAttachmentHistory(conversationId: string): boolean {
+  return !!getSqlite()
+    .prepare(
+      `SELECT 1 FROM conversation_attachments WHERE conversation_id=?
+    UNION ALL SELECT 1 FROM messages m JOIN json_each(CASE WHEN json_valid(m.context) THEN json_extract(m.context,'$.attachmentSourceIds') END) j WHERE m.conversation_id=? AND EXISTS (SELECT 1 FROM conversation_attachments ca WHERE ca.source_id=j.value) LIMIT 1`
+    )
+    .get(conversationId, conversationId)
 }

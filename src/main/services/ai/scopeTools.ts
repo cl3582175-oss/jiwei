@@ -24,8 +24,12 @@ function readable(id: string, zh: boolean, conversationId: string | null = null)
 
 export function buildScopeTools(
   zh: boolean,
-  chat: { providerId: string; model: string; conversationId?: string }
+  chat: { providerId: string; model: string; conversationId?: string; sourceIds?: string[] }
 ): { tools: ToolSet; meta: Record<string, ToolMeta> } {
+  const permitted = (id: string) => {
+    if (chat.sourceIds && !chat.sourceIds.includes(id)) throw new Error('Source is outside the selected scope')
+    return readable(id, zh, chat.conversationId ?? null)
+  }
   const digestInput = (i: Record<string, unknown>): DigestInput => ({
     sourceId: String(i.sourceId ?? ''),
     task: (i.task as DigestInput['task']) ?? 'mindmap',
@@ -56,7 +60,7 @@ export function buildScopeTools(
         : 'Get a source’s size (segments, pages) and chapter list with pages, to decide scope or list chapters for the user.',
       inputSchema: z.object({ sourceId: z.string().max(64) }),
       execute: async ({ sourceId }) => {
-        const src = readable(sourceId, zh, chat.conversationId ?? null)
+        const src = permitted(sourceId)
         const size = sourceSize(sourceId)
         const outline = sourceOutline(sourceId)
         return [
@@ -83,7 +87,7 @@ export function buildScopeTools(
         noteId: z.string().max(64).optional()
       }),
       execute: async (input) => {
-        readable(input.sourceId, zh, chat.conversationId ?? null)
+        permitted(input.sourceId)
         const { noteId } = startDigest(digestInput(input))
         return zh
           ? `已在后台开始整理（笔记 ID：${noteId}）。完成后会作为提案出现在这篇笔记里，界面会提示用户。用一句话告诉用户：已开始，可以在“后台任务”里看进度。`
@@ -100,7 +104,7 @@ export function buildScopeTools(
       describe: (i) => describeDigest(digestInput(i), zh),
       check: (i) => {
         try {
-          readable(String(i.sourceId ?? ''), zh, chat.conversationId ?? null)
+          permitted(String(i.sourceId ?? ''))
           return null
         } catch (e) {
           return e instanceof Error ? e.message : String(e)

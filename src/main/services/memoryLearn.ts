@@ -1,3 +1,4 @@
+import { hasAttachmentHistory } from './attachmentsAccess'
 import { z } from 'zod'
 import { and, asc, desc, eq, gt, isNull } from 'drizzle-orm'
 import log from 'electron-log/main'
@@ -13,7 +14,17 @@ import type { ContextPacket } from '@shared/context'
 import type { DocNode, Memory, Proposal } from '@shared/types'
 import { getSettings } from './settings'
 import { listBlocks } from './docs'
-import { getMemorySettings, getMemory, getMeta, getUserProfile, markUsed, saveMemory, setMeta, skillPreferences, fadeMemories } from './memory'
+import {
+  getMemorySettings,
+  getMemory,
+  getMeta,
+  getUserProfile,
+  markUsed,
+  saveMemory,
+  setMeta,
+  skillPreferences,
+  fadeMemories
+} from './memory'
 import { recordConcept } from './learner'
 import { quickModel, structured } from './ai/structured'
 import { listSkills } from './ai/skills'
@@ -147,11 +158,13 @@ async function extract(conversationId: string): Promise<{ added: number; concept
   if (stopped || !getMemorySettings().autoLearn) return none
   const db = getDb()
   const conv = db.select().from(conversations).where(eq(conversations.id, conversationId)).get()
-  if (!conv || conv.deletedAt || conv.incognito) return none
+  if (!conv || conv.deletedAt || conv.incognito || hasAttachmentHistory(conversationId)) return none
   const pdb = profileDb()
   const since =
-    (pdb.prepare('SELECT last_message_at FROM extract_state WHERE conversation_id = ?').get(conversationId) as { last_message_at: number } | undefined)
-      ?.last_message_at ?? 0
+    (
+      pdb.prepare('SELECT last_message_at FROM extract_state WHERE conversation_id = ?').get(conversationId) as
+        { last_message_at: number } | undefined
+    )?.last_message_at ?? 0
   const rows = db
     .select()
     .from(messages)
@@ -186,7 +199,8 @@ async function extract(conversationId: string): Promise<{ added: number; concept
   const zh = zhUI()
   const transcript = msgs
     .map((m) => {
-      if (m.role === 'assistant') return `${zh ? '助手' : 'Assistant'}：${clip(m.content, 600)}`
+      if (m.role === 'assistant')
+        return `${zh ? '助手' : 'Assistant'}：${clip(m.content.replace(/<external-data\b[^>]*>[\s\S]*?<\/external-data>/gi, ''), 600)}`
       const pointed = pointedText(m.context)
       return `${zh ? '用户' : 'User'}：${clip(m.content, 1200)}${pointed ? `\n  （${zh ? '指着' : 'pointing at'}：${pointed}）` : ''}`
     })
@@ -201,8 +215,7 @@ async function extract(conversationId: string): Promise<{ added: number; concept
   const refs = new Map(candidates.map((m, i) => [`m${i + 1}`, m]))
   const episodeKey = `conv:${conversationId}`
   const prevEpisode = pdb.prepare("SELECT content FROM memories WHERE kind = 'episode' AND key = ?").get(episodeKey) as
-    | { content: string }
-    | undefined
+    { content: string } | undefined
   const profile = getUserProfile()
 
   const prompt = [
@@ -215,7 +228,8 @@ async function extract(conversationId: string): Promise<{ added: number; concept
     .filter(Boolean)
     .join('\n\n')
 
-  const out: Extract = await structured({ purpose: 'memory',
+  const out: Extract = await structured({
+    purpose: 'memory',
     providerId,
     model: quickModel(providerId, model),
     system: zh ? RULES_ZH : RULES_EN,
@@ -295,16 +309,22 @@ function apply(
       )
       learned.push(getMemory(target.id)!)
     } else if (m.op === 'invalidate') {
-      db.prepare("UPDATE memories SET status = 'archived', invalid_at = ?, updated_at = ? WHERE id = ?").run(Date.now(), Date.now(), target.id)
+      db.prepare("UPDATE memories SET status = 'archived', invalid_at = ?, updated_at = ? WHERE id = ?").run(
+        Date.now(),
+        Date.now(),
+        target.id
+      )
     }
   }
   markUsed((out.reinforced ?? []).map((r) => refs.get(r)?.id).filter((x): x is string => !!x))
 
   let concepts = 0
-  for (const c of out.concepts) if (recordConcept(c.name, c.signal, { conversationId: ev.conversationId, note: c.note }, { silent: true })) concepts++
+  for (const c of out.concepts)
+    if (recordConcept(c.name, c.signal, { conversationId: ev.conversationId, note: c.note }, { silent: true })) concepts++
 
   const episode = out.episode?.trim()
-  if (episode) saveMemory({ kind: 'episode', key: ev.episodeKey, content: episode }, 'ai', { conversationId: ev.conversationId }, { silent: true })
+  if (episode)
+    saveMemory({ kind: 'episode', key: ev.episodeKey, content: episode }, 'ai', { conversationId: ev.conversationId }, { silent: true })
 
   // 敏感内容逐条询问；普通内容合并成一条提示（可撤销）
   const pending = learned.filter((m) => m.status === 'pending')
@@ -343,11 +363,7 @@ function catchUp(): void {
 
 function opText(op: Proposal['ops'][number], embeds: Proposal['embeds']): string {
   const nodes: DocNode[] =
-    op.op === 'insert_row'
-      ? [...(op.cue as DocNode[]), ...(op.body as DocNode[])]
-      : op.op === 'delete_block'
-        ? []
-        : (op.nodes as DocNode[])
+    op.op === 'insert_row' ? [...(op.cue as DocNode[]), ...(op.body as DocNode[])] : op.op === 'delete_block' ? [] : (op.nodes as DocNode[])
   const text = (n: DocNode): string => {
     if (n.type === 'embed') {
       const id = (n.attrs as { id?: string } | undefined)?.id
@@ -361,7 +377,7 @@ function opText(op: Proposal['ops'][number], embeds: Proposal['embeds']): string
 
 /** 提案中的一处修改被接受或拒绝：留下样本（接受的过一段时间再看有没有被改） */
 export function recordProposalDecision(p: Proposal, opIndex: number, decision: 'accepted' | 'rejected', blockIds?: string[]): void {
-  if (!p.skill || p.auto || !getMemorySettings().learnSkills) return
+  if (!p.skill || p.auto || !getMemorySettings().learnSkills || p.attachmentSourceIds?.length) return
   const op = p.ops[opIndex]
   if (!op || op.op === 'delete_block') return
   const before = clip(opText(op, p.embeds), 2000)
@@ -397,7 +413,9 @@ export function reviewFeedback(now = Date.now(), force = false): number {
   let n = 0
   for (const f of rows) {
     if (!force && now - f.created_at < SETTLE_MS) continue
-    const note = f.note_id ? getDb().select({ updatedAt: notes.updatedAt, deletedAt: notes.deletedAt }).from(notes).where(eq(notes.id, f.note_id)).get() : null
+    const note = f.note_id
+      ? getDb().select({ updatedAt: notes.updatedAt, deletedAt: notes.deletedAt }).from(notes).where(eq(notes.id, f.note_id)).get()
+      : null
     // 笔记不在当前知识库 / 已删除：无法判断，丢弃样本
     if (!note || note.deletedAt) {
       pdb.prepare("UPDATE skill_feedback SET kind = 'lost', checked_at = ?, consumed_at = ? WHERE id = ?").run(now, now, f.id)
@@ -467,10 +485,16 @@ export function induceSkillPreferences(): Promise<Memory[]> {
       const label = (k: string): string =>
         zh
           ? ({ rejected: '用户拒绝了这份输出', edited: '用户接受后改写了它', deleted: '用户接受后又删掉了它' }[k] ?? k)
-          : ({ rejected: 'The user rejected this output', edited: 'The user accepted, then rewrote it', deleted: 'The user accepted, then deleted it' }[k] ?? k)
+          : ({
+              rejected: 'The user rejected this output',
+              edited: 'The user accepted, then rewrote it',
+              deleted: 'The user accepted, then deleted it'
+            }[k] ?? k)
       const prompt = [
         `${zh ? '技能' : 'Skill'}：${listSkills().find((x) => x.name === skill)?.title || skill}（${skill}）`,
-        existing.length ? `${zh ? '已有偏好（不要重复）' : 'Existing preferences (do not repeat)'}：\n${existing.map((e) => `- ${e}`).join('\n')}` : '',
+        existing.length
+          ? `${zh ? '已有偏好（不要重复）' : 'Existing preferences (do not repeat)'}：\n${existing.map((e) => `- ${e}`).join('\n')}`
+          : '',
         `${zh ? `另有 ${kept} 次输出被原样保留。` : `${kept} outputs were kept unchanged.`}`,
         samples
           .map(
@@ -482,18 +506,24 @@ export function induceSkillPreferences(): Promise<Memory[]> {
         .filter(Boolean)
         .join('\n\n')
       try {
-        const out = await structured({ purpose: 'memory',
+        const out = await structured({
+          purpose: 'memory',
           providerId,
           model: quickModel(providerId, model),
           system: zh
             ? '你在帮学习助手了解用户对某个技能输出的稳定偏好。下面的记录都是用户不满意的输出：被拒绝、被删掉，或被改写（同时给出改后的样子）。对比 AI 输出与用户想要的样子，找出反复出现、可执行的格式或风格要求（如“表格不超过 4 列”“思维导图每个节点不超过 12 个字”“总结只写一句话”）。偏好描述用户想要什么，不要描述被否定的输出本身的特点。只是修正事实错误、或者证据只有一两次且不一致时，返回空数组。每条偏好一句话，不带主语，写成以后生成时要遵守的要求。'
-            : "You help a learning assistant learn the user's stable preferences for one skill's output. Every record below is output the user was unhappy with: rejected, deleted, or rewritten (with the rewrite shown). Compare the AI output with what the user wanted and find repeated, actionable format or style requirements (e.g. \"tables have at most 4 columns\", \"summaries are one sentence\"). Describe what the user wants, never the traits of the rejected output. Return an empty array if edits only fix facts or evidence is thin. One sentence each, no subject, phrased as a rule for future output.",
+            : 'You help a learning assistant learn the user\'s stable preferences for one skill\'s output. Every record below is output the user was unhappy with: rejected, deleted, or rewritten (with the rewrite shown). Compare the AI output with what the user wanted and find repeated, actionable format or style requirements (e.g. "tables have at most 4 columns", "summaries are one sentence"). Describe what the user wants, never the traits of the rejected output. Return an empty array if edits only fix facts or evidence is thin. One sentence each, no subject, phrased as a rule for future output.',
           prompt,
           schema: PrefSchema
         })
         for (const p of out.preferences) {
           const before = Date.now()
-          const m = saveMemory({ kind: 'skill', skill, content: p.content.trim() }, 'ai', { quote: zh ? `来自 ${samples.length} 次修改与拒绝` : `From ${samples.length} edits and rejections` }, { silent: true })
+          const m = saveMemory(
+            { kind: 'skill', skill, content: p.content.trim() },
+            'ai',
+            { quote: zh ? `来自 ${samples.length} 次修改与拒绝` : `From ${samples.length} edits and rejections` },
+            { silent: true }
+          )
           if (m.createdAt >= before) learned.push(m)
         }
         const now = Date.now()

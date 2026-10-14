@@ -7,7 +7,15 @@ import { basename, extname, join } from 'node:path'
 import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { getDb, getSqlite } from '../db'
-import { assets, conversationAttachments as conversationAttachmentsTable, categories, jobs, sources } from '../db/schema'
+import {
+  assets,
+  conversationAttachments as conversationAttachmentsTable,
+  categories,
+  conversations,
+  notes,
+  jobs,
+  sources
+} from '../db/schema'
 import { emit, onMainEvent } from '../events'
 import { newId } from '../lib/ids'
 import { tr } from '../lib/messages'
@@ -47,6 +55,7 @@ export function attachmentStatus(sourceIds: string[]): Attachment[] {
   const db = getDb(),
     recognizing = new Map(recognizingSources(sourceIds).map((r) => [r.id, r.progress]))
   return sourceIds.flatMap((id) => {
+    if (id.startsWith('note:')) return noteReference(id.slice(5)) ?? []
     const source = getSource(id)
     if (!source) return []
     const tasks = db
@@ -322,11 +331,29 @@ export function conversationAttachments(conversationId: string): Attachment[] {
     .orderBy(asc(conversationAttachmentsTable.createdAt))
     .all()
     .map((r) => r.id)
-  return attachmentStatus(ids)
+  return attachmentStatus([...ids, ...conversationNoteIds(conversationId).map((id) => `note:${id}`)])
 }
 // 函数与表有相同的公开名称，表别名只在查询中使用。
 
 export function removeFromConversation(conversationId: string, sourceId: string): void {
+  if (sourceId.startsWith('note:')) {
+    const db = getDb(),
+      c = db.select().from(conversations).where(eq(conversations.id, conversationId)).get()
+    if (!c) return
+    const scope = JSON.parse(c.scope) as import('@shared/schemas').ChatScope
+    const meta = c.meta ? JSON.parse(c.meta) : {}
+    db.update(conversations)
+      .set({
+        meta: JSON.stringify({ ...meta, attachmentNotes: conversationNoteIds(conversationId).filter((id) => `note:${id}` !== sourceId) }),
+        ...(scope.type === 'items'
+          ? { scope: JSON.stringify({ ...scope, notes: scope.notes.filter((id) => `note:${id}` !== sourceId) }) }
+          : {})
+      })
+      .where(eq(conversations.id, conversationId))
+      .run()
+    changed([sourceId], conversationId)
+    return
+  }
   getDb()
     .update(conversationAttachmentsTable)
     .set({ removedAt: Date.now() })
@@ -453,4 +480,47 @@ export function observeAttachmentChanges(): () => void {
     onMainEvent('sources:changed', () => changed())
   ]
   return () => dispose.forEach((fn) => fn())
+}
+
+function conversationNoteIds(conversationId: string): string[] {
+  const c = getDb().select({ meta: conversations.meta }).from(conversations).where(eq(conversations.id, conversationId)).get()
+  try {
+    return c?.meta ? ((JSON.parse(c.meta) as { attachmentNotes?: string[] }).attachmentNotes ?? []) : []
+  } catch {
+    return []
+  }
+}
+export function noteReference(id: string): Attachment | null {
+  const n = getDb().select().from(notes).where(eq(notes.id, id)).get()
+  if (!n) return null
+  return {
+    sourceId: `note:${id}`,
+    name: n.title || tr('无标题', 'Untitled'),
+    kind: 'document',
+    size: 0,
+    mime: 'text/plain',
+    thumbUrl: null,
+    status: n.deletedAt !== null ? 'failed' : 'ready',
+    progress: null,
+    error: n.aiExcluded ? tr('这份资料设为不给 AI', 'This source is excluded from AI') : null,
+    space: 'library',
+    archivedCategoryId: n.categoryId,
+    deleted: n.deletedAt !== null,
+    conversations: [],
+    createdAt: n.createdAt
+  }
+}
+export function bindAttachmentNotes(conversationId: string, noteIds: string[]): void {
+  const db = getDb(),
+    c = db.select().from(conversations).where(eq(conversations.id, conversationId)).get()
+  if (!c) throw new Error('Conversation not found')
+  for (const id of noteIds) {
+    const n = noteReference(id)
+    if (!n || n.deleted || n.error) throw new Error(n?.error ?? tr('附件已删除', 'Attachment deleted'))
+  }
+  const meta = c.meta ? JSON.parse(c.meta) : {}
+  db.update(conversations)
+    .set({ meta: JSON.stringify({ ...meta, attachmentNotes: [...new Set([...conversationNoteIds(conversationId), ...noteIds])] }) })
+    .where(eq(conversations.id, conversationId))
+    .run()
 }

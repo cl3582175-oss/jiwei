@@ -371,6 +371,7 @@ export interface Segment {
 export type ProposalOpStatus = 'pending' | 'accepted' | 'rejected'
 
 export interface Proposal {
+  attachmentSourceIds?: string[]
   id: string
   noteId: string
   title: string

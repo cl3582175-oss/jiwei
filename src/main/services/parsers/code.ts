@@ -3,31 +3,8 @@ import { extname } from 'node:path'
 import { decodeText } from './csv'
 import type { SegmentInput } from '../segments'
 
-export const CODE_EXTS = [
-  'json',
-  'yaml',
-  'yml',
-  'xml',
-  'log',
-  'py',
-  'js',
-  'ts',
-  'tsx',
-  'jsx',
-  'java',
-  'go',
-  'rs',
-  'c',
-  'cpp',
-  'h',
-  'cs',
-  'rb',
-  'php',
-  'sh',
-  'sql',
-  'ini',
-  'toml'
-]
+export { CODE_EXTS } from '@shared/attachments'
+
 const LANGUAGE: Record<string, string> = {
   py: 'python',
   js: 'javascript',

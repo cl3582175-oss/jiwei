@@ -288,3 +288,101 @@ it('无痕草稿在发送前已隐藏，普通附件的不给 AI 开关不可解
   expect(s.canReadSource(bound, 'private')).toBe(true)
   expect(s.unarchivedCount()).toBe(0)
 })
+
+it('短附件首次全文是外部数据，后续不重复，单附件点名才再发', async () => {
+  const s = await svc(),
+    a = await attachment('c1')
+  replaceSegments(a.sourceId, [{ kind: 'paragraph', text: 'ZZ-ATTACH-MARKER-7f3a', locator: {} }])
+  f.sql!.exec("UPDATE jobs SET status='done'")
+  const { prepareAttachmentTurn, markAttachmentTurnSent } = await import('../ai/chatAttachments')
+  const first = await prepareAttachmentTurn('c1', '总结', true, 'normal', false)
+  expect(first.full[0].text).toContain('ZZ-ATTACH-MARKER-7f3a')
+  expect(first.section).toContain('【本对话的附件】')
+  markAttachmentTurnSent('c1', first.sentIds)
+  expect((await prepareAttachmentTurn('c1', '第二轮继续', true, 'normal', false)).full).toEqual([])
+  expect((await prepareAttachmentTurn('c1', '这份附件再解释', true, 'normal', false)).full).toHaveLength(1)
+  s.removeFromConversation('c1', a.sourceId)
+  expect((await prepareAttachmentTurn('c1', '继续', true, 'normal', false)).section).toBe('')
+})
+
+it('长附件不发全文、处理状态可见；短附件全文合计不超过30000字', async () => {
+  const s = await svc()
+  const items = await s.addAttachments({
+    files: ['a', 'b', 'c', 'long'].map((name) => ({ name: name + '.txt', data: new TextEncoder().encode(name) })),
+    conversationId: 'c1'
+  })
+  items.forEach((a, i) => replaceSegments(a.sourceId, [{ kind: 'paragraph', text: '文'.repeat(i === 3 ? 12001 : 11000), locator: {} }]))
+  f.sql!.exec("UPDATE jobs SET status='done'")
+  const { prepareAttachmentTurn } = await import('../ai/chatAttachments')
+  const turn = await prepareAttachmentTurn('c1', '总结', true, 'normal', false)
+  expect(turn.full).toHaveLength(2)
+  expect(turn.full.reduce((n, t) => n + t.text.length, 0)).toBe(22000)
+  expect(turn.full.some((t) => t.sourceId === items[3].sourceId)).toBe(false)
+  f.sql!.prepare("UPDATE jobs SET status='queued' WHERE json_extract(payload,'$.sourceId')=?").run(items[3].sourceId)
+  expect((await prepareAttachmentTurn('c1', '继续', true, 'normal', false)).section).toContain('解析中')
+})
+
+it('图片只在首次参与时发图，最多4张，仍允许后续读取识别文字', async () => {
+  const s = await svc(),
+    png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==', 'base64')
+  const [a] = await s.addAttachments({ files: [{ name: 'photo.png', data: png }], conversationId: 'c1' })
+  f.sql!.exec("UPDATE jobs SET status='done'")
+  const { prepareAttachmentTurn, markAttachmentTurnSent } = await import('../ai/chatAttachments')
+  const turn = await prepareAttachmentTurn('c1', '解释图片', true, 'normal', true)
+  expect(turn.images).toHaveLength(1)
+  expect(turn.images[0]).toMatch(/^data:image\/png;base64,/)
+  markAttachmentTurnSent('c1', turn.sentIds)
+  replaceSegments(a.sourceId, [{ kind: 'paragraph', text: '图中文字', locator: {} }])
+  const next = await prepareAttachmentTurn('c1', '继续', true, 'normal', true)
+  expect(next.images).toEqual([])
+  expect(next.full[0].text).toBe('图中文字')
+})
+
+it('表格上下文每表只含前200行，给出总行数；关闭组件时不推荐chart', async () => {
+  const s = await svc(),
+    [a] = await s.addAttachments({ files: [{ name: 'sheet.csv', data: new TextEncoder().encode('a,b') }], conversationId: 'c1' })
+  const { tableSegments } = await import('../parsers/ooxml')
+  replaceSegments(
+    a.sourceId,
+    tableSegments(
+      'Data',
+      Array.from({ length: 302 }, (_, i) => ({ row: i + 1, cells: [i === 0 ? 'name' : `row-${i}`, 'value'] }))
+    )
+  )
+  f.sql!.exec("UPDATE jobs SET status='done'")
+  const { prepareAttachmentTurn } = await import('../ai/chatAttachments')
+  const turn = await prepareAttachmentTurn('c1', '总结', true, 'normal', false)
+  expect(turn.full[0].text).toContain('row-200')
+  expect(turn.full[0].text).not.toContain('row-201')
+  expect(turn.full[0].text).toContain('301')
+  expect(turn.section).toContain('chart / table')
+  expect((await prepareAttachmentTurn('c1', '总结', true, 'off', false)).section).not.toContain('chart / table')
+})
+
+it('附件引用权限撤销后旧助手消息不可复用，记忆整理也不能拿到复述', async () => {
+  const s = await svc(),
+    a = await attachment('c1')
+  const { attachmentHistoryReadable, hasPrivateAttachmentHistory } = await import('../attachmentsAccess')
+  expect(hasPrivateAttachmentHistory('c1')).toBe(true)
+  const context = JSON.stringify({ attachmentSourceIds: [a.sourceId] })
+  expect(attachmentHistoryReadable(context, 'c1')).toBe(true)
+  s.removeFromConversation('c1', a.sourceId)
+  expect(attachmentHistoryReadable(context, 'c1')).toBe(false)
+  expect(hasPrivateAttachmentHistory('c1')).toBe(true)
+  s.archiveAttachments([a.sourceId], null)
+  expect(hasPrivateAttachmentHistory('c1')).toBe(false)
+})
+
+it('附件派生笔记保留引用但不可进入其他 AI；归档前不得解除隔离', async () => {
+  const a = await attachment('c1')
+  f.sql!.exec("INSERT INTO notes(id,doc_version,learned_at,created_at,edited_at,updated_at,updated_by) VALUES('derived',1,1,1,1,1,'test')")
+  f.sql!.prepare(
+    "INSERT INTO proposals(id,note_id,title,ops,op_status,status,created_at) VALUES('p','derived','saved',?,'[]','pending',1)"
+  ).run(JSON.stringify({ ops: [] }))
+  const { protectProposalAttachments, noteHasPrivateAttachments } = await import('../attachmentDerived')
+  protectProposalAttachments('p', [a.sourceId])
+  expect(f.sql!.prepare("SELECT ai_excluded FROM notes WHERE id='derived'").get()).toEqual({ ai_excluded: 1 })
+  expect(noteHasPrivateAttachments('derived')).toBe(true)
+  ;(await svc()).archiveAttachments([a.sourceId], null)
+  expect(noteHasPrivateAttachments('derived')).toBe(false)
+})
