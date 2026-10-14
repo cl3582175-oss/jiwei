@@ -214,7 +214,14 @@ export type SidebarPage = 'notes' | 'library' | 'chat'
 export interface Settings {
   retrieval: import('./retrieval').RetrievalSettings
   plugins: { recommendedDismissed: boolean }
-  discover: { dailyLimit: number; dailyBudget: number; budgetCurrency: string; useSearch: boolean; podcast: boolean; podcastVoice: import('./discover').PodcastVoice }
+  discover: {
+    dailyLimit: number
+    dailyBudget: number
+    budgetCurrency: string
+    useSearch: boolean
+    podcast: boolean
+    podcastVoice: import('./discover').PodcastVoice
+  }
   tasks: { paused: boolean; launchAtLogin: boolean; keepRunning: boolean }
   plan: { autoComplete: boolean }
   recordingScene?: 'meeting' | 'lecture' | 'thought'
@@ -780,6 +787,7 @@ export interface ChatMessage {
   conversationId: string
   role: 'user' | 'assistant'
   content: string
+  uiText?: string | null
   reasoning: string | null
   citations: Citation[]
   providerId: string | null

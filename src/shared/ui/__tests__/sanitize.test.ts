@@ -10,7 +10,10 @@ it.each([
   '```jiwei-ui-extra',
   '｀｀｀jiwei-ui',
   '&#96;&#96;&#96;jiwei-ui',
-  '&grave;&grave;&grave;JIWEI-UI'
+  '&grave;&grave;&grave;JIWEI-UI',
+  '> ```jiwei-ui',
+  '- ```jiwei-ui',
+  '1. ~~~jiwei-ui'
 ])('中和外部围栏 %s', (fence) => {
   expect(neutralizeUiFences(fence + '\n{}\n```').toLowerCase()).toContain('jiwei-ui-blocked')
 })

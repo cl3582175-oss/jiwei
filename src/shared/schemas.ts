@@ -6,6 +6,7 @@ import { PodcastVoiceSchema } from './discover'
 export { InboxCreateSchema, InboxUpdateSchema, InboxAcceptSchema } from './inbox'
 import { z } from 'zod'
 import { UiSettingsSchema, UI_DEFAULTS } from './ui/settings'
+import { UiEventSchema } from './ui/events'
 import { ExternalBackupSchema } from './backup'
 import { DomainSchema, NetworkRuleSchema } from './browserSafety'
 import { AnchorSchema, ContextPacketSchema } from './context'
@@ -269,6 +270,7 @@ export const ChatScopeSchema = z.discriminatedUnion('type', [
 export type ChatScope = z.infer<typeof ChatScopeSchema>
 
 export const ChatSendSchema = z.object({
+  uiEvent: UiEventSchema.optional(),
   conversationId: Id.nullable(),
   text: z.string().min(1).max(20000),
   providerId: Id,

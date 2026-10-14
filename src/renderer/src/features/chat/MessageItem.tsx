@@ -393,7 +393,7 @@ export function MessageItem({
               isAnimating={streaming}
               components={components as never}
               controls={{ code: true, table: true, mermaid: false }}
-              plugins={uiPlugins}
+              plugins={plain ? undefined : uiPlugins}
             >
               {md}
             </Streamdown>

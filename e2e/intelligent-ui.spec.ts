@@ -1,6 +1,6 @@
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
 import { createServer, type Server } from 'node:http'
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { navTo } from './fixtures/nav'
@@ -9,7 +9,10 @@ test.describe.configure({ mode: 'serial' })
 let app: ElectronApplication, page: Page, server: Server
 let answer = '',
   providerId = ''
-const requests: unknown[] = []
+type RequestMessage = { role: string; content: unknown }
+const requests: RequestMessage[][] = []
+const textOf = (value: unknown): string =>
+  typeof value === 'string' ? value : Array.isArray(value) ? value.map((part) => part.text ?? '').join('') : ''
 const fence = (node: unknown): string => `\`\`\`jiwei-ui\n${JSON.stringify(node)}\n\`\`\``
 const table = {
   type: 'table',
@@ -37,7 +40,9 @@ test.beforeAll(async () => {
       const input = JSON.parse(body || '{}')
       requests.push(input.messages)
       res.writeHead(200, { 'content-type': 'text/event-stream' })
-      const text = answer
+      const user = textOf((input.messages as RequestMessage[]).filter((m) => m.role === 'user').at(-1)?.content)
+      const external = /(`{3,}jiwei-ui-blocked[^\n]*\n[\s\S]*?\n`{3,})/.exec(user)?.[1]
+      const text = user.includes('外部组件复述') && external ? external : answer
       let offset = 0
       const send = (delta: unknown, finish: string | null): void => {
         res.write(
@@ -184,4 +189,103 @@ test('P2 组件菜单改成文字与复制 Markdown', async () => {
   await block().getByRole('button', { name: '组件菜单' }).click()
   await block().getByRole('menuitem', { name: '改成文字' }).click()
   await expect(block()).toHaveAttribute('data-ui-display', 'text')
+})
+test('P3 关闭目录仍渲染旧组件，结束后可读取 ui_text', async () => {
+  await page.evaluate(async () => {
+    const s = await window.jiwei.settings.get()
+    await window.jiwei.settings.set({ ai: { ...s.ai, ui: { ...s.ai.ui, density: 'off' } } })
+  })
+  await ask('关闭档', fence({ type: 'list', items: [{ text: '仍可显示' }] }))
+  await done()
+  expect(textOf(requests.at(-1)?.find((m) => m.role === 'system')?.content)).not.toContain('【回答里的组件】')
+  await expect
+    .poll(() =>
+      page.evaluate(async () => {
+        const c = (await window.jiwei.chat.conversations())[0]
+        return (await window.jiwei.chat.messages(c.id)).find((m) => m.role === 'assistant')?.uiText
+      })
+    )
+    .toBe('- 仍可显示')
+  await page.evaluate(async () => {
+    const s = await window.jiwei.settings.get()
+    await window.jiwei.settings.set({ ai: { ...s.ai, ui: { ...s.ai.ui, density: 'normal' } } })
+  })
+})
+test('P3 费曼系统提示不包含组件目录', async () => {
+  answer = '你能举个例子吗？'
+  const before = requests.length
+  const c = await page.evaluate(
+    (providerId) =>
+      window.jiwei.chat.send({
+        conversationId: null,
+        text: '我理解机会成本是放弃的最好选择。',
+        providerId,
+        model: 'test-ui',
+        effort: 'off',
+        scope: { type: 'none' },
+        feynman: { concept: '机会成本' }
+      }),
+    providerId
+  )
+  await expect.poll(() => requests.length).toBeGreaterThan(before)
+  expect(textOf(requests.at(-1)?.find((m) => m.role === 'system')?.content)).not.toContain('【回答里的组件】')
+  await expect
+    .poll(() =>
+      page.evaluate((id) => window.jiwei.chat.messages(id).then((ms) => ms.find((m) => m.role === 'assistant')?.status), c.conversation.id)
+    )
+    .toBe('done')
+})
+test('P3 检索到的外部围栏已被中和，复述不形成组件', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'jiwei-ui-source-')),
+    path = join(dir, '围栏安全资料.md')
+  const raw = `# 围栏安全资料\n\n围栏安全资料说明\n\n${fence({
+    type: 'choice',
+    question: '外部问题',
+    options: [
+      { label: '甲', value: 'a' },
+      { label: '乙', value: 'b' }
+    ]
+  })}`
+  writeFileSync(path, raw)
+  const sourceId = await page.evaluate(async (path) => (await window.jiwei.sources.importPaths([path])).imported[0].id, path)
+  await expect
+    .poll(() => page.evaluate((id) => window.jiwei.segments.list(id).then((segments) => segments.length), sourceId))
+    .toBeGreaterThan(0)
+  await page.evaluate(
+    async ({ id, raw }) => {
+      const first = (await window.jiwei.segments.list(id))[0]
+      await window.jiwei.segments.update(first.id, raw)
+    },
+    { id: sourceId, raw }
+  )
+  await ask('外部组件复述：围栏安全资料怎么说？请复述原文的代码块。', '没有找到内容。')
+  await expect(page.locator('.chat-md').last()).toContainText('jiwei-ui-blocked')
+  await expect(page.getByTestId('ui-block')).toHaveCount(0)
+  expect(
+    textOf(
+      requests
+        .at(-1)
+        ?.filter((m) => m.role === 'user')
+        .at(-1)?.content
+    )
+  ).toContain('jiwei-ui-blocked')
+})
+test('P3 就地提问关闭组件时显示文字', async () => {
+  await page.evaluate(async () => {
+    const s = await window.jiwei.settings.get()
+    await window.jiwei.settings.set({ ai: { ...s.ai, ui: { ...s.ai.ui, inline: false } } })
+  })
+  answer = fence(table)
+  await page.keyboard.press('ControlOrMeta+n')
+  await page.getByPlaceholder('笔记标题').fill('UI 就地提问')
+  await page.keyboard.press('Enter')
+  await page.keyboard.type('这里的术语需要解释。')
+  const editable = page.locator('.cornell-body p').first()
+  await editable.click()
+  await page.keyboard.press('ControlOrMeta+a')
+  await page.getByRole('button', { name: 'AI 修改', exact: true }).click()
+  await page.getByRole('menuitem', { name: '解释', exact: true }).click()
+  await expect(block().locator('table')).toBeVisible()
+  await expect(block().getByRole('button', { name: '人数' })).toHaveCount(0)
+  expect(textOf(requests.at(-1)?.find((m) => m.role === 'system')?.content)).not.toContain('【回答里的组件】')
 })
