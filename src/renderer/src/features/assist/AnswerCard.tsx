@@ -1,3 +1,7 @@
+import { useAttachments } from '../attachments/useAttachments'
+import { AttachmentDropZone } from '../attachments/AttachmentInput'
+import { Composer as ChatComposer } from '../chat/ChatView'
+import { useModelChoice } from '../chat/useChat'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import i18n from 'i18next'
@@ -97,6 +101,8 @@ export function AnswerCard() {
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null)
   const [copied, setCopied] = useState(false)
   const { msgs, streaming } = useChatThread(card?.conversationId ?? null)
+  const attachments = useAttachments({ kind: 'inline', conversationId: card?.conversationId })
+  const { provider } = useModelChoice()
   useEffect(() => {
     if (!card?.conversationId) return
     const onReply = (e: Event): void => {
@@ -158,112 +164,123 @@ export function AnswerCard() {
   }
 
   return (
-    <div
-      ref={ref}
-      role="dialog"
-      aria-label={t('assist.card')}
-      style={{ width: W, left: pos?.left ?? -9999, top: pos?.top ?? 0 }}
-      className="paper fixed z-50 flex max-h-[min(62vh,560px)] flex-col overflow-hidden rounded-2xl border border-border shadow-float animate-[fade-in_140ms_ease-out]"
-    >
-      <header className="flex items-start gap-2.5 border-b border-border/70 px-4 py-3">
-        <span className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-md bg-accent-soft text-accent [&_svg]:size-3.5">
-          {ICON[card.action]}
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="text-xs font-medium text-fg">{card.question || t(`assist.actions.${card.action}`)}</p>
-          {quote && <p className="mt-0.5 line-clamp-2 font-kai text-2xs leading-relaxed text-muted">「{quote}」</p>}
-        </div>
-        {card.conversationId && (
-          <Tip label={t('assist.toPanel')} side="bottom">
-            <Button size="icon-sm" variant="ghost" onClick={toPanel} aria-label={t('assist.toPanel')}>
-              <PanelRightOpen />
-            </Button>
-          </Tip>
-        )}
-        <Button size="icon-sm" variant="ghost" onClick={() => useAssist.getState().closeCard()} aria-label={t('common.close')}>
-          <X />
-        </Button>
-      </header>
+    <AttachmentDropZone controller={attachments} className="fixed z-50" style={{ width: W, left: pos?.left ?? -9999, top: pos?.top ?? 0 }}>
+      <div
+        ref={ref}
+        role="dialog"
+        aria-label={t('assist.card')}
+        className="paper flex max-h-[min(62vh,560px)] flex-col overflow-hidden rounded-2xl border border-border shadow-float animate-[fade-in_140ms_ease-out]"
+      >
+        <header className="flex items-start gap-2.5 border-b border-border/70 px-4 py-3">
+          <span className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-md bg-accent-soft text-accent [&_svg]:size-3.5">
+            {ICON[card.action]}
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-medium text-fg">{card.question || t(`assist.actions.${card.action}`)}</p>
+            {quote && <p className="mt-0.5 line-clamp-2 font-kai text-2xs leading-relaxed text-muted">「{quote}」</p>}
+          </div>
+          {card.conversationId && (
+            <Tip label={t('assist.toPanel')} side="bottom">
+              <Button size="icon-sm" variant="ghost" onClick={toPanel} aria-label={t('assist.toPanel')}>
+                <PanelRightOpen />
+              </Button>
+            </Tip>
+          )}
+          <Button size="icon-sm" variant="ghost" onClick={() => useAssist.getState().closeCard()} aria-label={t('common.close')}>
+            <X />
+          </Button>
+        </header>
 
-      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-3 text-sm">
-        {composing ? (
-          <div className="space-y-3">
-            {card.image && (
-              <img src={card.image} alt={t('assist.region')} className="max-h-40 rounded-lg border border-border object-contain" />
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-3 text-sm">
+          {composing ? (
+            <div className="space-y-3">
+              {card.image && (
+                <img src={card.image} alt={t('assist.region')} className="max-h-40 rounded-lg border border-border object-contain" />
+              )}
+              {(card.anchor.kind === 'region' || card.anchor.kind === 'media-range') && (
+                <div className="flex flex-wrap gap-1.5">
+                  {(['explain', 'clarify', 'translate'] as const).map((a) => (
+                    <button
+                      key={a}
+                      onClick={() => void askInline(a, card.anchor, card.rect, undefined, card.image)}
+                      className="inline-flex h-7 items-center gap-1.5 rounded-full border border-border bg-surface px-3 text-xs text-fg hover:border-accent hover:text-accent [&_svg]:size-3.5 [&_svg]:text-accent"
+                    >
+                      {ICON[a]}
+                      {t(`assist.qRegion.${a}`)}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <Composer
+                autoFocus
+                placeholder={
+                  card.action === 'remap' ? t('embeds.aiEditPh') : card.action === 'revise' ? t('assist.revisePh') : t('assist.askPh')
+                }
+                onSend={(text) =>
+                  void askInline(isRevise(card.action) ? card.action : 'ask', card.anchor, card.rect, text, card.image, card.extra)
+                }
+              />
+            </div>
+          ) : shown.length === 0 ? (
+            <div className="space-y-2 py-1">
+              <div className="h-3 w-3/4 animate-pulse rounded bg-sunken" />
+              <div className="h-3 w-1/2 animate-pulse rounded bg-sunken" />
+            </div>
+          ) : (
+            shown.map((m, i) => <MessageItem key={m.id} m={m} compact last={i === shown.length - 1} />)
+          )}
+        </div>
+
+        {card.conversationId && (
+          <footer className={cn('space-y-2 border-t border-border/70 px-4 py-3', busy && 'opacity-60')}>
+            <div className="flex items-center gap-1.5">
+              {fromNote && isRevise(card.action) && (
+                <span className="mr-auto text-2xs leading-relaxed text-muted">
+                  {t(card.action === 'remap' ? 'assist.remapHint' : 'assist.reviseHint')}
+                </span>
+              )}
+              <Button
+                size="sm"
+                variant="primary"
+                className={cn(fromNote && 'hidden')}
+                disabled={!answer}
+                onClick={() =>
+                  answer &&
+                  void saveToNote({
+                    conversationId: card.conversationId ?? undefined,
+                    cue: cueFor(card.action, card.question, quote),
+                    answer: answer.content,
+                    anchor: card.anchor,
+                    model: answer.model
+                  }).then(() => useAssist.getState().closeCard())
+                }
+              >
+                <NotebookPen />
+                {t('assist.saveToNote')}
+              </Button>
+              <Button size="sm" variant="ghost" disabled={!answer} onClick={copy}>
+                {copied ? <Check /> : <Copy />}
+                {t('chat.copy')}
+              </Button>
+            </div>
+            {!busy && (
+              <ChatComposer
+                placeholder={t('assist.followUp')}
+                attachments={attachments}
+                provider={provider}
+                busy={!!streaming}
+                onStop={() => {}}
+                onSend={async (text) => {
+                  const ids = attachments.ids()
+                  const ok = await followUp(card.conversationId!, text, card.anchor, card.extra, undefined, ids)
+                  if (ok) attachments.clear(ids)
+                  return ok
+                }}
+              />
             )}
-            {(card.anchor.kind === 'region' || card.anchor.kind === 'media-range') && (
-              <div className="flex flex-wrap gap-1.5">
-                {(['explain', 'clarify', 'translate'] as const).map((a) => (
-                  <button
-                    key={a}
-                    onClick={() => void askInline(a, card.anchor, card.rect, undefined, card.image)}
-                    className="inline-flex h-7 items-center gap-1.5 rounded-full border border-border bg-surface px-3 text-xs text-fg hover:border-accent hover:text-accent [&_svg]:size-3.5 [&_svg]:text-accent"
-                  >
-                    {ICON[a]}
-                    {t(`assist.qRegion.${a}`)}
-                  </button>
-                ))}
-              </div>
-            )}
-            <Composer
-              autoFocus
-              placeholder={
-                card.action === 'remap' ? t('embeds.aiEditPh') : card.action === 'revise' ? t('assist.revisePh') : t('assist.askPh')
-              }
-              onSend={(text) =>
-                void askInline(isRevise(card.action) ? card.action : 'ask', card.anchor, card.rect, text, card.image, card.extra)
-              }
-            />
-          </div>
-        ) : shown.length === 0 ? (
-          <div className="space-y-2 py-1">
-            <div className="h-3 w-3/4 animate-pulse rounded bg-sunken" />
-            <div className="h-3 w-1/2 animate-pulse rounded bg-sunken" />
-          </div>
-        ) : (
-          shown.map((m, i) => <MessageItem key={m.id} m={m} compact last={i === shown.length - 1} />)
+          </footer>
         )}
       </div>
-
-      {card.conversationId && (
-        <footer className={cn('space-y-2 border-t border-border/70 px-4 py-3', busy && 'opacity-60')}>
-          <div className="flex items-center gap-1.5">
-            {fromNote && isRevise(card.action) && (
-              <span className="mr-auto text-2xs leading-relaxed text-muted">
-                {t(card.action === 'remap' ? 'assist.remapHint' : 'assist.reviseHint')}
-              </span>
-            )}
-            <Button
-              size="sm"
-              variant="primary"
-              className={cn(fromNote && 'hidden')}
-              disabled={!answer}
-              onClick={() =>
-                answer &&
-                void saveToNote({
-                  cue: cueFor(card.action, card.question, quote),
-                  answer: answer.content,
-                  anchor: card.anchor,
-                  model: answer.model
-                }).then(() => useAssist.getState().closeCard())
-              }
-            >
-              <NotebookPen />
-              {t('assist.saveToNote')}
-            </Button>
-            <Button size="sm" variant="ghost" disabled={!answer} onClick={copy}>
-              {copied ? <Check /> : <Copy />}
-              {t('chat.copy')}
-            </Button>
-          </div>
-          {!busy && (
-            <Composer
-              placeholder={t('assist.followUp')}
-              onSend={(text) => void followUp(card.conversationId!, text, card.anchor, card.extra)}
-            />
-          )}
-        </footer>
-      )}
-    </div>
+    </AttachmentDropZone>
   )
 }

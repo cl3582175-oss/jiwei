@@ -18,6 +18,7 @@ function defaults(): Settings {
     (process.env.JIWEI_LANG as Settings['language']) || (app.getLocale().toLowerCase().startsWith('zh') ? 'zh-CN' : 'en')
   return {
     retrieval: { ...RETRIEVAL_DEFAULTS, trustedSites: [], lowTrustSites: [] },
+    attachments: { cloudNoticeSeen: false },
     plugins: { recommendedDismissed: false },
     discover: {
       dailyLimit: 5,

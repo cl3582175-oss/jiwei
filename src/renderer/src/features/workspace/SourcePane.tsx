@@ -1,3 +1,4 @@
+import { CODE_EXTS } from '@shared/attachments'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -26,7 +27,7 @@ function TextSegments({ source }: { source: Source }) {
   const { t } = useTranslation()
   const qc = useQueryClient()
   const { data: segs, isFetched } = useQuery({ queryKey: ['segments', source.id], queryFn: () => api.segments.list(source.id) })
-  const {data:reading}=useReadingState({kind:'source',id:source.id})
+  const { data: reading } = useReadingState({ kind: 'source', id: source.id })
   useEffect(
     () =>
       window.jiweiEvents.on('segments:changed', (p) => {
@@ -36,7 +37,8 @@ function TextSegments({ source }: { source: Source }) {
   )
   if (!isFetched) return <Centered icon={<Loader2 className="animate-spin" />} />
   if (!segs?.length) return <Centered icon={<Loader2 className="animate-spin" />} text={t('workspace.parsing')} />
-  if(reading?.foreign&&(reading.mode!=='original'||reading.annotations))return <ReadingSourceText sourceId={source.id} segments={segs} />
+  if (reading?.foreign && (reading.mode !== 'original' || reading.annotations))
+    return <ReadingSourceText sourceId={source.id} segments={segs} />
   return <SegmentList sourceId={source.id} segs={segs} />
 }
 
@@ -56,11 +58,11 @@ export function useSourceSelection(sourceId: string): () => void {
 /** 片段的位置属性：页码 / 时间段（用于锚点） */
 function segAttrs(s: Segment): Record<string, string> {
   const v = String((s.locator as { value?: unknown }).value ?? '')
-  const page = v.match(/page=(\d+)/)
+  const page = typeof s.locator.page === 'number' ? String(s.locator.page) : v.match(/page=(\d+)/)?.[1]
   const t = v.match(/t=([\d.]+)(?:,([\d.]+))?/)
   return {
     'data-segment': s.id,
-    ...(page ? { 'data-page': page[1] } : {}),
+    ...(page ? { 'data-page': page } : {}),
     ...(t ? { 'data-t0': t[1], 'data-t1': t[2] ?? t[1] } : {})
   }
 }
@@ -105,7 +107,10 @@ function SegmentList({ sourceId, segs }: { sourceId: string; segs: Segment[] }) 
   // AI 引用跳转：定位并高亮片段
   useEffect(() => {
     if (highlight?.type !== 'segment') return
-    const el = ref.current?.querySelector<HTMLElement>(`[data-segment="${highlight.id}"]`)
+    const page = /page=(\d+)/.exec(highlight.locator ?? '')?.[1]
+    const el =
+      ref.current?.querySelector<HTMLElement>(`[data-segment="${highlight.id}"]`) ??
+      (page ? ref.current?.querySelector<HTMLElement>(`[data-page="${page}"]`) : null)
     if (!el) return
     el.scrollIntoView({ block: 'center', behavior: 'smooth' })
     el.classList.add('is-flash')
@@ -122,7 +127,7 @@ function SegmentList({ sourceId, segs }: { sourceId: string; segs: Segment[] }) 
           </h3>
         ) : s.kind === 'code' ? (
           <pre key={s.id} {...segAttrs(s)}>
-            {s.text.replace(/^```\w*\n?|```$/g, '')}
+            {s.text.replace(/^`{3,}[^\n]*\n/, '').replace(/\n`{3,}$/, '')}
           </pre>
         ) : (
           <p key={s.id} {...segAttrs(s)}>
@@ -174,7 +179,7 @@ function ImageSource({ source }: { source: Source }) {
 }
 
 /** 解析为文本分段后在应用内阅读的格式 */
-const TEXT_EXTS = ['md', 'markdown', 'txt', 'docx', 'epub', 'html', 'htm']
+const TEXT_EXTS = ['md', 'markdown', 'txt', 'docx', 'epub', 'html', 'htm', 'xlsx', 'csv', 'pptx', ...CODE_EXTS]
 
 function Body({ source }: { source: Source }) {
   const { t } = useTranslation()
@@ -202,7 +207,10 @@ function IndexChip({ sourceId }: { sourceId: string }) {
   const pct = Math.floor((s.embedded / s.segments) * 100)
   const label = !s.semantic ? t('workspace.index.off') : pct >= 98 ? t('workspace.index.ready') : t('workspace.index.building', { pct })
   return (
-    <Tip label={s.semantic ? t('workspace.index.hint', { done: s.embedded, total: s.segments }) : t('workspace.index.hintOff')} side="bottom">
+    <Tip
+      label={s.semantic ? t('workspace.index.hint', { done: s.embedded, total: s.segments }) : t('workspace.index.hintOff')}
+      side="bottom"
+    >
       <span className="no-drag" data-testid="source-index">
         {' · '}
         <span className={cn(s.semantic && pct >= 98 ? 'text-accent' : 'text-subtle')}>{label}</span>
@@ -236,7 +244,9 @@ export function SourcePane({ sourceId }: { sourceId: string }) {
           </p>
         </div>
         <div className="no-drag flex items-center gap-0.5">
-          {!source.aiExcluded&&['pdf','web','book','document','other'].includes(source.kind)&&<ReadingControls target={{kind:'source',id:source.id}} />}
+          {!source.aiExcluded && ['pdf', 'web', 'book', 'document', 'other'].includes(source.kind) && (
+            <ReadingControls target={{ kind: 'source', id: source.id }} />
+          )}
           {source.kind === 'web' && source.url && (
             <Tip label={t('browser.openOriginal')} side="bottom">
               <Button

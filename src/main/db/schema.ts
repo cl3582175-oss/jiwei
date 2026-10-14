@@ -222,6 +222,9 @@ export const sources = sqliteTable(
     kind: text('kind').notNull(),
     assetId: text('asset_id'),
     originalName: text('original_name'),
+    space: text('space', { enum: ['library', 'attachment'] })
+      .notNull()
+      .default('library'),
     url: text('url'),
     author: text('author'),
     /** 资料本身的发布日期（书籍出版、文章发布） */
@@ -257,7 +260,9 @@ export const links = sqliteTable(
     relation: text('relation', { enum: LINK_RELATIONS }).notNull().default('reference'),
     origin: text('origin', { enum: ['doc', 'manual', 'ai'] }).notNull(),
     /** v0.14.2：AI 推断的关系先是 suggested，用户确认后 confirmed；否决为 rejected（以后不再提） */
-    status: text('status', { enum: ['confirmed', 'suggested', 'rejected'] }).notNull().default('confirmed'),
+    status: text('status', { enum: ['confirmed', 'suggested', 'rejected'] })
+      .notNull()
+      .default('confirmed'),
     /** 关系的一句理由与依据原句（AI 建议时填写） */
     reason: text('reason'),
     quote: text('quote'),
@@ -868,6 +873,20 @@ export const uiStates = sqliteTable(
     updatedAt: integer('updated_at').notNull()
   },
   (t) => [primaryKey({ columns: [t.messageId, t.componentId] })]
+)
+
+/** 附件默认不给 AI；只有持有有效会话身份的专用读取通道可以放行。 */
+export const conversationAttachments = sqliteTable(
+  'conversation_attachments',
+  {
+    conversationId: text('conversation_id').notNull(),
+    sourceId: text('source_id').notNull(),
+    messageId: text('message_id'),
+    fullTextSent: integer('full_text_sent', { mode: 'boolean' }).notNull().default(false),
+    removedAt: integer('removed_at'),
+    createdAt: integer('created_at').notNull()
+  },
+  (t) => [primaryKey({ columns: [t.conversationId, t.sourceId] }), index('conversation_attachments_source_idx').on(t.sourceId)]
 )
 
 export const messages = sqliteTable(

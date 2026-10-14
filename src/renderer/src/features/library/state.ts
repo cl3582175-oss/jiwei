@@ -3,6 +3,7 @@ import type { SourceKind } from '@shared/types'
 import type { Scene } from '@shared/recording'
 export type CatFilter = { type: 'all' } | { type: 'uncategorized' } | { type: 'category'; id: string }
 interface LibraryState {
+  attachmentSpace: boolean
   kind?: SourceKind
   cat: CatFilter
   search: string
@@ -12,6 +13,7 @@ interface LibraryState {
   selectedId: string | null
 }
 export const useLibraryState = create<LibraryState>(() => ({
+  attachmentSpace: false,
   cat: { type: 'all' },
   search: '',
   seriesId: '',

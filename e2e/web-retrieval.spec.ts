@@ -715,7 +715,8 @@ test('12. 脚本网页经渲染读取，隐藏注入被移除，可见注入保�
   try {
     await startAsk(question)
     // 三页读取包含既有2秒域名间隔与JS渲染；监听所测assistant的真正结束，不把5秒断言当操作同步。
-    await page.getByText(question, { exact: true }).waitFor({ state: 'visible' })
+    await expect(page.locator('.paper.whitespace-pre-wrap').filter({ hasText: question })).toHaveText(question)
+    await expect(page.locator('textarea').last()).toHaveValue('')
     const id = (await page.evaluate(() => window.jiwei.chat.conversations()))[0].id
     const messages = await page.evaluate((id) => window.jiwei.chat.messages(id), id)
     expect(messages.some((message) => message.role === 'user' && message.content === question)).toBe(true)

@@ -1,12 +1,28 @@
+import { prepareAttachmentTurn, markAttachmentTurnSent, assertAttachmentTurn, type AttachmentTurn } from './chatAttachments'
+import { bindAttachments, bindAttachmentNotes, attachmentStatus, conversationAttachments, noteReference } from '../attachments'
+import { attachmentHistoryReadable, canReadSource, hasPrivateAttachmentHistory, hasAttachmentHistory } from '../attachmentsAccess'
+import { listSegments } from '../segments'
+import { conversationAttachmentIds } from '../attachmentDerived'
+import { tr } from '../../lib/messages'
+import { detachConversationAttachments } from '../attachments'
+import { collectGarbage } from '../assets'
 import { hasToolCall, stepCountIs, streamText, type ModelMessage, type ToolSet } from 'ai'
 import { ASK_USER, buildScopeTools } from './scopeTools'
 import { and, asc, desc, eq, inArray, isNull, ne } from 'drizzle-orm'
 import log from 'electron-log/main'
 import { getDb } from '../../db'
-import { conversations, messages, uiStates, webPageRefs, webPages } from '../../db/schema'
+import {
+  conversations,
+  messages,
+  sources,
+  conversationAttachments as attachmentRefs,
+  uiStates,
+  webPageRefs,
+  webPages
+} from '../../db/schema'
 import { newId } from '../../lib/ids'
 import { deviceId } from '../device'
-import { emit } from '../../events'
+import { emit, onMainEvent } from '../../events'
 import { getSettings } from '../settings'
 import { type Effort, type ModelTier, type Usage, type ProviderKind } from '@shared/ai'
 import type { ChatScope, ChatSend } from '@shared/schemas'
@@ -92,6 +108,18 @@ const toConversation = (r: ConvRow): Conversation => ({
 
 const toMessage = (r: MsgRow): ChatMessage => ({
   id: r.id,
+  attachments:
+    r.role === 'user'
+      ? attachmentStatus([
+          ...getDb()
+            .select({ id: attachmentRefs.sourceId })
+            .from(attachmentRefs)
+            .where(eq(attachmentRefs.messageId, r.id))
+            .all()
+            .map((a) => a.id),
+          ...messageNoteIds(r.context).map((id) => `note:${id}`)
+        ])
+      : [],
   conversationId: r.conversationId,
   role: r.role,
   content: r.content,
@@ -106,8 +134,8 @@ const toMessage = (r: MsgRow): ChatMessage => ({
   error: r.error,
   skill: r.skill,
   steps: r.steps ? (JSON.parse(r.steps) as AgentStep[]) : [],
-  // 用户消息附带了当前页面（「今日」、复习卡片、错题……）：回答依据的是用户自己的数据，不是“通用知识”
-  contextual: r.role === 'user' && !!r.context && /"page":\{"title"/.test(r.context),
+  // 用户消息附带了当前页面（「今日」、复习卡片、错题……）或本轮带着附件：回答依据的是用户自己的数据，不是“通用知识”
+  contextual: r.role === 'user' && !!r.context && (/"page":\{"title"/.test(r.context) || /"attachmentSourceIds":\["/.test(r.context)),
   createdAt: r.createdAt
 })
 
@@ -170,13 +198,14 @@ export function updateConversation(id: string, patch: { title?: string; scope?: 
     .run()
 }
 
-export function deleteConversation(id: string): void {
+export async function deleteConversation(id: string): Promise<void> {
   const db = getDb()
   running.forEach((ctrl, mid) => {
     const m = db.select({ c: messages.conversationId }).from(messages).where(eq(messages.id, mid)).get()
     if (m?.c === id) ctrl.abort()
   })
   db.transaction((tx) => {
+    detachConversationAttachments(id)
     tx.delete(webPageRefs).where(eq(webPageRefs.conversationId, id)).run()
     tx.delete(uiStates)
       .where(inArray(uiStates.messageId, tx.select({ id: messages.id }).from(messages).where(eq(messages.conversationId, id))))
@@ -184,6 +213,7 @@ export function deleteConversation(id: string): void {
     tx.delete(messages).where(eq(messages.conversationId, id)).run()
     tx.delete(conversations).where(eq(conversations.id, id)).run()
   })
+  await collectGarbage()
 }
 
 const fmtDate = (ts: number | null): string => (ts ? new Date(ts).toISOString().slice(0, 10) : '未知')
@@ -312,12 +342,14 @@ export interface SendResult {
   assistantMessageId: string
 }
 
-export function send(input: ChatSend): SendResult {
+function sendInTransaction(input: ChatSend): SendResult {
   const db = getDb()
   const anchor = input.conversationId
     ? db.select().from(conversations).where(eq(conversations.id, input.conversationId)).get()?.anchor
     : null
-  requireRecordingCloudAccess({ ...input, ...(anchor ? { anchor: JSON.parse(anchor) as Anchor } : {}) })
+  const attachmentIds = input.attachments ?? []
+  if (attachmentIds.length && (input.feynman || input.reflectionId || ['feynman', 'reflection'].includes(input.kind ?? '')))
+    throw new Error('Attachments are not supported in this conversation')
   const now = Date.now()
   let convId = input.conversationId
   if (!convId) {
@@ -325,7 +357,9 @@ export function send(input: ChatSend): SendResult {
     db.insert(conversations)
       .values({
         id: convId,
-        title: input.feynman ? input.feynman.concept.slice(0, 40) : input.text.replace(/\s+/g, ' ').slice(0, 40),
+        title: input.feynman
+          ? input.feynman.concept.slice(0, 40)
+          : input.text.replace(/\s+/g, ' ').slice(0, 40) || tr('附件对话', 'Attachment chat'),
         scope: JSON.stringify(input.scope),
         web: input.web ?? null,
         incognito: !!input.incognito,
@@ -374,6 +408,51 @@ export function send(input: ChatSend): SendResult {
     createdAt: now,
     updatedAt: now
   }
+  const noteIds = attachmentIds.filter((id) => id.startsWith('note:')).map((id) => id.slice(5))
+  const rawSourceIds = attachmentIds.filter((id) => !id.startsWith('note:'))
+  const sourceIds = rawSourceIds.length ? bindAttachments(convId, rawSourceIds, userMsg.id) : []
+  if (noteIds.length) bindAttachmentNotes(convId, noteIds)
+  const libraryIds = sourceIds.filter(
+    (id) => getDb().select({ space: sources.space }).from(sources).where(eq(sources.id, id)).get()?.space === 'library'
+  )
+  if (input.scope.type !== 'all' && (libraryIds.length || noteIds.length))
+    input.scope = {
+      type: 'items',
+      notes: [...new Set([...(input.scope.type === 'items' ? input.scope.notes : []), ...noteIds])],
+      sources: [...new Set([...(input.scope.type === 'items' ? input.scope.sources : []), ...libraryIds])]
+    }
+  input.attachments = [...sourceIds, ...noteIds.map((id) => `note:${id}`)]
+  db.update(conversations)
+    .set({ scope: JSON.stringify(input.scope) })
+    .where(eq(conversations.id, convId))
+    .run()
+  requireRecordingCloudAccess({ ...input, ...(anchor ? { anchor: JSON.parse(anchor) as Anchor } : {}) }, convId)
+  const active = conversationAttachments(convId)
+    .filter((a) => !a.sourceId.startsWith('note:') && !a.deleted && canReadSource(a.sourceId, convId))
+    .map((a) => a.sourceId)
+  const c = db.select().from(conversations).where(eq(conversations.id, convId)).get()!
+  if (attachmentIds.length && ['feynman', 'reflection'].includes(c.kind))
+    throw new Error('Attachments are not supported in this conversation')
+  if (c.kind === 'inline')
+    for (const id of sourceIds) {
+      const a = attachmentStatus([id])[0],
+        ext = a && a.name.split('.').at(-1)?.toLowerCase()
+      if (
+        !a ||
+        (a.kind !== 'image' &&
+          (['pdf', 'epub', 'pptx', 'xlsx', 'csv'].includes(ext ?? '') ||
+            a.kind === 'audio' ||
+            a.kind === 'video' ||
+            a.status !== 'ready' ||
+            listSegments(id).reduce((n, g) => n + Array.from(g.text).length, 0) > 12000))
+      )
+        throw new Error(tr('请在积微助手对话里添加这类附件', 'Add this type of attachment in Jiwei Assistant chat'))
+    }
+  userMsg.context = JSON.stringify({
+    ...(userMsg.context ? JSON.parse(userMsg.context) : {}),
+    attachmentSourceIds: active,
+    attachmentNotes: noteIds
+  })
   db.insert(messages).values(userMsg).run()
   const assistantId = newId()
   db.insert(messages)
@@ -390,10 +469,13 @@ export function send(input: ChatSend): SendResult {
       updatedAt: now + 1
     })
     .run()
-  void generate(convId, assistantId, input)
+  db.update(messages)
+    .set({ context: JSON.stringify({ attachmentSourceIds: active }) })
+    .where(eq(messages.id, assistantId))
+    .run()
   // 选区“解释这个词”：直接记一次学习信号（学习者模型）
   const conv = db.select({ incognito: conversations.incognito }).from(conversations).where(eq(conversations.id, convId)).get()
-  if (input.skill === 'explain-concept' && !conv?.incognito) {
+  if (input.skill === 'explain-concept' && !conv?.incognito && !hasPrivateAttachmentHistory(convId)) {
     try {
       noteExplainRequest(convId, input.anchor?.quote ?? input.context?.targets[0]?.quote)
     } catch (e) {
@@ -405,6 +487,30 @@ export function send(input: ChatSend): SendResult {
     userMessage: toMessage(userMsg),
     assistantMessageId: assistantId
   }
+}
+
+function messageNoteIds(context: string | null): string[] {
+  try {
+    return context ? ((JSON.parse(context) as { attachmentNotes?: string[] }).attachmentNotes ?? []) : []
+  } catch {
+    return []
+  }
+}
+export function send(input: ChatSend): SendResult {
+  for (const id of input.attachments ?? []) {
+    if (id.startsWith('note:')) {
+      const note = noteReference(id.slice(5))
+      if (!note || note.deleted || note.error) throw new Error(note?.error ?? tr('附件已删除', 'Attachment deleted'))
+    } else {
+      const row = getDb().select().from(sources).where(eq(sources.id, id)).get()
+      if (!row || row.deletedAt !== null) throw new Error(tr('附件已删除', 'Attachment deleted'))
+      if (row.space === 'library' && row.aiExcluded) throw new Error(tr('这份资料设为不给 AI', 'This source is excluded from AI'))
+    }
+  }
+  const normalized = { ...input }
+  const result = getDb().transaction(() => sendInTransaction(normalized))
+  void generate(result.conversation.id, result.assistantMessageId, normalized)
+  return result
 }
 
 function generate(conversationId: string, messageId: string, input: ChatSend): Promise<void> {
@@ -469,15 +575,25 @@ async function agentTools(
   Object.assign(tools, web.tools)
   Object.assign(meta, web.meta)
   for (const name of Object.keys(tools)) if (isProposalTool(name)) meta[name] = { level: 'write', proposal: true }
-  if (session.scope.type !== 'none') {
-    const doing = buildDoTools(zh)
-    Object.assign(tools, doing.tools)
-    Object.assign(meta, doing.meta)
+  if (session.scope.type !== 'none' || session.attachmentSourceIds?.length) {
+    {
+      const doing = buildDoTools(zh, {
+        sourceIds: conversationAttachmentIds(session.conversationId),
+        privateAttachments: hasPrivateAttachmentHistory(session.conversationId),
+        notesOnly: session.scope.type === 'none'
+      })
+      Object.assign(tools, doing.tools)
+      Object.assign(meta, doing.meta)
+    }
     // 范围：先问、整份资料交给后台（v0.7.6）
-    const scope = buildScopeTools(zh, chat)
+    const scope = buildScopeTools(zh, {
+      ...chat,
+      conversationId: session.conversationId,
+      ...(session.scope.type === 'none' ? { sourceIds: session.attachmentSourceIds ?? [] } : {})
+    })
     Object.assign(tools, scope.tools)
     Object.assign(meta, scope.meta)
-    if (!session.incognito) {
+    if (!session.incognito && !session.suppressAttachmentMemory && session.scope.type !== 'none') {
       const mcp = await assistantMcpTools(zh)
       Object.assign(tools, mcp.tools)
       Object.assign(meta, mcp.meta)
@@ -534,6 +650,28 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
       userText: input.text
     }
   }
+  let attachmentTurn: AttachmentTurn = { section: '', full: [], images: [], sentIds: [], sourceIds: [] }
+  session.attachmentSourceIds = conversationAttachments(conversationId)
+    .filter((a) => !a.sourceId.startsWith('note:') && !a.deleted && canReadSource(a.sourceId, conversationId))
+    .map((a) => a.sourceId)
+  session.suppressAttachmentMemory = hasAttachmentHistory(conversationId)
+  session.retrieveAttachments = async (query, filters, limit) => {
+    const ids = conversationAttachments(conversationId)
+      .filter((a) => !a.sourceId.startsWith('note:') && !a.deleted && canReadSource(a.sourceId, conversationId))
+      .map((a) => a.sourceId)
+    const scope: ChatScope =
+      input.scope.type === 'all'
+        ? input.scope
+        : {
+            type: 'items',
+            notes: input.scope.type === 'items' ? input.scope.notes : [],
+            sources: [...new Set([...(input.scope.type === 'items' ? input.scope.sources : []), ...ids])]
+          }
+    return retrieve(query, scope, limit, filters, session.preferSource, { sourceIds: ids })
+  }
+  const stopAttachmentGuard = onMainEvent('attachments:changed', () => {
+    if (attachmentTurn.sourceIds.some((id) => !canReadSource(id, conversationId))) ctrl.abort()
+  })
   let lastFlush = 0
   const flush = (force = false): void => {
     if (!force && Date.now() - lastFlush < 400) return
@@ -594,6 +732,7 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
       }
     })
     db.update(conversations).set({ updatedAt: Date.now() }).where(eq(conversations.id, conversationId)).run()
+    stopAttachmentGuard()
     running.delete(messageId)
     emit('chat:done', { message: toMessage(db.select().from(messages).where(eq(messages.id, messageId)).get()!) })
   }
@@ -610,24 +749,34 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
   // 复盘追问：素材包固定在系统提示中，当前复盘正文随本轮消息发送
   let coach = conv.kind === 'reflection' && conv.meta ? (JSON.parse(conv.meta) as CoachMeta) : null
   try {
-    requireRecordingCloudAccess(privacyInput)
+    requireRecordingCloudAccess(privacyInput, conversationId)
     if (feynman) feynman = await ensureReference(conversationId, feynman)
     if (coach) coach = ensureCoachMaterial(conversationId, coach)
-    let ctx = special ? { text: '', query: '' } : resolveContext(input.context, zh)
+    let ctx = special ? { text: '', query: '' } : resolveContext(input.context, zh, conversationId)
     // 检索：问题本身 + 用户指着的文字
     const query = [input.text, ctx.query].filter(Boolean).join('\n').slice(0, 2000)
     session.preferSource = 'sourceId' in ctx ? ctx.sourceId : null
-    const retrieved = special || input.scope.type === 'none' ? [] : await retrieve(query, input.scope, 8, {}, session.preferSource)
-    requireRecordingCloudAccess(privacyInput)
-    ctx = special ? { text: '', query: '' } : resolveContext(input.context, zh)
-    let kbHits = filterCloudHits(retrieved)
+    attachmentTurn = special ? attachmentTurn : await prepareAttachmentTurn(conversationId, input.text, zh, uiMode, session.vision ?? false)
+    const retrieved =
+      special || (input.scope.type === 'none' && !session.attachmentSourceIds.length) ? [] : await session.retrieveAttachments(query, {}, 8)
+    requireRecordingCloudAccess(privacyInput, conversationId)
+    ctx = special ? { text: '', query: '' } : resolveContext(input.context, zh, conversationId)
+    let kbHits = filterCloudHits(retrieved, conversationId)
+    const evidenceIds = [
+      ...new Set([...(session.attachmentSourceIds ?? []), ...kbHits.filter((h) => h.parentType === 'source').map((h) => h.parentId)])
+    ]
+    db.update(messages)
+      .set({ context: JSON.stringify({ attachmentSourceIds: evidenceIds }) })
+      .where(eq(messages.id, messageId))
+      .run()
+    session.suppressAttachmentMemory = hasAttachmentHistory(conversationId)
     const initialCoverage = coverage(kbHits)
-    const explicitAtStart = special ? [] : filterCloudHits(contextSourceEvidence(input.context))
+    const explicitAtStart = special ? [] : filterCloudHits(contextSourceEvidence(input.context, conversationId), conversationId)
     // 用户正指着的证据在最前，不能先参与主动检索配额再于组装阶段去重。
     kbHits = kbHits.filter((hit) => !explicitAtStart.some((item) => item.parentId === hit.parentId && item.ownerId === hit.ownerId))
     let webHits: SearchHit[] = []
     const filterCurrentWebHits = (hits: SearchHit[]): SearchHit[] =>
-      filterCloudHits(hits).filter((hit) => {
+      filterCloudHits(hits, conversationId).filter((hit) => {
         try {
           // 未完成回答的快照可被清缓存删除；继续使用读取时捕获的目的网址检查当前权限。
           if (hit.parentType === 'web') session.web.pageGuards?.get(hit.parentId)?.()
@@ -668,7 +817,8 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
       .limit(HISTORY_TURNS * 2 + 2)
       .all()
       .reverse()
-      .filter((m) => m.id !== messageId && (m.role === 'user' || m.status === 'done') && m.content)
+      .filter((m) => m.id !== messageId && (m.role === 'user' || m.status === 'done') && (m.content || m.role === 'user'))
+      .filter((m) => m.role === 'user' || attachmentHistoryReadable(m.context, conversationId))
     const msgs: ModelMessage[] = history.map((m) => {
       let content = m.content
       if (m.role === 'user' && m.context) {
@@ -708,8 +858,8 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
       const vision = capsFor(input.providerId, input.model).vision
       // 模型看不到图像：先用本地识别模型读出框选区域的内容（文字、表格、插图描述）
       const regionText = input.images?.length && !vision ? await recognizeRegion(input.images[0]) : null
-      requireRecordingCloudAccess(privacyInput)
-      ctx = resolveContext(input.context, zh)
+      requireRecordingCloudAccess(privacyInput, conversationId)
+      ctx = resolveContext(input.context, zh, conversationId)
       const imageNote =
         input.images?.length && !vision
           ? regionText
@@ -720,17 +870,28 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
               ? '（用户框选了一块图像区域，但当前模型看不到图像；请依据区域中的文字和上下文回答，并在开头提示用户：换用能看图的模型可以得到更准确的解释。）'
               : '(The user selected an image region, but this model cannot see images; answer from the region text and context, and mention that a vision model would do better.)'
           : ''
-      const learner = session.incognito ? null : learnerNote(query, zh)
+      const learner = session.incognito || session.suppressAttachmentMemory ? null : learnerNote(query, zh)
+      const attachmentImageText =
+        !vision && attachmentTurn.images.length
+          ? (await Promise.all(attachmentTurn.images.map((image) => recognizeRegion(image)))).filter(Boolean).join('\n')
+          : ''
+      const sendImages = [...(input.images ?? []), ...attachmentTurn.images].slice(0, 4)
       buildTurn = (): void => {
-        requireRecordingCloudAccess(privacyInput)
-        ctx = resolveContext(input.context, zh)
+        requireRecordingCloudAccess(privacyInput, conversationId)
+        ctx = resolveContext(input.context, zh, conversationId)
         session.hits = []
-        const explicit = filterCloudHits(contextSourceEvidence(input.context))
-        const currentHits = filterCloudHits([
-          ...explicit,
-          ...kbHits.filter((h) => !explicit.some((e) => e.ownerId === h.ownerId && e.parentId === h.parentId))
-        ])
-        const kb = currentHits.length ? numberHits(session, currentHits) : null
+        const explicit = filterCloudHits(contextSourceEvidence(input.context, conversationId), conversationId)
+        const currentHits = filterCloudHits(
+          [...explicit, ...kbHits.filter((h) => !explicit.some((e) => e.ownerId === h.ownerId && e.parentId === h.parentId))],
+          conversationId
+        ).filter((h) => !attachmentTurn.full.some((f) => f.sourceId === h.parentId))
+        let kb = currentHits.length ? numberHits(session, currentHits) : null
+        if (kb && currentHits.some((h) => session.attachmentSourceIds?.includes(h.parentId))) kb = asExternalData('attachment-excerpts', kb)
+        const attachmentFull = attachmentTurn.full
+          .map((f) => asExternalData('attachment:' + f.name, numberHits(session, f.hits), { maxChars: 60000, overflow: 'reject' }))
+          .join('\n\n')
+        const attachmentRecognized = attachmentImageText ? asExternalData('attachment-images', attachmentImageText) : ''
+        assertAttachmentTurn(conversationId, attachmentTurn.sourceIds)
         // 资料还在识别（扫描页、表格、图片）：回答可能不完整，要如实告诉用户（v0.7.6）
         const pending = recognizingSources(
           [...currentHits.filter((h) => h.parentType === 'source').map((h) => h.parentId), 'sourceId' in ctx ? ctx.sourceId : null].filter(
@@ -750,19 +911,32 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
           : ''
         if ((material || previousText) && currentRun()) currentRun()!.state.tainted = true
         const text = appendUiEvent(
-          turnMessage(zh, input.text, [ctx.text, learner, imageNote, pendingNote].filter(Boolean).join('\n\n'), kb, skillBody, {
-            gate: session.web.gate,
-            mode: effectiveMode,
-            failed: searchFailed,
-            material,
-            previous: previousText
-          }),
+          [
+            attachmentFull,
+            attachmentRecognized,
+            turnMessage(
+              zh,
+              input.text || (zh ? '请帮助我处理本对话附件。' : 'Help me with these attachments.'),
+              [ctx.text, learner, imageNote, pendingNote].filter(Boolean).join('\n\n'),
+              kb,
+              skillBody,
+              {
+                gate: session.web.gate,
+                mode: effectiveMode,
+                failed: searchFailed,
+                material,
+                previous: previousText
+              }
+            )
+          ]
+            .filter(Boolean)
+            .join('\n\n'),
           input.uiEvent
         )
-        if (input.images?.length && vision)
+        if (sendImages.length && vision)
           msgs[msgs.length - 1] = {
             role: 'user',
-            content: [{ type: 'text', text }, ...input.images.map((image) => ({ type: 'image' as const, image }))]
+            content: [{ type: 'text', text }, ...sendImages.map((image) => ({ type: 'image' as const, image }))]
           }
         else msgs[msgs.length - 1] = { role: 'user', content: text }
       }
@@ -788,10 +962,13 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
           ? feynmanSystem(feynman, zh)
           : coach
             ? coachSystem(coach, zh)
-            : systemPrompt(zh, session.tier, session.incognito, conversationId, uiMode, localUi),
+            : [systemPrompt(zh, session.tier, session.incognito, conversationId, uiMode, localUi), attachmentTurn.section]
+                .filter(Boolean)
+                .join('\n\n'),
         messages: msgs,
         prepareStep: ({ messages }) => {
-          requireRecordingCloudAccess(privacyInput)
+          assertAttachmentTurn(conversationId, attachmentTurn.sourceIds)
+          requireRecordingCloudAccess(privacyInput, conversationId)
           // 连续工具轮次会复用已经发送过的证据；确认或工具等待期间撤销权限后，不能再次发送旧正文。
           if (filterCurrentWebHits(session.hits).length !== session.hits.length)
             throw new Error(
@@ -902,7 +1079,18 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
     usage.reasoningTokens = u.outputTokenDetails?.reasoningTokens ?? 0
     usage.cachedInputTokens = u.inputTokenDetails?.cacheReadTokens ?? 0
     finish('done', null, { ...usage, cost: costOf(input.providerId, input.model, usage).cost, durationMs: Date.now() - t0 })
-    if (!session.incognito) scheduleExtract(conversationId)
+    db.update(messages)
+      .set({
+        context: JSON.stringify({
+          attachmentSourceIds: [
+            ...new Set([...evidenceIds, ...session.hits.filter((h) => h.parentType === 'source').map((h) => h.parentId)])
+          ]
+        })
+      })
+      .where(eq(messages.id, messageId))
+      .run()
+    markAttachmentTurnSent(conversationId, attachmentTurn.sentIds)
+    if (!session.incognito && !session.suppressAttachmentMemory) scheduleExtract(conversationId)
     if (Date.now() - t0 > 20_000) notifyDone(conversationId, conv.title, zh)
   } catch (e) {
     if (ctrl.signal.aborted) return finish('stopped', null, null)

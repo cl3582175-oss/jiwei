@@ -1,3 +1,4 @@
+import { EMBEDDING_DIM } from '../src/shared/ai'
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
 import { mkdtempSync } from 'fs'
 import { tmpdir } from 'os'
@@ -50,6 +51,18 @@ test.beforeAll(async () => {
     req.on('data', (c) => (body += c))
     req.on('end', () => {
       const input = JSON.parse(body)
+      // 二字中文查询依赖向量：用同一个回环假服务器提供受控向量，不读取真实模型缓存。
+      if (req.url?.endsWith('/embeddings')) {
+        const texts = Array.isArray(input.input) ? input.input : [input.input]
+        res
+          .writeHead(200, { 'content-type': 'application/json' })
+          .end(
+            JSON.stringify({
+              data: texts.map((_text, index) => ({ index, embedding: Array.from({ length: EMBEDDING_DIM }, (_, i) => (i === 0 ? 1 : 0)) }))
+            })
+          )
+        return
+      }
       const text = (c: unknown): string =>
         typeof c === 'string' ? c : Array.isArray(c) ? c.map((v: { text?: string }) => v.text ?? '').join('') : ''
       const prompt = text(input.messages.filter((m: { role: string }) => m.role === 'user').at(-1)?.content)
@@ -95,7 +108,14 @@ test.beforeAll(async () => {
     const j = window.jiwei
     const provider = await j.providers.save({ kind: 'ollama', name: '受控参谋模型', baseUrl, models: ['deepseek-flash'] } as never)
     const s = await j.settings.get()
-    await j.settings.set({ ai: { ...s.ai, chat: { providerId: provider.id, model: 'deepseek-flash' }, effort: 'off' } } as never)
+    await j.settings.set({
+      ai: {
+        ...s.ai,
+        chat: { providerId: provider.id, model: 'deepseek-flash' },
+        embedding: { mode: 'cloud', providerId: provider.id, model: 'controlled-embedding' },
+        effort: 'off'
+      }
+    } as never)
     // 知识库依据：一篇允许给 AI 的笔记、一篇不给 AI 的笔记
     const p = (text: string) => ({ type: 'paragraph', content: [{ type: 'text', text }] })
     const ok = await j.notes.create({ title: '实习经验' })

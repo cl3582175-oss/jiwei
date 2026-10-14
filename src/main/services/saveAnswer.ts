@@ -1,3 +1,4 @@
+import { conversationAttachmentIds, protectProposalAttachments } from './attachmentDerived'
 import { eq } from 'drizzle-orm'
 import { getDb } from '../db'
 import { sources } from '../db/schema'
@@ -52,5 +53,9 @@ export function saveAnswer(input: SaveAnswer): { noteId: string; created: boolea
     sources: input.anchor?.ownerId && input.anchor.parentType === 'source' ? [{ type: 'segment', id: input.anchor.ownerId }] : undefined,
     auto: true
   })
+  protectProposalAttachments(proposal.id, [
+    ...(input.conversationId ? conversationAttachmentIds(input.conversationId) : []),
+    ...(input.sourceId ? [input.sourceId] : [])
+  ])
   return { noteId, created, proposalId: proposal.id }
 }

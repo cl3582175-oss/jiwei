@@ -1,3 +1,4 @@
+import { MessageAttachments } from '../attachments/ConversationAttachments'
 import { useMemo, useState, type ReactNode } from 'react'
 import { useMoney } from '@/lib/money'
 import { useTranslation } from 'react-i18next'
@@ -359,6 +360,7 @@ export function MessageItem({
       <div className="flex justify-end">
         <div className="paper max-w-[78%] rounded-2xl rounded-br-md px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap text-fg shadow-[var(--shadow-1)]">
           {m.content}
+          {!!m.attachments?.length && <MessageAttachments items={m.attachments} />}
         </div>
       </div>
     )

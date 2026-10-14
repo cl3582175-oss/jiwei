@@ -29,7 +29,8 @@ function streakDays(): number {
   let s = 0
   for (let i = days.length - 1; i >= 0; i--) {
     if (days[i].count > 0) s++
-    else if (i === days.length - 1) continue // 今天还没学，从昨天数起
+    else if (i === days.length - 1)
+      continue // 今天还没学，从昨天数起
     else break
   }
   return s
@@ -50,7 +51,9 @@ export function todaySummary(): TodaySummary {
       .select({ n: sql<number>`count(*)` })
       .from(cards)
       .innerJoin(notes, eq(notes.id, cards.noteId))
-      .where(and(eq(cards.kind, 'mistake'), isNull(cards.deletedAt), isNull(notes.deletedAt), eq(cards.suspended, false), lte(cards.due, now)))
+      .where(
+        and(eq(cards.kind, 'mistake'), isNull(cards.deletedAt), isNull(notes.deletedAt), eq(cards.suspended, false), lte(cards.due, now))
+      )
       .get()?.n ?? 0
   const inboxPending =
     db
@@ -80,7 +83,15 @@ export function todaySummary(): TodaySummary {
     .slice(0, 6)
     .map((g) => {
       const p = goalProgress(g.id)
-      return { id: g.id, title: g.title, color: g.color ?? null, mastered: p.mastered, cards: p.cards, daysLeft: p.daysLeft, openActions: p.openActions }
+      return {
+        id: g.id,
+        title: g.title,
+        color: g.color ?? null,
+        mastered: p.mastered,
+        cards: p.cards,
+        daysLeft: p.daysLeft,
+        openActions: p.openActions
+      }
     })
   const overview = reflectionOverview()
   const weekday = new Date().getDay()
@@ -91,8 +102,18 @@ export function todaySummary(): TodaySummary {
     .orderBy(desc(notes.editedAt))
     .limit(4)
     .all()
-  const noteCount = db.select({ n: sql<number>`count(*)` }).from(notes).where(isNull(notes.deletedAt)).get()?.n ?? 0
-  const sourceCount = db.select({ n: sql<number>`count(*)` }).from(sources).where(isNull(sources.deletedAt)).get()?.n ?? 0
+  const noteCount =
+    db
+      .select({ n: sql<number>`count(*)` })
+      .from(notes)
+      .where(isNull(notes.deletedAt))
+      .get()?.n ?? 0
+  const sourceCount =
+    db
+      .select({ n: sql<number>`count(*)` })
+      .from(sources)
+      .where(and(isNull(sources.deletedAt), eq(sources.space, 'library')))
+      .get()?.n ?? 0
   return {
     date: localDate(),
     planLags: planLags(now),
@@ -161,9 +182,20 @@ function briefingFacts(s: TodaySummary): unknown {
     mistakesAwaitingCheck: s.mistakes.unverified,
     inboxToSort: s.inbox.pending,
     proposalsToConfirm: s.proposals.pending,
-    actions: s.actions.map((a) => ({ title: cut(a.title, 60), due: a.dueAt ? new Date(a.dueAt).toISOString().slice(0, 10) : null, overdue: a.overdue })),
+    actions: s.actions.map((a) => ({
+      title: cut(a.title, 60),
+      due: a.dueAt ? new Date(a.dueAt).toISOString().slice(0, 10) : null,
+      overdue: a.overdue
+    })),
     goals: s.goals.map((g) => ({ title: cut(g.title, 40), daysLeft: g.daysLeft, masteredPercent: Math.round(g.mastered * 100) })),
-    schedule: s.schedule.map((e) => ({ title: cut(e.title, 60), kind: e.kind, startAt: e.startAt, endAt: e.endAt, allDay: e.allDay, status: e.status })),
+    schedule: s.schedule.map((e) => ({
+      title: cut(e.title, 60),
+      kind: e.kind,
+      startAt: e.startAt,
+      endAt: e.endAt,
+      allDay: e.allDay,
+      status: e.status
+    })),
     taskResults: s.taskResults.map((r) => ({ name: r.name, summary: r.summary.slice(0, 1000) })),
     reflection: s.reflection,
     recentNotes: s.recentNotes.filter((n) => !hidden.has(n.id)).map((n) => cut(n.title || '', 40))
@@ -175,9 +207,15 @@ export function templateBriefing(s: TodaySummary): string {
   const zh = getSettings().language.startsWith('zh')
   const parts: string[] = []
   const due = s.actions.filter((a) => a.dueAt !== null)
-  if (due.length) parts.push(zh ? `今天有 ${due.length} 个行动项到期，先处理“${due[0].title}”。` : `${due.length} action${due.length > 1 ? 's are' : ' is'} due today; start with “${due[0].title}”.`)
+  if (due.length)
+    parts.push(
+      zh
+        ? `今天有 ${due.length} 个行动项到期，先处理“${due[0].title}”。`
+        : `${due.length} action${due.length > 1 ? 's are' : ' is'} due today; start with “${due[0].title}”.`
+    )
   if (s.review.due) parts.push(zh ? `有 ${s.review.due} 张卡片等你复习。` : `${s.review.due} cards are waiting for review.`)
-  if (s.mistakes.practiceReady) parts.push(zh ? `错题本里有 ${s.mistakes.practiceReady} 道题可以练。` : `${s.mistakes.practiceReady} mistakes are ready to practise.`)
+  if (s.mistakes.practiceReady)
+    parts.push(zh ? `错题本里有 ${s.mistakes.practiceReady} 道题可以练。` : `${s.mistakes.practiceReady} mistakes are ready to practise.`)
   if (s.inbox.pending) parts.push(zh ? `收件箱还有 ${s.inbox.pending} 条待整理。` : `${s.inbox.pending} inbox items need sorting.`)
   if (!parts.length)
     return s.fresh
@@ -200,7 +238,11 @@ function cached(): TodayBriefing | null {
   }
 }
 function save(b: TodayBriefing): void {
-  getDb().insert(meta).values({ key: KEY, value: JSON.stringify(b) }).onConflictDoUpdate({ target: meta.key, set: { value: JSON.stringify(b) } }).run()
+  getDb()
+    .insert(meta)
+    .values({ key: KEY, value: JSON.stringify(b) })
+    .onConflictDoUpdate({ target: meta.key, set: { value: JSON.stringify(b) } })
+    .run()
 }
 
 let inflight: { print: string; promise: Promise<TodayBriefing> } | null = null
@@ -241,7 +283,10 @@ export function todayBriefing(refresh = false): Promise<TodayBriefing> {
     if (!upgrade && Date.now() - old.generatedAt < 10 * 60_000) return Promise.resolve(old)
   }
   // 正在生成：要点相同就等它；手动刷新或数据已经变了，等它结束后按最新数据再生成
-  if (inflight) return inflight.print === print && !refresh ? inflight.promise : inflight.promise.catch(() => undefined).then(() => todayBriefing(refresh))
+  if (inflight)
+    return inflight.print === print && !refresh
+      ? inflight.promise
+      : inflight.promise.catch(() => undefined).then(() => todayBriefing(refresh))
   const promise = (async () => {
     const summary = summaryNow
     const chat = getSettings().ai.chat
@@ -250,7 +295,8 @@ export function todayBriefing(refresh = false): Promise<TodayBriefing> {
     if (chat.providerId && chat.model) {
       try {
         const zh = getSettings().language.startsWith('zh')
-        const r = await structured({ purpose: 'briefing',
+        const r = await structured({
+          purpose: 'briefing',
           providerId: chat.providerId,
           model: quickModel(chat.providerId, chat.model),
           system: zh ? BRIEFING_PROMPT_ZH : BRIEFING_PROMPT_EN,
@@ -282,15 +328,23 @@ export function todayOverviewText(zh: boolean): string {
     ? [
         `日期 ${s.date}；连续学习 ${s.streak} 天；今天已学习 ${minutes} 分钟。`,
         `复习到期 ${s.review.due} 张（今天已复习 ${s.review.doneToday}）；错题可练 ${s.mistakes.practiceReady} 道、AI 解答待核对 ${s.mistakes.unverified} 道；收件箱待整理 ${s.inbox.pending} 条；待确认修改 ${s.proposals.pending} 处。`,
-        ...s.actions.map((a) => `行动项：${a.title}${a.dueAt ? `（${localDate(new Date(a.dueAt))} 截止${a.overdue ? '，已逾期' : ''}）` : ''}`),
-        ...s.goals.map((g) => `目标：${g.title}，掌握 ${Math.round(g.mastered * 100)}%${g.daysLeft !== null ? `，剩 ${g.daysLeft} 天` : ''}`),
+        ...s.actions.map(
+          (a) => `行动项：${a.title}${a.dueAt ? `（${localDate(new Date(a.dueAt))} 截止${a.overdue ? '，已逾期' : ''}）` : ''}`
+        ),
+        ...s.goals.map(
+          (g) => `目标：${g.title}，掌握 ${Math.round(g.mastered * 100)}%${g.daysLeft !== null ? `，剩 ${g.daysLeft} 天` : ''}`
+        ),
         s.reflection.dailyEnabled ? `每日复盘 ${s.reflection.time}：${s.reflection.dailyDone ? '已完成' : '未完成'}` : ''
       ]
     : [
         `Date ${s.date}; ${s.streak}-day streak; ${minutes} minutes studied today.`,
         `${s.review.due} cards due (${s.review.doneToday} reviewed today); ${s.mistakes.practiceReady} mistakes to practise, ${s.mistakes.unverified} AI solutions to check; ${s.inbox.pending} inbox items; ${s.proposals.pending} changes to confirm.`,
-        ...s.actions.map((a) => `Action: ${a.title}${a.dueAt ? ` (due ${localDate(new Date(a.dueAt))}${a.overdue ? ', overdue' : ''})` : ''}`),
-        ...s.goals.map((g) => `Goal: ${g.title}, ${Math.round(g.mastered * 100)}% mastered${g.daysLeft !== null ? `, ${g.daysLeft} days left` : ''}`),
+        ...s.actions.map(
+          (a) => `Action: ${a.title}${a.dueAt ? ` (due ${localDate(new Date(a.dueAt))}${a.overdue ? ', overdue' : ''})` : ''}`
+        ),
+        ...s.goals.map(
+          (g) => `Goal: ${g.title}, ${Math.round(g.mastered * 100)}% mastered${g.daysLeft !== null ? `, ${g.daysLeft} days left` : ''}`
+        ),
         s.reflection.dailyEnabled ? `Daily reflection at ${s.reflection.time}: ${s.reflection.dailyDone ? 'done' : 'not done'}` : ''
       ]
   return lines.filter(Boolean).join('\n')

@@ -196,7 +196,12 @@ export function QuizNode({
       {completed && (
         <div className="border-t border-border pt-3">
           {!!wrong.length && ctx.context === 'chat' && (
-            <button className={uiAction} disabled={disabled || wrong.every((i) => !!written[i.id])} onClick={() => setConfirm(true)}>
+            <button
+              className={uiAction}
+              disabled={disabled || ctx.sharedWritesAllowed === false || wrong.every((i) => !!written[i.id])}
+              title={ctx.sharedWritesAllowed === false ? t('attach.reason.sharedWrite') : undefined}
+              onClick={() => setConfirm(true)}
+            >
               {t('ui.action.mistakes')}
             </button>
           )}
@@ -212,6 +217,7 @@ export function QuizNode({
           target={t('ui.target.mistakes')}
           onCancel={() => setConfirm(false)}
           onConfirm={async (ids) => {
+            if (!(await api.ui.canShareDerived(ctx.messageId))) throw new Error(t('attach.reason.sharedWrite'))
             const saved = { ...written },
               requests = { ...((state.mistakeRequests ?? {}) as Record<string, string>) }
             for (const id of ids) {

@@ -1,0 +1,26 @@
+// 主进程、worker 和阅读器共用格式定义，避免已解析的文件被阅读器误报不支持。
+export const CODE_EXTS = [
+  'json',
+  'yaml',
+  'yml',
+  'xml',
+  'log',
+  'py',
+  'js',
+  'ts',
+  'tsx',
+  'jsx',
+  'java',
+  'go',
+  'rs',
+  'c',
+  'cpp',
+  'h',
+  'cs',
+  'rb',
+  'php',
+  'sh',
+  'sql',
+  'ini',
+  'toml'
+]

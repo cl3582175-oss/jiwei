@@ -58,6 +58,7 @@ export {
   jobs,
   providers,
   conversations,
+  conversationAttachments,
   messages,
   uiStates,
   chunks,

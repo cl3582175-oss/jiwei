@@ -14,7 +14,7 @@ beforeEach(() => {
   fixture.db = db
   // 只建立隐私守卫所需列；不加载应用数据库，不产生迁移文件。
   db.exec(`CREATE TABLE notes(id TEXT PRIMARY KEY, title TEXT NOT NULL, plain_text TEXT NOT NULL, ai_excluded INTEGER NOT NULL, deleted_at INTEGER);
-    CREATE TABLE sources(id TEXT PRIMARY KEY, title TEXT NOT NULL, ai_excluded INTEGER NOT NULL, deleted_at INTEGER);
+    CREATE TABLE sources(id TEXT PRIMARY KEY, title TEXT NOT NULL, ai_excluded INTEGER NOT NULL, deleted_at INTEGER, space TEXT NOT NULL DEFAULT 'library');
     CREATE TABLE source_segments(id TEXT PRIMARY KEY, source_id TEXT NOT NULL, text TEXT NOT NULL);`)
   queries = []
 })
@@ -27,7 +27,7 @@ function note(title: string, text: string, excluded = 1, deleted: number | null 
   db.prepare('INSERT INTO notes VALUES (?, ?, ?, ?, ?)').run('note-1', title, text, excluded, deleted)
 }
 function source(title: string, text: string, excluded = 1, deleted: number | null = null): void {
-  db.prepare('INSERT INTO sources VALUES (?, ?, ?, ?)').run('source-1', title, excluded, deleted)
+  db.prepare('INSERT INTO sources(id,title,ai_excluded,deleted_at) VALUES (?, ?, ?, ?)').run('source-1', title, excluded, deleted)
   db.prepare('INSERT INTO source_segments VALUES (?, ?, ?)').run('segment-1', 'source-1', text)
 }
 

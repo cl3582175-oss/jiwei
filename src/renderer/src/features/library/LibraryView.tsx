@@ -1,3 +1,6 @@
+import { Paperclip } from 'lucide-react'
+import { AttachmentSpaceView } from '../attachments/AttachmentSpaceView'
+import { useAttachmentEvents } from '../attachments/ConversationAttachments'
 import { Mic } from 'lucide-react'
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -314,7 +317,9 @@ function SourceCard({ s }: { s: Source }) {
 export function LibraryView() {
   const { t } = useTranslation()
   const qc = useQueryClient()
-  const { kind, cat, search, scene, seriesId } = useLibraryState()
+  const { kind, cat, search, scene, seriesId, attachmentSpace } = useLibraryState()
+  useAttachmentEvents()
+  const { data: attachmentCount = 0 } = useQuery({ queryKey: ['attachment-count'], queryFn: () => api.attachments.count() })
   const setKind = (kind?: SourceKind) => changeFilter({ kind })
   const setCat = (cat: CatFilter) => changeFilter({ cat })
   const setSearch = (search: string) => changeFilter({ search })
@@ -323,7 +328,7 @@ export function LibraryView() {
   const scroller = useRef<HTMLDivElement>(null)
   const restored = useRef(false)
   const changeFilter = (patch: Parameters<typeof setLibraryFilter>[0]): void => {
-    setLibraryFilter(patch)
+    setLibraryFilter({ attachmentSpace: false, ...patch })
     if (scroller.current) scroller.current.scrollTop = 0
   }
   // 书脊（v0.7.3）：收起后竖排显示当前筛选；窗口较窄时自动收起
@@ -410,8 +415,20 @@ export function LibraryView() {
             <SidebarToggle />
           </div>
           <div className="space-y-0.5 overflow-y-auto px-3 pt-1">
+            <button
+              data-testid="attachment-space-entry"
+              className={cn(
+                'flex h-8 w-full items-center gap-2 rounded-lg px-2 text-left text-xs',
+                attachmentSpace ? 'bg-accent-soft text-accent' : 'text-muted hover:bg-surface-hover'
+              )}
+              onClick={() => changeFilter({ attachmentSpace: true })}
+            >
+              <Paperclip className="size-4" />
+              <span className="flex-1">{t('attach.space.title')}</span>
+              {attachmentCount > 0 && <span className="rounded-full bg-sunken px-1.5 text-2xs">{attachmentCount}</span>}
+            </button>
             <SectionHeader label={t('library.typeHeader')} />
-            {row(!kind, <Layers />, t('library.kinds.all'), () => setKind(undefined))}
+            {row(!attachmentSpace && !kind, <Layers />, t('library.kinds.all'), () => setKind(undefined))}
             {KINDS.map((k) => (
               <div key={k}>{row(kind === k, KIND_ICON[k], t(`library.kinds.${k}`), () => setKind(k))}</div>
             ))}
@@ -433,93 +450,104 @@ export function LibraryView() {
 
       {/* 主区：浮动面板 */}
       <FloatingPanel flushLeft className="flex flex-col">
-        <header className="drag flex h-[52px] shrink-0 items-center justify-end gap-2 border-b border-border/70 pr-[calc(var(--tb-right)+16px)] pl-6">
-          <div className="no-drag relative w-[260px]">
-            <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-subtle" />
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder={t('library.searchPlaceholder')}
-              className="h-8 pl-8"
-            />
-            {search && (
-              <button
-                onClick={() => setSearch('')}
-                className="absolute top-1/2 right-2 -translate-y-1/2 text-subtle hover:text-fg"
-                aria-label="clear"
-              >
-                <X className="size-3.5" />
-              </button>
-            )}
-          </div>
-          <Tip label={t('library.addLink')} side="bottom">
-            <Button
-              variant="outline"
-              size="icon"
-              className="no-drag h-8 w-8"
-              onClick={() => setLinkOpen(true)}
-              aria-label={t('library.addLink')}
-            >
-              <Link2 />
-            </Button>
-          </Tip>
-          <Button variant="primary" className="no-drag h-8" onClick={() => void importDialog()}>
-            <Upload />
-            {t('library.import')}
-          </Button>
-          <ImportLibraryButton />
-        </header>
-        <div className="flex shrink-0 flex-wrap gap-2 border-b border-border px-6 py-2">
-          <select
-            aria-label={t('recording.sceneFilter')}
-            className={lensSelectClass}
-            value={scene ?? ''}
-            onChange={(e) => setScene((e.target.value as Scene) || undefined)}
-          >
-            <option value="">{t('recording.allScenes')}</option>
-            {(['meeting', 'lecture', 'thought', 'unspecified'] as const).map((s) => (
-              <option key={s} value={s}>
-                {t(`recording.scene.${s}`)}
-              </option>
-            ))}
-          </select>
-          <select aria-label={t('series.all')} className={lensSelectClass} value={seriesId} onChange={(e) => setSeriesId(e.target.value)}>
-            <option value="">{t('series.all')}</option>
-            {series.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div
-          className="min-h-0 flex-1 overflow-y-auto"
-          ref={scroller}
-          data-testid="library-scroll"
-          onScroll={(event) => {
-            if (restored.current) useLibraryState.setState({ scrollTop: event.currentTarget.scrollTop })
-          }}
-        >
-          {isFetched && items.length === 0 ? (
-            <EmptyState
-              icon={<InkLibrary size={180} />}
-              title={t('empty.libraryTitle')}
-              hint={t('empty.libraryHint')}
-              action={
-                <Button variant="primary" onClick={() => void importDialog()}>
-                  <Upload />
-                  {t('library.import')}
+        {attachmentSpace ? (
+          <AttachmentSpaceView />
+        ) : (
+          <>
+            <header className="drag flex h-[52px] shrink-0 items-center justify-end gap-2 border-b border-border/70 pr-[calc(var(--tb-right)+16px)] pl-6">
+              <div className="no-drag relative w-[260px]">
+                <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-subtle" />
+                <Input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder={t('library.searchPlaceholder')}
+                  className="h-8 pl-8"
+                />
+                {search && (
+                  <button
+                    onClick={() => setSearch('')}
+                    className="absolute top-1/2 right-2 -translate-y-1/2 text-subtle hover:text-fg"
+                    aria-label="clear"
+                  >
+                    <X className="size-3.5" />
+                  </button>
+                )}
+              </div>
+              <Tip label={t('library.addLink')} side="bottom">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="no-drag h-8 w-8"
+                  onClick={() => setLinkOpen(true)}
+                  aria-label={t('library.addLink')}
+                >
+                  <Link2 />
                 </Button>
-              }
-            />
-          ) : (
-            <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-4 p-8">
-              {items.map((s) => (
-                <SourceCard key={s.id} s={s} />
-              ))}
+              </Tip>
+              <Button variant="primary" className="no-drag h-8" onClick={() => void importDialog()}>
+                <Upload />
+                {t('library.import')}
+              </Button>
+              <ImportLibraryButton />
+            </header>
+            <div className="flex shrink-0 flex-wrap gap-2 border-b border-border px-6 py-2">
+              <select
+                aria-label={t('recording.sceneFilter')}
+                className={lensSelectClass}
+                value={scene ?? ''}
+                onChange={(e) => setScene((e.target.value as Scene) || undefined)}
+              >
+                <option value="">{t('recording.allScenes')}</option>
+                {(['meeting', 'lecture', 'thought', 'unspecified'] as const).map((s) => (
+                  <option key={s} value={s}>
+                    {t(`recording.scene.${s}`)}
+                  </option>
+                ))}
+              </select>
+              <select
+                aria-label={t('series.all')}
+                className={lensSelectClass}
+                value={seriesId}
+                onChange={(e) => setSeriesId(e.target.value)}
+              >
+                <option value="">{t('series.all')}</option>
+                {series.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
             </div>
-          )}
-        </div>
+            <div
+              className="min-h-0 flex-1 overflow-y-auto"
+              ref={scroller}
+              data-testid="library-scroll"
+              onScroll={(event) => {
+                if (restored.current) useLibraryState.setState({ scrollTop: event.currentTarget.scrollTop })
+              }}
+            >
+              {isFetched && items.length === 0 ? (
+                <EmptyState
+                  icon={<InkLibrary size={180} />}
+                  title={t('empty.libraryTitle')}
+                  hint={t('empty.libraryHint')}
+                  action={
+                    <Button variant="primary" onClick={() => void importDialog()}>
+                      <Upload />
+                      {t('library.import')}
+                    </Button>
+                  }
+                />
+              ) : (
+                <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-4 p-8">
+                  {items.map((s) => (
+                    <SourceCard key={s.id} s={s} />
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
+        )}
       </FloatingPanel>
 
       {dragging && (

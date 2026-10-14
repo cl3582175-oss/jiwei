@@ -1,3 +1,4 @@
+import { compressImage } from '../lib/imageResize'
 import { and, eq, isNull } from 'drizzle-orm'
 import { nativeImage } from 'electron'
 import { readFile } from 'fs/promises'
@@ -60,11 +61,7 @@ export async function noteImageData(noteId: string, imageId: string): Promise<{ 
   const current = currentNoteImage(noteId, imageId)
   if (!current || imageAssetId(current) !== assetId) throw new Error('Note image access revoked')
   if (bytes.byteLength <= 4 * 1024 * 1024) return { data: bytes.toString('base64'), mediaType: asset.mime }
-  const image = nativeImage.createFromBuffer(bytes)
-  if (image.isEmpty()) throw new Error('Unable to resize note image')
-  const { width, height } = image.getSize()
-  const scaled = image.resize(width >= height ? { width: Math.min(width, 1600) } : { height: Math.min(height, 1600) })
-  return { data: scaled.toJPEG(85).toString('base64'), mediaType: 'image/jpeg' }
+  return { data: compressImage(bytes).toString('base64'), mediaType: 'image/jpeg' }
 }
 
 function persistImageText(assetId: string, result: RegionRecognition): void {

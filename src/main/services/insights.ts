@@ -1,3 +1,4 @@
+import { hasPrivateDecisionAttachments } from './attachmentsAccess'
 import { and, eq, gte, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm'
 import type { Insights, InsightRange } from '@shared/insights'
 import { getDb } from '../db'
@@ -155,6 +156,7 @@ export function insights(range: InsightRange, now = Date.now()): Insights {
       .get()?.n ?? 0
   const decisionRows = db
     .select({
+      id: decisions.id,
       status: decisions.status,
       accuracy: decisions.accuracy,
       memo: decisions.memo,
@@ -183,7 +185,7 @@ export function insights(range: InsightRange, now = Date.now()): Insights {
       .all()
       .map((r) => r.refId)
   )
-  for (const d of decisionRows) {
+  for (const d of decisionRows.filter((d) => !hasPrivateDecisionAttachments(d.id))) {
     if (!d.memo || d.createdAt < from) continue
     const memo = JSON.parse(d.memo) as { sources?: { parentType: string; parentId: string }[]; evidence?: { source: string }[] }
     const cited = new Set((memo.evidence ?? []).map((e) => e.source))
@@ -216,7 +218,7 @@ export function insights(range: InsightRange, now = Date.now()): Insights {
     (db
       .select({ n: sql<number>`count(*)` })
       .from(sources)
-      .where(and(isNull(sources.deletedAt), gte(sources.createdAt, from), lt(sources.createdAt, to)))
+      .where(and(isNull(sources.deletedAt), eq(sources.space, 'library'), gte(sources.createdAt, from), lt(sources.createdAt, to)))
       .get()?.n ?? 0)
   const read =
     db

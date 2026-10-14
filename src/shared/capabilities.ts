@@ -177,6 +177,7 @@ import type {
   Settings,
   SkillInfo,
   Source,
+  Attachment,
   Tag,
   TrashItem,
   UserProfile,
@@ -583,6 +584,23 @@ export const capabilities = {
         ['bytes', S.Bytes]
       ]
     })
+  },
+  attachments: {
+    add: cap<Attachment[]>()({ description: '把文件添加到对话附件空间', params: [['input', S.AttachmentAddSchema]] }),
+    pick: cap<string[]>()({ description: '选择附件文件', params: none }),
+    status: cap<Attachment[]>()({ description: '读取附件处理状态', params: [['sourceIds', z.array(S.Id).max(500)]] }),
+    ofConversation: cap<Attachment[]>()({ description: '本对话的附件', params: [id('conversationId')] }),
+    removeFromConversation: cap<void>()({ description: '从本对话移出附件', params: [id('conversationId'), id('sourceId')] }),
+    list: cap<Attachment[]>()({ description: '附件空间', params: [['filter', S.AttachmentListSchema]] }),
+    archive: cap<void>()({
+      description: '将附件归档到资料库',
+      params: [
+        ['sourceIds', z.array(S.Id).max(500)],
+        ['categoryId', S.Id.nullable()]
+      ]
+    }),
+    delete: cap<void>()({ description: '删除附件，移入最近删除', params: [['sourceIds', z.array(S.Id).max(500)]] }),
+    count: cap<number>()({ description: '未归档附件数量', params: none })
   },
   sources: {
     list: cap<Source[]>()({ description: '按条件列出 / 检索资料', params: [['query', S.SourceQuerySchema]], ai: { effect: 'read' } }),
@@ -1470,6 +1488,7 @@ export const capabilities = {
     usage: cap<RetrievalUsage>()({ description: '联网搜索与读取次数', params: [['range', z.enum(['today', 'month'])]] })
   },
   ui: {
+    canShareDerived: cap<boolean>()({ description: '检查回答的派生内容是否可写入共享模块', params: [id('messageId')] }),
     states: cap<Record<string, unknown>>()({ description: '读取某条回答里组件的状态', params: [id('messageId')] }),
     saveState: cap<void>()({
       description: '保存组件状态（滑块、勾选、作答）',

@@ -1,3 +1,4 @@
+import { tr } from '../lib/messages'
 import { recordingAudio, withRecordingFile } from './recording'
 import { enqueueMoss, mossStatus } from './moss'
 import { mossTranscriptRevision } from '../lib/moss'
@@ -386,8 +387,10 @@ export function enqueueTranscribe(sourceId: string, overwrite = false): void {
   )
 }
 
-const sourceTitle = (id: string): string =>
-  getDb().select({ title: sources.title }).from(sources).where(eq(sources.id, id)).get()?.title ?? id
+const sourceTitle = (id: string): string => {
+  const s = getDb().select({ title: sources.title, space: sources.space }).from(sources).where(eq(sources.id, id)).get()
+  return s?.space === 'attachment' ? tr('对话附件', 'Chat attachment') : (s?.title ?? id)
+}
 
 export function registerAsrJob(): void {
   registerJobKind<{ sourceId: string; transcriptRevision?: string }>('source.transcribe', {

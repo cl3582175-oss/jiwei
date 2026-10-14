@@ -287,7 +287,8 @@ export function ListNode({
       {node.checkable && (
         <button
           className="mx-4 mb-3 rounded-lg border border-border px-3 py-1.5 text-xs hover:bg-sunken disabled:opacity-40"
-          disabled={disabled || !items.length}
+          disabled={disabled || ctx.sharedWritesAllowed === false || !items.length}
+          title={ctx.sharedWritesAllowed === false ? t('attach.reason.sharedWrite') : undefined}
           onClick={() => setPending(items)}
         >
           {t('ui.action.toTasks')}
@@ -299,6 +300,7 @@ export function ListNode({
           target={t('ui.target.tasks')}
           onCancel={() => setPending(null)}
           onConfirm={async (ids) => {
+            if (!(await api.ui.canShareDerived(ctx.messageId))) throw new Error(t('attach.reason.sharedWrite'))
             const written = { ...created }
             for (const id of ids) {
               if (written[id]) continue

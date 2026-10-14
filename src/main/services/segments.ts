@@ -54,7 +54,7 @@ export function searchSegments(query: string, sourceId?: string): Segment[] {
   const live = getDb()
     .select({ id: sources.id })
     .from(sources)
-    .where(isNull(sources.deletedAt))
+    .where(and(isNull(sources.deletedAt), sourceId ? eq(sources.id, sourceId) : eq(sources.space, 'library')))
     .all()
     .map((r) => r.id)
   if (live.length === 0) return []
@@ -68,7 +68,7 @@ export function searchSegments(query: string, sourceId?: string): Segment[] {
   } else {
     ids = []
   }
-  const conds = [inArray(sourceSegments.sourceId, sourceId ? [sourceId] : live)]
+  const conds = [inArray(sourceSegments.sourceId, live)]
   if (ids.length) conds.push(inArray(sourceSegments.id, ids))
   else conds.push(like(sourceSegments.text, `%${q}%`))
   return getDb()

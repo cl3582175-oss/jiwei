@@ -1,3 +1,4 @@
+import { cleanupDrafts, observeAttachmentChanges } from './services/attachments'
 import { getMainWindow, setMainWindow } from './mainWindow'
 import { initializePlugins } from './services/plugins/install'
 import { initializeMarkets } from './services/plugins/markets'
@@ -168,116 +169,122 @@ app.on('second-instance', (_, argv) => {
   handleDeepLink(argv.find((a) => a.startsWith('jiwei://')))
 })
 
-app.whenReady().then(async () => {
-  setMessageLanguage(process.env.JIWEI_LANG || app.getLocale())
-  electronApp.setAppUserModelId('io.github.cl3582175-oss.jiwei')
-  // 系统“关于积微”面板（macOS 应用菜单、Linux）
-  app.setAboutPanelOptions({ applicationName: '积微', copyright: '青风铃 出品 · © 2026' })
-  app.on('browser-window-created', (_, w) => optimizer.watchWindowShortcuts(w))
+app
+  .whenReady()
+  .then(async () => {
+    setMessageLanguage(process.env.JIWEI_LANG || app.getLocale())
+    electronApp.setAppUserModelId('io.github.cl3582175-oss.jiwei')
+    // 系统“关于积微”面板（macOS 应用菜单、Linux）
+    app.setAboutPanelOptions({ applicationName: '积微', copyright: '青风铃 出品 · © 2026' })
+    app.on('browser-window-created', (_, w) => optimizer.watchWindowShortcuts(w))
 
-  await initializeBackupSafety()
-  await openDatabase()
-  migrateSearchConnections()
-  ensureIdentity()
-  await initializePlugins()
-  await initializeMarkets()
-  await initializeRecordingFiles()
-  resumeCryptoMigration()
-  await refreshBrowserNetwork()
-  // 仅开发 / 测试：导入服务商配置（见 importProvidersForTest）
-  if (!app.isPackaged && process.env.JIWEI_IMPORT_PROVIDERS_FROM) {
-    log.info('[test] imported providers:', importProvidersForTest(process.env.JIWEI_IMPORT_PROVIDERS_FROM))
-  }
-  applyNativeTheme(getSettings())
-  registerProtocol()
-  registerIpc()
-  registerJobKinds()
-  registerTaskJob()
-  registerFeedJob()
-  registerDailyJob()
-  registerPodcastJob()
-  recoverTaskRuns()
-  registerAsrJob()
-  registerMossJob()
-  registerRecording()
-  registerLensJobs()
-  registerRecognizeJob()
-  registerDigestJob()
-  registerImporterJobs()
-  registerImportCueJob()
-  // 低谷时段运行（v0.7.5）：开启后，可延后的后台任务在 DeepSeek 高峰期排到下一个低谷
-  setOffPeakPolicy((at) => {
-    const s = getSettings()
-    if (!s.money.offPeakJobs || !isDeepSeekPeak(at)) return at
-    const vm = visionModel()
-    return hasOffPeak(s.ai.chat.providerId, s.ai.chat.model) || (vm && hasOffPeak(vm.providerId, vm.model)) ? nextOffPeak(at) : at
+    await initializeBackupSafety()
+    await openDatabase()
+    await cleanupDrafts()
+    migrateSearchConnections()
+    ensureIdentity()
+    await initializePlugins()
+    await initializeMarkets()
+    await initializeRecordingFiles()
+    resumeCryptoMigration()
+    await refreshBrowserNetwork()
+    // 仅开发 / 测试：导入服务商配置（见 importProvidersForTest）
+    if (!app.isPackaged && process.env.JIWEI_IMPORT_PROVIDERS_FROM) {
+      log.info('[test] imported providers:', importProvidersForTest(process.env.JIWEI_IMPORT_PROVIDERS_FROM))
+    }
+    applyNativeTheme(getSettings())
+    registerProtocol()
+    registerIpc()
+    const stopAttachmentEvents = observeAttachmentChanges()
+    app.once('will-quit', stopAttachmentEvents)
+    registerJobKinds()
+    registerTaskJob()
+    registerFeedJob()
+    registerDailyJob()
+    registerPodcastJob()
+    recoverTaskRuns()
+    registerAsrJob()
+    registerMossJob()
+    registerRecording()
+    registerLensJobs()
+    registerRecognizeJob()
+    registerDigestJob()
+    registerImporterJobs()
+    registerImportCueJob()
+    // 低谷时段运行（v0.7.5）：开启后，可延后的后台任务在 DeepSeek 高峰期排到下一个低谷
+    setOffPeakPolicy((at) => {
+      const s = getSettings()
+      if (!s.money.offPeakJobs || !isDeepSeekPeak(at)) return at
+      const vm = visionModel()
+      return hasOffPeak(s.ai.chat.providerId, s.ai.chat.model) || (vm && hasOffPeak(vm.providerId, vm.model)) ? nextOffPeak(at) : at
+    })
+    startRateUpdates()
+    registerBrowser()
+    registerIndexJob()
+    registerInboxJobs()
+    registerMistakeEntryGuards()
+    registerMistakeJobs()
+    reconcilePeopleReferences()
+    startJobs()
+    void rebuildNoteImageReferences().catch((e) => log.warn('[note images] backfill failed', e))
+    startMemoryLearning()
+    startReminders()
+    // v0.7：让其他应用使用积微（MCP 服务，默认关闭）
+    void startServe().catch((e) => log.warn('[mcp-serve] start failed', e))
+    // 复习卡片：补齐已有笔记的线索（升级到 v0.4 后第一次启动）
+    setTimeout(() => {
+      try {
+        syncAllCards()
+      } catch (e) {
+        log.warn('[review] sync failed', e)
+      }
+      try {
+        const n = resegmentEmptyPdfs()
+        if (n) log.info('[sources] re-parse PDFs without segments', n)
+      } catch (e) {
+        log.warn('[sources] re-parse failed', e)
+      }
+    }, 3000)
+    // 向量模型已安装则补齐索引（例如上次退出时未完成的部分）
+    void refreshStatus().then((s) => s.state === 'ready' && requestIndex())
+    handleDeepLink(process.argv.find((a) => a.startsWith('jiwei://')))
+
+    const maintenance = async (): Promise<void> => {
+      try {
+        await purgeExpired()
+        pruneRevisions()
+        pruneJobs()
+        pruneAudit()
+        cleanupRetrieval()
+        await pruneImportScans()
+        await collectGarbage()
+      } catch (e) {
+        log.error('[maintenance] failed', e)
+      }
+    }
+    void autoBackup().then(maintenance)
+    setInterval(() => {
+      void autoBackup()
+      void maintenance()
+    }, HOUR)
+
+    await startUpdates()
+    createWindow()
+    startResidency(createWindow)
+    registerCapture()
+    app.on('activate', () => {
+      if (!getMainWindow()) createWindow()
+    })
   })
-  startRateUpdates()
-  registerBrowser()
-  registerIndexJob()
-  registerInboxJobs()
-  registerMistakeEntryGuards()
-  registerMistakeJobs()
-  reconcilePeopleReferences()
-  startJobs()
-  void rebuildNoteImageReferences().catch((e) => log.warn('[note images] backfill failed', e))
-  startMemoryLearning()
-  startReminders()
-  // v0.7：让其他应用使用积微（MCP 服务，默认关闭）
-  void startServe().catch((e) => log.warn('[mcp-serve] start failed', e))
-  // 复习卡片：补齐已有笔记的线索（升级到 v0.4 后第一次启动）
-  setTimeout(() => {
-    try {
-      syncAllCards()
-    } catch (e) {
-      log.warn('[review] sync failed', e)
-    }
-    try {
-      const n = resegmentEmptyPdfs()
-      if (n) log.info('[sources] re-parse PDFs without segments', n)
-    } catch (e) {
-      log.warn('[sources] re-parse failed', e)
-    }
-  }, 3000)
-  // 向量模型已安装则补齐索引（例如上次退出时未完成的部分）
-  void refreshStatus().then((s) => s.state === 'ready' && requestIndex())
-  handleDeepLink(process.argv.find((a) => a.startsWith('jiwei://')))
-
-  const maintenance = async (): Promise<void> => {
-    try {
-      await purgeExpired()
-      pruneRevisions()
-      pruneJobs()
-      pruneAudit()
-      cleanupRetrieval()
-      await pruneImportScans()
-      await collectGarbage()
-    } catch (e) {
-      log.error('[maintenance] failed', e)
-    }
-  }
-  void autoBackup().then(maintenance)
-  setInterval(() => {
-    void autoBackup()
-    void maintenance()
-  }, HOUR)
-
-  await startUpdates()
-  createWindow()
-  startResidency(createWindow)
-  registerCapture()
-  app.on('activate', () => {
-    if (!getMainWindow()) createWindow()
+  .catch((e) => {
+    // 启动失败不能静默：否则进程留在后台占着单实例锁，用户再点图标也毫无反应
+    log.error('[startup] failed', e)
+    dialog.showErrorBox(
+      '积微启动失败',
+      `${e instanceof Error ? e.stack || e.message : String(e)}\n\n日志位置：${log.transports.file.getFile().path}`
+    )
+    app.exit(1)
   })
-}).catch((e) => {
-  // 启动失败不能静默：否则进程留在后台占着单实例锁，用户再点图标也毫无反应
-  log.error('[startup] failed', e)
-  dialog.showErrorBox(
-    '积微启动失败',
-    `${e instanceof Error ? e.stack || e.message : String(e)}\n\n日志位置：${log.transports.file.getFile().path}`
-  )
-  app.exit(1)
-})
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin' && !isResident()) app.quit()

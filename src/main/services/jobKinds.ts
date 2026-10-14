@@ -1,3 +1,4 @@
+import { CODE_EXTS } from './parsers/code'
 import { externalFetch } from './externalFetch'
 import { registerIcsJobs } from './plan/ics'
 import { and, eq, isNull, sql } from 'drizzle-orm'
@@ -21,7 +22,11 @@ const PARSERS: Record<string, string> = {
   docx: 'parseDocx',
   epub: 'parseEpub',
   html: 'parseHtml',
-  htm: 'parseHtml'
+  htm: 'parseHtml',
+  xlsx: 'parseXlsx',
+  csv: 'parseCsv',
+  pptx: 'parsePptx',
+  ...Object.fromEntries(CODE_EXTS.map((ext) => [ext, 'parseCode']))
 }
 
 /** 资料是否支持当前版本的解析（图片资料由文档识别生成文字） */
@@ -55,8 +60,10 @@ export function resegmentEmptyPdfs(): number {
   return rows.length
 }
 
-const sourceTitle = (id: string): string =>
-  getDb().select({ title: sources.title }).from(sources).where(eq(sources.id, id)).get()?.title ?? id
+const sourceTitle = (id: string): string => {
+  const s = getDb().select({ title: sources.title, space: sources.space }).from(sources).where(eq(sources.id, id)).get()
+  return s?.space === 'attachment' ? '对话附件' : (s?.title ?? id)
+}
 
 export function registerJobKinds(): void {
   registerIcsJobs()
@@ -81,7 +88,8 @@ export function registerJobKinds(): void {
       if (!task) return { skipped: `unsupported: ${row.a.ext}` }
       const result = await ctx.worker<TextSegment[] | SegmentInput[] | { title: string; segments: SegmentInput[] }>(task, {
         path: assetPath(row.a.id, row.a.ext),
-        ext: row.a.ext
+        ext: row.a.ext,
+        name: row.s.originalName ?? row.s.title
       })
       if (ctx.isCanceled()) return
       const segs = Array.isArray(result) ? result : result.segments

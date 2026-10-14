@@ -134,6 +134,7 @@ export type NoteSort = NonNullable<NoteQuery['sort']>
 export type SourceKind = 'book' | 'pdf' | 'video' | 'audio' | 'recording' | 'image' | 'document' | 'web' | 'other'
 
 export interface Source {
+  space?: 'library' | 'attachment'
   recordingScene?: import('./recording').Scene
   id: string
   title: string
@@ -213,6 +214,7 @@ export type Palette = 'qinglu' | 'celadon' | 'dunhuang'
 export type SidebarPage = 'notes' | 'library' | 'chat'
 
 export interface Settings {
+  attachments?: { cloudNoticeSeen: boolean }
   retrieval: import('./retrieval').RetrievalSettings
   plugins: { recommendedDismissed: boolean }
   discover: {
@@ -370,6 +372,7 @@ export interface Segment {
 export type ProposalOpStatus = 'pending' | 'accepted' | 'rejected'
 
 export interface Proposal {
+  attachmentSourceIds?: string[]
   id: string
   noteId: string
   title: string
@@ -797,6 +800,7 @@ export interface Citation {
 }
 
 export interface ChatMessage {
+  attachments?: Attachment[]
   id: string
   conversationId: string
   role: 'user' | 'assistant'
@@ -1075,6 +1079,7 @@ export interface SourceRecognition {
 
 /** 主进程 → 渲染进程的事件 */
 export interface JiweiEvents {
+  'attachments:changed': { sourceIds?: string[]; conversationId?: string }
   'mail:changed': Record<string, never>
   'discover:changed': Record<string, never>
   'retrieval:changed': Record<string, never>
@@ -1184,4 +1189,24 @@ export interface RegionRecognition {
 export interface ScanPageText {
   page: number
   blocks: import('./scanText').ScanBlock[]
+}
+
+export type AttachmentStatus = 'adding' | 'parsing' | 'recognizing' | 'transcribing' | 'ready' | 'failed' | 'unsupported'
+export interface Attachment {
+  sourceId: string
+  name: string
+  kind: SourceKind
+  size: number
+  mime: string | null
+  thumbUrl: string | null
+  status: AttachmentStatus
+  progress: number | null
+  /** 文字已经可用（例如 PDF 文字层已解析，只剩图表识别）：可以先提问 */
+  askable?: boolean
+  error: string | null
+  space: 'attachment' | 'library'
+  archivedCategoryId: string | null
+  deleted: boolean
+  conversations: { id: string; title: string }[]
+  createdAt: number
 }

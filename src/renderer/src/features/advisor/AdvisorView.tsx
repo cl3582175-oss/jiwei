@@ -1,3 +1,8 @@
+import { useAttachments } from '../attachments/useAttachments'
+import { AttachmentInput, AttachmentDropZone } from '../attachments/AttachmentInput'
+import { AttachmentButton } from '../attachments/AttachmentBar'
+import { ConversationAttachments } from '../attachments/ConversationAttachments'
+import { useModelChoice } from '../chat/useChat'
 import { PluginSourceLabel, usePluginNames } from '../plugins/PluginSourceLabel'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -77,6 +82,8 @@ export function AdvisorView() {
 /* ——— 首页：提问 + 决策日志 ——— */
 
 function Home({ onOpen }: { onOpen: (id: string) => void }) {
+  const attachments = useAttachments({ kind: 'advisor' })
+  const { provider } = useModelChoice()
   const { t, i18n } = useTranslation()
   const { data: settings } = useSettings()
   const money = useMoney()
@@ -116,11 +123,13 @@ function Home({ onOpen }: { onOpen: (id: string) => void }) {
       () =>
         api.advisor.ask({
           question: question.trim(),
+          attachments: attachments.ids(),
           context: context.trim(),
           goalId: goalId || null,
           frameworkId: frameworkId || undefined
         }),
       (d) => {
+        attachments.clear(attachments.ids())
         setAdvisorDraft({ question: '', context: '' })
         onOpen(d.id)
       }
@@ -135,17 +144,27 @@ function Home({ onOpen }: { onOpen: (id: string) => void }) {
     { key: 'dropped', items: list.filter((d) => d.status === 'dropped') }
   ]
   return (
-    <div className="space-y-10">
+    <AttachmentDropZone controller={attachments} className="space-y-10">
       <section>
+        <AttachmentInput
+          controller={attachments}
+          provider={provider}
+          text={question}
+          onMentionPicked={() => setQuestion(question.replace(/@[^\s@]*$/, ''))}
+        />
         <p className="max-w-[680px] text-sm leading-relaxed text-muted">{t('advisor.intro')}</p>
         <div className="mt-5 rounded-2xl border border-border bg-surface p-4 shadow-[var(--shadow-1)] focus-within:border-accent/60">
           <textarea
             aria-label={t('advisor.title')}
             className="block min-h-[64px] w-full resize-none bg-transparent text-[15px] leading-relaxed text-fg outline-none placeholder:text-subtle"
+            onPaste={attachments.paste}
             placeholder={t('advisor.questionPh')}
             value={question}
             disabled={busy}
-            onChange={(e) => setQuestion(e.target.value)}
+            onChange={(e) => {
+              setQuestion(e.target.value)
+              attachments.textChanged(e.target.value)
+            }}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) void submit()
             }}
@@ -219,13 +238,14 @@ function Home({ onOpen }: { onOpen: (id: string) => void }) {
                 ))}
               </select>
             )}
+            <AttachmentButton controller={attachments} />
             <span className="ml-auto text-2xs text-subtle">
               {model ? t('advisor.costHint', { model, cost: cost === null ? '—' : money.format(cost) }) : t('advisor.noModel')}
             </span>
             <Button
               variant="primary"
               size="sm"
-              disabled={busy || question.trim().length < 4 || !model || (!!frameworkId && !selected)}
+              disabled={busy || attachments.adding || question.trim().length < 4 || !model || (!!frameworkId && !selected)}
               onClick={() => void submit()}
             >
               {busy ? <Loader2 className="animate-spin" /> : <Scale />}
@@ -312,7 +332,7 @@ function Home({ onOpen }: { onOpen: (id: string) => void }) {
             ))
         )}
       </section>
-    </div>
+    </AttachmentDropZone>
   )
 }
 
@@ -428,6 +448,7 @@ function DecisionPage({ id, onBack }: { id: string; onBack: () => void }) {
           {t('advisor.back')}
         </button>
         <div className="mt-3 flex items-start gap-4">
+          <ConversationAttachments conversationId={d.id} />
           <h2 className="min-w-0 flex-1 font-serif text-2xl leading-snug font-semibold text-fg">{d.question}</h2>
           <div className="flex shrink-0 items-center gap-1.5">
             {d.status === 'draft' && memo && (
@@ -838,7 +859,17 @@ function WeightStepper({ label, value, onChange }: { label: string; value: numbe
 
 /* ——— 记录决定 ——— */
 
-export function DecideDialog({ d, memo, onClose, initialPick }: { d: Decision; memo: DecisionMemo; onClose: () => void; initialPick?: string }) {
+export function DecideDialog({
+  d,
+  memo,
+  onClose,
+  initialPick
+}: {
+  d: Decision
+  memo: DecisionMemo
+  onClose: () => void
+  initialPick?: string
+}) {
   const { t } = useTranslation()
   const qc = useQueryClient()
   const [pick, setPick] = useState<string>(initialPick ?? memo.recommendation.option),

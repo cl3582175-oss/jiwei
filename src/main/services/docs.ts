@@ -6,6 +6,8 @@ import { getDb } from '../db'
 import { blocks, links, noteAssetBlocks, noteAssets, noteDocs, noteRevisions, noteUpdates, notes } from '../db/schema'
 import { newId } from '../lib/ids'
 import { jsonToYState } from '../lib/yjson'
+import { retainAttachmentOrigins } from '../lib/attachmentOrigins'
+import { readNoteState as readState } from './noteState'
 import { countWords, deriveDoc, diffBlocks, type EmbedsData } from '../lib/derive'
 import { syncCards } from './review'
 import { deviceId } from './device'
@@ -25,20 +27,6 @@ const COMPACT_THRESHOLD = 64
 const REVISION_INTERVAL = 10 * 60_000
 
 const timers = new Map<string, NodeJS.Timeout>()
-
-function readState(noteId: string): Uint8Array {
-  const db = getDb()
-  const base = db.select({ state: noteDocs.state }).from(noteDocs).where(eq(noteDocs.noteId, noteId)).get()
-  const ups = db
-    .select({ u: noteUpdates.update })
-    .from(noteUpdates)
-    .where(eq(noteUpdates.noteId, noteId))
-    .orderBy(asc(noteUpdates.seq))
-    .all()
-  const parts = [...(base ? [new Uint8Array(base.state)] : []), ...ups.map((r) => new Uint8Array(r.u))]
-  if (parts.length === 0) return Y.encodeStateAsUpdate(new Y.Doc())
-  return parts.length === 1 ? parts[0] : Y.mergeUpdates(parts)
-}
 
 /** 新笔记的初始文档：一行空的康奈尔行 + 空总结（节点自带永久 ID） */
 export function initDoc(noteId: string): void {
@@ -64,7 +52,7 @@ export function initDoc(noteId: string): void {
 /** 用文档 JSON 整体替换笔记正文（仅用于尚未在编辑器中打开的新笔记，如示例笔记、导入） */
 export function replaceDoc(noteId: string, doc: DocJSON, embeds?: EmbedsData): void {
   const db = getDb()
-  const state = jsonToYState(doc, embeds)
+  const state = retainAttachmentOrigins(readState(noteId), jsonToYState(doc, embeds))
   db.transaction((tx) => {
     tx.delete(noteUpdates).where(eq(noteUpdates.noteId, noteId)).run()
     tx.insert(noteDocs)

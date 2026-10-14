@@ -9,11 +9,11 @@ export class PrivacyError extends Error {
 }
 
 const TITLES_SQL = `SELECT title FROM notes WHERE ai_excluded = 1 AND deleted_at IS NULL
-  UNION ALL SELECT title FROM sources WHERE ai_excluded = 1 AND deleted_at IS NULL`
+  UNION ALL SELECT title FROM sources WHERE ai_excluded = 1 AND deleted_at IS NULL AND space = 'library'`
 const BODY_MATCH_SQL = `SELECT 1 FROM notes
   WHERE ai_excluded = 1 AND deleted_at IS NULL AND instr(lower(plain_text), lower(?)) > 0
   UNION ALL SELECT 1 FROM source_segments AS segment JOIN sources AS source ON source.id = segment.source_id
-  WHERE source.ai_excluded = 1 AND source.deleted_at IS NULL AND instr(lower(segment.text), lower(?)) > 0
+  WHERE source.ai_excluded = 1 AND source.deleted_at IS NULL AND source.space = 'library' AND instr(lower(segment.text), lower(?)) > 0
   LIMIT 1`
 
 function* windows(q: string): Generator<string> {

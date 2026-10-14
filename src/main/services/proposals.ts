@@ -1,6 +1,8 @@
+import { protectProposalAttachments } from './attachmentDerived'
+import { currentRun } from './agent/context'
 import { EMBED_KINDS } from '@shared/embeds'
 import { and, desc, eq, or } from 'drizzle-orm'
-import { getDb } from '../db'
+import { getDb, getSqlite } from '../db'
 import { derivationLandings, notes, proposals } from '../db/schema'
 import { newId } from '../lib/ids'
 import { emit } from '../events'
@@ -17,6 +19,7 @@ type Row = typeof proposals.$inferSelect
 function toProposal(r: Row): Proposal {
   const payload = JSON.parse(r.ops) as { ops: Proposal['ops']; embeds?: Proposal['embeds']; auto?: boolean; skill?: string }
   return {
+    attachmentSourceIds: (payload as { attachmentSourceIds?: string[] }).attachmentSourceIds,
     id: r.id,
     noteId: r.noteId,
     title: r.title,
@@ -47,6 +50,14 @@ export function createProposal(input: ProposalInput): Proposal {
     const def = EMBED_KINDS[embed.kind]
     if (def && !def.validate(embed.data)) throw new Error(`Invalid ${embed.kind} data in embed "${key}"`)
   }
+  const run = currentRun()
+  const attachmentSourceIds = run?.conversationId
+    ? (
+        getSqlite().prepare('SELECT DISTINCT source_id FROM conversation_attachments WHERE conversation_id=?').all(run.conversationId) as {
+          source_id: string
+        }[]
+      ).map((r) => r.source_id)
+    : []
   const row: Row = {
     id: newId(),
     noteId: input.noteId,
@@ -55,7 +66,8 @@ export function createProposal(input: ProposalInput): Proposal {
       ops: input.ops,
       embeds: input.embeds ?? {},
       ...(input.auto ? { auto: true } : {}),
-      ...(input.skill ? { skill: input.skill } : {})
+      ...(input.skill ? { skill: input.skill } : {}),
+      ...(attachmentSourceIds.length ? { attachmentSourceIds } : {})
     }),
     opStatus: JSON.stringify(input.ops.map(() => 'pending')),
     status: 'pending',
@@ -65,6 +77,7 @@ export function createProposal(input: ProposalInput): Proposal {
     resolvedAt: null
   }
   db.insert(proposals).values(row).run()
+  protectProposalAttachments(row.id, attachmentSourceIds)
   emit('proposals:changed', { noteId: input.noteId })
   return toProposal(row)
 }

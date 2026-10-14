@@ -31,7 +31,7 @@ export const ACTION_SKILL: Record<AskAction, string | undefined> = {
 
 /** 快捷操作默认的提问文字 */
 export function actionQuestion(action: AskAction, quote: string, region = false): string {
-  if(action==='grammar')return i18n.t('reading.grammarQuestion')
+  if (action === 'grammar') return i18n.t('reading.grammarQuestion')
   if (region && action !== 'ask') return i18n.t(`assist.qRegion.${action}`)
   const q = quote.length > 24 ? quote.slice(0, 24) + '…' : quote
   return i18n.t(`assist.q.${action}`, { q })
@@ -57,11 +57,14 @@ export async function askInline(
   validate?: () => Promise<unknown>
 ): Promise<void> {
   const settings = await api.settings.get()
-  if((action==='translate'||action==='grammar')&&anchor.parentType==='source') {
-    const source=await api.sources.get(anchor.parentId)
-    if(!source||source.aiExcluded){toast.error(i18n.t('reading.privacy'));return}
-    const word=anchor.quote?.trim() ?? ''
-    if(/^[A-Za-z]+(?:['’][A-Za-z]+)?$/.test(word))await api.reading.query(word)
+  if ((action === 'translate' || action === 'grammar') && anchor.parentType === 'source') {
+    const source = await api.sources.get(anchor.parentId)
+    if (!source || source.aiExcluded) {
+      toast.error(i18n.t('reading.privacy'))
+      return
+    }
+    const word = anchor.quote?.trim() ?? ''
+    if (/^[A-Za-z]+(?:['’][A-Za-z]+)?$/.test(word)) await api.reading.query(word)
   }
   const providers = await api.providers.list()
   const p = providers.find((x) => x.id === settings.ai.chat.providerId)
@@ -126,6 +129,7 @@ export async function saveToNote(input: {
   answer: string
   anchor: Anchor
   model: string | null
+  conversationId?: string
   browserEntries?: { id: string; text: string }[]
 }): Promise<boolean> {
   const app = useApp.getState()
@@ -133,6 +137,7 @@ export async function saveToNote(input: {
     const r = input.browserEntries
       ? await api.browser.captureSave(input.browserEntries, app.noteId)
       : await api.chat.saveAnswer({
+          conversationId: input.conversationId,
           noteId: app.noteId,
           sourceId: input.anchor.parentType === 'source' ? input.anchor.parentId : null,
           cue: input.cue,
@@ -162,16 +167,27 @@ export async function saveToNote(input: {
 }
 
 /** 就地对话中的追问 */
-export async function followUp(conversationId: string, text: string, anchor: Anchor, extra: Anchor[] = [], uiEvent?: UiEvent): Promise<void> {
+export async function followUp(
+  conversationId: string,
+  text: string,
+  anchor: Anchor,
+  extra: Anchor[] = [],
+  uiEvent?: UiEvent,
+  attachments: string[] = []
+): Promise<boolean> {
   const settings = await api.settings.get()
   const providers = await api.providers.list()
   const p = providers.find((x) => x.id === settings.ai.chat.providerId)
-  if (!p || !settings.ai.chat.model) return void toast.error(i18n.t('chat.needModel'))
+  if (!p || !settings.ai.chat.model) {
+    toast.error(i18n.t('chat.needModel'))
+    return false
+  }
   const ws = useApp.getState().context
   try {
     const { userMessage, assistant } = await sendChat({
       conversationId,
       text,
+      attachments,
       providerId: p.id,
       model: settings.ai.chat.model,
       effort: effortFor('ask', settings, p),
@@ -180,8 +196,10 @@ export async function followUp(conversationId: string, text: string, anchor: Anc
       context: { targets: [anchor, ...extra].slice(0, 8), noteId: ws.noteId, sourceId: ws.sourceId }
     })
     queryClient.setQueryData<ChatMessage[]>(['messages', conversationId], (list) => [...(list ?? []), userMessage, assistant])
+    return true
   } catch (e) {
     toast.error(errText(e))
+    return false
   }
 }
 

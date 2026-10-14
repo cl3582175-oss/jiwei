@@ -1,3 +1,8 @@
+import { attachmentContext } from '../attachments/context'
+import { useAttachments, resetAttachmentDraft, type AttachmentsController } from '../attachments/useAttachments'
+import { AttachmentInput, AttachmentDropZone } from '../attachments/AttachmentInput'
+import { AttachmentButton } from '../attachments/AttachmentBar'
+import { ConversationAttachments } from '../attachments/ConversationAttachments'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQueryClient } from '@tanstack/react-query'
@@ -50,7 +55,10 @@ function ChatSidebar() {
             variant="outline"
             size="sm"
             className="ml-1 h-7 rounded-full px-2.5"
-            onClick={() => openConversation(null)}
+            onClick={() => {
+              resetAttachmentDraft('chat')
+              openConversation(null)
+            }}
             aria-label={t('chat.new')}
           >
             <Plus />
@@ -102,18 +110,25 @@ export function Composer({
   onSend,
   onStop,
   placeholder,
-  prefill
+  prefill,
+  attachments,
+  provider,
+  newConversation
 }: {
   busy: boolean
-  onSend: (text: string) => void
+  onSend: (text: string) => void | boolean | Promise<void | boolean>
   onStop: () => void
   placeholder?: string
   /** 预填的文字（角色起步卡）：只填入输入框，由用户检查后发送 */
   prefill?: string
+  attachments?: AttachmentsController
+  provider?: import('@shared/types').ProviderInfo | null
+  newConversation?: boolean
 }) {
   const { t } = useTranslation()
   const [text, setText] = useState('')
   const ref = useRef<HTMLTextAreaElement>(null)
+  const [sending, setSending] = useState(false)
   useEffect(() => ref.current?.focus(), [])
   const resize = (): void => {
     const el = ref.current
@@ -129,32 +144,55 @@ export function Composer({
       ref.current?.setSelectionRange(prefill.length, prefill.length)
     })
   }, [prefill])
-  const submit = (): void => {
-    if (!text.trim() || busy) return
-    onSend(text.trim())
-    setText('')
-    requestAnimationFrame(resize)
+  const submit = async (value = text): Promise<void> => {
+    if ((!value.trim() && !attachments?.ids().length) || busy || sending || attachments?.adding) return
+    setSending(true)
+    try {
+      if ((await onSend(value.trim())) !== false) {
+        setText((current) => (current === text ? '' : current))
+        requestAnimationFrame(resize)
+      }
+    } finally {
+      setSending(false)
+    }
   }
   return (
     <div className="relative">
+      {attachments && (
+        <AttachmentInput
+          controller={attachments}
+          provider={provider}
+          text={text}
+          newConversation={newConversation}
+          onSend={(q) => void submit(q)}
+          onMentionPicked={() => setText(text.replace(/@[^\s@]*$/, ''))}
+        />
+      )}
       <textarea
         ref={ref}
         rows={1}
         value={text}
         onChange={(e) => {
           setText(e.target.value)
+          attachments?.textChanged(e.target.value)
           resize()
         }}
+        onPaste={attachments?.paste}
         onKeyDown={(e) => {
           if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
             e.preventDefault()
-            submit()
+            void submit()
           }
         }}
         placeholder={placeholder ?? t('chat.placeholder')}
         aria-label={placeholder ?? t('chat.placeholder')}
         className="block max-h-[220px] min-h-[52px] w-full resize-none bg-transparent px-4 pt-3.5 pb-2 text-sm leading-relaxed text-fg outline-none placeholder:text-subtle"
       />
+      {attachments && (
+        <div className="px-2 pb-2">
+          <AttachmentButton controller={attachments} />
+        </div>
+      )}
       <div className="absolute right-2.5 bottom-2.5">
         {busy ? (
           <Tip label={t('chat.stop')} side="top">
@@ -168,8 +206,8 @@ export function Composer({
               size="icon-sm"
               variant="primary"
               className="rounded-full"
-              disabled={!text.trim()}
-              onClick={submit}
+              disabled={(!text.trim() && !attachments?.ids().length) || sending || attachments?.adding}
+              onClick={() => void submit()}
               aria-label={t('chat.send')}
             >
               <ArrowUp />
@@ -198,6 +236,7 @@ function ChatPanel() {
   // 无痕只能在新对话开始前选择；已有对话沿用其设置
   const [incognitoNew, setIncognitoNew] = useState(false)
   const incognito = conv ? conv.incognito : incognitoNew
+  const attachments = useAttachments({ kind: 'chat', conversationId, incognito })
   const scroller = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
 
@@ -208,11 +247,12 @@ function ChatPanel() {
     if (el && stick.current) el.scrollTop = el.scrollHeight
   }, [msgs])
 
-  const send = async (text: string, page?: { title: string; text: string }, uiEvent?: UiEvent): Promise<void> => {
+  const send = async (text: string, page?: { title: string; text: string }, uiEvent?: UiEvent): Promise<boolean> => {
     if (!choice.providerId || !choice.model) {
       toast.error(t('chat.needModel'))
-      return
+      return false
     }
+    const attachmentIds = attachments.ids()
     stick.current = true
     const skill = starterSkill.current
     starterSkill.current = undefined
@@ -220,6 +260,7 @@ function ChatPanel() {
       const { conversation, userMessage, assistant } = await sendChat({
         conversationId,
         text,
+        attachments: attachmentIds,
         uiEvent,
         ...(skill ? { skill } : {}),
         providerId: choice.providerId,
@@ -228,9 +269,15 @@ function ChatPanel() {
         scope,
         // 既有会话由模式菜单立即更新；发送不写回旧渲染值，避免待回包的切换被撤销。
         ...(conversationId ? {} : { web }),
-        context: { ...packetFromWorkspace(getWorkspaceContext()), page: page ?? null },
+        context: await attachmentContext(
+          { ...packetFromWorkspace(getWorkspaceContext()), page: page ?? null },
+          conversationId,
+          attachmentIds
+        ),
         ...(conversationId ? {} : { incognito: incognitoNew })
       })
+      attachments.clear(attachmentIds)
+      if (useApp.getState().conversationId !== conversationId) return true
       const r = { conversation, userMessage }
       setMsgs((list) => [...list, r.userMessage, assistant])
       if (!conversationId) {
@@ -238,8 +285,10 @@ function ChatPanel() {
         openConversation(r.conversation.id)
       }
       void qc.invalidateQueries({ queryKey: ['conversations'] })
+      return true
     } catch (e) {
       toast.error(errText(e))
+      return false
     }
   }
   // 点了 AI 选择题的选项（v0.7.6）：当作用户的回答发出
@@ -277,7 +326,7 @@ function ChatPanel() {
   const noProvider = providers.length === 0 || !providers.some((p) => p.hasKey || !PROVIDER_PRESETS[p.kind].needsKey)
 
   return (
-    <div className="flex h-full flex-col">
+    <AttachmentDropZone controller={attachments} className="flex h-full flex-col">
       <header className="drag flex h-[52px] shrink-0 items-center justify-between gap-4 border-b border-border/70 pr-[calc(var(--tb-right)+12px)] pl-6">
         <span className="flex min-w-0 items-center gap-2">
           <span className="truncate text-sm font-medium text-fg">{conv?.title || t('chat.new')}</span>
@@ -288,6 +337,7 @@ function ChatPanel() {
             </span>
           )}
         </span>
+        <ConversationAttachments conversationId={conversationId} incognito={incognito} />
         {emb && emb.state !== 'ready' && (
           <button
             onClick={() => openSettings('ai')}
@@ -343,7 +393,10 @@ function ChatPanel() {
           <Composer
             prefill={prefill}
             busy={!!streaming}
-            onSend={(text) => void send(text)}
+            attachments={attachments}
+            provider={provider}
+            newConversation={!conversationId}
+            onSend={(text) => send(text)}
             onStop={() => streaming && void api.chat.stop(streaming.id)}
           />
           <div className="flex flex-wrap items-center gap-2 border-t border-border/60 px-3 py-2">
@@ -359,6 +412,7 @@ function ChatPanel() {
                   role="switch"
                   aria-checked={incognitoNew}
                   aria-label={t('chat.incognito')}
+                  disabled={!!attachments.items.length}
                   onClick={() => setIncognitoNew(!incognitoNew)}
                   className={cn(
                     'inline-flex h-7 items-center gap-1.5 rounded-lg border px-2.5 text-xs transition-colors',
@@ -374,7 +428,7 @@ function ChatPanel() {
           </div>
         </div>
       </div>
-    </div>
+    </AttachmentDropZone>
   )
 }
 

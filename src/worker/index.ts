@@ -1,3 +1,7 @@
+import { parseXlsx } from '../main/services/parsers/xlsx'
+import { parseCsv } from '../main/services/parsers/csv'
+import { parsePptx } from '../main/services/parsers/pptx'
+import { parseCode } from '../main/services/parsers/code'
 import { readFile } from 'fs/promises'
 import { expandICS } from '../main/lib/ics'
 import { segmentText, type TextSegment } from '../main/lib/segment'
@@ -19,6 +23,20 @@ import { createHash } from 'crypto'
 type Task = (payload: unknown, progress: (p: number) => void, signal: AbortSignal) => Promise<unknown>
 
 const tasks: Record<string, Task> = {
+  async parseXlsx(payload) {
+    return parseXlsx((payload as { path: string }).path)
+  },
+  async parseCsv(payload) {
+    const { path, name } = payload as { path: string; name?: string }
+    return parseCsv(path, name)
+  },
+  async parsePptx(payload) {
+    return parsePptx((payload as { path: string }).path)
+  },
+  async parseCode(payload) {
+    const { path, ext } = payload as { path: string; ext: string }
+    return parseCode(path, ext)
+  },
   async parseICS(payload) {
     const { body, range } = payload as { body: string; range: { startAt: number; endAt: number } }
     return expandICS(body, range)

@@ -1,4 +1,6 @@
-import { and, eq, inArray, isNull } from 'drizzle-orm'
+import { tablePreview } from '../../lib/attachmentText'
+import { getSettings } from '../settings'
+import { and, eq, inArray, isNull, or } from 'drizzle-orm'
 import { getDb, getSqlite } from '../../db'
 import { annotations, assetTexts, noteAssetBlocks, blocks, chunks, notes, sourceSegments, sources } from '../../db/schema'
 import type { ChatScope } from '@shared/schemas'
@@ -132,7 +134,7 @@ async function vectorHits(q: string, limit: number, filters: RecordingFilters = 
 }
 
 /** 读取候选分片的内容与元数据（同时完成隐私与范围过滤） */
-function hydrate(keys: Key[], scope: ChatScope): Map<Key, KnowledgeHit> {
+function hydrate(keys: Key[], scope: ChatScope, allow?: { sourceIds: string[] }): Map<Key, KnowledgeHit> {
   const db = getDb()
   const out = new Map<Key, KnowledgeHit>()
   const blockIds = keys.filter((k) => k.startsWith('block:')).map((k) => k.slice(6))
@@ -195,17 +197,29 @@ function hydrate(keys: Key[], scope: ChatScope): Map<Key, KnowledgeHit> {
       .select({ g: sourceSegments, s: sources })
       .from(sourceSegments)
       .innerJoin(sources, eq(sourceSegments.sourceId, sources.id))
-      .where(and(inArray(sourceSegments.id, segIds), isNull(sources.deletedAt), eq(sources.aiExcluded, false)))
+      .where(
+        and(
+          inArray(sourceSegments.id, segIds),
+          isNull(sources.deletedAt),
+          or(
+            eq(sources.aiExcluded, false),
+            allow?.sourceIds.length ? and(eq(sources.space, 'attachment'), inArray(sources.id, allow.sourceIds)) : undefined
+          )
+        )
+      )
       .all()
     for (const { g, s } of rows) {
       if (srcScope && !srcScope.has(s.id)) continue
-      const loc = JSON.parse(g.locator) as { value?: string }
+      const loc = JSON.parse(g.locator) as Record<string, unknown>
+      const limited = s.space === 'attachment' || !!allow?.sourceIds.includes(s.id)
+      const preview = limited ? tablePreview([{ ...g, locator: loc }])[0] : null
+      if (limited && !preview) continue
       out.set(`segment:${g.id}`, {
         parentType: 'source',
         parentId: s.id,
         ownerId: g.id,
         title: s.title,
-        text: g.text,
+        text: preview?.text ?? g.text,
         locator: typeof loc.value === 'string' ? loc.value : null,
         score: 0,
         learnedAt: s.publishedAt ?? s.accessedAt,
@@ -276,18 +290,27 @@ export async function retrieve(
   scope: ChatScope,
   limit = 8,
   filters: RecordingFilters = {},
-  prefer?: string | null
+  prefer?: string | null,
+  allow?: { sourceIds: string[] }
 ): Promise<KnowledgeHit[]> {
   if (scope.type === 'none' || !query.trim()) return []
+  const privateAllowed =
+    allow?.sourceIds.length &&
+    getDb()
+      .select({ id: sources.id })
+      .from(sources)
+      .where(and(inArray(sources.id, allow.sourceIds), eq(sources.space, 'attachment')))
+      .get()
+  const onlyKeywords = !!privateAllowed && getSettings().ai.embedding?.mode === 'cloud'
   const [kw, vec] = await Promise.all([
     Promise.resolve(keywordHits(query, limit, filters)),
-    vectorHits(query, limit, filters).catch(noVectors)
+    onlyKeywords ? Promise.resolve(noVectors()) : vectorHits(query, limit, filters).catch(noVectors)
   ])
   const rrf = new Map<Key, number>()
   kw.forEach((k, i) => rrf.set(k, (rrf.get(k) ?? 0) + 1 / (RRF_K + i)))
   // 向量命中权重略高：语义相关比字面重合更可靠
   vec.keys.forEach((k, i) => rrf.set(k, (rrf.get(k) ?? 0) + 1.2 / (RRF_K + i)))
-  const hits = hydrate([...rrf.keys()], scope)
+  const hits = hydrate([...rrf.keys()], scope, allow)
   const kwSet = new Set(kw)
   const vecSet = new Set(vec.keys)
   const via = (k: Key): SearchHit['via'] => (kwSet.has(k) && vecSet.has(k) ? 'both' : vecSet.has(k) ? 'semantic' : 'keyword')
@@ -312,8 +335,7 @@ export async function retrieve(
       )
       for (let i = 0; i < missing.length; i++) {
         const v = vectors[i]
-        if (v?.length === qv.length && v.every(Number.isFinite))
-          missing[i].sim = clampSim(qv.reduce((sum, n, j) => sum + n * v[j], 0))
+        if (v?.length === qv.length && v.every(Number.isFinite)) missing[i].sim = clampSim(qv.reduce((sum, n, j) => sum + n * v[j], 0))
       }
     } catch {
       /* 相似度是附加元数据，向量失败时保留关键词结果。 */
