@@ -138,3 +138,42 @@ test('v0.14.2 relation types: change a text link to prerequisite in the panel, l
     .poll(async () => (await page.evaluate(() => window.jiwei.graph.data())).edges.find((e) => e.relation === 'contrasts')?.relation)
     .toBe('contrasts')
 })
+
+test('v0.14.3 shift-drag from one note to another picks a relation', async () => {
+  await page.evaluate(async () => {
+    const j = window.jiwei
+    const c = (await j.categories.create('note', '甲')).id
+    const ids = []
+    for (const t of ['递归', '动态规划', '二分查找']) ids.push((await j.notes.create({ title: t, categoryId: c })).id)
+    await j.connections.relate(ids[0], 'note', ids[2])
+  })
+  await page.keyboard.press('ControlOrMeta+6')
+  await expect(page.getByTestId('graph-canvas').locator('canvas').first()).toBeVisible()
+  await page.waitForTimeout(4000)
+  const box = (await page.getByTestId('graph-canvas').boundingBox())!
+  const ids = await page.evaluate(() => window.jiwei.graph.data().then((g) => Object.fromEntries(g.nodes.map((n) => [n.title, n.key]))))
+  const point = (key: string) =>
+    page
+      .getByTestId('graph-canvas')
+      .evaluate((el, key) => (el as unknown as { __graphPoint(k: string): { x: number; y: number } }).__graphPoint(key), key)
+  const found = { 递归: await point(ids['递归']), 动态规划: await point(ids['动态规划']) }
+  for (const k of Object.keys(found) as (keyof typeof found)[]) found[k] = { x: found[k].x + box.x, y: found[k].y + box.y }
+  const a = found['递归'],
+    b = found['动态规划']
+  await page.mouse.move(a.x, a.y)
+  await page.keyboard.down('Shift')
+  await page.mouse.down()
+  await page.mouse.move((a.x + b.x) / 2, (a.y + b.y) / 2, { steps: 8 })
+  await page.mouse.move(b.x, b.y, { steps: 8 })
+  await page.mouse.up()
+  await page.keyboard.up('Shift')
+  await expect(page.getByTestId('graph-connect')).toBeVisible()
+  await expect(page.getByTestId('graph-panel')).toHaveCount(0)
+  await page
+    .getByTestId('graph-connect')
+    .getByRole('button', { name: /前置 · 递归 → 动态规划/ })
+    .click()
+  await expect
+    .poll(async () => (await page.evaluate(() => window.jiwei.graph.data())).edges.find((e) => e.relation === 'prerequisite')?.relation)
+    .toBe('prerequisite')
+})

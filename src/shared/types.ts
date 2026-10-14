@@ -528,6 +528,9 @@ export interface GraphEdge {
   relation: Relation
   /** AI 建议的关系为 suggested（v0.14.3 起） */
   status: 'confirmed' | 'suggested'
+  /** 这条连线对应的关系记录（确认 / 否决建议时用）与 AI 给的理由 */
+  linkId?: string
+  reason?: string | null
 }
 
 export interface KnowledgeGraph {

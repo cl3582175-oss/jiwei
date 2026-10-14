@@ -127,3 +127,125 @@ export function neighborhood(g: KnowledgeGraph, focus: string, depth: number): S
 
 /** 以标题为主语的关系说明里，选中节点在关系中的位置 */
 export const otherEnd = (e: GraphEdge, key: string): string => (e.from === key ? e.to : e.from)
+
+/* ——— 学习路径（v0.14.3）：只看“前置”关系，按先修在左分层 ——— */
+
+export interface PathModel {
+  /** 每层的节点（已按父节点的平均位置排序，减少交叉） */
+  layers: string[][]
+  edges: [string, string][]
+  /** 前置都已牢固、自己还没牢固：现在可以学 */
+  frontier: Set<string>
+  /** 没牢固、又挡住后面不少内容的：卡点（按挡住的数量排序） */
+  blockers: { key: string; blocked: number }[]
+  /** 前置关系里成环的笔记（多半是标反了） */
+  cycle: Set<string>
+}
+
+export function learningPath(nodes: GraphNode[], edges: GraphEdge[]): PathModel {
+  const solid = new Set(nodes.filter((n) => n.mastery === 'solid').map((n) => n.key))
+  const pairs = edges
+    .filter((e) => e.relation === 'prerequisite' && e.status === 'confirmed')
+    .map((e) => [e.from, e.to] as [string, string])
+  const keys = [...new Set(pairs.flat())]
+  const out = new Map<string, string[]>(),
+    into = new Map<string, string[]>()
+  for (const [a, b] of pairs) {
+    out.set(a, [...(out.get(a) ?? []), b])
+    into.set(b, [...(into.get(b) ?? []), a])
+  }
+  // Kahn 拓扑排序；剩下的就是环
+  const indeg = new Map(keys.map((k) => [k, into.get(k)?.length ?? 0]))
+  const layer = new Map<string, number>()
+  let queue = keys.filter((k) => !indeg.get(k))
+  queue.forEach((k) => layer.set(k, 0))
+  const order: string[] = []
+  while (queue.length) {
+    const next: string[] = []
+    for (const k of queue) {
+      order.push(k)
+      for (const m of out.get(k) ?? []) {
+        layer.set(m, Math.max(layer.get(m) ?? 0, (layer.get(k) ?? 0) + 1))
+        indeg.set(m, indeg.get(m)! - 1)
+        if (!indeg.get(m)) next.push(m)
+      }
+    }
+    queue = next
+  }
+  const cycle = new Set(keys.filter((k) => !order.includes(k)))
+  const depth = Math.max(0, ...layer.values())
+  cycle.forEach((k) => layer.set(k, depth + 1))
+  const layers: string[][] = []
+  for (const k of [...order, ...cycle]) (layers[layer.get(k)!] ??= []).push(k)
+  // 按父节点在上一层的平均位置排序
+  for (let i = 1; i < layers.length; i++) {
+    const pos = new Map((layers[i - 1] ?? []).map((k, j) => [k, j]))
+    const score = (k: string): number => {
+      const ps = (into.get(k) ?? []).map((p) => pos.get(p)).filter((p): p is number => p !== undefined)
+      return ps.length ? ps.reduce((s, p) => s + p, 0) / ps.length : Infinity
+    }
+    layers[i] = (layers[i] ?? []).sort((a, b) => score(a) - score(b))
+  }
+  const frontier = new Set(keys.filter((k) => !solid.has(k) && !cycle.has(k) && (into.get(k) ?? []).every((p) => solid.has(p))))
+  const descendants = (k: string): number => {
+    const seen = new Set<string>()
+    const walk = (x: string): void => {
+      for (const m of out.get(x) ?? [])
+        if (!seen.has(m)) {
+          seen.add(m)
+          walk(m)
+        }
+    }
+    walk(k)
+    return seen.size
+  }
+  const blockers = keys
+    .filter((k) => !solid.has(k))
+    .map((key) => ({ key, blocked: descendants(key) }))
+    .filter((b) => b.blocked >= 2)
+    .sort((a, b) => b.blocked - a.blocked)
+    .slice(0, 5)
+  return { layers: layers.filter(Boolean), edges: pairs, frontier, blockers, cycle }
+}
+
+/* ——— 知识缺口（v0.14.3）：孤立的笔记、几乎不与其它分类相连的分类、两个分类之间缺桥 ——— */
+
+export interface Gaps {
+  isolated: GraphNode[]
+  lonely: { categoryId: string; notes: number; cross: number }[]
+  bridges: { a: string; b: string; from: GraphNode; to: GraphNode }[]
+}
+
+export function knowledgeGaps(g: { nodes: GraphNode[]; edges: GraphEdge[]; categories: { id: string }[] }): Gaps {
+  const notes = g.nodes.filter((n) => n.type === 'note')
+  const byKey = new Map(notes.map((n) => [n.key, n]))
+  const deg = degrees(g.edges)
+  const isolated = notes
+    .filter((n) => !deg.get(n.key))
+    .sort((a, b) => b.weight - a.weight)
+    .slice(0, 8)
+  const size = new Map<string, GraphNode[]>()
+  for (const n of notes) if (n.categoryId) size.set(n.categoryId, [...(size.get(n.categoryId) ?? []), n])
+  const cross = new Map<string, number>()
+  const between = new Set<string>()
+  for (const e of g.edges) {
+    const a = byKey.get(e.from)?.categoryId,
+      b = byKey.get(e.to)?.categoryId
+    if (!a || !b || a === b) continue
+    cross.set(a, (cross.get(a) ?? 0) + 1)
+    cross.set(b, (cross.get(b) ?? 0) + 1)
+    between.add([a, b].sort().join('|'))
+  }
+  const big = g.categories.map((c) => c.id).filter((id) => (size.get(id)?.length ?? 0) >= 3)
+  const lonely = big
+    .map((categoryId) => ({ categoryId, notes: size.get(categoryId)!.length, cross: cross.get(categoryId) ?? 0 }))
+    .filter((c) => c.cross <= 1)
+  // 两个分类之间一条连线都没有：各取连接最多的一篇，拿来问“它们有什么联系”
+  const top = (id: string): GraphNode => [...size.get(id)!].sort((x, y) => (deg.get(y.key) ?? 0) - (deg.get(x.key) ?? 0))[0]
+  const bridges: Gaps['bridges'] = []
+  for (let i = 0; i < big.length; i++)
+    for (let j = i + 1; j < big.length; j++)
+      if (!between.has([big[i], big[j]].sort().join('|'))) bridges.push({ a: big[i], b: big[j], from: top(big[i]), to: top(big[j]) })
+  bridges.sort((x, y) => size.get(y.a)!.length * size.get(y.b)!.length - size.get(x.a)!.length * size.get(x.b)!.length)
+  return { isolated, lonely, bridges: bridges.slice(0, 4) }
+}
