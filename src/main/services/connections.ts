@@ -1,4 +1,5 @@
 import { and, eq, inArray, isNull, isNotNull, or } from 'drizzle-orm'
+import { asRelation, type Relation } from '@shared/graphRelations'
 import { getDb, getSqlite } from '../db'
 import { assetTexts, noteAssetBlocks, blocks, chunks, links, notes, sources } from '../db/schema'
 import { newId } from '../lib/ids'
@@ -31,8 +32,8 @@ function manualLinks(noteId: string, includeDeleted = false) {
     .from(links)
     .where(
       and(
+        // 手动关联可以带类型（v0.14.2）：前置、推出、对比……都是手动关联的一种
         eq(links.origin, 'manual'),
-        eq(links.relation, 'related'),
         or(and(eq(links.fromType, 'note'), eq(links.fromId, noteId)), and(eq(links.toType, 'note'), eq(links.toId, noteId))),
         includeDeleted ? undefined : isNull(links.deletedAt)
       )
@@ -208,7 +209,15 @@ export async function noteConnections(noteId: string): Promise<NoteConnections> 
         ? { type: l.toType as 'note' | 'source', id: l.toId }
         : { type: l.fromType as 'note' | 'source', id: l.fromId }
     const t = titleOf(other.type, other.id)
-    if (t.ok) related.push({ linkId: l.id, type: other.type, id: other.id, title: t.title })
+    if (t.ok)
+      related.push({
+        linkId: l.id,
+        type: other.type,
+        id: other.id,
+        title: t.title,
+        relation: asRelation(l.relation),
+        outgoing: l.fromType === 'note' && l.fromId === noteId
+      })
   }
   const exclude = new Set<string>([
     ...outgoing,
@@ -224,25 +233,33 @@ export async function noteConnections(noteId: string): Promise<NoteConnections> 
   }
 }
 
-/** 建立关联（手动、双向可见） */
-export function relate(noteId: string, toType: 'note' | 'source', toId: string): void {
+/**
+ * 建立关联（手动、双向可见）。relation 为关系类型（默认“相关”），读作“本篇 <关系> 对方”；
+ * reverse 为 true 时读作“对方 <关系> 本篇”（只对笔记之间有效）。同一对节点只保留一条手动关联，再次设置即改类型 / 方向。
+ */
+export function relate(noteId: string, toType: 'note' | 'source', toId: string, relation: Relation = 'related', reverse = false): void {
   if (toType === 'note' && toId === noteId) return
   const db = getDb()
   const now = Date.now()
+  const flip = reverse && toType === 'note'
   const existing = manualLinks(noteId, true).find(
     (l) =>
       (l.fromId === noteId && l.toType === toType && l.toId === toId) || (l.toId === noteId && l.fromType === toType && l.fromId === toId)
   )
-  if (existing) db.update(links).set({ deletedAt: null, updatedAt: now }).where(eq(links.id, existing.id)).run()
+  const ends = flip
+    ? { fromType: 'note' as const, fromId: toId, toType: 'note' as const, toId: noteId }
+    : { fromType: 'note' as const, fromId: noteId, toType, toId }
+  if (existing)
+    db.update(links)
+      .set({ ...ends, relation, status: 'confirmed', deletedAt: null, updatedAt: now, updatedBy: deviceId() })
+      .where(eq(links.id, existing.id))
+      .run()
   else
     db.insert(links)
       .values({
         id: newId(),
-        fromType: 'note',
-        fromId: noteId,
-        toType,
-        toId,
-        relation: 'related',
+        ...ends,
+        relation,
         origin: 'manual',
         createdAt: now,
         updatedAt: now,
@@ -281,7 +298,13 @@ export function unrelate(noteId: string, toType: 'note' | 'source', toId: string
 }
 
 /** 知识结构图用：全部未删除的笔记间 / 笔记到资料的关系 */
-export function allEdges(): { from: string; to: string; kind: 'reference' | 'related' | 'source' }[] {
+export function allEdges(): {
+  from: string
+  to: string
+  kind: 'reference' | 'related' | 'source'
+  relation: string
+  status: 'confirmed' | 'suggested' | 'rejected'
+}[] {
   return getDb()
     .select({
       fromType: links.fromType,
@@ -289,16 +312,19 @@ export function allEdges(): { from: string; to: string; kind: 'reference' | 'rel
       toType: links.toType,
       toId: links.toId,
       origin: links.origin,
-      relation: links.relation
+      relation: links.relation,
+      status: links.status
     })
     .from(links)
     .where(and(isNull(links.deletedAt), eq(links.fromType, 'note'), isNotNull(links.toId)))
     .all()
-    .filter((l) => l.toType === 'note' || l.toType === 'source')
+    .filter((l) => (l.toType === 'note' || l.toType === 'source') && l.status !== 'rejected')
     .map((l) => ({
       from: `note:${l.fromId}`,
       to: `${l.toType}:${l.toId}`,
-      kind: l.toType === 'source' ? ('source' as const) : l.origin === 'manual' ? ('related' as const) : ('reference' as const)
+      kind: l.toType === 'source' ? ('source' as const) : l.origin === 'doc' ? ('reference' as const) : ('related' as const),
+      relation: l.relation,
+      status: l.status
     }))
 }
 

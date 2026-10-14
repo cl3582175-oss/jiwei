@@ -8,6 +8,8 @@ import { api, cn } from '@/lib/utils'
 import { useApp } from '@/store/app'
 import { Button } from '@/components/ui/button'
 import { Tip } from '@/components/ui/primitives'
+import type { Relation } from '@shared/graphRelations'
+import { relationOptions } from '@/features/graph/NodePanel'
 
 // 笔记底部的「关联」：链接到这里（反向链接）、已关联、相关推荐（本地向量）、未链接的提及。
 // 关联是双向的：在任意一方建立，两边都能看到。
@@ -35,7 +37,7 @@ function Group({ icon, title, count, children }: { icon: React.ReactNode; title:
 }
 
 export function ConnectionsPanel({ noteId }: { noteId: string }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const qc = useQueryClient()
   const [collapsed, setCollapsed] = useState(false)
   const key = ['connections', noteId]
@@ -66,7 +68,8 @@ export function ConnectionsPanel({ noteId }: { noteId: string }) {
   }
   const total = c.backlinks.length + c.linked.length + c.related.length + c.mentions.length
   const Icon = ({ type }: { type: 'note' | 'source' }) => (type === 'note' ? <NotebookText /> : <FileText />)
-  const row = 'group flex items-start gap-2.5 rounded-lg px-2.5 py-2 hover:bg-surface-hover [&>svg]:mt-0.5 [&>svg]:size-3.5 [&>svg]:shrink-0 [&>svg]:text-subtle'
+  const row =
+    'group flex items-start gap-2.5 rounded-lg px-2.5 py-2 hover:bg-surface-hover [&>svg]:mt-0.5 [&>svg]:size-3.5 [&>svg]:shrink-0 [&>svg]:text-subtle'
 
   return (
     <section className="mt-8 rounded-2xl border border-border bg-surface/60 px-5 py-4" data-testid="connections">
@@ -99,6 +102,24 @@ export function ConnectionsPanel({ noteId }: { noteId: string }) {
                 <button onClick={() => open(l.type, l.id)} className="min-w-0 flex-1 truncate text-left text-sm text-fg hover:text-accent">
                   {l.title || t('common.untitled')}
                 </button>
+                {/* 关系类型（v0.14.2）：前置、推出、对比……在知识图谱上会按类型画出来 */}
+                {l.type === 'note' && (
+                  <select
+                    aria-label={`${t('graph.setType')}：${l.title}`}
+                    value={`${l.relation}|${l.relation === 'related' || l.outgoing ? 0 : 1}`}
+                    onChange={(e) => {
+                      const [r, rev] = e.target.value.split('|')
+                      void api.connections.relate(noteId, 'note', l.id, r as Relation, rev === '1').then(refresh)
+                    }}
+                    className="max-w-40 shrink-0 truncate rounded-md border border-transparent bg-transparent px-1 py-0.5 text-2xs text-subtle hover:border-border focus:border-border"
+                  >
+                    {relationOptions(t('links.thisNote'), l.title || t('common.untitled'), i18n.language.startsWith('zh')).map((o) => (
+                      <option key={o.value} value={o.value} title={o.title}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                )}
                 <Tip label={t('links.unrelate')}>
                   <button
                     aria-label={`${t('links.unrelate')}：${l.title}`}
@@ -116,7 +137,10 @@ export function ConnectionsPanel({ noteId }: { noteId: string }) {
               <li key={`${r.type}:${r.id}`} className={row} data-related={r.title}>
                 <Icon type={r.type} />
                 <div className="min-w-0 flex-1">
-                  <button onClick={() => open(r.type, r.id)} className="block max-w-full truncate text-left text-sm text-fg hover:text-accent">
+                  <button
+                    onClick={() => open(r.type, r.id)}
+                    className="block max-w-full truncate text-left text-sm text-fg hover:text-accent"
+                  >
                     {r.title || t('common.untitled')}
                   </button>
                   {r.theirs && <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-muted">{r.theirs}</p>}
@@ -128,7 +152,12 @@ export function ConnectionsPanel({ noteId }: { noteId: string }) {
                     {t('links.relate')}
                   </Button>
                   <Tip label={t('links.dismiss')}>
-                    <Button size="icon-sm" variant="ghost" aria-label={`${t('links.dismiss')}：${r.title}`} onClick={() => unrelate(r.type, r.id)}>
+                    <Button
+                      size="icon-sm"
+                      variant="ghost"
+                      aria-label={`${t('links.dismiss')}：${r.title}`}
+                      onClick={() => unrelate(r.type, r.id)}
+                    >
                       <X />
                     </Button>
                   </Tip>
@@ -141,7 +170,10 @@ export function ConnectionsPanel({ noteId }: { noteId: string }) {
               <li key={m.noteId} className={row} data-mention={m.title}>
                 <NotebookText />
                 <div className="min-w-0 flex-1">
-                  <button onClick={() => open('note', m.noteId, m.blockId)} className="block max-w-full truncate text-left text-sm text-fg hover:text-accent">
+                  <button
+                    onClick={() => open('note', m.noteId, m.blockId)}
+                    className="block max-w-full truncate text-left text-sm text-fg hover:text-accent"
+                  >
                     {m.title || t('common.untitled')}
                   </button>
                   <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-muted">{m.text}</p>

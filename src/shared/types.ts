@@ -18,6 +18,7 @@ import type {
   SourceUpdate
 } from './schemas'
 import type { Effort, ModelCapsOverride, ProviderKind, Usage } from './ai'
+import type { Relation } from './graphRelations'
 export type {
   AiSettings,
   AnnotationInput,
@@ -487,7 +488,8 @@ export interface NoteConnections {
   /** 正文中链接到本篇的笔记（及所在段落） */
   backlinks: { noteId: string; title: string; blockId: string | null; text: string }[]
   /** 手动建立的关联（双向） */
-  linked: { linkId: string; type: 'note' | 'source'; id: string; title: string }[]
+  /** relation：关系类型；outgoing 为 true 时读作“本篇 <关系> 对方”，否则“对方 <关系> 本篇” */
+  linked: { linkId: string; type: 'note' | 'source'; id: string; title: string; relation: Relation; outgoing: boolean }[]
   /** 按内容相似度推荐的相关笔记 / 资料（mine：本篇中最相似的段落；theirs：对方的段落） */
   related: { type: 'note' | 'source'; id: string; title: string; score: number; mine: string; theirs: string }[]
   /** 正文提到本篇标题、但还没有链接的笔记 */
@@ -510,6 +512,11 @@ export interface GraphNode {
   weight: number
   /** 笔记的掌握情况（与掌握度地图一致） */
   mastery: MasteryStatus | null
+  /** 正文开头一句（悬停卡片用） */
+  excerpt: string
+  /** 知识状态：已过时 / 存疑时在图上标出 */
+  status: 'active' | 'outdated' | 'disputed' | null
+  createdAt: number
 }
 
 export interface GraphEdge {
@@ -517,6 +524,10 @@ export interface GraphEdge {
   to: string
   /** reference 正文链接；related 手动关联；source 引用资料 */
   kind: 'reference' | 'related' | 'source'
+  /** 关系类型（v0.14.2）：读作“from <关系> to”；正文链接为 related */
+  relation: Relation
+  /** AI 建议的关系为 suggested（v0.14.3 起） */
+  status: 'confirmed' | 'suggested'
 }
 
 export interface KnowledgeGraph {

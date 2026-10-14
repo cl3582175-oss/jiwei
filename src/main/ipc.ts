@@ -578,7 +578,7 @@ const handlers: Handlers = {
   },
   connections: {
     get: (_, noteId) => connections.noteConnections(noteId),
-    relate: (_, noteId, toType, toId) => connections.relate(noteId, toType, toId),
+    relate: (_, noteId, toType, toId, relation, reverse) => connections.relate(noteId, toType, toId, relation, reverse),
     unrelate: (_, noteId, toType, toId) => connections.unrelate(noteId, toType, toId),
     linkMention: (_, noteId, mentionNoteId, blockId, undo) => connections.linkMention(noteId, mentionNoteId, blockId, undo)
   },

@@ -15,7 +15,19 @@ const syncCols = {
 }
 
 export const LINK_ENDPOINTS = ['note', 'source', 'segment', 'insight', 'goal', 'review', 'action'] as const
-export const LINK_RELATIONS = ['reference', 'related', 'supersedes', 'evidence', 'derived_from', 'contradicts', 'applied_in'] as const
+export const LINK_RELATIONS = [
+  'reference',
+  'related',
+  'supersedes',
+  'evidence',
+  'derived_from',
+  'contradicts',
+  'applied_in',
+  // v0.14.2 知识图谱关系
+  'prerequisite',
+  'part_of',
+  'contrasts'
+] as const
 
 /** 本机元数据：设备 ID、知识库 ID 等 */
 export const meta = sqliteTable('meta', {
@@ -243,7 +255,13 @@ export const links = sqliteTable(
     toId: text('to_id').notNull(),
     toSelector: text('to_selector'),
     relation: text('relation', { enum: LINK_RELATIONS }).notNull().default('reference'),
-    origin: text('origin', { enum: ['doc', 'manual'] }).notNull(),
+    origin: text('origin', { enum: ['doc', 'manual', 'ai'] }).notNull(),
+    /** v0.14.2：AI 推断的关系先是 suggested，用户确认后 confirmed；否决为 rejected（以后不再提） */
+    status: text('status', { enum: ['confirmed', 'suggested', 'rejected'] }).notNull().default('confirmed'),
+    /** 关系的一句理由与依据原句（AI 建议时填写） */
+    reason: text('reason'),
+    quote: text('quote'),
+    confidence: real('confidence'),
     ...syncCols
   },
   (t) => [index('links_from_idx').on(t.fromType, t.fromId), index('links_to_idx').on(t.toType, t.toId)]
