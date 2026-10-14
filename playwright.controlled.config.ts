@@ -16,6 +16,7 @@ for (const name of [
 
 export default defineConfig({
   ...base,
+  globalSetup: './e2e/setup/controlled.ts',
   testIgnore: [
     '**/fixtures/*.test.ts',
     '**/*-live.spec.ts',

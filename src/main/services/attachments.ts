@@ -1,3 +1,4 @@
+import { CODE_EXTS } from './parsers/code'
 export { canReadSource } from './attachmentsAccess'
 import { attachmentOwner as owner } from './attachmentsAccess'
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm'
@@ -27,31 +28,7 @@ import { compressImage } from '../lib/imageResize'
 const PRIVATE_DRAFT = 'incognito-draft:'
 const ORPHAN = 'orphan:'
 const MB = 1024 * 1024
-const CODE_EXTS = [
-  'json',
-  'yaml',
-  'yml',
-  'xml',
-  'log',
-  'py',
-  'js',
-  'ts',
-  'tsx',
-  'jsx',
-  'java',
-  'go',
-  'rs',
-  'c',
-  'cpp',
-  'h',
-  'cs',
-  'rb',
-  'php',
-  'sh',
-  'sql',
-  'ini',
-  'toml'
-]
+
 export const ATTACHMENT_EXTS = [
   ...Object.keys(EXT_KIND).filter((ext) => !['doc', 'xls', 'ppt', 'mobi', 'azw3'].includes(ext)),
   'markdown',

@@ -1,3 +1,4 @@
+import { CODE_EXTS } from './parsers/code'
 import log from 'electron-log/main'
 import { recordingAudio, recordingForSource, purgeRecording } from './recording'
 import { recordings } from '../db/schema'
@@ -57,7 +58,9 @@ export const EXT_KIND: Record<string, SourceKind> = {
   xlsx: 'document',
   csv: 'document',
   html: 'document',
-  htm: 'document'
+  htm: 'document',
+  markdown: 'document',
+  ...Object.fromEntries(CODE_EXTS.map((ext) => [ext, 'document' as const]))
 }
 
 function query(conds: SQL[]): Source[] {
