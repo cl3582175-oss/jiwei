@@ -5,6 +5,9 @@ import { CurrencyCode, MoneySettingsSchema } from './money'
 import { PodcastVoiceSchema } from './discover'
 export { InboxCreateSchema, InboxUpdateSchema, InboxAcceptSchema } from './inbox'
 import { z } from 'zod'
+import { UiSettingsSchema, UI_DEFAULTS } from './ui/settings'
+import { UiEventSchema } from './ui/events'
+import { UiNodeSchema } from './ui/catalog'
 import { ExternalBackupSchema } from './backup'
 import { DomainSchema, NetworkRuleSchema } from './browserSafety'
 import { AnchorSchema, ContextPacketSchema } from './context'
@@ -15,6 +18,16 @@ import { RetrievalSettingsSchema, WebModeSchema } from './retrieval'
 // 所有跨进程输入的 zod 模式。类型由模式推导，保证“声明一次、处处一致”。
 
 export const Id = z.string().min(1).max(64)
+export const UiSaveToNoteSchema = z.object({
+  conversationId: Id,
+  messageId: Id,
+  uiKey: z.string().max(80),
+  node: UiNodeSchema,
+  state: z.unknown().optional(),
+  target: z.object({ noteId: Id.optional(), newTitle: z.string().max(200).optional() }),
+  mode: z.enum(['auto', 'rows'])
+})
+export type UiSaveToNote = z.input<typeof UiSaveToNoteSchema>
 /** 二进制数据（Yjs 增量、文件字节） */
 export const Bytes = z.custom<Uint8Array>((v) => v instanceof Uint8Array, { message: 'Expected Uint8Array' })
 export const CategoryKindSchema = z.enum(['note', 'source'])
@@ -82,9 +95,23 @@ export const CategoryPatchSchema = z.object({
 export const SettingsPatchSchema = z.object({
   retrieval: RetrievalSettingsSchema.partial().optional(),
   plugins: z.object({ recommendedDismissed: z.boolean().optional() }).optional(),
-  tasks: z.object({ paused: z.boolean().optional(), launchAtLogin: z.boolean().optional(), keepRunning: z.boolean().optional() }).optional(),
+  tasks: z
+    .object({ paused: z.boolean().optional(), launchAtLogin: z.boolean().optional(), keepRunning: z.boolean().optional() })
+    .optional(),
   plan: z.object({ autoComplete: z.boolean() }).optional(),
-  discover: z.object({ dailyLimit: z.number().int().min(0).max(5).optional(), dailyBudget: z.number().min(0).max(1000).optional(), budgetCurrency: z.string().regex(/^[A-Z]{3}$/).optional(), useSearch: z.boolean().optional(), podcast: z.boolean().optional(), podcastVoice: PodcastVoiceSchema.optional() }).optional(),
+  discover: z
+    .object({
+      dailyLimit: z.number().int().min(0).max(5).optional(),
+      dailyBudget: z.number().min(0).max(1000).optional(),
+      budgetCurrency: z
+        .string()
+        .regex(/^[A-Z]{3}$/)
+        .optional(),
+      useSearch: z.boolean().optional(),
+      podcast: z.boolean().optional(),
+      podcastVoice: PodcastVoiceSchema.optional()
+    })
+    .optional(),
   recordingScene: z.enum(['meeting', 'lecture', 'thought']).optional(),
   capture: CaptureSettingsSchema.optional(),
   language: z.enum(['zh-CN', 'en']).optional(),
@@ -96,7 +123,7 @@ export const SettingsPatchSchema = z.object({
   sidebars: z
     .partialRecord(z.enum(['notes', 'library', 'chat']), z.object({ collapsed: z.boolean(), width: z.number().min(150).max(600) }))
     .optional(),
-  ai: z.lazy(() => AiSettingsSchema).optional(),
+  ai: z.lazy(() => AiSettingsSchema.extend({ ui: UiSettingsSchema.partial().optional() })).optional(),
   /** 费用上限（v0.7） */
   budget: z.lazy(() => BudgetSchema).optional(),
   /** 币种、汇率、省钱选项（v0.7.5） */
@@ -254,6 +281,7 @@ export const ChatScopeSchema = z.discriminatedUnion('type', [
 export type ChatScope = z.infer<typeof ChatScopeSchema>
 
 export const ChatSendSchema = z.object({
+  uiEvent: UiEventSchema.optional(),
   conversationId: Id.nullable(),
   text: z.string().min(1).max(20000),
   providerId: Id,
@@ -280,6 +308,7 @@ export const ChatSendSchema = z.object({
 export type ChatSend = z.infer<typeof ChatSendSchema>
 
 export const AiSettingsSchema = z.object({
+  ui: UiSettingsSchema.default(UI_DEFAULTS),
   chat: z.object({ providerId: Id.nullable(), model: z.string().max(200).nullable() }),
   effort: EffortSchema,
   embedding: z.object({

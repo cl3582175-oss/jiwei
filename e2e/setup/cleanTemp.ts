@@ -1,4 +1,4 @@
-import { readdirSync, rmSync, statSync } from 'fs'
+import { readdirSync, rmSync, statSync, realpathSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 
@@ -8,11 +8,19 @@ import { join } from 'path'
  * 只删除超过 10 分钟的目录，避免误删另一个同时进行的测试。
  */
 export default function cleanTemp(): void {
-  const root = tmpdir(), cutoff = Date.now() - 10 * 60_000
+  const root = tmpdir(),
+    cutoff = Date.now() - 10 * 60_000
   for (const name of readdirSync(root)) {
     if (!name.startsWith('jiwei-')) continue
     const path = join(root, name)
     try {
+      // 显式指定的评测配置需要服务商凭证和待审结果；安全范围由 ui-eval 启动前检查。
+      if (
+        process.env.JIWEI_EVAL === '1' &&
+        process.env.JIWEI_EVAL_USER_DATA_DIR &&
+        realpathSync(path) === realpathSync(process.env.JIWEI_EVAL_USER_DATA_DIR)
+      )
+        continue
       if (statSync(path).mtimeMs < cutoff) rmSync(path, { recursive: true, force: true })
     } catch {
       /* 正被占用或已删除 */

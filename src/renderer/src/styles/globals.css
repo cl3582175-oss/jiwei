@@ -70,6 +70,29 @@
   --p-moon: #e1e6ee;
   --p-moon-ink: #4f5d70;
 
+  /*
+   * 图表与组件的分类色（黛蓝、赭橙、青碧、朱红、藤紫、姜黄、胭脂、竹绿）。
+   * 顺序就是分配顺序，相邻两色在红绿色弱下仍可区分（OKLab ΔE ≥ 8），对浅色底对比 ≥ 3:1。
+   * 只用来区分“是哪一类”；数值大小用同一色相的深浅，重点用 --emph。
+   */
+  --viz-1: #2f6fb3;
+  --viz-2: #d9682b;
+  --viz-3: #1f9a8a;
+  --viz-4: #c94540;
+  --viz-5: #7a5cc2;
+  --viz-6: #b07d0a;
+  --viz-7: #d0527a;
+  --viz-8: #3d7f2a;
+  /* 重点（荧光笔的意思）：和品牌绿拉开，暖色一眼就能看到 */
+  --emph: var(--viz-2);
+  --emph-soft: color-mix(in oklab, var(--emph) 16%, transparent);
+  /* 退到背景里的数据（非重点的柱、次要节点） */
+  --viz-rest: color-mix(in oklab, var(--fg-subtle) 55%, var(--surface));
+  /* 旧代码和图表读取的简称 */
+  --muted: var(--fg-muted);
+  --subtle: var(--fg-subtle);
+  --sunken: var(--bg-sunken);
+
   /* 强调色（默认：玉） */
   --accent: #3d8a74;
   --accent-fg: #ffffff;
@@ -133,6 +156,15 @@
   --p-gosling-ink: #e2d38c;
   --p-moon: #252b33;
   --p-moon-ink: #b9c4d3;
+
+  --viz-1: #5a86e0;
+  --viz-2: #d0743a;
+  --viz-3: #2a9a8a;
+  --viz-4: #d0584f;
+  --viz-5: #8d74d6;
+  --viz-6: #b08a22;
+  --viz-7: #d0668a;
+  --viz-8: #6a9a3a;
 }
 
 /*
@@ -284,6 +316,16 @@
   --color-danger: var(--danger);
   --color-danger-soft: var(--danger-soft);
   --color-warning: var(--warning);
+  --color-viz-1: var(--viz-1);
+  --color-viz-2: var(--viz-2);
+  --color-viz-3: var(--viz-3);
+  --color-viz-4: var(--viz-4);
+  --color-viz-5: var(--viz-5);
+  --color-viz-6: var(--viz-6);
+  --color-viz-7: var(--viz-7);
+  --color-viz-8: var(--viz-8);
+  --color-emph: var(--emph);
+  --color-emph-soft: var(--emph-soft);
   --font-sans: var(--font-sans);
   --font-serif: var(--font-serif);
   --font-mono: var(--font-mono);
@@ -1291,7 +1333,8 @@
 .timeline-date {
   text-align: right;
   font-size: 12px;
-  color: var(--accent);
+  color: var(--viz-1);
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
   padding-top: 2px;
 }
@@ -1301,7 +1344,7 @@
   margin-top: 4px;
   border-radius: 999px;
   background: var(--surface);
-  border: 2.5px solid var(--accent);
+  border: 2.5px solid var(--viz-1);
   position: relative;
   z-index: 1;
 }
@@ -1599,4 +1642,101 @@
 .graph-range {
   accent-color: var(--accent);
   height: 1.25rem;
+}
+
+/* 组件自己画编号或复选框的列表：不要再套回答正文的列表符号（.chat-md ol 会加 1. 2.） */
+.ui-plain-list,
+.chat-md .ui-plain-list {
+  list-style: none;
+  padding-left: 0;
+  margin-top: 0;
+}
+/* Mermaid 输出 width=100% + max-width=原始宽度：外层要给满宽，否则会被缩成一小块 */
+.diagram-svg > div {
+  width: 100%;
+}
+.diagram-svg svg {
+  display: block;
+  margin: 0 auto;
+  height: auto;
+}
+
+/* 智能界面：步骤（编号圆点 + 竖线；已完成 / 当前 / 未开始三种状态） */
+.ui-steps {
+  display: grid;
+  gap: 2px;
+}
+.ui-step {
+  position: relative;
+}
+.ui-step:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  left: 11px;
+  top: 28px;
+  bottom: -2px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--border);
+}
+.ui-step[data-state='done']:not(:last-child)::before {
+  background: color-mix(in oklab, var(--viz-1) 45%, var(--border));
+}
+.ui-step-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 3px 0 8px;
+  cursor: default;
+  list-style: none;
+}
+.ui-step details > .ui-step-head {
+  cursor: pointer;
+}
+.ui-step-head::-webkit-details-marker {
+  display: none;
+}
+.ui-step-dot {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--viz-1);
+  background: var(--surface);
+  border: 1.5px solid color-mix(in oklab, var(--viz-1) 55%, var(--surface));
+}
+.ui-step[data-state='done'] .ui-step-dot {
+  color: var(--viz-1);
+  background: color-mix(in oklab, var(--viz-1) 14%, var(--surface));
+  border-color: transparent;
+}
+.ui-step[data-state='current'] .ui-step-dot {
+  color: #fff;
+  background: var(--emph);
+  border-color: var(--emph);
+  box-shadow: 0 0 0 3px var(--emph-soft);
+}
+.ui-step[data-state='current'] .ui-step-head > span:last-child {
+  font-weight: 600;
+}
+.ui-step details[open] .ui-step-dot {
+  color: #fff;
+  background: var(--viz-1);
+  border-color: var(--viz-1);
+}
+.ui-step-detail {
+  margin: -2px 0 10px 34px;
+  font-size: 12px;
+  line-height: 1.65;
+  color: var(--fg-muted);
+}
+
+/* 组件里的数字卡、小卡片：比卡片底色略深（深色模式下略亮），不用 sunken——深色里会像挖了个洞 */
+.ui-tile {
+  background: color-mix(in oklab, var(--fg) 4.5%, var(--surface));
 }

@@ -1,3 +1,4 @@
+import { uiZh } from '../features/ui/messages'
 import { pluginsZh } from '../features/plugins/pluginMessages'
 import { updatesZh } from '../features/update/updateMessages'
 import { importerZh } from '../features/import/importMessages'
@@ -17,6 +18,7 @@ import { readingZh } from '../features/reading/messages'
 import { retrievalZh } from '../features/retrieval/messages'
 
 const zhCN = {
+  ui: uiZh,
   updates: updatesZh,
   importer: importerZh,
   discover: discoverZh,
@@ -534,6 +536,7 @@ const zhCN = {
     aiWordsHint: 'AI 生成且尚未经你修改的内容不计入学习统计。修改后会自动标记为“已审阅”。'
   },
   embeds: {
+    ui: uiZh.embedLabel,
     chart: '图表',
     diagram: '图示',
     timeline: '时间线',

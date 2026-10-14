@@ -6,6 +6,7 @@ import { audit } from './audit'
 import { requestApproval } from './approval'
 import { currentRun } from './context'
 import { newId } from '../../lib/ids'
+import { neutralizeUiFences } from '@shared/ui/sanitize'
 
 // 给一组 AI SDK 工具统一加一层：策略 → （需要时）等待用户确认 → 执行（超时）→ 审计 → 外部内容封装。
 // 内置工具和外部 MCP 工具走同一条路径，规则只写一次。
@@ -52,7 +53,7 @@ export function asExternalData(source: string, text: string, options?: { maxChar
   if (text.length > limit && options?.overflow === 'reject') throw new Error('External data exceeds input limit')
   const body = text.length > limit ? `${text.slice(0, limit)}\n…（已截断）` : text
   // 防止内容里伪造结束标签跳出数据区
-  const safe = body.replace(/<\/?external-data/gi, (m) => m.replace('<', '‹'))
+  const safe = neutralizeUiFences(body.replace(/<\/?external-data/gi, (m) => m.replace('<', '‹')))
   return `<external-data source="${source.replace(/"/g, '')}">\n${safe}\n</external-data>`
 }
 

@@ -17,7 +17,7 @@ import {
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Tip } from '@/components/ui/primitives'
-import { MessageItem } from '../chat/MessageItem'
+import { MessageItem, REPLY_EVENT, type ReplyDetail } from '../chat/MessageItem'
 import { useChatThread } from '../chat/useChat'
 import { useAssist, isRevise, type AskAction } from './store'
 import { askInline, followUp, saveToNote, stripCites } from './actions'
@@ -97,6 +97,16 @@ export function AnswerCard() {
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null)
   const [copied, setCopied] = useState(false)
   const { msgs, streaming } = useChatThread(card?.conversationId ?? null)
+  useEffect(() => {
+    if (!card?.conversationId) return
+    const onReply = (e: Event): void => {
+      const d = (e as CustomEvent<ReplyDetail>).detail
+      if (d.conversationId === card.conversationId && !streaming)
+        void followUp(d.conversationId, d.text, card.anchor, card.extra, d.uiEvent)
+    }
+    window.addEventListener(REPLY_EVENT, onReply)
+    return () => window.removeEventListener(REPLY_EVENT, onReply)
+  }, [card, streaming])
 
   // 位置：优先放在选区下方，放不下则放上方；始终在窗口内
   useLayoutEffect(() => {
@@ -211,7 +221,7 @@ export function AnswerCard() {
             <div className="h-3 w-1/2 animate-pulse rounded bg-sunken" />
           </div>
         ) : (
-          shown.map((m) => <MessageItem key={m.id} m={m} compact />)
+          shown.map((m, i) => <MessageItem key={m.id} m={m} compact last={i === shown.length - 1} />)
         )}
       </div>
 

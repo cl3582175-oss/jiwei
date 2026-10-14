@@ -102,12 +102,16 @@ export const ReviewDecisionSchema = z.object({
 
 /** 按（可能被用户调整过的）权重算每个选项的加权得分，0–100 */
 export function matrixTotals(
-  memo: Pick<DecisionMemoDraft, 'options' | 'criteria' | 'scores'>,
+  memo: {
+    options: { id: string }[]
+    criteria: { name: string; weight: number }[]
+    scores: { option: string; criterion: string; score: number }[]
+  },
   weights?: Record<string, number> | null
 ): Record<string, number> {
-  const w = (c: { name: string; weight: number }): number => weights?.[c.name] ?? c.weight
+  const w = (c: { name: string; weight: number }): number => (weights && Object.hasOwn(weights, c.name) ? weights[c.name] : c.weight)
   const sum = memo.criteria.reduce((n, c) => n + w(c), 0) || 1
-  const out: Record<string, number> = {}
+  const out: Record<string, number> = Object.create(null)
   for (const o of memo.options) {
     let total = 0
     for (const c of memo.criteria) {

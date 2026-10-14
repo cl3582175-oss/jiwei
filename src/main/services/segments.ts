@@ -1,7 +1,7 @@
 import { correctionPair, speakerBody } from '@shared/recording'
 import { and, asc, eq, inArray, isNull, like } from 'drizzle-orm'
 import { getDb, getSqlite } from '../db'
-import { sourceSegments, sources, hotwordCorrections } from '../db/schema'
+import { sourceSegments, sources, recordings, hotwordCorrections } from '../db/schema'
 import { newId } from '../lib/ids'
 import { hashText } from '../lib/derive'
 import { emit } from '../events'
@@ -26,6 +26,26 @@ export function listSegments(sourceId: string): Segment[] {
     .orderBy(asc(sourceSegments.ordinal))
     .all()
     .map(toSegment)
+}
+
+/** 按永久片段身份定位；智能界面不能借此读取已排除或删除的资料。 */
+export function getSegment(id: string): Segment | null {
+  const row = getDb()
+    .select({ segment: sourceSegments })
+    .from(sourceSegments)
+    .innerJoin(sources, eq(sourceSegments.sourceId, sources.id))
+    .where(and(eq(sourceSegments.id, id), isNull(sources.deletedAt), eq(sources.aiExcluded, false)))
+    .get()
+  if (
+    !row ||
+    getDb()
+      .select({ id: recordings.id })
+      .from(recordings)
+      .where(and(eq(recordings.sourceId, row.segment.sourceId), eq(recordings.localOnly, true)))
+      .get()
+  )
+    return null
+  return toSegment(row.segment)
 }
 
 /** 资料正文检索：≥3 字用 FTS5 trigram，否则回退 LIKE；排除已删除资料 */

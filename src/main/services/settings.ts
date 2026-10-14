@@ -10,6 +10,7 @@ import { DEFAULT_PODCAST_VOICE } from '@shared/discover'
 import { defaultMoney, fromUsd, rateOf, toUsd } from '@shared/money'
 import type { SettingsPatch } from '@shared/schemas'
 import { RETRIEVAL_DEFAULTS } from '@shared/retrieval'
+import { UI_DEFAULTS } from '@shared/ui/settings'
 
 function defaults(): Settings {
   // JIWEI_LANG 便于测试固定界面语言
@@ -18,7 +19,14 @@ function defaults(): Settings {
   return {
     retrieval: { ...RETRIEVAL_DEFAULTS, trustedSites: [], lowTrustSites: [] },
     plugins: { recommendedDismissed: false },
-    discover: { dailyLimit: 5, dailyBudget: fromUsd(0.5 / (rateOf('CNY') ?? 7), defaultMoney(language).currency), budgetCurrency: defaultMoney(language).currency, useSearch: true, podcast: false, podcastVoice: DEFAULT_PODCAST_VOICE },
+    discover: {
+      dailyLimit: 5,
+      dailyBudget: fromUsd(0.5 / (rateOf('CNY') ?? 7), defaultMoney(language).currency),
+      budgetCurrency: defaultMoney(language).currency,
+      useSearch: true,
+      podcast: false,
+      podcastVoice: DEFAULT_PODCAST_VOICE
+    },
     tasks: { paused: false, launchAtLogin: false, keepRunning: false },
     plan: { autoComplete: true },
     language,
@@ -29,7 +37,12 @@ function defaults(): Settings {
     onboarded: process.env.JIWEI_SKIP_ONBOARDING === '1',
     sidebarCollapsed: false,
     // AI：默认思考强度“高”（DeepSeek 默认值）；向量默认使用内置本地模型
-    ai: { chat: { providerId: null, model: null }, effort: 'high', embedding: { mode: 'local', providerId: null, model: null } },
+    ai: {
+      ui: { ...UI_DEFAULTS },
+      chat: { providerId: null, model: null },
+      effort: 'high',
+      embedding: { mode: 'local', providerId: null, model: null }
+    },
     // 默认节奏：每天 1 分钟微复盘 + 每周日晚完整复盘
     reflection: { daily: true, weekly: true, weeklyDay: 0, time: '21:00' },
     // 复习：每天最多 20 张新卡，目标记忆保持率 90%（FSRS 默认）
@@ -49,6 +62,7 @@ export function getSettings(): Settings {
   const result: Settings = {
     ...base,
     ...stored,
+    ai: { ...base.ai, ...stored.ai, ui: { ...base.ai.ui, ...stored.ai?.ui } },
     retrieval: { ...base.retrieval, ...stored.retrieval },
     capture: mergeCaptureSettings(stored.capture, process.platform === 'darwin'),
     money: { ...base.money, ...stored.money },
@@ -62,6 +76,10 @@ export function getSettings(): Settings {
 }
 
 export function setSettings(patch: SettingsPatch): Settings {
+  if (patch.ai) {
+    const current = getSettings().ai
+    patch = { ...patch, ai: { ...current, ...patch.ai, ui: { ...current.ui, ...patch.ai.ui } } }
+  }
   if (patch.retrieval) patch = { ...patch, retrieval: { ...getSettings().retrieval, ...patch.retrieval } }
   if (patch.updates) patch = { ...patch, updates: { ...getSettings().updates!, ...patch.updates } }
   if (patch.plugins) patch = { ...patch, plugins: { ...getSettings().plugins, ...patch.plugins } }

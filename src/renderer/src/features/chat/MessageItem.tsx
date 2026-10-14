@@ -25,6 +25,12 @@ import { useApp } from '@/store/app'
 import { Tip } from '@/components/ui/primitives'
 import { ApprovalCard, BudgetNotice, StepLinkButton, budgetKind } from '@/features/agent/ChatCards'
 import { useWebSnapshot } from '@/features/retrieval/store'
+import { UiFence } from '@/features/ui/UiFence'
+import { UiMessageProvider } from '@/features/ui/context'
+import { annotateUiFences, uiAnswerText, mapOutsideFences } from '@shared/ui/fences'
+import type { UiEvent } from '@shared/ui/events'
+
+const uiPlugins = { renderers: [{ language: 'jiwei-ui', component: UiFence }] }
 
 /** 打开引用：知识库定位到段落 / 页码，网页打开快照或原网页。 */
 export function openCitation(c: Citation): void {
@@ -248,8 +254,9 @@ function CitationCard({ c }: { c: Citation }) {
 
 /** 回复选择题（v0.7.6）：对话页与 AI 面板监听这个事件，把选项当作用户的回答发出 */
 export const REPLY_EVENT = 'jiwei:reply'
-export function replyInConversation(conversationId: string, text: string): void {
-  window.dispatchEvent(new CustomEvent(REPLY_EVENT, { detail: { conversationId, text } }))
+export type ReplyDetail = { conversationId: string; text: string; uiEvent?: UiEvent }
+export function replyInConversation(conversationId: string, text: string, uiEvent?: UiEvent): void {
+  window.dispatchEvent(new CustomEvent<ReplyDetail>(REPLY_EVENT, { detail: { conversationId, text, uiEvent } }))
 }
 
 /** AI 的选择题（ask_user）：只有最新一条回答上的可以点 */
@@ -344,8 +351,7 @@ export function MessageItem({
   const byN = useMemo(() => new Map(m.citations.map((c) => [c.n, c])), [m.citations])
   // 引用标记 [n] → 可点击的编号（代码块中的不处理）
   const md = useMemo(() => {
-    const parts = m.content.split(/(```[\s\S]*?(?:```|$))/g)
-    return parts.map((p, i) => (i % 2 ? p : p.replace(/\[(\d{1,2})\]/g, '[$1](#cite-$1)'))).join('')
+    return annotateUiFences(mapOutsideFences(m.content, (p) => p.replace(/\[(\d{1,2})\]/g, '[$1](#cite-$1)')))
   }, [m.content])
 
   if (m.role === 'user') {
@@ -372,7 +378,7 @@ export function MessageItem({
   }
   const seconds = m.usage ? Math.round(m.usage.durationMs / 1000) : null
   const copy = (): void => {
-    void navigator.clipboard.writeText(m.content.replace(/\[(\d{1,2})\]/g, ''))
+    void navigator.clipboard.writeText(uiAnswerText(m.content).replace(/\[(\d{1,2})\]/g, ''))
     setCopied(true)
     setTimeout(() => setCopied(false), 1500)
   }
@@ -383,14 +389,18 @@ export function MessageItem({
       {m.steps.length > 0 && <Steps steps={m.steps} streaming={streaming} />}
       {m.content ? (
         <div className="chat-md">
-          <Streamdown
-            mode={streaming ? 'streaming' : 'static'}
-            isAnimating={streaming}
-            components={components as never}
-            controls={{ code: true, table: true, mermaid: false }}
-          >
-            {md}
-          </Streamdown>
+          <UiMessageProvider message={m} isLatest={!!last} compact={!!compact}>
+            <Streamdown
+              // 两种模式采用不同的块树；组件回答保持流式树，结束只停止动画，保留组件实例。
+              mode={plain && !streaming ? 'static' : 'streaming'}
+              isAnimating={streaming}
+              components={components as never}
+              controls={{ code: true, table: true, mermaid: false }}
+              plugins={plain ? undefined : uiPlugins}
+            >
+              {md}
+            </Streamdown>
+          </UiMessageProvider>
         </div>
       ) : (
         streaming && !m.reasoning && !m.steps.length && <div className="h-5 w-16 animate-pulse rounded bg-sunken" />

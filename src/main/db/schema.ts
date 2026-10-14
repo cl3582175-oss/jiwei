@@ -840,6 +840,18 @@ export const conversations = sqliteTable(
   (t) => [index('conversations_updated_idx').on(t.updatedAt)]
 )
 
+/** 组件状态只属于对话回答；不进入用户知识检索。 */
+export const uiStates = sqliteTable(
+  'ui_states',
+  {
+    messageId: text('message_id').notNull(),
+    componentId: text('component_id').notNull(),
+    state: text('state').notNull(),
+    updatedAt: integer('updated_at').notNull()
+  },
+  (t) => [primaryKey({ columns: [t.messageId, t.componentId] })]
+)
+
 export const messages = sqliteTable(
   'messages',
   {
@@ -847,6 +859,8 @@ export const messages = sqliteTable(
     conversationId: text('conversation_id').notNull(),
     role: text('role', { enum: ['user', 'assistant'] }).notNull(),
     content: text('content').notNull().default(''),
+    /** 回答里的组件转成的文字（对话本身不进入知识库）。 */
+    uiText: text('ui_text'),
     /** 模型的思考过程 */
     reasoning: text('reasoning'),
     /** 引用的知识库片段（JSON） */

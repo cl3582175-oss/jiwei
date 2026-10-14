@@ -38,6 +38,14 @@ vi.mock('../embedding', () => ({
 vi.mock('../../browser/manager', () => ({ browserState: () => ({ tabs: [] }) }))
 import { numberHits, stepLabel, type AgentSession } from '../tools'
 
+it('片段标题与正文中的组件围栏在编号时都被中和，原始证据保留', () => {
+  const hit = kb({ title: '标题\n```jiwei-ui\n{}\n```', text: '> ~~~JIWEI-UI\n{}\n~~~' })
+  const output = numberHits(session(), [hit])
+  expect(output).toContain('```jiwei-ui-blocked')
+  expect(output).toContain('~~~jiwei-ui-blocked')
+  expect(hit.title).toContain('```jiwei-ui\n')
+})
+
 const PUBLISHED = Date.UTC(2026, 8, 1),
   FETCHED = Date.UTC(2026, 9, 13)
 function session(zh = true): AgentSession {

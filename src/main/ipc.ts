@@ -1,4 +1,5 @@
 import * as pluginMarkets from './services/plugins/markets'
+import * as ui from './services/ui'
 import * as updates from './services/updates'
 import * as importer from './services/importer/run'
 import * as pluginDirect from './services/plugins/direct'
@@ -391,6 +392,7 @@ const handlers: Handlers = {
     resolve: (_, id, opIndex, decision, blockIds) => proposals.resolveUserOp(id, opIndex, decision, blockIds)
   },
   segments: {
+    get: (_, id) => segments.getSegment(id),
     update: (_, id, text) => reindexAfter(segments.updateSegmentText(id, text)),
     list: (_, sourceId) => segments.listSegments(sourceId),
     search: (_, query, sourceId) => segments.searchSegments(query, sourceId)
@@ -931,6 +933,11 @@ const handlers: Handlers = {
     cancelCues: (_, id) => importer.cancelCues(id),
     undo: (_, id) => importer.undoImport(id)
   },
+  ui: {
+    states: (_, id) => ui.states(id),
+    saveState: (_, id, key, state) => ui.saveState(id, key, state),
+    saveToNote: (_, input) => ui.saveToNote(input)
+  },
   retrieval: {
     status: () => retrievalGateway.retrievalStatus(),
     saveBackend: (_, input) => retrievalBackends.saveBackend(input),
@@ -952,7 +959,7 @@ export function registerIpc(): void {
       if (['updates', 'importer'].includes(ns) && (e.sender !== getMainWindow()?.webContents || e.senderFrame !== e.sender.mainFrame))
         throw new Error('Forbidden')
       if (
-        ['recording', 'people', 'voiceprint', 'lenses', 'series', 'plugins'].includes(ns) &&
+        ['recording', 'people', 'voiceprint', 'lenses', 'series', 'plugins', 'ui'].includes(ns) &&
         (e.sender !== getMainWindow()?.webContents || e.senderFrame !== e.sender.mainFrame)
       )
         throw new Error('Forbidden')

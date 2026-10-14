@@ -12,7 +12,7 @@ export interface EmbedImage {
   height?: number
 }
 
-const SELECTOR = 'svg.mindmap-svg, .chart-canvas svg, .diagram-svg svg'
+export const EMBED_SVG_SELECTOR = 'svg.mindmap-svg, .chart-canvas svg, .diagram-svg svg'
 
 async function rasterize(svg: string, w: number, h: number): Promise<string | undefined> {
   if (svg.includes('<foreignObject')) return undefined
@@ -38,27 +38,33 @@ export async function collectEmbedImages(root: ParentNode = document): Promise<R
   const out: Record<string, EmbedImage> = {}
   for (const el of root.querySelectorAll<HTMLElement>('.cornell-doc .embed-block[data-embed-id]')) {
     const id = el.dataset.embedId!
-    const svgEl = el.querySelector<SVGSVGElement>(SELECTOR)
-    if (!svgEl) continue
-    const box = svgEl.getBoundingClientRect()
-    const w = Math.max(1, Math.round(box.width))
-    const h = Math.max(1, Math.round(box.height))
-    const clone = svgEl.cloneNode(true) as SVGSVGElement
-    clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
-    // ECharts 等会给 SVG 加绝对定位，导出时还原为普通排版
-    clone.style.removeProperty('position')
-    clone.style.removeProperty('left')
-    clone.style.removeProperty('top')
-    clone.setAttribute('width', String(w))
-    clone.setAttribute('height', String(h))
-    if (!clone.getAttribute('viewBox')) clone.setAttribute('viewBox', `0 0 ${w} ${h}`)
-    // 把界面配色变量写成具体颜色，脱离应用也能正确显示
-    const css = getComputedStyle(document.documentElement)
-    let svg = new XMLSerializer().serializeToString(clone)
-    svg = svg.replace(/var\(--([a-z0-9-]+)(?:,[^)]*)?\)/gi, (m, name: string) => css.getPropertyValue(`--${name}`).trim() || m)
-    out[id] = { svg, width: w, height: h, png: await rasterize(svg, w, h) }
+    const picture = await collectSvgImage(el)
+    if (picture) out[id] = picture
   }
   return out
+}
+
+/** 回答组件与笔记导出共用实际 SVG，避免另起截图实现或新增依赖。 */
+export async function collectSvgImage(root: ParentNode): Promise<EmbedImage | null> {
+  const svgEl = root.querySelector<SVGSVGElement>(EMBED_SVG_SELECTOR)
+  if (!svgEl) return null
+  const box = svgEl.getBoundingClientRect()
+  const w = Math.max(1, Math.round(box.width))
+  const h = Math.max(1, Math.round(box.height))
+  const clone = svgEl.cloneNode(true) as SVGSVGElement
+  clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
+  // ECharts 等会给 SVG 加绝对定位，导出时还原为普通排版
+  clone.style.removeProperty('position')
+  clone.style.removeProperty('left')
+  clone.style.removeProperty('top')
+  clone.setAttribute('width', String(w))
+  clone.setAttribute('height', String(h))
+  if (!clone.getAttribute('viewBox')) clone.setAttribute('viewBox', `0 0 ${w} ${h}`)
+  // 把界面配色变量写成具体颜色，脱离应用也能正确显示
+  const css = getComputedStyle(document.documentElement)
+  let svg = new XMLSerializer().serializeToString(clone)
+  svg = svg.replace(/var\(--([a-z0-9-]+)(?:,[^)]*)?\)/gi, (m, name: string) => css.getPropertyValue(`--${name}`).trim() || m)
+  return { svg, width: w, height: h, png: await rasterize(svg, w, h) }
 }
 
 export async function exportCurrentNote(noteId: string, format: 'md' | 'html' | 'pdf' | 'docx'): Promise<void> {

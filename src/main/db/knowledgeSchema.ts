@@ -59,6 +59,7 @@ export {
   providers,
   conversations,
   messages,
+  uiStates,
   chunks,
   inboxItems,
   recordings,

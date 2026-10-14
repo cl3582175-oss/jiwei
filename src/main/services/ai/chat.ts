@@ -1,21 +1,21 @@
 import { hasToolCall, stepCountIs, streamText, type ModelMessage, type ToolSet } from 'ai'
 import { ASK_USER, buildScopeTools } from './scopeTools'
-import { and, asc, desc, eq, isNull, ne } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, isNull, ne } from 'drizzle-orm'
 import log from 'electron-log/main'
 import { getDb } from '../../db'
-import { conversations, messages, webPageRefs, webPages } from '../../db/schema'
+import { conversations, messages, uiStates, webPageRefs, webPages } from '../../db/schema'
 import { newId } from '../../lib/ids'
 import { deviceId } from '../device'
 import { emit } from '../../events'
 import { getSettings } from '../settings'
-import { type Effort, type ModelTier, type Usage } from '@shared/ai'
+import { type Effort, type ModelTier, type Usage, type ProviderKind } from '@shared/ai'
 import type { ChatScope, ChatSend } from '@shared/schemas'
 import type { Anchor } from '@shared/context'
 import type { AgentStep, ChatMessage, Citation, Conversation, SearchHit } from '@shared/types'
 import type { WebMode } from '@shared/retrieval'
 import { buildModel } from './model'
 import { recognizeRegion, recognizingSources } from '../recognize'
-import { capsFor } from './providers'
+import { capsFor, getProviderRow } from './providers'
 import { retrieve } from './retrieve'
 import { contextSourceEvidence, resolveContext } from './context'
 import { buildTools, numberHits, stepLabel, type AgentSession } from './tools'
@@ -28,7 +28,13 @@ import { activeGoalsText } from '../progress'
 import { noteExplainRequest, scheduleExtract } from '../memoryLearn'
 import { ensureReference, feynmanSystem, parseMeta, toInfo as feynmanInfo, type FeynmanMeta } from '../feynman'
 import { coachSystem, coachTurn, ensureCoachMaterial, type CoachMeta } from '../reflectionCoach'
-import { Notification } from 'electron'
+import { app, Notification } from 'electron'
+import { promptCatalog, uiModeFor, type UiMode } from '@shared/ui/promptCatalog'
+import { UI_DEFAULTS } from '@shared/ui/settings'
+import { neutralizeUiFences } from '@shared/ui/sanitize'
+import { appendUiEvent, UiEventSchema } from '@shared/ui/events'
+import { scanUiFences } from '@shared/ui/fences'
+import { parseUiJson, parseUiNode, uiToText, UI_TYPES } from '@shared/ui/catalog'
 import { withRun } from '../agent/context'
 import { guardTools, type ToolMeta } from '../agent/wrap'
 import { perRunLimit } from '../agent/usage'
@@ -89,6 +95,7 @@ const toMessage = (r: MsgRow): ChatMessage => ({
   conversationId: r.conversationId,
   role: r.role,
   content: r.content,
+  uiText: r.uiText,
   reasoning: r.reasoning,
   citations: r.citations ? (JSON.parse(r.citations) as Citation[]) : [],
   providerId: r.providerId,
@@ -171,6 +178,9 @@ export function deleteConversation(id: string): void {
   })
   db.transaction((tx) => {
     tx.delete(webPageRefs).where(eq(webPageRefs.conversationId, id)).run()
+    tx.delete(uiStates)
+      .where(inArray(uiStates.messageId, tx.select({ id: messages.id }).from(messages).where(eq(messages.conversationId, id))))
+      .run()
     tx.delete(messages).where(eq(messages.conversationId, id)).run()
     tx.delete(conversations).where(eq(conversations.id, id)).run()
   })
@@ -182,7 +192,7 @@ const fmtDate = (ts: number | null): string => (ts ? new Date(ts).toISOString().
  * 系统提示：只放稳定内容（规则 + 技能目录 + 用户卡片 + 日期），每轮字节相同，便于命中前缀缓存。
  * 每轮变化的上下文、检索片段放在最后一条用户消息里。
  */
-function systemPrompt(zh: boolean, tier: ModelTier, incognito: boolean, conversationId: string): string {
+function systemPrompt(zh: boolean, tier: ModelTier, incognito: boolean, conversationId: string, uiMode: UiMode, localUi: boolean): string {
   const rules = zh
     ? `你是「积微」的学习助手，帮助用户理解、整理和内化自己学到的知识。用户的知识库 = 用户写的笔记 + 用户上传的原始资料。
 规则：
@@ -228,6 +238,7 @@ Rules:
   const goals = incognito ? null : activeGoalsText(zh)
   return [
     rules.replace('{{MEMORY_RULE}}', memoryRule),
+    promptCatalog(uiMode, zh, localUi),
     skillCatalog(tier, zh),
     card
       ? `${zh ? '用户卡片（关于这位用户，回答时自然地参考，不要复述）' : 'About the user (use naturally, do not recite)'}：\n${card}`
@@ -251,7 +262,7 @@ function turnMessage(
   web: { gate: WebGate; mode: WebMode; failed: boolean; material: string; previous: string }
 ): string {
   const parts: string[] = []
-  if (ctx) parts.push(`<${zh ? '上下文' : 'context'}>\n${ctx}\n</${zh ? '上下文' : 'context'}>`)
+  if (ctx) parts.push(`<${zh ? '上下文' : 'context'}>\n${neutralizeUiFences(ctx)}\n</${zh ? '上下文' : 'context'}>`)
   if (web.gate.status !== 'not-allowed') {
     const state = {
       available: zh ? `可用（${web.mode === 'always' ? '总是' : '自动'}）` : `available (${web.mode})`,
@@ -347,9 +358,11 @@ export function send(input: ChatSend): SendResult {
     conversationId: convId,
     role: 'user',
     content: input.text,
+    uiText: null,
     reasoning: null,
     citations: null,
-    context: input.context ? JSON.stringify(input.context) : null,
+    context:
+      input.context || input.uiEvent ? JSON.stringify({ ...input.context, ...(input.uiEvent ? { uiEvent: input.uiEvent } : {}) }) : null,
     skill: input.skill ?? null,
     steps: null,
     providerId: null,
@@ -493,6 +506,11 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
   const steps: AgentStep[] = []
   const conv = db.select().from(conversations).where(eq(conversations.id, conversationId)).get()!
   const special = conv.kind === 'feynman' || conv.kind === 'reflection'
+  const uiSettings = getSettings().ai.ui ?? UI_DEFAULTS
+  const providerKind = getProviderRow(input.providerId).kind as ProviderKind
+  const uiMode = uiModeFor(conv.kind, providerKind, uiSettings)
+  const fullLocal = !app.isPackaged && process.env.JIWEI_TEST_NETWORK === '1' && process.env.JIWEI_TEST_UI_FULL === '1'
+  const localUi = providerKind === 'ollama' && !fullLocal
   const effectiveMode = (conv.web as WebMode | null) ?? getSettings().retrieval.mode
   const privacyInput = { ...input, ...(conv.anchor ? { anchor: JSON.parse(conv.anchor) as Anchor } : {}) }
   const zh = getSettings().language.startsWith('zh')
@@ -528,10 +546,31 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
   const finish = (status: ChatMessage['status'], error: string | null, usage: ChatMessage['usage']): void => {
     // 有的模型会把工具返回的 <external-data> 原样复述进回答：保存前去掉（工具结果在步骤里能看到）
     content = cleanContent(content)
+    const uiText: string[] = []
+    if (status === 'done' || status === 'stopped')
+      for (const fence of scanUiFences(content)) {
+        let type = 'unknown',
+          ok = false,
+          error = ''
+        try {
+          const value: unknown = parseUiJson(fence.code)
+          if (value && typeof value === 'object' && UI_TYPES.some((item) => item.type === (value as { type?: unknown }).type))
+            type = (value as { type: string }).type
+          const parsed = parseUiNode(value)
+          if (fence.closed && parsed.ok) {
+            ok = true
+            uiText.push(uiToText(parsed.node))
+          } else error = parsed.ok ? 'unfinished' : 'invalid-node'
+        } catch {
+          error = 'json'
+        }
+        log.info('[ui] type=%s ok=%s err=%s model=%s', type, ok, error, input.model)
+      }
     db.transaction((tx) => {
       tx.update(messages)
         .set({
           content,
+          uiText: uiText.length ? uiText.join('\n\n') : null,
           reasoning: reasoning || null,
           citations: JSON.stringify(citations),
           skill: session.skills[0] ?? null,
@@ -630,7 +669,18 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
       .all()
       .reverse()
       .filter((m) => m.id !== messageId && (m.role === 'user' || m.status === 'done') && m.content)
-    const msgs: ModelMessage[] = history.map((m) => ({ role: m.role, content: m.content }))
+    const msgs: ModelMessage[] = history.map((m) => {
+      let content = m.content
+      if (m.role === 'user' && m.context) {
+        try {
+          const event = UiEventSchema.safeParse((JSON.parse(m.context) as { uiEvent?: unknown }).uiEvent)
+          if (event.success) content = appendUiEvent(content, event.data)
+        } catch {
+          /* 旧消息的上下文不合格时保留原话 */
+        }
+      }
+      return { role: m.role, content }
+    })
     const previous = special
       ? null
       : db
@@ -699,13 +749,16 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
           ? `${zh ? '上一轮回答里引用过的网页（编号已重新分配；这里只有当时引用的段落，需要页面里的其他内容时，用 read_url 重新读取该网址，focus 写要找什么）：' : 'Web pages cited in the previous answer (numbers reassigned; only the cited passages are here — to find other content on a page, call read_url on that URL again with a focus):'}\n${numberHits(session, past)}`
           : ''
         if ((material || previousText) && currentRun()) currentRun()!.state.tainted = true
-        const text = turnMessage(zh, input.text, [ctx.text, learner, imageNote, pendingNote].filter(Boolean).join('\n\n'), kb, skillBody, {
-          gate: session.web.gate,
-          mode: effectiveMode,
-          failed: searchFailed,
-          material,
-          previous: previousText
-        })
+        const text = appendUiEvent(
+          turnMessage(zh, input.text, [ctx.text, learner, imageNote, pendingNote].filter(Boolean).join('\n\n'), kb, skillBody, {
+            gate: session.web.gate,
+            mode: effectiveMode,
+            failed: searchFailed,
+            material,
+            previous: previousText
+          }),
+          input.uiEvent
+        )
         if (input.images?.length && vision)
           msgs[msgs.length - 1] = {
             role: 'user',
@@ -735,7 +788,7 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
           ? feynmanSystem(feynman, zh)
           : coach
             ? coachSystem(coach, zh)
-            : systemPrompt(zh, session.tier, session.incognito, conversationId),
+            : systemPrompt(zh, session.tier, session.incognito, conversationId, uiMode, localUi),
         messages: msgs,
         prepareStep: ({ messages }) => {
           requireRecordingCloudAccess(privacyInput)

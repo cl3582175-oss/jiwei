@@ -14,8 +14,13 @@ interface PureNode {
   payload?: Record<string, unknown>
 }
 
-function toPure(t: MindmapTree): PureNode {
-  return { content: escapeHtml(t.text), children: t.children.map(toPure), payload: { id: t.id, anchor: t.anchor } }
+/** branch：属于第几条主干（根为 -1），用来给整条分支上同一种颜色 */
+function toPure(t: MindmapTree, branch = -1): PureNode {
+  return {
+    content: escapeHtml(t.text),
+    children: t.children.map((c, i) => toPure(c, branch < 0 ? i : branch)),
+    payload: { id: t.id, anchor: t.anchor, branch }
+  }
 }
 
 function MindmapView({ entry }: EmbedViewProps) {
@@ -29,7 +34,10 @@ function MindmapView({ entry }: EmbedViewProps) {
 
   useEffect(() => {
     if (!svgRef.current || !tree) return
-    const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#3d8a74'
+    const css = getComputedStyle(document.documentElement)
+    const accent = css.getPropertyValue('--accent').trim() || '#3d8a74'
+    // 每条主干一种分类色（与图表、示意图同一套 --viz-*）；根节点用强调色
+    const palette = Array.from({ length: 8 }, (_, i) => css.getPropertyValue(`--viz-${i + 1}`).trim() || accent)
     if (!mmRef.current) {
       mmRef.current = Markmap.create(svgRef.current, {
         autoFit: true,
@@ -37,7 +45,10 @@ function MindmapView({ entry }: EmbedViewProps) {
         maxWidth: 260,
         spacingHorizontal: 64,
         initialExpandLevel: 4,
-        color: () => accent
+        color: (node) => {
+          const branch = (node.payload as { branch?: number } | undefined)?.branch ?? -1
+          return branch < 0 ? accent : palette[branch % palette.length]
+        }
       })
     }
     void mmRef.current.setData(toPure(tree) as never).then(() => mmRef.current?.fit())

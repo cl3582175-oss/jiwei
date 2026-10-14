@@ -17,11 +17,13 @@ for (const name of [
 export default defineConfig({
   ...base,
   testIgnore: [
+    '**/fixtures/*.test.ts',
     '**/*-live.spec.ts',
     '**/*-real.spec.ts',
     '**/*-provider.spec.ts',
     '**/voice-models.spec.ts',
     '**/retrieval-eval.spec.ts',
-    '**/web-eval.spec.ts'
+    '**/web-eval.spec.ts',
+    '**/ui-eval.spec.ts'
   ]
 })
