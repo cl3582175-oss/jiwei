@@ -1,4 +1,4 @@
-import { and, eq, isNotNull, or } from 'drizzle-orm'
+import { and, eq, isNotNull, or, sql } from 'drizzle-orm'
 import { getDb } from '../db'
 import { annotations, categories, links, notes, sources, recordings } from '../db/schema'
 import { purgeRecording, restoreRecording } from './recording'
@@ -31,7 +31,12 @@ export function listTrash(): TrashItem[] {
   const s = db
     .select({ id: sources.id, title: sources.title, deletedAt: sources.deletedAt })
     .from(sources)
-    .where(isNotNull(sources.deletedAt))
+    .where(
+      and(
+        isNotNull(sources.deletedAt),
+        sql`NOT EXISTS (SELECT 1 FROM conversation_attachments ca LEFT JOIN conversations c ON c.id=ca.conversation_id WHERE ca.source_id=${sources.id} AND (c.incognito=1 OR ca.conversation_id LIKE 'incognito-draft:%'))`
+      )
+    )
     .all()
   // 子分类随父分类一起删除时只显示父分类
   const c = db.select().from(categories).where(isNotNull(categories.deletedAt)).all()
@@ -59,6 +64,13 @@ export function restore(type: TrashType, id: string): void {
   }
   const table = type === 'note' ? notes : sources
   getDb().update(table).set({ deletedAt: null, updatedAt: Date.now() }).where(eq(table.id, id)).run()
+  if (type === 'source') {
+    getDb()
+      .update(sources)
+      .set({ aiExcluded: true })
+      .where(and(eq(sources.id, id), eq(sources.space, 'attachment')))
+      .run()
+  }
 }
 
 export async function purge(type: TrashType, id: string): Promise<void> {

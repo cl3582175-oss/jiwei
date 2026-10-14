@@ -134,6 +134,7 @@ export type NoteSort = NonNullable<NoteQuery['sort']>
 export type SourceKind = 'book' | 'pdf' | 'video' | 'audio' | 'recording' | 'image' | 'document' | 'web' | 'other'
 
 export interface Source {
+  space?: 'library' | 'attachment'
   recordingScene?: import('./recording').Scene
   id: string
   title: string
@@ -797,6 +798,7 @@ export interface Citation {
 }
 
 export interface ChatMessage {
+  attachments?: Attachment[]
   id: string
   conversationId: string
   role: 'user' | 'assistant'
@@ -1075,6 +1077,7 @@ export interface SourceRecognition {
 
 /** 主进程 → 渲染进程的事件 */
 export interface JiweiEvents {
+  'attachments:changed': { sourceIds?: string[]; conversationId?: string }
   'mail:changed': Record<string, never>
   'discover:changed': Record<string, never>
   'retrieval:changed': Record<string, never>
@@ -1184,4 +1187,22 @@ export interface RegionRecognition {
 export interface ScanPageText {
   page: number
   blocks: import('./scanText').ScanBlock[]
+}
+
+export type AttachmentStatus = 'adding' | 'parsing' | 'recognizing' | 'transcribing' | 'ready' | 'failed' | 'unsupported'
+export interface Attachment {
+  sourceId: string
+  name: string
+  kind: SourceKind
+  size: number
+  mime: string | null
+  thumbUrl: string | null
+  status: AttachmentStatus
+  progress: number | null
+  error: string | null
+  space: 'attachment' | 'library'
+  archivedCategoryId: string | null
+  deleted: boolean
+  conversations: { id: string; title: string }[]
+  createdAt: number
 }

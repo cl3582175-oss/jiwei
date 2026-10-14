@@ -69,6 +69,7 @@ export const NoteMetaUpdateSchema = z.object({
 export type NoteMetaUpdate = z.infer<typeof NoteMetaUpdateSchema>
 
 export const SourceQuerySchema = RecordingFiltersSchema.extend({
+  space: z.enum(['library', 'attachment']).optional(),
   categoryId: Id.nullable().optional(),
   includeDescendants: z.boolean().optional(),
   kind: SourceKindSchema.optional(),
@@ -531,3 +532,17 @@ export const CourseErrorSchema = CourseEnvelope.extend({
   code: z.enum(['audio-blocked', 'frame-blocked', 'audio-unavailable']),
   requestId: Id.optional()
 })
+
+export const AttachmentAddSchema = z
+  .object({
+    paths: z.array(z.string().min(1).max(4096)).max(10).optional(),
+    files: z
+      .array(z.object({ name: z.string().min(1).max(260), data: Bytes }))
+      .max(10)
+      .optional(),
+    conversationId: Id.nullable().optional(),
+    // 无痕草稿也要持久隔离；没有会话ID时用私有草稿关系记录，发送时替换。
+    incognito: z.boolean().optional()
+  })
+  .refine((v) => (v.paths?.length ?? 0) + (v.files?.length ?? 0) <= 10, 'At most 10 attachments')
+export const AttachmentListSchema = z.object({ state: z.enum(['unarchived', 'archived', 'all']), query: z.string().max(500).optional() })

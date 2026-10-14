@@ -6,21 +6,22 @@ import { basename, extname } from 'path'
 import { stat } from 'fs/promises'
 import { BrowserWindow, dialog, shell } from 'electron'
 import { and, desc, eq, inArray, isNull, like, or, type SQL } from 'drizzle-orm'
-import { getDb } from '../db'
+import { getDb, getSqlite } from '../db'
 import { emit } from '../events'
-import { assets, sources, taggings } from '../db/schema'
+import { assets, sources, taggings, sourcePages, conversationAttachments, chunks, jobs, links, annotations } from '../db/schema'
 import { newId } from '../lib/ids'
 import { deviceId } from './device'
 import { recordActivity } from './stats'
 import { deletedCategoryIds, descendantIds } from './categories'
 import { entitiesWithTag, tagIdsFor } from './tags'
 import { assetPath, assetUrl, collectGarbage, importBytes, importFile } from './assets'
+import { cancelJob } from './jobs'
 import { canSegment, enqueueFetch, enqueueSegment } from './jobKinds'
 import { applySubtitleFile, canAutoTranscribe, enqueueTranscribe, findSidecarSubtitles, isMedia } from './asr'
 import { deleteSegments, listSegments } from './segments'
 import type { ImportResult, Source, SourceKind, SourceQuery, SourceUpdate } from '@shared/types'
 
-const EXT_KIND: Record<string, SourceKind> = {
+export const EXT_KIND: Record<string, SourceKind> = {
   pdf: 'pdf',
   epub: 'book',
   mobi: 'book',
@@ -86,6 +87,7 @@ function query(conds: SQL[]): Source[] {
     accessedAt: s.accessedAt,
     categoryId: s.categoryId,
     aiExcluded: s.aiExcluded,
+    space: s.space,
     tagIds: tagMap.get(s.id) ?? [],
     createdAt: s.createdAt,
     updatedAt: s.updatedAt,
@@ -94,7 +96,7 @@ function query(conds: SQL[]): Source[] {
 }
 
 export function listSources(q: SourceQuery): Source[] {
-  const conds: SQL[] = [isNull(sources.deletedAt)]
+  const conds: SQL[] = [isNull(sources.deletedAt), eq(sources.space, q.space ?? 'library')]
   if (q.categoryId !== undefined) {
     if (q.categoryId === null) {
       const dead = deletedCategoryIds()
@@ -140,7 +142,14 @@ export async function importPaths(
     const dup = db
       .select({ id: sources.id })
       .from(sources)
-      .where(and(eq(sources.assetId, row.id), isNull(sources.deletedAt), init?.aiExcluded ? eq(sources.aiExcluded, true) : undefined))
+      .where(
+        and(
+          eq(sources.assetId, row.id),
+          isNull(sources.deletedAt),
+          eq(sources.space, 'library'),
+          init?.aiExcluded ? eq(sources.aiExcluded, true) : undefined
+        )
+      )
       .get()
     if (dup) {
       out.duplicates++
@@ -263,18 +272,39 @@ export function addUrl(url: string, title?: string, categoryId?: string | null):
 
 /** 下载的二进制资料走与本地文件相同的资产去重、分段和索引路径。 */
 export async function importContent(name: string, mime: string, bytes: Uint8Array, init: { title: string; url?: string }): Promise<Source> {
-  const asset = await importBytes(name, mime, bytes), db = getDb()
-  const existing = db.select().from(sources).where(and(eq(sources.assetId, asset.id), isNull(sources.deletedAt))).get()
+  const asset = await importBytes(name, mime, bytes),
+    db = getDb()
+  const existing = db
+    .select()
+    .from(sources)
+    .where(and(eq(sources.assetId, asset.id), isNull(sources.deletedAt), eq(sources.space, 'library')))
+    .get()
   if (existing) return getSource(existing.id)!
-  const id = newId(), now = Date.now()
+  const id = newId(),
+    now = Date.now()
   const ext = extname(name).slice(1).toLowerCase()
-  db.insert(sources).values({ id, title: init.title.slice(0, 500), url: init.url ?? null, kind: EXT_KIND[ext] ?? 'other', originalName: name, assetId: asset.id, accessedAt: now, createdAt: now, updatedAt: now, updatedBy: deviceId() }).run()
+  db.insert(sources)
+    .values({
+      id,
+      title: init.title.slice(0, 500),
+      url: init.url ?? null,
+      kind: EXT_KIND[ext] ?? 'other',
+      originalName: name,
+      assetId: asset.id,
+      accessedAt: now,
+      createdAt: now,
+      updatedAt: now,
+      updatedBy: deviceId()
+    })
+    .run()
   recordActivity('source_add')
   if (canSegment(ext)) enqueueSegment(id)
   return getSource(id)!
 }
 
 export function updateSource(id: string, patch: SourceUpdate): void {
+  if (patch.aiExcluded === false && getSource(id)?.space === 'attachment')
+    throw new Error('Archive this attachment before sharing it with AI')
   if (patch.aiExcluded !== undefined)
     getDb().update(recordings).set({ localOnly: patch.aiExcluded }).where(eq(recordings.sourceId, id)).run()
   getDb()
@@ -323,8 +353,7 @@ export async function purgeSource(id: string): Promise<void> {
   db.delete(taggings)
     .where(and(eq(taggings.entityType, 'source'), eq(taggings.entityId, id)))
     .run()
-  db.delete(sources).where(eq(sources.id, id)).run()
-  deleteSegments(id)
+  purgeSourceData(id)
   await collectGarbage()
 }
 
@@ -334,4 +363,43 @@ export async function importSubtitlesDialog(win: BrowserWindow | null, sourceId:
   const res = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts)
   if (res.canceled || !res.filePaths[0]) return null
   return applySubtitleFile(sourceId, res.filePaths[0])
+}
+
+/** 删除来源的派生数据；调用方的生命周期事务可以一起回滚。 */
+export function purgeSourceData(id: string): void {
+  const db = getDb(),
+    sqlite = getSqlite()
+  db.transaction(() => {
+    const pending = db
+      .select()
+      .from(jobs)
+      .all()
+      .filter((j) => {
+        try {
+          return (JSON.parse(j.payload) as { sourceId?: string }).sourceId === id
+        } catch {
+          return false
+        }
+      })
+    for (const job of pending) cancelJob(job.id)
+    const vectors = db
+      .select({ rowid: chunks.rowid })
+      .from(chunks)
+      .where(and(eq(chunks.parentType, 'source'), eq(chunks.parentId, id)))
+      .all()
+    for (const v of vectors) sqlite.prepare('DELETE FROM vec_chunks WHERE rowid = ?').run(BigInt(v.rowid))
+    db.delete(chunks)
+      .where(and(eq(chunks.parentType, 'source'), eq(chunks.parentId, id)))
+      .run()
+    db.delete(conversationAttachments).where(eq(conversationAttachments.sourceId, id)).run()
+    db.delete(sourcePages).where(eq(sourcePages.sourceId, id)).run()
+    db.delete(annotations)
+      .where(and(eq(annotations.targetType, 'source'), eq(annotations.targetId, id)))
+      .run()
+    db.delete(links)
+      .where(or(and(eq(links.fromType, 'source'), eq(links.fromId, id)), and(eq(links.toType, 'source'), eq(links.toId, id))))
+      .run()
+    db.delete(sources).where(eq(sources.id, id)).run()
+    deleteSegments(id)
+  })
 }

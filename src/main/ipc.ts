@@ -1,3 +1,4 @@
+import * as attachments from './services/attachments'
 import * as graphAi from './services/graphAi'
 import * as pluginMarkets from './services/plugins/markets'
 import * as ui from './services/ui'
@@ -409,6 +410,17 @@ const handlers: Handlers = {
   },
   assets: {
     importBytes: (_, name, mime, bytes) => assets.importBytes(name, mime, bytes)
+  },
+  attachments: {
+    add: (_, input) => attachments.addAttachments(input),
+    pick: ({ win }) => attachments.pickAttachments(win),
+    status: (_, ids) => attachments.attachmentStatus(ids),
+    ofConversation: (_, id) => attachments.conversationAttachments(id),
+    removeFromConversation: (_, conversationId, sourceId) => attachments.removeFromConversation(conversationId, sourceId),
+    list: (_, filter) => attachments.listAttachmentSpace(filter),
+    archive: (_, ids, categoryId) => attachments.archiveAttachments(ids, categoryId),
+    delete: (_, ids) => attachments.deleteAttachments(ids),
+    count: () => attachments.unarchivedCount()
   },
   sources: {
     list: (_, q) => sources.listSources(q),

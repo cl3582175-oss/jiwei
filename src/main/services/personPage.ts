@@ -29,7 +29,14 @@ export function personPage(id: string): PersonPageData {
     .orderBy(desc(derivations.createdAt))
     .all()) {
     const source = getSource(d.sourceId)
-    if (!d.result || !source || source.deletedAt || d.transcriptRevision !== transcriptRevision(d.sourceId)) continue
+    if (
+      !d.result ||
+      !source ||
+      source.deletedAt ||
+      source.space === 'attachment' ||
+      d.transcriptRevision !== transcriptRevision(d.sourceId)
+    )
+      continue
     const version = JSON.stringify([d.sourceId, d.lens, d.params])
     if (versions.has(version)) continue
     versions.add(version)
@@ -54,7 +61,7 @@ export function personPage(id: string): PersonPageData {
     person: listPeople().find((p) => p.id === id) ?? null,
     sources: [...ids]
       .map((id) => getSource(id))
-      .filter((s): s is NonNullable<typeof s> => !!s && !s.deletedAt)
+      .filter((s): s is NonNullable<typeof s> => !!s && !s.deletedAt && s.space !== 'attachment')
       .sort((a, b) => b.createdAt - a.createdAt),
     actions,
     viewpoints

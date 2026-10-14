@@ -1,3 +1,4 @@
+import { canReadSource } from '../attachmentsAccess'
 import { manimAvailable } from '../plugins/manim'
 import { visual as embedVisual } from './embedProposal'
 import { neutralizeUiFences } from '@shared/ui/sanitize'
@@ -76,7 +77,7 @@ function readableNote(id: string): NoteCheck {
     .get()
   return n && !n.aiExcluded && !n.deletedAt ? { title: n.title } : null
 }
-function readableSource(id: string, zh: boolean): { title: string } {
+function readableSource(id: string, zh: boolean, conversationId: string | null = null): { title: string } {
   const s = getDb()
     .select({ title: sources.title, aiExcluded: sources.aiExcluded, deletedAt: sources.deletedAt })
     .from(sources)
@@ -88,7 +89,8 @@ function readableSource(id: string, zh: boolean): { title: string } {
         ? `没有 ID 为 ${id} 的资料。资料 ID 见 knowledge_search 结果里的 sourceId，不要自己编。`
         : `No source with ID ${id}; use the sourceId from knowledge_search results.`
     )
-  if (s.aiExcluded) throw new Error(zh ? '用户设置了这份资料不给 AI 读取。' : 'The user excluded this source from AI.')
+  if (!canReadSource(id, conversationId))
+    throw new Error(zh ? '用户设置了这份资料不给 AI 读取。' : 'The user excluded this source from AI.')
   return { title: s.title }
 }
 
@@ -388,7 +390,7 @@ export function buildTools(s: AgentSession): ToolSet {
         }),
         execute: async ({ sourceId, from = 0, count = 12, includeMetadata }) => {
           if (s.scope.type === 'items' && !s.scope.sources.includes(sourceId)) throw new Error('Source is outside the selected scope')
-          const src = readableSource(sourceId, zh)
+          const src = readableSource(sourceId, zh, s.conversationId)
           const segs = listSegments(sourceId)
           const part = segs.slice(from, from + count)
           const loc = (l: Record<string, unknown>): string => (l.value ? ` · ${String(l.value)}` : '')

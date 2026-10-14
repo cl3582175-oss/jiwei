@@ -1,0 +1,290 @@
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import Database from 'better-sqlite3'
+import { drizzle } from 'drizzle-orm/better-sqlite3'
+import { getLoadablePath } from 'sqlite-vec'
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync, existsSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
+const f = vi.hoisted(() => ({
+  db: null as ReturnType<typeof drizzle> | null,
+  sql: null as Database.Database | null,
+  dir: '',
+  ready: false,
+  events: [] as string[]
+}))
+vi.mock('../../db', () => ({ getDb: () => f.db, getSqlite: () => f.sql, dataDir: () => f.dir, assetsDir: () => join(f.dir, 'assets') }))
+vi.mock('../../events', () => ({ emit: (event: string) => f.events.push(event) }))
+vi.mock('electron-log/main', () => ({ default: { info: () => {}, warn: () => {}, error: () => {} } }))
+vi.mock('electron', () => ({
+  app: { getLocale: () => 'zh-CN', isPackaged: false },
+  nativeImage: {},
+  net: {},
+  protocol: {},
+  BrowserWindow: {},
+  dialog: {},
+  shell: {}
+}))
+vi.mock('../device', () => ({ deviceId: () => 'test-device' }))
+vi.mock('../recording', () => ({
+  recordingForSource: () => null,
+  recordingAudio: () => null,
+  purgeRecording: async () => {},
+  restoreRecording: () => {}
+}))
+vi.mock('../recordingFiles', () => ({ recordingKey: () => null, recordingPlainSize: () => 0, recordingStream: () => null }))
+vi.mock('../recognize', () => ({
+  recognizingSources: () => [],
+  IMAGE_EXTS: new Set(['png', 'jpg']),
+  maybeAutoRecognize: () => {},
+  applyRecognized: () => {},
+  recordPages: () => {}
+}))
+vi.mock('../asr', () => ({
+  isMedia: (ext: string) => ['mp3', 'mp4'].includes(ext),
+  canAutoTranscribe: () => false,
+  findSidecarSubtitles: () => null,
+  enqueueTranscribe: () => {},
+  applySubtitleFile: () => {}
+}))
+vi.mock('../moss', () => ({ mossStatus: () => ({ state: 'missing' }), enqueueMoss: () => {} }))
+vi.mock('../ai/embedding', () => ({
+  isReady: async () => f.ready,
+  currentModelId: () => 'controlled',
+  embed: async (texts: string[]) => texts.map(() => [1, 0]),
+  setStatus: () => {}
+}))
+vi.mock('../recognizeRuntimes', () => ({}))
+vi.mock('../notes', () => ({ deleteNoteRow: () => {} }))
+vi.mock('../docs', () => ({ purgeDocData: () => {}, setTextLink: () => {} }))
+vi.mock('../proposals', () => ({ deleteProposalsForNote: () => {} }))
+
+import { listSources, importPaths, getSource, updateSource } from '../sources'
+import { replaceSegments, searchSegments } from '../segments'
+import { restore } from '../trash'
+import { retrieve } from '../ai/retrieve'
+import { desiredChunks } from '../ai/indexer'
+import { check } from '../retrieval/privacyGuard'
+import { assetPath } from '../assets'
+import { relatedByVectors } from '../connections'
+import { knowledgeGraph } from '../graph'
+vi.mock('../progress', () => ({ masteryMap: () => ({ notes: [] }) }))
+
+beforeEach(() => {
+  f.dir = mkdtempSync(join(tmpdir(), 'jiwei-attachment-unit-'))
+  f.sql = new Database(':memory:')
+  f.sql.loadExtension(getLoadablePath())
+  const folder = join(process.cwd(), 'resources/migrations')
+  for (const file of readdirSync(folder)
+    .filter((p) => p.endsWith('.sql'))
+    .sort())
+    f.sql.exec(readFileSync(join(folder, file), 'utf8'))
+  f.sql.exec('DROP TABLE vec_chunks; CREATE VIRTUAL TABLE vec_chunks USING vec0(embedding float[2] distance_metric=cosine)')
+  f.db = drizzle(f.sql)
+  f.events = []
+  f.ready = false
+  for (const id of ['c1', 'c2', 'private'])
+    f.sql
+      .prepare('INSERT INTO conversations(id,title,incognito,created_at,updated_at) VALUES(?,?,?,1,1)')
+      .run(id, id, id === 'private' ? 1 : 0)
+  f.sql.exec("INSERT INTO decisions(id,question,created_at,updated_at) VALUES('decision','choice',1,1)")
+})
+afterEach(() => {
+  f.sql?.close()
+  rmSync(f.dir, { recursive: true, force: true })
+})
+
+const svc = () => import('../attachments')
+function file(name = 'secret.txt', text = 'ZZ-ATTACH-MARKER-7f3a'): string {
+  const path = join(f.dir, name)
+  writeFileSync(path, text)
+  return path
+}
+async function attachment(owner?: string) {
+  return (await (await svc()).addAttachments({ paths: [file()], conversationId: owner }))[0]
+}
+const rowCount = (table: string): number => (f.sql!.prepare(`SELECT count(*) AS n FROM ${table}`).get() as { n: number }).n
+
+it('默认隐藏附件，只有主动添加的所属会话可读，普通资料隐私开关优先', async () => {
+  const s = await svc(),
+    a = await attachment('c1')
+  expect(getSource(a.sourceId)?.aiExcluded).toBe(true)
+  expect(listSources({})).toEqual([])
+  expect(listSources({ space: 'attachment' })).toHaveLength(1)
+  expect(s.canReadSource(a.sourceId, 'c1')).toBe(true)
+  expect(s.canReadSource(a.sourceId, 'c2')).toBe(false)
+  expect(s.canReadSource(a.sourceId, null)).toBe(false)
+  s.removeFromConversation('c1', a.sourceId)
+  expect(s.canReadSource(a.sourceId, 'c1')).toBe(false)
+  s.bindAttachments('c1', [a.sourceId], 'u1')
+  s.archiveAttachments([a.sourceId], null)
+  expect(s.canReadSource(a.sourceId, null)).toBe(true)
+  updateSource(a.sourceId, { aiExcluded: true })
+  expect(s.canReadSource(a.sourceId, 'c1')).toBe(false)
+})
+
+it('决策附件只对有效决策可读，删除和移出立即撤销', async () => {
+  const s = await svc(),
+    a = await attachment()
+  s.bindAttachments('decision', [a.sourceId], null)
+  expect(s.canReadSource(a.sourceId, 'decision')).toBe(true)
+  expect(s.canReadSource(a.sourceId, 'c1')).toBe(false)
+  s.deleteAttachments([a.sourceId])
+  expect(s.canReadSource(a.sourceId, 'decision')).toBe(false)
+})
+
+it('关键词与向量分段默认排除附件，allow 放行也不能读已删除来源', async () => {
+  const s = await svc(),
+    a = await attachment('c1')
+  replaceSegments(a.sourceId, [{ kind: 'paragraph', text: 'ZZ-ATTACH-MARKER-7f3a', locator: {} }])
+  expect(await retrieve('ZZ-ATTACH-MARKER', { type: 'all' })).toEqual([])
+  expect(searchSegments('ZZ-ATTACH-MARKER')).toEqual([])
+  expect(await retrieve('ZZ-ATTACH-MARKER', { type: 'all' }, 8, {}, null, { sourceIds: [a.sourceId] })).toHaveLength(1)
+  s.deleteAttachments([a.sourceId])
+  expect(await retrieve('ZZ-ATTACH-MARKER', { type: 'all' }, 8, {}, null, { sourceIds: [a.sourceId] })).toEqual([])
+})
+
+it('复用同内容附件和库内资料；资料库导入不把未归档附件隐式开放', async () => {
+  const s = await svc(),
+    a = await attachment('c1'),
+    b = await attachment('c2')
+  expect(a.sourceId).toBe(b.sourceId)
+  expect(rowCount('sources')).toBe(1)
+  expect(s.conversationAttachments('c2')[0].sourceId).toBe(a.sourceId)
+  const imported = await importPaths([file()])
+  expect(imported.imported).toHaveLength(1)
+  expect(rowCount('sources')).toBe(2)
+  const c = await attachment('c2')
+  expect(c.space).toBe('library')
+  expect(c.sourceId).toBe(imported.imported[0].id)
+})
+
+it('超限、旧格式、不支持格式给逐文件失败状态，不产生来源行', async () => {
+  const s = await svc()
+  const items = await s.addAttachments({
+    files: [
+      { name: 'legacy.doc', data: new Uint8Array([1]) },
+      { name: 'unknown.exe', data: new Uint8Array([2]) },
+      { name: 'huge.txt', data: new Uint8Array(25 * 1024 * 1024 + 1) }
+    ]
+  })
+  expect(items.map((i) => i.status)).toEqual(['unsupported', 'unsupported', 'failed'])
+  expect(items[0].error).toContain('docx')
+  expect(rowCount('sources')).toBe(0)
+})
+
+it('删除进最近删除，恢复仍未归档；归档后可全局检索并广播变化', async () => {
+  const s = await svc(),
+    a = await attachment('c1')
+  replaceSegments(a.sourceId, [{ kind: 'paragraph', text: 'ZZ-ATTACH-MARKER-7f3a', locator: {} }])
+  s.archiveAttachments([a.sourceId], null)
+  expect(await retrieve('ZZ-ATTACH-MARKER', { type: 'all' })).toHaveLength(1)
+  s.deleteAttachments([a.sourceId])
+  restore('source', a.sourceId)
+  expect(getSource(a.sourceId)?.space).toBe('attachment')
+  expect(getSource(a.sourceId)?.aiExcluded).toBe(true)
+  expect(s.unarchivedCount()).toBe(1)
+  expect(f.events).toContain('attachments:changed')
+})
+
+it('启动清理严格超过24小时的草稿，连同分段、向量和独占资产；边界保留', async () => {
+  const s = await svc(),
+    a = await attachment(),
+    asset = f.sql!.prepare('SELECT asset_id FROM sources WHERE id=?').get(a.sourceId) as { asset_id: string }
+  replaceSegments(a.sourceId, [{ kind: 'paragraph', text: 'draft', locator: {} }])
+  const now = Date.now()
+  f.sql!.prepare('UPDATE sources SET created_at=? WHERE id=?').run(now - 86400000, a.sourceId)
+  await s.cleanupDrafts(now)
+  expect(getSource(a.sourceId)).not.toBeNull()
+  await s.cleanupDrafts(now + 1)
+  expect(getSource(a.sourceId)).toBeNull()
+  expect(rowCount('source_segments')).toBe(0)
+  expect(rowCount('assets')).toBe(0)
+  expect(existsSync(assetPath(asset.asset_id, 'txt'))).toBe(false)
+})
+
+it('删除普通对话保留附件空间且不被草稿清理误删，无痕独立资料彻底清除', async () => {
+  const s = await svc(),
+    regular = await attachment('c1'),
+    privateItem = await attachment('private')
+  expect(privateItem.sourceId).not.toBe(regular.sourceId)
+  expect(s.listAttachmentSpace({ state: 'all' }).map((a) => a.sourceId)).toEqual([regular.sourceId])
+  s.detachConversationAttachments('private')
+  expect(getSource(privateItem.sourceId)).toBeNull()
+  expect(getSource(regular.sourceId)).not.toBeNull()
+  s.detachConversationAttachments('c1')
+  f.sql!.prepare('UPDATE sources SET created_at=1 WHERE id=?').run(regular.sourceId)
+  await s.cleanupDrafts()
+  expect(getSource(regular.sourceId)).not.toBeNull()
+  expect(s.conversationAttachments('c1')).toEqual([])
+  expect(s.listAttachmentSpace({ state: 'all' })).toHaveLength(1)
+})
+
+it('草稿无向量、无痕无向量；已绑定普通附件有向量候选但没有跨对话读取', async () => {
+  const draft = await attachment(),
+    normal = await attachment('c1'),
+    priv = await attachment('private')
+  const s = await svc()
+  // normal 与 draft 内容相同，会复用；另造真正的未绑定草稿。
+  const [unbound] = await s.addAttachments({ paths: [file('draft.txt', 'unique draft')] })
+  for (const id of [draft.sourceId, normal.sourceId, priv.sourceId, unbound.sourceId])
+    replaceSegments(id, [{ kind: 'paragraph', text: 'ZZ-ATTACH-MARKER-7f3a', locator: {} }])
+  expect(
+    desiredChunks()
+      .filter((c) => c.parentType === 'source')
+      .map((c) => c.parentId)
+  ).toEqual([normal.sourceId])
+  expect(check('secret document title')).toBe(true)
+})
+
+it('附件标题与正文不参与联网隐私黑名单，库内不给AI内容仍拦截', async () => {
+  const a = await attachment('c1')
+  replaceSegments(a.sourceId, [{ kind: 'paragraph', text: 'unique hidden private document body', locator: {} }])
+  expect(check('secret')).toBe(true)
+  expect(check('unique hidden private document body')).toBe(true)
+  await (await svc()).archiveAttachments([a.sourceId], null)
+  updateSource(a.sourceId, { aiExcluded: true })
+  expect(check('secret')).toBe(false)
+  expect(check('unique hidden private document body')).toBe(false)
+})
+
+it('真实向量候选回表、相关推荐与图谱都排除未归档附件，显式放行和归档可用', async () => {
+  const s = await svc(),
+    a = await attachment('c1')
+  replaceSegments(a.sourceId, [{ kind: 'paragraph', text: 'ZZ-ATTACH-MARKER-7f3a', locator: {} }])
+  const segment = f.sql!.prepare('SELECT id FROM source_segments WHERE source_id=?').get(a.sourceId) as { id: string }
+  f.sql!.prepare(
+    "INSERT INTO chunks(rowid,owner_type,owner_id,parent_type,parent_id,hash,model,created_at) VALUES(1,'segment',?,'source',?,'h','controlled',1)"
+  ).run(segment.id, a.sourceId)
+  const vector = Buffer.from(new Float32Array([1, 0]).buffer)
+  f.sql!.prepare('INSERT INTO vec_chunks(rowid,embedding) VALUES(?,?)').run(1n, vector)
+  f.sql!.exec("INSERT INTO notes(id,title,learned_at,created_at,updated_at,edited_at) VALUES('note','ordinary',1,1,1,1);")
+  f.sql!.exec(
+    "INSERT INTO chunks(rowid,owner_type,owner_id,parent_type,parent_id,hash,model,created_at) VALUES(2,'block','ordinary-block','note','note','h','controlled',1);"
+  )
+  f.sql!.prepare('INSERT INTO vec_chunks(rowid,embedding) VALUES(?,?)').run(2n, vector)
+  f.sql!.prepare(
+    "INSERT INTO links(id,from_type,from_id,to_type,to_id,relation,origin,created_at,updated_at) VALUES('citation','note','note','source',?,'reference','doc',1,1)"
+  ).run(a.sourceId)
+  f.ready = true
+  expect(await retrieve('unrelated keyword', { type: 'all' })).toEqual([])
+  expect(await retrieve('unrelated keyword', { type: 'all' }, 8, {}, null, { sourceIds: [a.sourceId] })).toHaveLength(1)
+  expect(await relatedByVectors('note', new Set())).toEqual([])
+  expect(knowledgeGraph().nodes.some((n) => n.id === a.sourceId)).toBe(false)
+  s.archiveAttachments([a.sourceId], null)
+  expect(await retrieve('unrelated keyword', { type: 'all' })).toHaveLength(1)
+  expect(await relatedByVectors('note', new Set())).toHaveLength(1)
+  expect(knowledgeGraph().nodes.some((n) => n.id === a.sourceId)).toBe(true)
+})
+
+it('无痕草稿在发送前已隐藏，普通附件的不给 AI 开关不可解除', async () => {
+  const s = await svc()
+  const [a] = await s.addAttachments({ paths: [file()], incognito: true })
+  expect(s.unarchivedCount()).toBe(0)
+  expect(s.listAttachmentSpace({ state: 'all' })).toEqual([])
+  expect(() => updateSource(a.sourceId, { aiExcluded: false })).toThrow('Archive')
+  const [bound] = s.bindAttachments('private', [a.sourceId], 'u-private')
+  expect(bound).toBe(a.sourceId)
+  expect(s.canReadSource(bound, 'private')).toBe(true)
+  expect(s.unarchivedCount()).toBe(0)
+})

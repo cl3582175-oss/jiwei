@@ -20,8 +20,12 @@ function noteTitle(id: string): { title: string; ok: boolean } {
   return { title: n?.title ?? '', ok: !!n && !n.deletedAt }
 }
 function sourceTitle(id: string): { title: string; ok: boolean } {
-  const s = getDb().select({ title: sources.title, deletedAt: sources.deletedAt }).from(sources).where(eq(sources.id, id)).get()
-  return { title: s?.title ?? '', ok: !!s && !s.deletedAt }
+  const s = getDb()
+    .select({ title: sources.title, deletedAt: sources.deletedAt, space: sources.space, aiExcluded: sources.aiExcluded })
+    .from(sources)
+    .where(eq(sources.id, id))
+    .get()
+  return { title: s?.title ?? '', ok: !!s && !s.deletedAt && s.space === 'library' }
 }
 const titleOf = (type: 'note' | 'source', id: string): { title: string; ok: boolean } => (type === 'note' ? noteTitle(id) : sourceTitle(id))
 
@@ -95,6 +99,14 @@ export async function relatedByVectors(noteId: string, exclude: Set<string>): Pr
     for (const h of hits) {
       const x = byRow.get(Number(h.rowid))
       if (!x || x.parentId === noteId) continue
+      // 向量候选可能含对话附件，读取文字前先核对父来源的默认隐私边界。
+      const parent = x.parentType === 'source' ? sources : notes
+      const allowed = getDb()
+        .select({ aiExcluded: parent.aiExcluded, deletedAt: parent.deletedAt })
+        .from(parent)
+        .where(eq(parent.id, x.parentId))
+        .get()
+      if (!allowed || allowed.deletedAt !== null || allowed.aiExcluded || !titleOf(x.parentType, x.parentId).ok) continue
       const key = `${x.parentType}:${x.parentId}`
       if (exclude.has(key)) continue
       rank++

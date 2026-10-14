@@ -1,3 +1,5 @@
+import { detachConversationAttachments } from '../attachments'
+import { collectGarbage } from '../assets'
 import { hasToolCall, stepCountIs, streamText, type ModelMessage, type ToolSet } from 'ai'
 import { ASK_USER, buildScopeTools } from './scopeTools'
 import { and, asc, desc, eq, inArray, isNull, ne } from 'drizzle-orm'
@@ -170,13 +172,14 @@ export function updateConversation(id: string, patch: { title?: string; scope?: 
     .run()
 }
 
-export function deleteConversation(id: string): void {
+export async function deleteConversation(id: string): Promise<void> {
   const db = getDb()
   running.forEach((ctrl, mid) => {
     const m = db.select({ c: messages.conversationId }).from(messages).where(eq(messages.id, mid)).get()
     if (m?.c === id) ctrl.abort()
   })
   db.transaction((tx) => {
+    detachConversationAttachments(id)
     tx.delete(webPageRefs).where(eq(webPageRefs.conversationId, id)).run()
     tx.delete(uiStates)
       .where(inArray(uiStates.messageId, tx.select({ id: messages.id }).from(messages).where(eq(messages.conversationId, id))))
@@ -184,6 +187,7 @@ export function deleteConversation(id: string): void {
     tx.delete(messages).where(eq(messages.conversationId, id)).run()
     tx.delete(conversations).where(eq(conversations.id, id)).run()
   })
+  await collectGarbage()
 }
 
 const fmtDate = (ts: number | null): string => (ts ? new Date(ts).toISOString().slice(0, 10) : '未知')

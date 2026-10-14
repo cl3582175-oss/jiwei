@@ -55,8 +55,10 @@ export function resegmentEmptyPdfs(): number {
   return rows.length
 }
 
-const sourceTitle = (id: string): string =>
-  getDb().select({ title: sources.title }).from(sources).where(eq(sources.id, id)).get()?.title ?? id
+const sourceTitle = (id: string): string => {
+  const s = getDb().select({ title: sources.title, space: sources.space }).from(sources).where(eq(sources.id, id)).get()
+  return s?.space === 'attachment' ? '对话附件' : (s?.title ?? id)
+}
 
 export function registerJobKinds(): void {
   registerIcsJobs()

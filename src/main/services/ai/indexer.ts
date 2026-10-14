@@ -1,4 +1,5 @@
-import { and, eq, inArray, isNotNull, isNull, or } from 'drizzle-orm'
+import { getSettings } from '../settings'
+import { and, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm'
 import log from 'electron-log/main'
 import { getDb, getSqlite } from '../../db'
 import { annotations, assetTexts, noteAssetBlocks, blocks, chunks, notes, sourceSegments, sources } from '../../db/schema'
@@ -43,7 +44,20 @@ export function desiredChunks(): DesiredChunk[] {
     .select({ id: sourceSegments.id, sourceId: sourceSegments.sourceId, text: sourceSegments.text, title: sources.title })
     .from(sourceSegments)
     .innerJoin(sources, eq(sourceSegments.sourceId, sources.id))
-    .where(and(isNull(sources.deletedAt), eq(sources.aiExcluded, false)))
+    .where(
+      and(
+        isNull(sources.deletedAt),
+        or(
+          eq(sources.aiExcluded, false),
+          and(
+            eq(sources.space, 'attachment'),
+            sql`${getSettings().ai.embedding?.mode === 'local' ? 1 : 0}`,
+            sql`EXISTS (SELECT 1 FROM conversation_attachments ca WHERE ca.source_id=${sources.id} AND (EXISTS (SELECT 1 FROM conversations c WHERE c.id=ca.conversation_id AND c.incognito=0 AND c.deleted_at IS NULL) OR EXISTS (SELECT 1 FROM decisions d WHERE d.id=ca.conversation_id AND d.deleted_at IS NULL) OR ca.conversation_id LIKE 'orphan:%'))`,
+            sql`NOT EXISTS (SELECT 1 FROM conversation_attachments ca LEFT JOIN conversations c ON c.id=ca.conversation_id WHERE ca.source_id=${sources.id} AND (c.incognito=1 OR ca.conversation_id LIKE 'incognito-draft:%'))`
+          )
+        )
+      )
+    )
     .all()
   return [
     ...annotationChunks(),

@@ -53,7 +53,7 @@ export function seriesSourceIds(id: string, cloud = false): string[] {
     .select({ id: sources.id, excluded: sources.aiExcluded })
     .from(recordings)
     .innerJoin(sources, eq(recordings.sourceId, sources.id))
-    .where(and(eq(recordings.seriesId, id), isNull(recordings.deletedAt), isNull(sources.deletedAt)))
+    .where(and(eq(recordings.seriesId, id), isNull(recordings.deletedAt), isNull(sources.deletedAt), eq(sources.space, 'library')))
     .all()
     .filter((s) => !cloud || !s.excluded)
     .map((s) => s.id)

@@ -216,7 +216,7 @@ export function insights(range: InsightRange, now = Date.now()): Insights {
     (db
       .select({ n: sql<number>`count(*)` })
       .from(sources)
-      .where(and(isNull(sources.deletedAt), gte(sources.createdAt, from), lt(sources.createdAt, to)))
+      .where(and(isNull(sources.deletedAt), eq(sources.space, 'library'), gte(sources.createdAt, from), lt(sources.createdAt, to)))
       .get()?.n ?? 0)
   const read =
     db

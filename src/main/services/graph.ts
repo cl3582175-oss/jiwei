@@ -64,7 +64,7 @@ export function knowledgeGraph(): KnowledgeGraph {
     const rows = db
       .select({ id: sources.id, title: sources.title })
       .from(sources)
-      .where(and(inArray(sources.id, srcIds), isNull(sources.deletedAt)))
+      .where(and(inArray(sources.id, srcIds), isNull(sources.deletedAt), eq(sources.space, 'library')))
       .all()
     const counts = new Map<string, number>()
     for (const s of db

@@ -1,3 +1,4 @@
+import { canReadSource } from '../attachmentsAccess'
 import { tool, type ToolSet } from 'ai'
 import { z } from 'zod'
 import { eq } from 'drizzle-orm'
@@ -10,20 +11,20 @@ import { describeDigest, sourceOutline, sourceSize, startDigest, type DigestInpu
 
 export const ASK_USER = 'ask_user'
 
-function readable(id: string, zh: boolean): { title: string } {
+function readable(id: string, zh: boolean, conversationId: string | null = null): { title: string } {
   const r = getDb()
     .select({ title: sources.title, aiExcluded: sources.aiExcluded, deletedAt: sources.deletedAt })
     .from(sources)
     .where(eq(sources.id, id))
     .get()
   if (!r || r.deletedAt) throw new Error(zh ? `没有 ID 为 ${id} 的资料` : `No source ${id}`)
-  if (r.aiExcluded) throw new Error(zh ? '用户设置了这份资料不给 AI' : 'Source excluded from AI')
+  if (!canReadSource(id, conversationId)) throw new Error(zh ? '用户设置了这份资料不给 AI' : 'Source excluded from AI')
   return r
 }
 
 export function buildScopeTools(
   zh: boolean,
-  chat: { providerId: string; model: string }
+  chat: { providerId: string; model: string; conversationId?: string }
 ): { tools: ToolSet; meta: Record<string, ToolMeta> } {
   const digestInput = (i: Record<string, unknown>): DigestInput => ({
     sourceId: String(i.sourceId ?? ''),
@@ -31,6 +32,7 @@ export function buildScopeTools(
     fromPage: typeof i.fromPage === 'number' ? i.fromPage : undefined,
     toPage: typeof i.toPage === 'number' ? i.toPage : undefined,
     noteId: typeof i.noteId === 'string' ? i.noteId : null,
+    conversationId: chat.conversationId ?? null,
     providerId: chat.providerId,
     model: chat.model
   })
@@ -54,7 +56,7 @@ export function buildScopeTools(
         : 'Get a source’s size (segments, pages) and chapter list with pages, to decide scope or list chapters for the user.',
       inputSchema: z.object({ sourceId: z.string().max(64) }),
       execute: async ({ sourceId }) => {
-        const src = readable(sourceId, zh)
+        const src = readable(sourceId, zh, chat.conversationId ?? null)
         const size = sourceSize(sourceId)
         const outline = sourceOutline(sourceId)
         return [
@@ -81,7 +83,7 @@ export function buildScopeTools(
         noteId: z.string().max(64).optional()
       }),
       execute: async (input) => {
-        readable(input.sourceId, zh)
+        readable(input.sourceId, zh, chat.conversationId ?? null)
         const { noteId } = startDigest(digestInput(input))
         return zh
           ? `已在后台开始整理（笔记 ID：${noteId}）。完成后会作为提案出现在这篇笔记里，界面会提示用户。用一句话告诉用户：已开始，可以在“后台任务”里看进度。`
@@ -98,7 +100,7 @@ export function buildScopeTools(
       describe: (i) => describeDigest(digestInput(i), zh),
       check: (i) => {
         try {
-          readable(String(i.sourceId ?? ''), zh)
+          readable(String(i.sourceId ?? ''), zh, chat.conversationId ?? null)
           return null
         } catch (e) {
           return e instanceof Error ? e.message : String(e)

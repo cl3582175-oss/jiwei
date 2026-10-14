@@ -1,3 +1,4 @@
+import { canReadSource } from './attachmentsAccess'
 import { eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { getDb } from '../db'
@@ -22,6 +23,7 @@ import { costOf } from './agent/pricing'
 
 export type DigestTask = 'mindmap' | 'summary' | 'outline'
 export interface DigestInput {
+  conversationId?: string | null
   sourceId: string
   task: DigestTask
   fromPage?: number
@@ -153,7 +155,7 @@ export function describeDigest(input: DigestInput, zh: boolean): { title: string
 export function startDigest(input: DigestInput): { jobId: string; noteId: string } {
   const src = getDb().select().from(sources).where(eq(sources.id, input.sourceId)).get()
   if (!src || src.deletedAt) throw new Error('Source not found')
-  if (src.aiExcluded) throw new Error('This source is excluded from AI')
+  if (!canReadSource(input.sourceId, input.conversationId ?? null)) throw new Error('This source is excluded from AI')
   if (!rangeOf(input).length) throw new Error(getSettings().language.startsWith('zh') ? '这个范围里没有文字内容' : 'No text in this range')
   let noteId = input.noteId ?? null
   if (!noteId) {
@@ -177,15 +179,19 @@ type Points = z.infer<typeof PointsSchema>
 async function run(input: DigestInput & { noteId: string }, ctx: JobContext): Promise<{ noteId: string }> {
   const zh = getSettings().language.startsWith('zh')
   const src = getDb().select().from(sources).where(eq(sources.id, input.sourceId)).get()
-  if (!src || src.deletedAt || src.aiExcluded) throw new Error('Source unavailable')
+  if (!src || !canReadSource(input.sourceId, input.conversationId ?? null)) throw new Error('Source unavailable')
   const parts = chunks(rangeOf(input))
   const quick = quickModel(input.providerId, input.model)
   const mapped: Points[] = []
   // 1. 逐批提炼要点（带片段 ID，结果里的节点可以回到原文）
   for (const [i, part] of parts.entries()) {
+    if (!canReadSource(input.sourceId, input.conversationId ?? null)) throw new Error('Source access revoked')
     if (ctx.isCanceled()) throw new Error('canceled')
     mapped.push(
       await structured({
+        guard: () => {
+          if (!canReadSource(input.sourceId, input.conversationId ?? null)) throw new Error('Source access revoked')
+        },
         purpose: 'digest',
         providerId: input.providerId,
         model: quick,
@@ -215,6 +221,9 @@ async function run(input: DigestInput & { noteId: string }, ctx: JobContext): Pr
   // 2. 汇总
   if (input.task === 'mindmap') {
     const { tree } = await structured({
+      guard: () => {
+        if (!canReadSource(input.sourceId, input.conversationId ?? null)) throw new Error('Source access revoked')
+      },
       purpose: 'digest',
       providerId: input.providerId,
       model: input.model,
@@ -239,6 +248,9 @@ async function run(input: DigestInput & { noteId: string }, ctx: JobContext): Pr
     ]
   } else if (input.task === 'summary') {
     const r = await structured({
+      guard: () => {
+        if (!canReadSource(input.sourceId, input.conversationId ?? null)) throw new Error('Source access revoked')
+      },
       purpose: 'digest',
       providerId: input.providerId,
       model: input.model,
@@ -259,6 +271,9 @@ async function run(input: DigestInput & { noteId: string }, ctx: JobContext): Pr
     ]
   } else {
     const r = await structured({
+      guard: () => {
+        if (!canReadSource(input.sourceId, input.conversationId ?? null)) throw new Error('Source access revoked')
+      },
       purpose: 'digest',
       providerId: input.providerId,
       model: input.model,
