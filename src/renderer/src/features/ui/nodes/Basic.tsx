@@ -5,6 +5,8 @@ import type { UiContext } from '../context'
 import { cn } from '@/lib/utils'
 import { api } from '@/lib/utils'
 import { ConfirmSheet, type ConfirmItem } from '../ConfirmSheet'
+import { canReply, sendUiReply } from '../reply'
+import { toast } from 'sonner'
 
 export function Columns({ children, compact, ratio }: { children: ReactNode; compact: boolean; ratio?: string }) {
   const ref = useRef<HTMLDivElement>(null)
@@ -100,9 +102,29 @@ export function TableNode({
   const { t } = useTranslation()
   const state = ctx.states[uiKey] ?? {}
   const sort = state.sort as { key: string; direction: number } | undefined
+  type Change = { row: number; col: string; from: string | number | null; to: string | number | null }
+  const changes = (state.changes ?? []) as Change[]
+  const [editing, setEditing] = useState<{ row: number; col: string; value: string; number: boolean } | null>(null)
+  const commit = (): void => {
+    if (!editing) return
+    const value = editing.number ? Number(editing.value) : editing.value
+    if (editing.number && (!editing.value.trim() || !Number.isFinite(value))) return
+    const from = node.rows[editing.row][editing.col] ?? null
+    const next = changes.filter((c) => c.row !== editing.row || c.col !== editing.col)
+    if (value !== from) next.push({ row: editing.row, col: editing.col, from, to: value })
+    if (next.length > 50) {
+      toast.error(t('ui.editLimit'))
+      return
+    }
+    ctx.setState(uiKey, { changes: next })
+    setEditing(null)
+  }
   const cols = node.columns ?? [],
     shown = ctx.compact ? cols.slice(0, 4) : cols
-  const rows = (node.rows ?? []).map((row, index) => ({ row, index }))
+  const rows = (node.rows ?? []).map((original, index) => ({
+    row: Object.fromEntries([...Object.entries(original), ...changes.filter((c) => c.row === index).map((c) => [c.col, c.to])]),
+    index
+  }))
   if (sort?.direction)
     rows.sort((a, b) => {
       const l = a.row[sort.key],
@@ -147,6 +169,10 @@ export function TableNode({
               {shown.map((col) => (
                 <td
                   key={col.key}
+                  onDoubleClick={() => {
+                    if (!disabled && node.editable)
+                      setEditing({ row: index, col: col.key, value: String(row[col.key] ?? ''), number: col.kind === 'number' })
+                  }}
                   className={cn(
                     'border-b border-border/50 px-2 py-2',
                     (col.align === 'right' || col.kind === 'number') && 'text-right tabular-nums',
@@ -154,7 +180,28 @@ export function TableNode({
                       'bg-accent/10'
                   )}
                 >
-                  {row[col.key] ?? ''}
+                  {editing?.row === index && editing.col === col.key ? (
+                    <input
+                      autoFocus
+                      aria-label={col.label}
+                      type={editing.number ? 'number' : 'text'}
+                      step="any"
+                      maxLength={2000}
+                      className="w-full min-w-12 rounded border border-accent bg-surface p-1 text-xs"
+                      value={editing.value}
+                      onChange={(e) => setEditing({ ...editing, value: e.target.value })}
+                      onBlur={commit}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault()
+                          commit()
+                        }
+                        if (e.key === 'Escape') setEditing(null)
+                      }}
+                    />
+                  ) : (
+                    (row[col.key] ?? '')
+                  )}
                 </td>
               ))}
             </tr>
@@ -173,6 +220,22 @@ export function TableNode({
             </p>
           ))}
         </details>
+      )}
+      {node.editable && changes.length > 0 && ctx.context === 'chat' && (
+        <button
+          className="mt-3 rounded-lg border border-border px-3 py-1.5 text-xs hover:bg-sunken disabled:opacity-40"
+          disabled={disabled || !canReply(ctx)}
+          title={!ctx.isLatest ? t('ui.latestOnly') : undefined}
+          onClick={() => {
+            try {
+              sendUiReply(ctx, node, uiKey, 'edit', t('ui.event.edit'), { changes })
+            } catch (e) {
+              toast.error(String(e))
+            }
+          }}
+        >
+          {t('ui.action.applyEdit')}
+        </button>
       )}
     </div>
   )

@@ -4,6 +4,7 @@ import { MoreHorizontal } from 'lucide-react'
 import { toast } from 'sonner'
 import { uiToText, type UiNode } from '@shared/ui/catalog'
 import type { UiContext } from './context'
+import { canReply, restyle } from './reply'
 
 export function UiFrame({
   node,
@@ -39,6 +40,11 @@ export function UiFrame({
               ctx.setState(uiKey, { asText: !asText })
               return ctx.flushState?.(uiKey)
             }
+          },
+          {
+            label: t('ui.menu.restyle'),
+            disabled: !canReply(ctx),
+            run: () => restyle(ctx, node, uiKey)
           },
           {
             label: t('ui.menu.copy'),
@@ -90,7 +96,8 @@ export function UiFrame({
               type="button"
               role="menuitem"
               key={item.label}
-              disabled={disabled}
+              disabled={disabled || ('disabled' in item && item.disabled === true)}
+              title={'disabled' in item && item.disabled ? t('ui.latestOnly') : undefined}
               className="block w-full rounded px-3 py-2 text-left text-xs hover:bg-sunken focus:bg-sunken"
               onClick={() => {
                 void Promise.resolve(item.run())

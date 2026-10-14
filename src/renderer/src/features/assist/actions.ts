@@ -2,6 +2,7 @@ import i18n from 'i18next'
 import { toast } from 'sonner'
 import type { Anchor } from '@shared/context'
 import type { Effort } from '@shared/ai'
+import type { UiEvent } from '@shared/ui/events'
 import { PROVIDER_PRESETS } from '@shared/ai'
 import type { ChatMessage, ProviderInfo, Settings } from '@shared/types'
 import { api } from '@/lib/utils'
@@ -161,7 +162,7 @@ export async function saveToNote(input: {
 }
 
 /** 就地对话中的追问 */
-export async function followUp(conversationId: string, text: string, anchor: Anchor, extra: Anchor[] = []): Promise<void> {
+export async function followUp(conversationId: string, text: string, anchor: Anchor, extra: Anchor[] = [], uiEvent?: UiEvent): Promise<void> {
   const settings = await api.settings.get()
   const providers = await api.providers.list()
   const p = providers.find((x) => x.id === settings.ai.chat.providerId)
@@ -174,6 +175,7 @@ export async function followUp(conversationId: string, text: string, anchor: Anc
       providerId: p.id,
       model: settings.ai.chat.model,
       effort: effortFor('ask', settings, p),
+      uiEvent,
       scope: { type: 'all' },
       context: { targets: [anchor, ...extra].slice(0, 8), noteId: ws.noteId, sourceId: ws.sourceId }
     })

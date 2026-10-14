@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+export const uiAction = 'rounded-lg border border-border px-3 py-1.5 text-xs hover:bg-sunken disabled:opacity-40'
+
 export interface ConfirmItem {
   id: string
   label: string

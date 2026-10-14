@@ -7,10 +7,9 @@ import { api, cn } from '@/lib/utils'
 import { useApp } from '@/store/app'
 import { openCitation } from '@/features/chat/MessageItem'
 import type { UiContext } from '../context'
-import { ConfirmSheet, type ConfirmItem } from '../ConfirmSheet'
+import { ConfirmSheet, uiAction, type ConfirmItem } from '../ConfirmSheet'
 import { readUiData, dataText, type DataNode, type UiData } from '../readData'
 
-export const uiAction = 'rounded-lg border border-border px-3 py-1.5 text-xs hover:bg-sunken disabled:opacity-40'
 type Pending = { kind: 'schedule' | 'create' | 'complete'; items: ConfirmItem[] }
 export function DataNodeView({ node, uiKey, ctx }: { node: DataNode; uiKey: string; ctx: UiContext }) {
   const { t, i18n } = useTranslation()

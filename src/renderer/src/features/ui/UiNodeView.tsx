@@ -8,6 +8,8 @@ import { CodeStepsBox } from '@/features/visuals/CodeStepsBox'
 import type { UiContext } from './context'
 import { Columns, Tabs, TableNode, ListNode } from './nodes/Basic'
 import { DataNodeView } from './nodes/Data'
+import { ChoiceNode, FormNode } from './nodes/Input'
+import { QuizNode, FlashcardsNode, ClozeNode } from './nodes/Practice'
 
 export function estimateHeight(type?: string, value: Record<string, unknown> = {}): number {
   const count = (key: string, min = 0) => Math.max(min, Array.isArray(value[key]) ? value[key].length : 0)
@@ -45,9 +47,19 @@ export function UiNodeView({ node, uiKey, ctx, partial = false }: { node: UiNode
       <UiNodeView node={n} uiKey={`${uiKey}.${i}`} ctx={ctx} partial={partial} />
     </div>
   )
-  if (partial && !['table', 'list', 'stat', 'steps', 'timeline', 'columns', 'tabs'].includes(node.type))
+  if (partial && !['table', 'list', 'stat', 'steps', 'timeline', 'columns', 'tabs', 'choice', 'form'].includes(node.type))
     return <UiSkeleton type={node.type} value={node as unknown as Record<string, unknown>} />
   switch (node.type) {
+    case 'quiz':
+      return <QuizNode node={node} uiKey={uiKey} ctx={ctx} disabled={disabled} />
+    case 'flashcards':
+      return <FlashcardsNode node={node} uiKey={uiKey} ctx={ctx} disabled={disabled} />
+    case 'cloze':
+      return <ClozeNode node={node} uiKey={uiKey} ctx={ctx} disabled={disabled} />
+    case 'choice':
+      return <ChoiceNode node={node} uiKey={uiKey} ctx={ctx} disabled={disabled} />
+    case 'form':
+      return <FormNode node={node} uiKey={uiKey} ctx={ctx} disabled={disabled} />
     case 'schedule':
     case 'tasks':
     case 'note':

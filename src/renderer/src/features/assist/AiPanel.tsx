@@ -29,7 +29,8 @@ import { useApp } from '@/store/app'
 import { useConversations, useNote } from '@/lib/queries'
 import { Button } from '@/components/ui/button'
 import { Menu, MenuContent, MenuTrigger, Tip } from '@/components/ui/primitives'
-import { MessageItem, REPLY_EVENT } from '../chat/MessageItem'
+import { MessageItem, REPLY_EVENT, type ReplyDetail } from '../chat/MessageItem'
+import type { UiEvent } from '@shared/ui/events'
 import { errText, sendChat, useChatThread, useModelChoice } from '../chat/useChat'
 import { ModelPicker } from '../ai/ModelPicker'
 import { EffortPicker } from '../ai/EffortPicker'
@@ -140,7 +141,7 @@ export function AiPanelBody({ pinned }: { pinned: boolean }) {
   }, [msgs])
   useEffect(() => input.current?.focus(), [])
 
-  const send = async (q: string): Promise<void> => {
+  const send = async (q: string, uiEvent?: UiEvent): Promise<void> => {
     if (!q.trim() || streaming || sending.current) return
     if (!choice.providerId || !choice.model) return void toast.error(t('chat.needModel'))
     sending.current = true
@@ -189,6 +190,7 @@ export function AiPanelBody({ pinned }: { pinned: boolean }) {
       const r = await sendChat({
         conversationId,
         text: q.trim(),
+        uiEvent,
         providerId: choice.providerId,
         model: choice.model,
         effort,
@@ -232,8 +234,8 @@ export function AiPanelBody({ pinned }: { pinned: boolean }) {
   sendRef.current = send
   useEffect(() => {
     const onReply = (e: Event): void => {
-      const d = (e as CustomEvent<{ conversationId: string; text: string }>).detail
-      if (d.conversationId === conversationId) void sendRef.current(d.text)
+      const d = (e as CustomEvent<ReplyDetail>).detail
+      if (d.conversationId === conversationId) void sendRef.current(d.text, d.uiEvent)
     }
     window.addEventListener(REPLY_EVENT, onReply)
     return () => window.removeEventListener(REPLY_EVENT, onReply)

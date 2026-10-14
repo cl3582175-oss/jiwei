@@ -28,6 +28,7 @@ import { useWebSnapshot } from '@/features/retrieval/store'
 import { UiFence } from '@/features/ui/UiFence'
 import { UiMessageProvider } from '@/features/ui/context'
 import { annotateUiFences, uiAnswerText, mapOutsideFences } from '@shared/ui/fences'
+import type { UiEvent } from '@shared/ui/events'
 
 const uiPlugins = { renderers: [{ language: 'jiwei-ui', component: UiFence }] }
 
@@ -253,8 +254,9 @@ function CitationCard({ c }: { c: Citation }) {
 
 /** 回复选择题（v0.7.6）：对话页与 AI 面板监听这个事件，把选项当作用户的回答发出 */
 export const REPLY_EVENT = 'jiwei:reply'
-export function replyInConversation(conversationId: string, text: string): void {
-  window.dispatchEvent(new CustomEvent(REPLY_EVENT, { detail: { conversationId, text } }))
+export type ReplyDetail = { conversationId: string; text: string; uiEvent?: UiEvent }
+export function replyInConversation(conversationId: string, text: string, uiEvent?: UiEvent): void {
+  window.dispatchEvent(new CustomEvent<ReplyDetail>(REPLY_EVENT, { detail: { conversationId, text, uiEvent } }))
 }
 
 /** AI 的选择题（ask_user）：只有最新一条回答上的可以点 */

@@ -19,7 +19,8 @@ import { ModelPicker } from '../ai/ModelPicker'
 import { EffortPicker } from '../ai/EffortPicker'
 import { ScopePicker } from './ScopePicker'
 import { WebModePicker, useWebMode } from '../retrieval/WebModePicker'
-import { MessageItem, REPLY_EVENT } from './MessageItem'
+import { MessageItem, REPLY_EVENT, type ReplyDetail } from './MessageItem'
+import type { UiEvent } from '@shared/ui/events'
 import { errText, sendChat, useChatThread, useModelChoice } from './useChat'
 
 function ChatSidebar() {
@@ -207,7 +208,7 @@ function ChatPanel() {
     if (el && stick.current) el.scrollTop = el.scrollHeight
   }, [msgs])
 
-  const send = async (text: string, page?: { title: string; text: string }): Promise<void> => {
+  const send = async (text: string, page?: { title: string; text: string }, uiEvent?: UiEvent): Promise<void> => {
     if (!choice.providerId || !choice.model) {
       toast.error(t('chat.needModel'))
       return
@@ -219,6 +220,7 @@ function ChatPanel() {
       const { conversation, userMessage, assistant } = await sendChat({
         conversationId,
         text,
+        uiEvent,
         ...(skill ? { skill } : {}),
         providerId: choice.providerId,
         model: choice.model,
@@ -245,8 +247,8 @@ function ChatPanel() {
   sendRef.current = send
   useEffect(() => {
     const onReply = (e: Event): void => {
-      const d = (e as CustomEvent<{ conversationId: string; text: string }>).detail
-      if (d.conversationId === conversationId) void sendRef.current(d.text)
+      const d = (e as CustomEvent<ReplyDetail>).detail
+      if (d.conversationId === conversationId) void sendRef.current(d.text, undefined, d.uiEvent)
     }
     window.addEventListener(REPLY_EVENT, onReply)
     return () => window.removeEventListener(REPLY_EVENT, onReply)

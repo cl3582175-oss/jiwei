@@ -45,6 +45,8 @@ test.beforeAll(async () => {
       const user = textOf((input.messages as RequestMessage[]).filter((m) => m.role === 'user').at(-1)?.content)
       const external = /(`{3,}jiwei-ui-blocked[^\n]*\n[\s\S]*?\n`{3,})/.exec(user)?.[1]
       const text = user.includes('外部组件复述') && external ? external : answer
+      // 大组件仍按规定的 5–15 字符片段流式输出，保持断言原有超时。
+      const chunkSize = text.length > 2400 ? 15 : 10
       let offset = 0
       const send = (delta: unknown, finish: string | null): void => {
         res.write(
@@ -53,8 +55,8 @@ test.beforeAll(async () => {
       }
       const interval = setInterval(() => {
         if (offset < text.length) {
-          send({ content: text.slice(offset, offset + 10) }, null)
-          offset += 10
+          send({ content: text.slice(offset, offset + chunkSize) }, null)
+          offset += chunkSize
         } else {
           clearInterval(interval)
           send({}, 'stop')
@@ -381,16 +383,36 @@ test('P4 写入部分失败时保留确认面板，重试不重复写已成功�
   await panel.getByRole('button', { name: '取消', exact: true }).click()
 })
 test('P4 dataAccess 关闭时不调用日程接口，只显示建议', async () => {
+  await app.evaluate(({ ipcMain }) => {
+    const channel = 'plan:events'
+    const old = (
+      ipcMain as unknown as { _invokeHandlers: Map<string, (event: Electron.IpcMainInvokeEvent, ...args: unknown[]) => unknown> }
+    )._invokeHandlers.get(channel)
+    if (!old) throw new Error('Missing plan IPC handler')
+    let calls = 0
+    ipcMain.removeHandler(channel)
+    ipcMain.handle(channel, (event, ...args) => {
+      calls++
+      return old(event, ...args)
+    })
+    const state = globalThis as unknown as { uiReadCalls: () => number; resetUiReadCalls: () => void; restorePlanRead: () => void }
+    state.uiReadCalls = () => calls
+    state.resetUiReadCalls = () => {
+      calls = 0
+    }
+    state.restorePlanRead = () => {
+      ipcMain.removeHandler(channel)
+      ipcMain.handle(channel, old)
+    }
+  })
+  await page.evaluate(() =>
+    window.jiwei.plan.events({ startAt: new Date('2026-10-19T00:00').getTime(), endAt: new Date('2026-10-26T00:00').getTime() })
+  )
+  expect(await app.evaluate(() => (globalThis as unknown as { uiReadCalls: () => number }).uiReadCalls())).toBe(1)
+  await app.evaluate(() => (globalThis as unknown as { resetUiReadCalls: () => void }).resetUiReadCalls())
   await page.evaluate(async () => {
     const s = await window.jiwei.settings.get()
     await window.jiwei.settings.set({ ai: { ...s.ai, ui: { ...s.ai.ui, dataAccess: false } } })
-    const old = window.jiwei.plan.events
-    let calls = 0
-    window.jiwei.plan.events = async (...args) => {
-      calls++
-      return old(...args)
-    }
-    ;(window as unknown as { uiReadCalls: () => number }).uiReadCalls = () => calls
   })
   await ask(
     '只看建议',
@@ -402,7 +424,8 @@ test('P4 dataAccess 关闭时不调用日程接口，只显示建议', async () 
   )
   await done()
   await expect(block()).toContainText('已关闭读取你的数据，这里只显示建议')
-  expect(await page.evaluate(() => (window as unknown as { uiReadCalls: () => number }).uiReadCalls())).toBe(0)
+  expect(await app.evaluate(() => (globalThis as unknown as { uiReadCalls: () => number }).uiReadCalls())).toBe(0)
+  await app.evaluate(() => (globalThis as unknown as { restorePlanRead: () => void }).restorePlanRead())
   await page.evaluate(async () => {
     const s = await window.jiwei.settings.get()
     await window.jiwei.settings.set({ ai: { ...s.ai, ui: { ...s.ai.ui, dataAccess: true } } })
@@ -524,4 +547,308 @@ test('P4 清单只把未勾选项确认为待办，重复点击不会重复写�
     .poll(() => page.evaluate(() => window.jiwei.actions.list().then((rows) => rows.filter((r) => /^清单待办/.test(r.title)).length)))
     .toBe(2)
   await expect(block().getByRole('button', { name: '变成待办', exact: true })).toBeDisabled()
+})
+
+test.describe('P5', () => {
+  test.describe.configure({ mode: 'default' })
+  const lastUser = () =>
+    textOf(
+      requests
+        .at(-1)
+        ?.filter((m) => m.role === 'user')
+        .at(-1)?.content
+    )
+  const replied = async (action: string) => {
+    await expect.poll(lastUser).toContain(`action="${action}"`)
+    await expect(page.locator('.chat-md').last()).toContainText('收到操作')
+  }
+  test('选项传真实 ui-event，发送后旧回答只读', async () => {
+    await ask(
+      '选择练习范围',
+      fence({
+        type: 'choice',
+        question: '练什么？',
+        options: [
+          { label: '练习概率', value: 'probability' },
+          { label: '练习统计', value: 'statistics' }
+        ]
+      })
+    )
+    await done()
+    const original = block()
+    await expect(original.getByRole('button', { name: '练习概率', exact: true })).toBeVisible()
+    answer = '收到操作'
+    await original.getByRole('button', { name: '练习概率', exact: true }).click()
+    await replied('choose')
+    expect(lastUser()).toContain('"value":"probability"')
+    await expect(page.getByTestId('ui-block').first().getByRole('button', { name: '练习概率', exact: true })).toBeDisabled()
+    await expect(page.getByText('练习概率', { exact: true }).last()).toBeVisible()
+  })
+  test('表单必填校验、逐行用户消息和带类型值的事件', async () => {
+    await ask(
+      '表单条件',
+      fence({
+        type: 'form',
+        fields: [
+          { key: 'topic', label: '主题', kind: 'text', required: true },
+          { key: 'hours', label: '时数', kind: 'number', min: 1, max: 12, required: true },
+          {
+            key: 'mode',
+            label: '方式',
+            kind: 'select',
+            options: [
+              { label: '阅读', value: 'reading' },
+              { label: '练习', value: 'practice' }
+            ],
+            value: 'reading'
+          },
+          { key: 'date', label: '日期', kind: 'date' },
+          { key: 'days', label: '天数', kind: 'slider', min: 1, max: 7, value: 3 },
+          { key: 'remind', label: '提醒', kind: 'toggle', value: false }
+        ]
+      })
+    )
+    await done()
+    await expect(block().getByRole('button', { name: '提交', exact: true })).toBeVisible()
+    await expect(block().getByRole('button', { name: '提交', exact: true })).toBeDisabled()
+    await block().getByRole('textbox', { name: '主题', exact: true }).fill('概率')
+    await block().getByRole('spinbutton', { name: '时数', exact: true }).fill('2')
+    await block().getByRole('checkbox', { name: '提醒', exact: true }).check()
+    answer = '收到操作'
+    await block().getByRole('button', { name: '提交', exact: true }).click()
+    await replied('submit')
+    expect(lastUser()).toContain('主题：概率\n时数：2')
+    expect(lastUser()).toContain('"hours":2')
+    expect(lastUser()).toContain('"remind":true')
+  })
+  test('编辑表格只发送 changes，换呈现发送原节点', async () => {
+    await ask(
+      '编辑数据',
+      fence({ type: 'table', editable: true, columns: [{ key: 'n', label: '人数', kind: 'number' }], rows: [{ n: 3 }] })
+    )
+    await done()
+    await block().getByRole('cell', { name: '3', exact: true }).dblclick()
+    await expect(block().getByRole('spinbutton')).toBeVisible()
+    await block().getByRole('spinbutton').fill('5')
+    await block().getByRole('spinbutton').press('Enter')
+    answer = '收到操作'
+    await block().getByRole('button', { name: '按这个改', exact: true }).click()
+    await replied('edit')
+    expect(lastUser()).toContain('"changes":[{"row":0,"col":"n","from":3,"to":5}]')
+    await ask('换呈现', fence({ type: 'list', items: [{ text: '比较两种方法' }] }))
+    await done()
+    await block().getByRole('button', { name: '组件菜单' }).click()
+    await expect(block().getByRole('menuitem', { name: '换一种呈现' })).toBeVisible()
+    answer = '收到操作'
+    await block().getByRole('menuitem', { name: '换一种呈现' }).click()
+    await replied('restyle')
+    expect(lastUser()).toContain('"node":{"type":"list"')
+  })
+  test('三道练习核对，一道错题经确认写入，三行保存后可读', async () => {
+    await ask(
+      '练习三题',
+      fence({
+        type: 'quiz',
+        title: '组件三题练习',
+        items: [
+          { q: '一加一？', options: ['一', '二'], answer: 1, explain: '相加是二' },
+          { q: '二加二？', options: ['三', '四'], answer: 1, explain: '相加是四' },
+          { q: '三加三？', options: ['五', '六'], answer: 1, explain: '相加是六' }
+        ]
+      })
+    )
+    await done()
+    await expect(block().getByRole('button', { name: '核对', exact: true })).toBeVisible()
+    for (const [i, label] of ['一', '四', '六'].entries()) {
+      await block().getByRole('radio', { name: label, exact: true }).check()
+      await block().getByRole('button', { name: '核对', exact: true }).click()
+      await expect(block()).toContainText(i === 0 ? '不正确' : '正确')
+      if (i < 2) await block().getByRole('button', { name: '下一题', exact: true }).click()
+    }
+    const before = await page.evaluate(() => window.jiwei.mistakes.list().then((ms) => ms.length))
+    await block().getByRole('button', { name: '把做错的加入错题本', exact: true }).click()
+    const panel = block().getByTestId('ui-confirm')
+    await expect(panel).toContainText('一加一？')
+    await expect(panel).not.toContainText('二加二？')
+    expect(await page.evaluate(() => window.jiwei.mistakes.list().then((ms) => ms.length))).toBe(before)
+    await panel.getByRole('button', { name: '确认', exact: true }).click()
+    await expect.poll(() => page.evaluate(() => window.jiwei.mistakes.list().then((ms) => ms.length))).toBe(before + 1)
+    const mistake = await page.evaluate(() => window.jiwei.mistakes.list().then((ms) => ms.find((m) => m.question.includes('一加一'))))
+    expect(mistake?.question).toContain('相加是二')
+    await block().getByRole('button', { name: '全部存为练习笔记', exact: true }).click()
+    await block().getByTestId('ui-confirm').getByRole('button', { name: '确认', exact: true }).click()
+    await expect(page.getByPlaceholder('笔记标题')).toHaveValue('组件三题练习')
+    const id = await page.evaluate(() => window.jiwei.notes.list({ search: '组件三题练习' }).then((ns) => ns[0].id))
+    await expect
+      .poll(() =>
+        page.evaluate(
+          (id) => window.jiwei.notes.blocks(id).then((bs) => new Set(bs.filter((b) => b.section === 'cue').map((b) => b.rowId)).size),
+          id
+        )
+      )
+      .toBe(3)
+    await navTo(page, /AI 对话/)
+  })
+  test('卡片空格翻面，经确认存成康奈尔行并进入复习', async () => {
+    await ask(
+      '翻面练习',
+      fence({
+        type: 'flashcards',
+        title: '组件复习卡片',
+        cards: [
+          { front: '什么是提取练习？', back: '主动回忆知识。' },
+          { front: '什么是间隔重复？', back: '按间隔复习。' }
+        ]
+      })
+    )
+    await done()
+    const card = block().getByRole('button', { name: '翻面', exact: true })
+    await expect(card).toBeVisible()
+    await card.focus()
+    await page.keyboard.press('Space')
+    await expect(block()).toContainText('主动回忆知识。')
+    const before = await page.evaluate(() => window.jiwei.review.list('all').then((cs) => cs.length))
+    await block().getByRole('button', { name: '加入复习', exact: true }).click()
+    await block().getByTestId('ui-confirm').getByRole('button', { name: '确认', exact: true }).click()
+    await expect(page.getByPlaceholder('笔记标题')).toHaveValue('组件复习卡片')
+    await expect.poll(() => page.evaluate(() => window.jiwei.review.list('all').then((cs) => cs.length))).toBe(before + 2)
+    await navTo(page, /AI 对话/)
+  })
+  test('填空逐空核对，并确认加入复习', async () => {
+    await ask(
+      '填空练习',
+      fence({ type: 'cloze', title: '组件填空练习', text: '地球绕{{太阳}}公转，月球绕{{地球}}公转。', explain: '卫星与行星关系。' })
+    )
+    await done()
+    await expect(block().getByRole('textbox')).toHaveCount(2)
+    await block().getByRole('textbox').nth(0).fill('太阳')
+    await block().getByRole('textbox').nth(1).fill('太阳')
+    await block().getByRole('button', { name: '核对', exact: true }).click()
+    await expect(block().getByText('正确', { exact: true })).toBeVisible()
+    await expect(block().getByText('不正确', { exact: true })).toBeVisible()
+    await block().getByRole('button', { name: '加入复习', exact: true }).click()
+    await block().getByTestId('ui-confirm').getByRole('button', { name: '确认', exact: true }).click()
+    await expect(page.getByPlaceholder('笔记标题')).toHaveValue('组件填空练习')
+    const id = await page.evaluate(() => window.jiwei.notes.list({ search: '组件填空练习' }).then((ns) => ns[0].id))
+    await expect.poll(() => page.evaluate((id) => window.jiwei.review.forNote(id).then((cs) => cs.length), id)).toBe(1)
+    await navTo(page, /AI 对话/)
+  })
+  test('多选经确定回复，大组件换呈现只发送类型和标题', async () => {
+    await ask(
+      '多选方向',
+      fence({
+        type: 'choice',
+        multi: true,
+        question: '选哪些？',
+        options: [
+          { label: '方法甲', value: 'a' },
+          { label: '方法乙', value: 'b' }
+        ]
+      })
+    )
+    await done()
+    await block().getByRole('checkbox', { name: '方法甲', exact: true }).check()
+    await block().getByRole('checkbox', { name: '方法乙', exact: true }).check()
+    await expect(block().getByRole('button', { name: '确定', exact: true })).toBeVisible()
+    answer = '收到操作'
+    await block().getByRole('button', { name: '确定', exact: true }).click()
+    await replied('choose')
+    expect(lastUser()).toContain('方法甲、方法乙')
+    expect(lastUser()).toContain('"values":["a","b"]')
+    const large = {
+      type: 'table', title: '大表', columns: [{ key: 'text', label: '内容' }],
+      rows: Array.from({ length: 12 }, () => ({ text: '汉'.repeat(225) }))
+    }
+    expect(new TextEncoder().encode(JSON.stringify({ type: 'table', node: large })).length).toBeGreaterThan(8192)
+    await ask('大组件换呈现', fence(large))
+    await done()
+    answer = '收到操作'
+    await block().getByRole('button', { name: '组件菜单' }).click()
+    await block().getByRole('menuitem', { name: '换一种呈现', exact: true }).click()
+    await replied('restyle')
+    expect(lastUser()).toContain('{"type":"table","title":"大表"}')
+    expect(lastUser()).not.toContain('"node"')
+  })
+  test('就地答复的最新选项能回到原对话，侧栏也携带事件', async () => {
+    await page.keyboard.press('ControlOrMeta+n')
+    await page.getByPlaceholder('笔记标题').fill('P5 就地事件')
+    await page.keyboard.press('Enter')
+    await page.keyboard.type('术语需要解释。')
+    answer = fence({
+      type: 'choice',
+      question: '要看哪个？',
+      options: [
+        { label: '继续解释', value: 'explain' },
+        { label: '给出例子', value: 'example' }
+      ]
+    })
+    await page.locator('.cornell-body p').first().click()
+    await page.keyboard.press('ControlOrMeta+a')
+    await page.getByRole('button', { name: 'AI 修改', exact: true }).click()
+    await page.getByRole('menuitem', { name: '解释', exact: true }).click()
+    await done()
+    answer = '收到操作'
+    const dialog = page.getByRole('dialog', { name: '就地答复' })
+    await dialog.getByRole('button', { name: '继续解释', exact: true }).click()
+    await expect.poll(lastUser).toContain('action="choose"')
+    await expect(dialog).toContainText('收到操作')
+    expect(lastUser()).toContain('"value":"explain"')
+    await dialog.getByRole('button', { name: '关闭', exact: true }).click()
+    await navTo(page, /今日/)
+    await page.keyboard.press('ControlOrMeta+j')
+    const panel = page.getByRole('complementary', { name: '积微助手', exact: true })
+    await expect(panel).toBeVisible()
+    await expect(panel.getByRole('button', { name: '模型', exact: true })).toContainText('test-ui')
+    answer = fence({
+      type: 'choice',
+      question: '侧栏问题',
+      options: [
+        { label: '侧栏继续', value: 'continue' },
+        { label: '侧栏停止', value: 'stop' }
+      ]
+    })
+    await panel.getByRole('textbox').fill('侧栏询问')
+    await panel.getByRole('textbox').press('Enter')
+    await expect(panel.getByTestId('ui-block').last()).toHaveAttribute('data-ui-state', 'ready')
+    answer = '收到操作'
+    await panel.getByRole('button', { name: '侧栏继续', exact: true }).click()
+    await expect.poll(lastUser).toContain('action="choose"')
+    await expect(panel).toContainText('收到操作')
+    expect(lastUser()).toContain('"value":"continue"')
+    await navTo(page, /AI 对话/)
+  })
+  test('练习提案成功后状态落盘失败，重试沿用同一笔记', async () => {
+    await ask(
+      '保存失败重试',
+      fence({ type: 'flashcards', title: '保存重试练习', cards: [{ front: '什么是原子事实？', back: '单一可核对的陈述。' }] })
+    )
+    await done()
+    await app.evaluate(({ ipcMain }) => {
+      const channel = 'ui:saveState'
+      const old = (
+        ipcMain as unknown as { _invokeHandlers: Map<string, (event: Electron.IpcMainInvokeEvent, ...args: unknown[]) => unknown> }
+      )._invokeHandlers.get(channel)!
+      ipcMain.removeHandler(channel)
+      ipcMain.handle(channel, (event, ...args) => {
+        if ((args[2] as { practiceNote?: unknown })?.practiceNote) throw new Error('受控落盘失败')
+        return old(event, ...args)
+      })
+      ;(globalThis as unknown as { restoreUiState: () => void }).restoreUiState = () => {
+        ipcMain.removeHandler(channel)
+        ipcMain.handle(channel, old)
+      }
+    })
+    await block().getByRole('button', { name: '加入复习', exact: true }).click()
+    const panel = block().getByTestId('ui-confirm')
+    await panel.getByRole('button', { name: '确认', exact: true }).click()
+    await expect(panel.getByRole('alert')).toContainText('受控落盘失败')
+    expect(await page.evaluate(() => window.jiwei.notes.list({ search: '保存重试练习' }).then((ns) => ns.length))).toBe(1)
+    await app.evaluate(() => (globalThis as unknown as { restoreUiState: () => void }).restoreUiState())
+    await panel.getByRole('button', { name: '确认', exact: true }).click()
+    await expect(page.getByPlaceholder('笔记标题')).toHaveValue('保存重试练习')
+    expect(await page.evaluate(() => window.jiwei.notes.list({ search: '保存重试练习' }).then((ns) => ns.length))).toBe(1)
+    const id = await page.evaluate(() => window.jiwei.notes.list({ search: '保存重试练习' }).then((ns) => ns[0].id))
+    await expect.poll(() => page.evaluate((id) => window.jiwei.review.forNote(id).then((cs) => cs.length), id)).toBe(1)
+    await navTo(page, /AI 对话/)
+  })
 })

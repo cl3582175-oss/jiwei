@@ -1,6 +1,12 @@
 export const uiZh = {
+  chooseConfirm: '确定',
+  practiceTitle: '练习笔记',
+  answer: '答案：',
+  myAnswer: '我的作答：',
+  blank: '第 {{n}} 空',
+  editLimit: '一次最多修改 50 个单元格',
   errors: { note: '这篇笔记已不可用或设置了不给 AI', goal: '这个方向已被删除', excerpt: '这段原文已不可用或设置了不给 AI' },
-  target: { calendar: '写入日历', tasks: '新建或修改行动项' },
+  target: { calendar: '写入日历', tasks: '新建或修改行动项', newNote: '新建笔记《{{title}}》', mistakes: '写入错题本' },
   loading: '正在读取…',
   free: '空档',
   due: '到期 {{n}} 张',
@@ -44,7 +50,7 @@ export const uiZh = {
     openUsage: '打开用量页',
     startReview: '开始复习'
   },
-  done: { scheduled: '已排进日历', saved: '已存进《{{title}}》' },
+  done: { scheduled: '已排进日历', saved: '已存进《{{title}}》', joined: '已加入《{{title}}》', mistakes: '已加入错题本 {{n}} 题' },
   event: { restyle: '换一种方式呈现这部分', edit: '按我修改后的数据继续' },
   settings: {
     title: '回答里的图示和工具',
@@ -70,12 +76,23 @@ export const uiZh = {
   details: '更多信息'
 }
 export const uiEn: typeof uiZh = {
+  chooseConfirm: 'Confirm choices',
+  practiceTitle: 'Practice notes',
+  answer: 'Answer:',
+  myAnswer: 'My answer:',
+  blank: 'Blank {{n}}',
+  editLimit: 'Edit up to 50 cells at a time',
   errors: {
     note: 'Note is unavailable or excluded from AI',
     goal: 'This direction was deleted',
     excerpt: 'Passage is unavailable or excluded from AI'
   },
-  target: { calendar: 'Write to calendar', tasks: 'Create or update action items' },
+  target: {
+    calendar: 'Write to calendar',
+    tasks: 'Create or update action items',
+    newNote: 'New note “{{title}}”',
+    mistakes: 'Write to mistakes'
+  },
   loading: 'Loading…',
   free: 'Free',
   due: '{{n}} cards due',
@@ -119,7 +136,12 @@ export const uiEn: typeof uiZh = {
     openUsage: 'Open usage',
     startReview: 'Start review'
   },
-  done: { scheduled: 'Added to calendar', saved: 'Saved to “{{title}}”' },
+  done: {
+    scheduled: 'Added to calendar',
+    saved: 'Saved to “{{title}}”',
+    joined: 'Added to “{{title}}”',
+    mistakes: 'Added {{n}} questions to mistakes'
+  },
   event: { restyle: 'Present this section differently', edit: 'Continue with my edited data' },
   settings: {
     title: 'Visuals and tools in responses',
