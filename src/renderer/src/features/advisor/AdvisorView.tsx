@@ -838,10 +838,10 @@ function WeightStepper({ label, value, onChange }: { label: string; value: numbe
 
 /* ——— 记录决定 ——— */
 
-function DecideDialog({ d, memo, onClose }: { d: Decision; memo: DecisionMemo; onClose: () => void }) {
+export function DecideDialog({ d, memo, onClose, initialPick }: { d: Decision; memo: DecisionMemo; onClose: () => void; initialPick?: string }) {
   const { t } = useTranslation()
   const qc = useQueryClient()
-  const [pick, setPick] = useState<string>(memo.recommendation.option),
+  const [pick, setPick] = useState<string>(initialPick ?? memo.recommendation.option),
     [custom, setCustom] = useState(''),
     [expectation, setExpectation] = useState(''),
     [days, setDays] = useState<'14' | '30' | '90'>('30'),

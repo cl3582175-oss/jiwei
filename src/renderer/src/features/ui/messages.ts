@@ -1,12 +1,33 @@
 export const uiZh = {
+  criterion: '准则',
+  weight: '权重',
+  total: '加权得分',
+  today: '今天',
+  month: '本月',
+  increase: '{{name}}：增加',
+  decrease: '{{name}}：减少',
+  embedLabel: '组件',
+  newNote: '新建笔记',
+  searchNotes: '搜索笔记',
   chooseConfirm: '确定',
   practiceTitle: '练习笔记',
   answer: '答案：',
   myAnswer: '我的作答：',
   blank: '第 {{n}} 空',
   editLimit: '一次最多修改 50 个单元格',
-  errors: { note: '这篇笔记已不可用或设置了不给 AI', goal: '这个方向已被删除', excerpt: '这段原文已不可用或设置了不给 AI' },
-  target: { calendar: '写入日历', tasks: '新建或修改行动项', newNote: '新建笔记《{{title}}》', mistakes: '写入错题本' },
+  errors: {
+    note: '这篇笔记已不可用或设置了不给 AI',
+    goal: '这个方向已被删除',
+    excerpt: '这段原文已不可用或设置了不给 AI',
+    decision: '这个决策已不可用或还没有备忘录'
+  },
+  target: {
+    calendar: '写入日历',
+    tasks: '新建或修改行动项',
+    newNote: '新建笔记《{{title}}》',
+    appendNote: '追加到《{{title}}》',
+    mistakes: '写入错题本'
+  },
   loading: '正在读取…',
   free: '空档',
   due: '到期 {{n}} 张',
@@ -76,6 +97,16 @@ export const uiZh = {
   details: '更多信息'
 }
 export const uiEn: typeof uiZh = {
+  criterion: 'Criterion',
+  weight: 'Weight',
+  total: 'Weighted score',
+  today: 'Today',
+  month: 'This month',
+  increase: '{{name}}: increase',
+  decrease: '{{name}}: decrease',
+  embedLabel: 'Component',
+  newNote: 'New note',
+  searchNotes: 'Search notes',
   chooseConfirm: 'Confirm choices',
   practiceTitle: 'Practice notes',
   answer: 'Answer:',
@@ -85,12 +116,14 @@ export const uiEn: typeof uiZh = {
   errors: {
     note: 'Note is unavailable or excluded from AI',
     goal: 'This direction was deleted',
-    excerpt: 'Passage is unavailable or excluded from AI'
+    excerpt: 'Passage is unavailable or excluded from AI',
+    decision: 'Decision is unavailable or has no memo yet'
   },
   target: {
     calendar: 'Write to calendar',
     tasks: 'Create or update action items',
     newNote: 'New note “{{title}}”',
+    appendNote: 'Append to “{{title}}”',
     mistakes: 'Write to mistakes'
   },
   loading: 'Loading…',

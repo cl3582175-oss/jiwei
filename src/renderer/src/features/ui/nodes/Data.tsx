@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import type { UiNode } from '@shared/ui/catalog'
@@ -6,6 +6,8 @@ import { addDays, localDay } from '@shared/plan'
 import { api, cn } from '@/lib/utils'
 import { useApp } from '@/store/app'
 import { openCitation } from '@/features/chat/MessageItem'
+import { useMoney } from '@/lib/money'
+import { DecisionBox, UsageBox } from './Tools'
 import type { UiContext } from '../context'
 import { ConfirmSheet, uiAction, type ConfirmItem } from '../ConfirmSheet'
 import { readUiData, dataText, type DataNode, type UiData } from '../readData'
@@ -13,18 +15,26 @@ import { readUiData, dataText, type DataNode, type UiData } from '../readData'
 type Pending = { kind: 'schedule' | 'create' | 'complete'; items: ConfirmItem[] }
 export function DataNodeView({ node, uiKey, ctx }: { node: DataNode; uiKey: string; ctx: UiContext }) {
   const { t, i18n } = useTranslation()
+  const money = useMoney()
+  const textOf = useCallback(
+    (data: UiData): string =>
+      data.type === 'usage'
+        ? `${t('ui.today')}: ${money.format(data.summary.today)}\n${t('ui.month')}: ${money.format(data.summary.month)}`
+        : dataText(data),
+    [t, money]
+  )
   const [pending, setPending] = useState<Pending | null>(null),
     [dirty, setDirty] = useState(false),
     [live, setLive] = useState(false)
   const state = ctx.states[uiKey] ?? {},
     snapshot = typeof state.snapshot === 'string' ? state.snapshot : undefined
   const snapshotMode = ctx.context === 'note' && snapshot !== undefined && !live
-  const enabled = ctx.settings.dataAccess && !snapshotMode
+  const enabled = ctx.settings.dataAccess && !snapshotMode && !(node.type === 'decision' && !node.decisionId)
   const query = useQuery({ queryKey: ['ui-data', ctx.messageId, uiKey, node], queryFn: () => readUiData(node, ctx), enabled, retry: false })
   useEffect(() => {
-    if (query.data && enabled) ctx.snapshot?.(uiKey, dataText(query.data))
+    if (query.data && enabled) ctx.snapshot?.(uiKey, textOf(query.data))
     else if (!enabled && !snapshotMode) ctx.snapshot?.(uiKey, '')
-  }, [query.data, uiKey, ctx, enabled, snapshotMode])
+  }, [query.data, uiKey, ctx, enabled, snapshotMode, textOf])
   useEffect(() => {
     const mark = (): void => setDirty(true)
     const off = [
@@ -32,7 +42,9 @@ export function DataNodeView({ node, uiKey, ctx }: { node: DataNode; uiKey: stri
       window.jiweiEvents.on('notes:changed', mark),
       window.jiweiEvents.on('review:changed', mark),
       window.jiweiEvents.on('sources:changed', mark),
-      window.jiweiEvents.on('segments:changed', mark)
+      window.jiweiEvents.on('segments:changed', mark),
+      window.jiweiEvents.on('advisor:changed', mark),
+      window.jiweiEvents.on('usage:changed', mark)
     ]
     return () => off.forEach((f) => f())
   }, [])
@@ -86,7 +98,8 @@ export function DataNodeView({ node, uiKey, ctx }: { node: DataNode; uiKey: stri
   const errors: Record<string, string> = {
     'note-unavailable': t('ui.errors.note'),
     'goal-unavailable': t('ui.errors.goal'),
-    'excerpt-unavailable': t('ui.errors.excerpt')
+    'excerpt-unavailable': t('ui.errors.excerpt'),
+    'decision-unavailable': t('ui.errors.decision')
   }
   return (
     <div className="min-w-0 px-3 py-3">
@@ -191,6 +204,16 @@ export function DataNodeView({ node, uiKey, ctx }: { node: DataNode; uiKey: stri
             </blockquote>
           )}
           {data?.type === 'mastery' && <Mastery data={data} />}
+          {node.type === 'decision' && (
+            <DecisionBox
+              node={node}
+              decision={data?.type === 'decision' ? data.decision : undefined}
+              uiKey={uiKey}
+              ctx={ctx}
+              disabled={disabled}
+            />
+          )}
+          {node.type === 'usage' && data?.type === 'usage' && <UsageBox node={node} summary={data.summary} />}
         </>
       )}
       {dirty && enabled && (
@@ -199,7 +222,7 @@ export function DataNodeView({ node, uiKey, ctx }: { node: DataNode; uiKey: stri
         </button>
       )}
       {ctx.context === 'note' && live && data && (
-        <button className={cn(uiAction, 'mt-2')} onClick={() => ctx.setState(uiKey, { snapshot: dataText(data), snapshotData: data })}>
+        <button className={cn(uiAction, 'mt-2')} onClick={() => ctx.setState(uiKey, { snapshot: textOf(data), snapshotData: data })}>
           {t('ui.updateSnapshot')}
         </button>
       )}

@@ -108,3 +108,24 @@ it('不能追加到软删除笔记，也不能写入被删除对话的状态', (
   fixture.sqlite!.exec("UPDATE conversations SET deleted_at=1 WHERE id='c'")
   expect(() => saveState('m', 'b0', {})).toThrow()
 })
+it('保存原文组件保留可信引用定位，不能由渲染状态伪造引用', () => {
+  fixture
+    .sqlite!.prepare('UPDATE messages SET citations=? WHERE id=?')
+    .run(
+      JSON.stringify([
+        { n: 1, parentType: 'source', parentId: 'source', ownerId: 'segment', title: '出处', snippet: '原文', locator: 'page=3' }
+      ]),
+      'm'
+    )
+  const r = saveToNote({
+    conversationId: 'c',
+    messageId: 'm',
+    uiKey: 'b0',
+    node: samples.excerpt,
+    state: { citations: [{ n: 1, ownerId: 'forged' }] },
+    target: { noteId: 'n' },
+    mode: 'auto'
+  })
+  const payload = JSON.parse((fixture.sqlite!.prepare('SELECT ops FROM proposals WHERE id=?').get(r.proposalId) as { ops: string }).ops)
+  expect(payload.embeds.v.data.state.citations[0].ownerId).toBe('segment')
+})

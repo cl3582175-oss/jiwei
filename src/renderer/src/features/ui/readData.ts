@@ -1,10 +1,12 @@
 import type { UiNode } from '@shared/ui/catalog'
 import type { ActionItem, BlockInfo, Citation, NoteMastery, NoteSummary, Segment } from '@shared/types'
 import type { PlanEvent } from '@shared/plan'
+import type { Decision } from '@shared/advisor'
+import type { UsageSummary } from '@shared/agent'
 import { api } from '@/lib/utils'
 import type { UiContext } from './context'
 
-export type DataNode = Extract<UiNode, { type: 'schedule' | 'tasks' | 'note' | 'excerpt' | 'mastery' }>
+export type DataNode = Extract<UiNode, { type: 'schedule' | 'tasks' | 'note' | 'excerpt' | 'mastery' | 'decision' | 'usage' }>
 export interface NoteRow {
   id: string
   cue: string
@@ -16,6 +18,8 @@ export type UiData =
   | { type: 'note'; note: NoteSummary; rows: NoteRow[] }
   | { type: 'excerpt'; text: string; title: string; citation?: Citation; segment?: Segment }
   | { type: 'mastery'; notes: NoteMastery[]; due: number }
+  | { type: 'decision'; decision: Decision }
+  | { type: 'usage'; summary: UsageSummary }
 async function noteMeta(id: string): Promise<NoteSummary> {
   const note = await api.notes.get(id)
   if (!note || note.deletedAt !== null || note.aiExcluded) throw new Error('note-unavailable')
@@ -34,6 +38,13 @@ function rowsOf(blocks: BlockInfo[], rowIds?: string[]): NoteRow[] {
 }
 export async function readUiData(node: DataNode, ctx: UiContext): Promise<UiData> {
   switch (node.type) {
+    case 'decision': {
+      const decision = node.decisionId ? await api.advisor.get(node.decisionId) : null
+      if (!decision?.memo) throw new Error('decision-unavailable')
+      return { type: 'decision', decision }
+    }
+    case 'usage':
+      return { type: 'usage', summary: await api.usage.summary() }
     case 'schedule':
       return {
         type: 'schedule',
@@ -71,7 +82,9 @@ export async function readUiData(node: DataNode, ctx: UiContext): Promise<UiData
       return { type: 'note', note, rows: rowsOf(await api.notes.blocks(node.noteId), node.rowIds) }
     }
     case 'excerpt': {
-      const citation = ctx.message?.citations.find((c) => (node.cite !== undefined ? c.n === node.cite : c.ownerId === node.segmentId))
+      const citation = (ctx.citations ?? ctx.message?.citations ?? []).find((c) =>
+        node.cite !== undefined ? c.n === node.cite : c.ownerId === node.segmentId
+      )
       if (citation?.parentType === 'note') {
         await noteMeta(citation.parentId)
         const blocks = await api.notes.blocks(citation.parentId)
@@ -130,6 +143,10 @@ export async function readUiData(node: DataNode, ctx: UiContext): Promise<UiData
 }
 export function dataText(data: UiData): string {
   switch (data.type) {
+    case 'decision':
+      return [data.decision.question, ...(data.decision.memo?.options.map((o) => o.title) ?? [])].join('\n')
+    case 'usage':
+      return `${data.summary.today}\n${data.summary.month}`
     case 'schedule':
       return data.events
         .map((e) => `${e.title} (${new Date(e.startAt).toLocaleString()} – ${new Date(e.endAt).toLocaleString()})`)

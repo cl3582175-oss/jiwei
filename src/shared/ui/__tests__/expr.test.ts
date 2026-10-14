@@ -1,6 +1,10 @@
 import { expect, it } from 'vitest'
 import { compileExpr } from '../expr'
 
+it('拒绝原型链上的函数名，不能把 constructor 当白名单函数', () => {
+  expect(compileExpr('constructor(1)', []).ok).toBe(false)
+})
+
 it.each([
   ['2+3*4', 14],
   ['2^3^2', 512],

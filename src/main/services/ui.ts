@@ -141,7 +141,12 @@ export function saveToNote(input: UiSaveToNote): { noteId: string; created: bool
             target.id,
             title,
             'ui',
-            { node, state: value.state, savedAt: Date.now(), from: { conversationId: source.conversationId, messageId: source.id } },
+            {
+              node,
+              state: { ...(value.state && typeof value.state === 'object' && !Array.isArray(value.state) ? value.state : {}), citations },
+              savedAt: Date.now(),
+              from: { conversationId: source.conversationId, messageId: source.id }
+            },
             undefined,
             undefined,
             options

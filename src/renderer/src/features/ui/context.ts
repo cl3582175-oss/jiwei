@@ -2,7 +2,7 @@ import { createContext, createElement, useCallback, useContext, useEffect, useMe
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/utils'
 import { toast } from 'sonner'
-import type { ChatMessage } from '@shared/types'
+import type { ChatMessage, Citation } from '@shared/types'
 import type { UiSettings } from '@shared/ui/settings'
 import { UI_DEFAULTS } from '@shared/ui/settings'
 import { useSettings } from '@/lib/queries'
@@ -18,6 +18,7 @@ export interface UiContext {
   context: 'chat' | 'note'
   settings: UiSettings
   message?: ChatMessage
+  citations?: Citation[]
   fenceIndex(meta?: string): number
   states: Record<string, UiState>
   setState(key: string, patch: UiState, immediate?: boolean): void

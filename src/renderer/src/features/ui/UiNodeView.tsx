@@ -10,6 +10,8 @@ import { Columns, Tabs, TableNode, ListNode } from './nodes/Basic'
 import { DataNodeView } from './nodes/Data'
 import { ChoiceNode, FormNode } from './nodes/Input'
 import { QuizNode, FlashcardsNode, ClozeNode } from './nodes/Practice'
+import { CalcNode } from './nodes/Calc'
+import { openCitation } from '@/features/chat/MessageItem'
 
 export function estimateHeight(type?: string, value: Record<string, unknown> = {}): number {
   const count = (key: string, min = 0) => Math.max(min, Array.isArray(value[key]) ? value[key].length : 0)
@@ -38,7 +40,46 @@ export function UiSkeleton({ type, value }: { type?: string; value?: Record<stri
     </div>
   )
 }
-export function UiNodeView({ node, uiKey, ctx, partial = false }: { node: UiNode; uiKey: string; ctx: UiContext; partial?: boolean }) {
+type ViewProps = { node: UiNode; uiKey: string; ctx: UiContext; partial?: boolean }
+export function UiNodeView(props: ViewProps) {
+  const { node, ctx, uiKey } = props
+  const refs = Array.isArray(node.cite) ? [...node.cite] : typeof node.cite === 'number' ? [node.cite] : []
+  if (node.type === 'list') refs.push(...(node.items ?? []).flatMap((item) => item.cite ?? []))
+  if (node.type === 'quiz' || node.type === 'flashcards') {
+    const value = ctx.states[uiKey]?.[node.type === 'quiz' ? 'question' : 'card']
+    const index = typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : 0
+    refs.push(...(node.type === 'quiz' ? (node.items?.[index]?.cite ?? []) : (node.cards?.[index]?.cite ?? [])))
+  }
+  const citations = ctx.citations ?? ctx.message?.citations ?? []
+  return (
+    <>
+      <UiContent {...props} />
+      {!!refs.length && (
+        <div className="flex flex-wrap gap-1 px-4 pb-3">
+          {[...new Set(refs)].map((n) => {
+            const citation = citations.find((c) => c.n === n)
+            return citation ? (
+              <button
+                key={n}
+                className="cite-chip"
+                aria-label={`[${n}] ${citation.title}`}
+                title={citation.title}
+                onClick={() => openCitation(citation)}
+              >
+                {n}
+              </button>
+            ) : (
+              <sup key={n} className="text-2xs text-subtle">
+                [{n}]
+              </sup>
+            )
+          })}
+        </div>
+      )}
+    </>
+  )
+}
+function UiContent({ node, uiKey, ctx, partial = false }: ViewProps) {
   const { t } = useTranslation()
   const disabled = partial || ctx.stopped
   const child = (n: UiNode, i: string | number) => (
@@ -50,6 +91,8 @@ export function UiNodeView({ node, uiKey, ctx, partial = false }: { node: UiNode
   if (partial && !['table', 'list', 'stat', 'steps', 'timeline', 'columns', 'tabs', 'choice', 'form'].includes(node.type))
     return <UiSkeleton type={node.type} value={node as unknown as Record<string, unknown>} />
   switch (node.type) {
+    case 'calc':
+      return <CalcNode node={node} uiKey={uiKey} ctx={ctx} disabled={disabled} />
     case 'quiz':
       return <QuizNode node={node} uiKey={uiKey} ctx={ctx} disabled={disabled} />
     case 'flashcards':
@@ -65,6 +108,8 @@ export function UiNodeView({ node, uiKey, ctx, partial = false }: { node: UiNode
     case 'note':
     case 'excerpt':
     case 'mastery':
+    case 'decision':
+    case 'usage':
       return <DataNodeView node={node} uiKey={uiKey} ctx={ctx} />
     case 'columns':
       return (

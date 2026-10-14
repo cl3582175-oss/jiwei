@@ -549,6 +549,7 @@ const en: Messages = {
     aiWordsHint: 'AI-generated content you have not edited is excluded from learning stats. Editing it marks it as reviewed.'
   },
   embeds: {
+    ui: uiEn.embedLabel,
     chart: 'Chart',
     diagram: 'Diagram',
     timeline: 'Timeline',

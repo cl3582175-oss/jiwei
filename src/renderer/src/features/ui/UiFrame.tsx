@@ -1,10 +1,12 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { MoreHorizontal } from 'lucide-react'
 import { toast } from 'sonner'
 import { uiToText, type UiNode } from '@shared/ui/catalog'
 import type { UiContext } from './context'
 import { canReply, restyle } from './reply'
+import { SaveToNote } from './SaveToNote'
+import { collectSvgImage, EMBED_SVG_SELECTOR } from '@/features/notes/exportNote'
 
 export function UiFrame({
   node,
@@ -28,8 +30,20 @@ export function UiFrame({
   title?: string
 }) {
   const { t } = useTranslation()
+  const host = useRef<HTMLElement>(null)
+  const [hasSvg, setHasSvg] = useState(false)
+  useEffect(() => {
+    const el = host.current
+    if (!el) return
+    const check = (): void => setHasSvg(!!el.querySelector(EMBED_SVG_SELECTOR))
+    check()
+    const observer = new MutationObserver(check)
+    observer.observe(el, { childList: true, subtree: true })
+    return () => observer.disconnect()
+  }, [])
   const [menu, setMenu] = useState(false),
-    [showRaw, setShowRaw] = useState(false)
+    [showRaw, setShowRaw] = useState(false),
+    [save, setSave] = useState(false)
   const disabled = state === 'streaming' || ctx.streaming || ctx.stopped
   const items = [
     ...(node
@@ -47,8 +61,29 @@ export function UiFrame({
             run: () => restyle(ctx, node, uiKey)
           },
           {
+            label: t('ui.menu.saveToNote'),
+            run: () => setSave(true)
+          },
+          {
             label: t('ui.menu.copy'),
             run: () => navigator.clipboard.writeText(uiToText(node))
+          }
+        ]
+      : []),
+    ...(node && hasSvg
+      ? [
+          {
+            label: t('ui.menu.exportImage'),
+            run: async () => {
+              const picture = host.current && (await collectSvgImage(host.current))
+              if (!picture?.svg) return
+              const url = URL.createObjectURL(new Blob([picture.svg], { type: 'image/svg+xml' })),
+                link = document.createElement('a')
+              link.href = url
+              link.download = `${(node.title ?? node.type).replace(/[\\/:*?"<>|]/g, '-')}.svg`
+              link.click()
+              setTimeout(() => URL.revokeObjectURL(url), 1000)
+            }
           }
         ]
       : []),
@@ -56,6 +91,7 @@ export function UiFrame({
   ]
   return (
     <section
+      ref={host}
       data-testid="ui-block"
       data-ui-type={type ?? 'unknown'}
       data-ui-state={state}
@@ -111,6 +147,7 @@ export function UiFrame({
         </div>
       )}
       {children}
+      {save && node && <SaveToNote node={node} uiKey={uiKey} ctx={ctx} onClose={() => setSave(false)} />}
       {ctx.stopped && state === 'streaming' && <p className="px-4 pb-3 text-2xs text-subtle">{t('ui.unfinished')}</p>}
       {node?.note && <p className="px-4 pb-3 text-2xs text-subtle">{node.note}</p>}
       {showRaw && (

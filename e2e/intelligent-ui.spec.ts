@@ -1,6 +1,6 @@
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
 import { createServer, type Server } from 'node:http'
-import { mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, realpathSync, writeFileSync, readdirSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
 import Database from 'better-sqlite3'
@@ -31,6 +31,32 @@ const table = {
     { name: '第五行', count: 3 }
   ]
 }
+const decisionMemo = {
+  restated: '阅读与练习之间的权衡',
+  options: [
+    { id: 'O1', title: '阅读', summary: '系统理解' },
+    { id: 'O2', title: '练习', summary: '反复应用' }
+  ],
+  criteria: [
+    { name: '效率', weight: 5, why: '' },
+    { name: '熟练', weight: 1, why: '' }
+  ],
+  scores: [
+    { option: 'O1', criterion: '效率', score: 5, why: '' },
+    { option: 'O1', criterion: '熟练', score: 1, why: '' },
+    { option: 'O2', criterion: '效率', score: 2, why: '' },
+    { option: 'O2', criterion: '熟练', score: 5, why: '' }
+  ],
+  evidence: [],
+  assumptions: [],
+  premortem: [],
+  secondOrder: [],
+  counter: '',
+  risks: [],
+  recommendation: { option: 'O2', why: '练习有助于应用' },
+  confidence: 3,
+  unknowns: []
+}
 
 test.beforeAll(async () => {
   server = createServer((req, res) => {
@@ -41,6 +67,31 @@ test.beforeAll(async () => {
     req.on('end', () => {
       const input = JSON.parse(body || '{}')
       requests.push(input.messages)
+      if (input.tools?.some((tool: { function?: { name?: string } }) => tool.function?.name === 'submit')) {
+        res
+          .writeHead(200, { 'content-type': 'application/json' })
+          .end(
+            JSON.stringify({
+              id: 'memo',
+              object: 'chat.completion',
+              created: 1,
+              model: 'test-ui',
+              choices: [
+                {
+                  index: 0,
+                  message: {
+                    role: 'assistant',
+                    content: null,
+                    tool_calls: [{ id: 'submit', type: 'function', function: { name: 'submit', arguments: JSON.stringify(decisionMemo) } }]
+                  },
+                  finish_reason: 'tool_calls'
+                }
+              ],
+              usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 }
+            })
+          )
+        return
+      }
       res.writeHead(200, { 'content-type': 'text/event-stream' })
       const user = textOf((input.messages as RequestMessage[]).filter((m) => m.role === 'user').at(-1)?.content)
       const external = /(`{3,}jiwei-ui-blocked[^\n]*\n[\s\S]*?\n`{3,})/.exec(user)?.[1]
@@ -756,7 +807,9 @@ test.describe('P5', () => {
     expect(lastUser()).toContain('方法甲、方法乙')
     expect(lastUser()).toContain('"values":["a","b"]')
     const large = {
-      type: 'table', title: '大表', columns: [{ key: 'text', label: '内容' }],
+      type: 'table',
+      title: '大表',
+      columns: [{ key: 'text', label: '内容' }],
       rows: Array.from({ length: 12 }, () => ({ text: '汉'.repeat(225) }))
     }
     expect(new TextEncoder().encode(JSON.stringify({ type: 'table', node: large })).length).toBeGreaterThan(8192)
@@ -849,6 +902,314 @@ test.describe('P5', () => {
     expect(await page.evaluate(() => window.jiwei.notes.list({ search: '保存重试练习' }).then((ns) => ns.length))).toBe(1)
     const id = await page.evaluate(() => window.jiwei.notes.list({ search: '保存重试练习' }).then((ns) => ns[0].id))
     await expect.poll(() => page.evaluate((id) => window.jiwei.review.forNote(id).then((cs) => cs.length), id)).toBe(1)
+    await navTo(page, /AI 对话/)
+  })
+})
+
+test.describe('P6', () => {
+  test('组件引用沿用回答编号并跳回真实出处', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'jiwei-ui-citation-')),
+      path = join(dir, '引用组件原文.md')
+    writeFileSync(path, '# 引用组件原文\n\n引用组件原文讲解：提取练习要求主动回忆已有知识，随后核对出处。')
+    const id = await page.evaluate(async (path) => (await window.jiwei.sources.importPaths([path])).imported[0].id, path)
+    await expect.poll(() => page.evaluate((id) => window.jiwei.segments.list(id).then((ss) => ss.length), id)).toBeGreaterThan(0)
+    await ask('引用组件原文怎么说？', fence({ type: 'list', items: [{ text: '主动回忆后核对出处' }], cite: [1] }))
+    await done()
+    await expect(block().getByRole('button', { name: /\[1\].*引用组件原文/ })).toBeVisible()
+    await block()
+      .getByRole('button', { name: /\[1\].*引用组件原文/ })
+      .click()
+    await expect(page.getByRole('article')).toContainText('主动回忆已有知识')
+    await page.getByRole('button', { name: '关闭资料', exact: true }).click()
+    await navTo(page, /AI 对话/)
+  })
+  test('已有决策读取真实备忘录，权重不写回，记录预选最高分选项', async () => {
+    const decision = await page.evaluate(() => window.jiwei.advisor.ask({ question: '阅读与练习之间如何选择？' }))
+    await ask('已有决策组件', fence({ type: 'decision', decisionId: decision.id }))
+    await done()
+    await expect(block()).toContainText('阅读与练习之间如何选择？')
+    await block().getByRole('button', { name: '效率：减少', exact: true }).click()
+    expect((await page.evaluate((id) => window.jiwei.advisor.get(id), decision.id))?.weights).toBeNull()
+    await block().getByRole('button', { name: '记录我的决定', exact: true }).click()
+    const dialog = page.getByTestId('decide-dialog')
+    await expect(dialog.getByRole('radio', { name: '阅读', exact: true })).toBeChecked()
+    await dialog.getByRole('textbox').fill('按计划完成阅读并进行少量应用练习。')
+    await dialog.getByRole('button', { name: '记下', exact: true }).click()
+    await expect.poll(() => page.evaluate((id) => window.jiwei.advisor.get(id).then((d) => d?.choice), decision.id)).toBe('阅读')
+  })
+  test('笔记组件忽略损坏的卡片位置，仍能翻面', async () => {
+    await page.keyboard.press('ControlOrMeta+n')
+    await page.getByPlaceholder('笔记标题').fill('损坏状态组件')
+    await page.keyboard.press('Enter')
+    await page.keyboard.type('导言')
+    await expect.poll(() => page.evaluate(() => window.jiwei.notes.list({ search: '损坏状态组件' }).then((ns) => ns.length))).toBe(1)
+    const noteId = await page.evaluate(() => window.jiwei.notes.list({ search: '损坏状态组件' }).then((ns) => ns[0].id))
+    await page.evaluate(
+      (noteId) =>
+        window.jiwei.proposals.create({
+          noteId,
+          title: '恢复状态验证',
+          auto: true,
+          ops: [{ op: 'insert_row', afterRowId: null, cue: [], body: [{ type: 'embed', attrs: { id: 'v', kind: 'ui' } }] }],
+          embeds: {
+            v: {
+              kind: 'ui',
+              data: {
+                node: { type: 'flashcards', cards: [{ front: '状态恢复问题', back: '状态恢复答案' }] },
+                state: { card: 'bad', flipped: false },
+                savedAt: Date.now()
+              }
+            }
+          }
+        }),
+      noteId
+    )
+    const embed = page.locator('.embed-block[data-kind="ui"]')
+    await expect(embed).toContainText('状态恢复问题')
+    await embed.getByRole('button', { name: '翻面', exact: true }).click()
+    await expect(embed).toContainText('状态恢复答案')
+    await navTo(page, /AI 对话/)
+  })
+  test('图表 SVG 导出使用真实渲染结果', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'jiwei-ui-svg-'))
+    await app.evaluate(({ BrowserWindow }, dir) => {
+      const wc = BrowserWindow.getAllWindows()[0].webContents
+      const trace = { navigation: '', download: '', status: '' }
+      ;(globalThis as unknown as { uiSvgTrace: typeof trace }).uiSvgTrace = trace
+      wc.on('will-navigate', (_e, url) => {
+        trace.navigation = url
+      })
+      wc.session.on('will-download', (_e, item) => {
+        trace.download = item.getFilename()
+        item.setSavePath(dir + '/' + item.getFilename())
+        item.on('done', (_e, status) => {
+          trace.status = status
+        })
+      })
+    }, dir)
+    await ask(
+      '导出组件图表',
+      fence({ type: 'chart', title: '真实图表导出', kind: 'bar', categories: ['甲', '乙'], series: [{ name: '数量', data: [2, 3] }] })
+    )
+    await done()
+    await expect(block().locator('.chart-canvas svg')).toBeVisible()
+    await block().getByRole('button', { name: '组件菜单' }).click()
+    await expect(block().getByRole('menuitem', { name: '导出图片', exact: true })).toBeVisible()
+    await block().getByRole('menuitem', { name: '导出图片', exact: true }).click()
+    try {
+      await expect.poll(() => readdirSync(dir).filter((name) => name.endsWith('.svg')).length).toBe(1)
+    } finally {
+      await test
+        .info()
+        .attach('svg-download-trace', {
+          body: JSON.stringify(await app.evaluate(() => (globalThis as unknown as { uiSvgTrace: unknown }).uiSvgTrace)),
+          contentType: 'application/json'
+        })
+    }
+    const svg = readFileSync(
+      join(
+        dir,
+        readdirSync(dir).find((name) => name.endsWith('.svg'))!
+      ),
+      'utf8'
+    )
+    expect(svg).toContain('<svg')
+    expect(svg).toContain('甲')
+    expect(svg).toContain('乙')
+  })
+  const loan = {
+    type: 'calc',
+    title: '房贷计算',
+    inputs: [
+      { key: 'pv', label: '贷款金额', kind: 'number', min: 0, max: 10000000, step: 1000, value: 1000000 },
+      { key: 'rate', label: '年利率', kind: 'slider', min: 0, max: 10, step: 0.1, value: 3.2, unit: '%' },
+      { key: 'years', label: '年数', kind: 'number', min: 1, max: 50, step: 1, value: 30 }
+    ],
+    outputs: [{ label: '月供', expr: 'pmt(rate/1200,years*12,pv)', format: '0.00' }]
+  }
+  test('计算器公式随滑块重算，重开保持，图表组合可窄排', async () => {
+    await ask(
+      '贷款布局',
+      fence({
+        type: 'columns',
+        children: [loan, { type: 'chart', kind: 'bar', categories: ['甲', '乙'], series: [{ name: '数量', data: [2, 3] }] }]
+      })
+    )
+    await done()
+    const slider = block().getByRole('slider', { name: '年利率', exact: true })
+    await expect(slider).toBeVisible()
+    await expect(block().getByTestId('ui-columns')).toHaveAttribute('data-layout', 'columns')
+    const box = (await slider.boundingBox())!
+    await page.mouse.click(box.x + box.width * 0.65, box.y + box.height / 2)
+    await expect(slider).not.toHaveValue('3.2')
+    const rate = Number(await slider.inputValue()),
+      r = rate / 1200,
+      expected = (1000000 * r) / (1 - (1 + r) ** -360)
+    expect(rate).not.toBe(3.2)
+    await expect
+      .poll(async () => Number((await block().getByTestId('ui-calc-output').textContent())?.replace(/[^0-9.-]/g, '')))
+      .toBeCloseTo(expected, 2)
+    await page.reload()
+    await page.waitForSelector('nav')
+    await navTo(page, /AI 对话/)
+    await page.getByRole('button', { name: /贷款布局/ }).click()
+    await expect(block().getByRole('slider', { name: '年利率', exact: true })).toHaveValue(String(rate))
+    await page.evaluate(() => {
+      const frame = document.querySelector<HTMLElement>('[data-testid="ui-block"]')!
+      frame.style.width = '360px'
+    })
+    await expect(block().getByTestId('ui-columns')).toHaveAttribute('data-layout', 'stack')
+  })
+  test('图表按原种类存入笔记，计算器是可持久互动的 ui 块', async () => {
+    await ask(
+      '存图表',
+      fence({ type: 'chart', title: '组件保存图表', kind: 'bar', categories: ['甲', '乙'], series: [{ name: '数量', data: [2, 3] }] })
+    )
+    await done()
+    await block().getByRole('button', { name: '组件菜单' }).click()
+    await expect(block().getByRole('menuitem', { name: '存进笔记', exact: true })).toBeVisible()
+    await block().getByRole('menuitem', { name: '存进笔记', exact: true }).click()
+    await block().getByTestId('ui-save-target').getByRole('button', { name: '新建笔记', exact: true }).click()
+    await block().getByTestId('ui-confirm').getByRole('button', { name: '确认', exact: true }).click()
+    await expect(page.getByPlaceholder('笔记标题')).toHaveValue('组件保存图表')
+    await expect(page.locator('.embed-block[data-kind="chart"] .chart-canvas svg')).toBeVisible()
+    await navTo(page, /AI 对话/)
+    await ask('存计算器', fence({ ...loan, title: '组件保存计算器' }))
+    await done()
+    await block().getByRole('button', { name: '组件菜单' }).click()
+    await block().getByRole('menuitem', { name: '存进笔记', exact: true }).click()
+    await block().getByTestId('ui-save-target').getByRole('button', { name: '新建笔记', exact: true }).click()
+    await block().getByTestId('ui-confirm').getByRole('button', { name: '确认', exact: true }).click()
+    await expect(page.getByPlaceholder('笔记标题')).toHaveValue('组件保存计算器')
+    const embed = page.locator('.embed-block[data-kind="ui"]')
+    await expect(embed.getByRole('slider', { name: '年利率', exact: true })).toBeVisible()
+    const old = await embed.getByTestId('ui-calc-output').textContent()
+    await embed.getByRole('slider', { name: '年利率', exact: true }).press('ArrowRight')
+    await expect(embed.getByTestId('ui-calc-output')).not.toHaveText(old!)
+    const rate = await embed.getByRole('slider', { name: '年利率', exact: true }).inputValue()
+    await expect(embed.getByRole('button', { name: '按这个改', exact: true })).toHaveCount(0)
+    await page.reload()
+    await page.waitForSelector('nav')
+    await navTo(page, /^笔记/)
+    await page.getByText('组件保存计算器', { exact: true }).first().click()
+    await expect(page.locator('.embed-block[data-kind="ui"]').getByRole('slider', { name: '年利率', exact: true })).toHaveValue(rate)
+    await navTo(page, /AI 对话/)
+  })
+  test('数据保存为快照，刷新不改快照，更新后才持久化', async () => {
+    await ask('保存日程快照', fence({ type: 'schedule', title: '组件日程快照', range: { from: '2026-10-19', to: '2026-10-25' } }))
+    await done()
+    await page.evaluate(() =>
+      window.jiwei.plan.eventSave({
+        kind: 'event',
+        title: '快照旧日程',
+        startAt: new Date('2026-10-20T10:00').getTime(),
+        endAt: new Date('2026-10-20T11:00').getTime()
+      })
+    )
+    await block()
+      .getByRole('button', { name: /数据已更新/ })
+      .click()
+    await expect(block()).toContainText('快照旧日程')
+    await block().getByRole('button', { name: '组件菜单' }).click()
+    await block().getByRole('menuitem', { name: '存进笔记', exact: true }).click()
+    await block().getByTestId('ui-save-target').getByRole('button', { name: '新建笔记', exact: true }).click()
+    await block().getByTestId('ui-confirm').getByRole('button', { name: '确认', exact: true }).click()
+    await expect(page.getByPlaceholder('笔记标题')).toHaveValue('组件日程快照')
+    const embed = page.locator('.embed-block[data-kind="ui"]')
+    await expect(embed).toContainText('截至')
+    await expect(embed).toContainText('快照旧日程')
+    await page.evaluate(() =>
+      window.jiwei.plan.eventSave({
+        kind: 'event',
+        title: '快照新日程',
+        startAt: new Date('2026-10-21T10:00').getTime(),
+        endAt: new Date('2026-10-21T11:00').getTime()
+      })
+    )
+    await expect(embed).not.toContainText('快照新日程')
+    await embed.getByRole('button', { name: '刷新为最新', exact: true }).click()
+    await expect(embed).toContainText('快照新日程')
+    await page.reload()
+    await page.waitForSelector('nav')
+    await navTo(page, /^笔记/)
+    await page.getByText('组件日程快照', { exact: true }).first().click()
+    await expect(embed).not.toContainText('快照新日程')
+    await embed.getByRole('button', { name: '刷新为最新', exact: true }).click()
+    await embed.getByRole('button', { name: '更新快照', exact: true }).click()
+    await page.reload()
+    await page.waitForSelector('nav')
+    await navTo(page, /^笔记/)
+    await page.getByText('组件日程快照', { exact: true }).first().click()
+    await expect(embed).toContainText('快照新日程')
+    await navTo(page, /AI 对话/)
+  })
+  test('决策权重仅本地改变，参谋预填和真实用量入口', async () => {
+    await ask(
+      '组件决策',
+      fence({
+        type: 'decision',
+        question: '阅读还是练习？',
+        options: [
+          { id: 'a', title: '阅读' },
+          { id: 'b', title: '练习' }
+        ],
+        criteria: [
+          { name: '效率', weight: 3 },
+          { name: '熟练', weight: 2 }
+        ],
+        scores: [
+          { option: 'a', criterion: '效率', score: 5 },
+          { option: 'a', criterion: '熟练', score: 2 },
+          { option: 'b', criterion: '效率', score: 3 },
+          { option: 'b', criterion: '熟练', score: 5 }
+        ]
+      })
+    )
+    await done()
+    await expect(block().getByRole('button', { name: /效率.*增加/ })).toBeVisible()
+    await block()
+      .getByRole('button', { name: /效率.*增加/ })
+      .click()
+    await block().getByRole('button', { name: '交给参谋深入分析', exact: true }).click()
+    await expect(page.getByPlaceholder(/下学期要不要去实习/)).toHaveValue('阅读还是练习？')
+    await navTo(page, /AI 对话/)
+    await ask('查看用量组件', fence({ type: 'usage', range: 'month' }))
+    await done()
+    await expect(block().getByRole('button', { name: '打开用量页', exact: true })).toBeVisible()
+    await expect(block()).toContainText('本月')
+    await block().getByRole('button', { name: '打开用量页', exact: true }).click()
+    await expect(page.getByTestId('usage-dashboard')).toBeVisible()
+    await navTo(page, /AI 对话/)
+  })
+  test('AI 设置的档位与三个开关持久化', async () => {
+    await page.keyboard.press('ControlOrMeta+,')
+    const dialog = page.getByRole('dialog')
+    await dialog.getByRole('button', { name: 'AI 模型', exact: true }).click()
+    const settings = dialog.getByTestId('ui-settings')
+    await expect(settings).toContainText('回答里的图示和工具')
+    await settings.getByRole('button', { name: '丰富', exact: true }).click()
+    for (const name of ['组件可以读取我的日程、待办和复习数据', '在就地提问中也使用组件', /本地模型也使用组件/]) {
+      const control = settings.getByRole('switch', { name })
+      await expect(control).toBeChecked()
+      await control.click()
+      await expect(control).not.toBeChecked()
+    }
+    await expect
+      .poll(() => page.evaluate(() => window.jiwei.settings.get().then((s) => s.ai.ui)))
+      .toEqual({ density: 'rich', dataAccess: false, inline: false, localModels: 'off' })
+    await page.keyboard.press('Escape')
+    await page.reload()
+    await page.waitForSelector('nav')
+    expect(await page.evaluate(() => window.jiwei.settings.get().then((s) => s.ai.ui))).toEqual({
+      density: 'rich',
+      dataAccess: false,
+      inline: false,
+      localModels: 'off'
+    })
+    await page.evaluate(async () => {
+      const s = await window.jiwei.settings.get()
+      await window.jiwei.settings.set({ ai: { ...s.ai, ui: { density: 'normal', dataAccess: true, inline: true, localModels: 'normal' } } })
+    })
     await navTo(page, /AI 对话/)
   })
 })

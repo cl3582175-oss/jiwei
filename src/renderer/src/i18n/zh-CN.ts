@@ -536,6 +536,7 @@ const zhCN = {
     aiWordsHint: 'AI 生成且尚未经你修改的内容不计入学习统计。修改后会自动标记为“已审阅”。'
   },
   embeds: {
+    ui: uiZh.embedLabel,
     chart: '图表',
     diagram: '图示',
     timeline: '时间线',

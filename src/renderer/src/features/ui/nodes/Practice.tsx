@@ -9,6 +9,8 @@ import { ConfirmSheet, uiAction } from '../ConfirmSheet'
 
 type Practice = Extract<UiNode, { type: 'quiz' | 'flashcards' | 'cloze' }>
 type Answer = { value: string | number; checked?: boolean }
+const position = (value: unknown, length: number): number =>
+  typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 && value < length ? value : 0
 const equal = (a: string | number, b: string | number): boolean =>
   String(a).trim().toLocaleLowerCase() === String(b).trim().toLocaleLowerCase()
 const questionText = (q: Extract<UiNode, { type: 'quiz' }>['items'][number]): string =>
@@ -109,7 +111,7 @@ export function QuizNode({
   const [confirm, setConfirm] = useState(false)
   const state = ctx.states[uiKey] ?? {},
     answers = (state.answers ?? {}) as Record<string, Answer>
-  const index = Math.max(0, Math.min(Number(state.question ?? 0), node.items.length - 1)),
+  const index = position(state.question, node.items.length),
     q = node.items[index],
     current = answers[index]
   const completed = node.items.every((_q, i) => answers[i]?.checked)
@@ -245,7 +247,7 @@ export function FlashcardsNode({
 }) {
   const { t } = useTranslation()
   const state = ctx.states[uiKey] ?? {},
-    index = Math.max(0, Math.min(Number(state.card ?? 0), node.cards.length - 1)),
+    index = position(state.card, node.cards.length),
     flipped = !!state.flipped
   return (
     <div className="px-4 py-3">
