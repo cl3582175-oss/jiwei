@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/primitives'
 import { Switch } from '@/components/ui/switch'
 import { useSettings } from '@/lib/queries'
-import { api, cn } from '@/lib/utils'
+import { api, cn, formatBytes } from '@/lib/utils'
 import type { UpdateState } from '@shared/updates'
 import { useUpdates } from './useUpdates'
 import { UpdateNotes } from './UpdateNotes'
@@ -70,7 +70,9 @@ export function AboutSettings() {
     : checking
       ? t('updates.checking')
       : state.status === 'downloading'
-        ? t('updates.downloading', { percent: Math.round(state.percent ?? 0) })
+        ? state.source && state.speed
+          ? t('updates.downloadingVia', { percent: Math.round(state.percent ?? 0), source: state.source, speed: formatBytes(state.speed) })
+          : t('updates.downloading', { percent: Math.round(state.percent ?? 0) })
         : state.status === 'ready'
           ? t('updates.ready')
           : state.status === 'current'

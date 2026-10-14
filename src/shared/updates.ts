@@ -17,6 +17,9 @@ export interface UpdateState {
   notes?: string
   notesTruncated?: boolean
   percent?: number
+  /** 当前下载来源（主机名）与速度（字节 / 秒） */
+  source?: string
+  speed?: number
   error?: 'offline' | 'server' | 'checksum' | 'download' | 'storage'
   upgrade?: UpgradeNotice | null
 }
@@ -36,6 +39,17 @@ export const UpdateSettingsSchema = z.object({
     }, 'Use a public HTTPS update feed without credentials or query parameters')
     .optional()
 })
+
+/*
+ * 国内直连 GitHub 下载安装包常只有几十 KB/s。安装包走第三方加速镜像，按测速选最快的，
+ * 失败或变慢时换下一个；版本信息和 SHA-512 仍从 GitHub 读取，镜像改不了校验值。
+ */
+const RELEASE_ASSET = /^https:\/\/github\.com\/cl3582175-oss\/jiwei-releases\/releases\/download\/[^?#]+$/
+export const UPDATE_MIRRORS = ['https://gh-proxy.com/', 'https://ghfast.top/'] as const
+/** 积微官方发布仓库的安装包地址 → [镜像…, 原地址]；其它地址（自定义更新源、测试源）原样返回 */
+export function mirrorUrls(url: string): string[] {
+  return RELEASE_ASSET.test(url) ? [...UPDATE_MIRRORS.map((m) => m + url), url] : [url]
+}
 
 function versionParts(version: string): { main: bigint[]; pre?: string[] } {
   const match = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/.exec(version)

@@ -8,11 +8,11 @@ import { randomUUID } from 'node:crypto'
 import electronUpdater, { type AppUpdater } from 'electron-updater'
 import { CancellationToken } from 'builder-util-runtime'
 import log from 'electron-log/main'
-import { updateMode, type UpdateState } from '@shared/updates'
+import { mirrorUrls, updateMode, type UpdateState } from '@shared/updates'
 import { getSettings } from './settings'
 import { emit, onMainEvent } from '../events'
 import { getStartupUpgrade } from '../db'
-import { download } from './download'
+import { download, probeMirrors } from './download'
 import { verifyUpdateSha512 } from '../lib/updateIntegrity'
 import { requestRendererFlush } from '../lifecycle'
 import { flushAll } from './docs'
@@ -73,6 +73,14 @@ let generation = 0
 let abort: AbortController | null = null
 let cancellation: CancellationToken | null = null
 let downloaded: { path: string; sha512: string } | null = null
+let activeSource: string | undefined
+const hostOf = (url: string): string => {
+  try {
+    return new URL(url).hostname
+  } catch {
+    return url
+  }
+}
 let initial: NodeJS.Timeout | null = null,
   recurring: NodeJS.Timeout | null = null
 let unsubscribe: (() => void) | null = null
@@ -174,7 +182,15 @@ function configure(): void {
       if (owner === generation && mode === 'automatic') void downloadUpdate()
     })
     instance.on('download-progress', (progress) =>
-      publish({ status: 'downloading', percent: Math.min(100, Math.max(0, progress.percent)) }, owner)
+      publish(
+        {
+          status: 'downloading',
+          percent: Math.min(100, Math.max(0, progress.percent)),
+          speed: progress.bytesPerSecond,
+          source: activeSource
+        },
+        owner
+      )
     )
     instance.on('update-downloaded', () => publish({ status: 'ready', percent: 100, error: undefined }, owner))
     instance.on('error', (error) => fail(error, owner))
@@ -241,9 +257,11 @@ export async function downloadUpdate(): Promise<UpdateState> {
       if (file.url.protocol !== 'https:' && !(testing() && file.url.hostname === '127.0.0.1')) throw new Error('Untrusted update transport')
       const directory = testing() ? process.env.JIWEI_UPDATE_DOWNLOADS! : app.getPath('downloads')
       destination = join(directory, `Jiwei-${state.nextVersion}-mac-${process.arch}-${randomUUID().slice(0, 8)}.dmg`)
+      // 镜像测速选最快的，变慢自动换；4 段并行（GitHub 单连接很慢）。校验值来自 GitHub 上的版本信息。
       await download(
-        { name: 'Jiwei update', urls: [file.url.href], dest: destination, size, sha512: file.info.sha512 },
-        (progress) => publish({ percent: (100 * progress.received) / progress.total }, owner),
+        { name: 'Jiwei update', urls: mirrorUrls(file.url.href), dest: destination, size, sha512: file.info.sha512, parallel: 4 },
+        (progress) =>
+          publish({ percent: (100 * progress.received) / progress.total, speed: progress.speed, source: progress.mirror }, owner),
         controller.signal
       )
       await verifyUpdateSha512(destination, file.info.sha512)
@@ -258,13 +276,55 @@ export async function downloadUpdate(): Promise<UpdateState> {
   } else {
     const token = new CancellationToken()
     cancellation = token
-    try {
-      await instance.downloadUpdate(token)
-    } catch (error) {
-      if (!token.cancelled) fail(error, owner)
+    // Windows / Linux 仍由 electron-updater 下载和安装（保留它的增量下载、校验与安装流程），
+    // 只把安装包地址换成测速最快的镜像；失败时依次换下一个来源。
+    const routes = await rankRoutes(instance)
+    for (let i = 0; i < routes.length; i++) {
+      if (owner !== generation || token.cancelled) break
+      routeVia(instance, routes[i])
+      try {
+        await instance.downloadUpdate(token)
+        break
+      } catch (error) {
+        if (token.cancelled) break
+        log.warn('[updates] download failed via', hostOf(routes[i] ?? ''))
+        if (i === routes.length - 1) fail(error, owner)
+        else publish({ status: 'downloading', error: undefined }, owner)
+      }
     }
+    routeVia(instance, null)
   }
   return getUpdateState()
+}
+type ResolvedFile = { url: URL }
+type ProviderLike = { resolveFiles(info: unknown): ResolvedFile[] }
+type WithProvider = {
+  updateInfoAndProvider?: { info: unknown; provider: ProviderLike & { __jiweiResolve?: ProviderLike['resolveFiles'] } }
+}
+/** 当前版本安装包的可选来源：按测速排序（测不出来时按镜像在前的原顺序） */
+async function rankRoutes(instance: AppUpdater): Promise<(string | null)[]> {
+  const chosen = (instance as unknown as WithProvider).updateInfoAndProvider
+  if (!chosen) return [null]
+  const files = chosen.provider.resolveFiles(chosen.info)
+  const main = files.find((f) => /\.(exe|AppImage)$/.test(f.url.pathname)) ?? files[0]
+  if (!main) return [null]
+  const urls = mirrorUrls(main.url.href)
+  if (urls.length === 1) return [null]
+  const ranked = (await probeMirrors(urls)).map((r) => r.url)
+  const order = [...ranked, ...urls.filter((u) => !ranked.includes(u))]
+  log.info('[updates] routes', order.map(hostOf).join(' > '))
+  // 记下镜像前缀（原地址记为空前缀）
+  return order.map((u) => (u === main.url.href ? '' : u.slice(0, u.length - main.url.href.length)))
+}
+/** 把 provider 解析出的 GitHub 地址加上镜像前缀；null 恢复原样 */
+function routeVia(instance: AppUpdater, prefix: string | null): void {
+  const chosen = (instance as unknown as WithProvider).updateInfoAndProvider
+  if (!chosen) return
+  const provider = chosen.provider
+  provider.__jiweiResolve ??= provider.resolveFiles.bind(provider)
+  const original = provider.__jiweiResolve
+  activeSource = prefix ? hostOf(prefix) : prefix === '' ? 'github.com' : undefined
+  provider.resolveFiles = prefix ? (info) => original(info).map((f) => ({ ...f, url: new URL(prefix + f.url.href) })) : original
 }
 export async function installUpdate(): Promise<void> {
   if (state.status !== 'ready') throw new Error('No verified update is ready')
