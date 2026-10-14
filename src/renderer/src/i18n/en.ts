@@ -1,3 +1,4 @@
+import { attachEn } from '../features/attachments/messages'
 import { uiEn } from '../features/ui/messages'
 import { pluginsEn } from '../features/plugins/pluginMessages'
 import { updatesEn } from '../features/update/updateMessages'
@@ -18,6 +19,7 @@ import { safetyEn } from '../features/settings/safetyMessages'
 import { readingEn } from '../features/reading/messages'
 import { retrievalEn } from '../features/retrieval/messages'
 const en: Messages = {
+  ...attachEn,
   ui: uiEn,
   updates: updatesEn,
   importer: importerEn,
@@ -1515,8 +1517,23 @@ const en: Messages = {
     depth: 'Range',
     steps: '{{n}} steps',
     view: { map: 'Graph', path: 'Learning path', list: 'Relations' },
-    legend: { stale: 'Outdated / disputed', categories: 'Categories', mastery: 'Mastery', relations: 'Relations', hub: 'Hub note', source: 'Source', uncategorized: 'Uncategorized', unlinked: 'Unlinked', toggle: 'Click to show or hide' },
-    family: { assoc: 'Related', structure: 'Prerequisite / part of', reasoning: 'Derived / evidence / applied', tension: 'Contrast / conflict / superseded' },
+    legend: {
+      stale: 'Outdated / disputed',
+      categories: 'Categories',
+      mastery: 'Mastery',
+      relations: 'Relations',
+      hub: 'Hub note',
+      source: 'Source',
+      uncategorized: 'Uncategorized',
+      unlinked: 'Unlinked',
+      toggle: 'Click to show or hide'
+    },
+    family: {
+      assoc: 'Related',
+      structure: 'Prerequisite / part of',
+      reasoning: 'Derived / evidence / applied',
+      tension: 'Contrast / conflict / superseded'
+    },
     zoomIn: 'Zoom in',
     zoomOut: 'Zoom out',
     fit: 'Fit to view',
@@ -1548,13 +1565,15 @@ const en: Messages = {
       step: 'Step {{n}}',
       ready: 'Ready to learn',
       blocking: 'Blocks {{n}} later notes',
-      legend: 'Ready to learn: all prerequisites are solid, this one is not yet. Bottleneck: not mastered and a prerequisite for several later notes.'
+      legend:
+        'Ready to learn: all prerequisites are solid, this one is not yet. Bottleneck: not mastered and a prerequisite for several later notes.'
     },
     discover: {
       title: 'Organize & discover',
       suggestions: 'AI suggestions {{n}}',
       acceptAll: 'Accept all',
-      intro: 'Jiwei reads the sentence around each link and the notes’ openings to suggest prerequisite, derived, contrast and other relations, and finds similar notes not yet linked. Suggestions count only after you confirm them.',
+      intro:
+        'Jiwei reads the sentence around each link and the notes’ openings to suggest prerequisite, derived, contrast and other relations, and finds similar notes not yet linked. Suggestions count only after you confirm them.',
       run: 'Organize relations',
       running: 'Organizing…',
       done: 'Checked {{judged}} pairs, {{suggested}} suggestions',

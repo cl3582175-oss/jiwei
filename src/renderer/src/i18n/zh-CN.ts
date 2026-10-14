@@ -1,3 +1,4 @@
+import { attachZh } from '../features/attachments/messages'
 import { uiZh } from '../features/ui/messages'
 import { pluginsZh } from '../features/plugins/pluginMessages'
 import { updatesZh } from '../features/update/updateMessages'
@@ -18,6 +19,7 @@ import { readingZh } from '../features/reading/messages'
 import { retrievalZh } from '../features/retrieval/messages'
 
 const zhCN = {
+  ...attachZh,
   ui: uiZh,
   updates: updatesZh,
   importer: importerZh,
@@ -1468,7 +1470,17 @@ const zhCN = {
     depth: '范围',
     steps: '{{n}} 步',
     view: { map: '图', path: '学习路径', list: '关系列表' },
-    legend: { stale: '已过时 / 存疑', categories: '分类', mastery: '掌握度', relations: '关系', hub: '枢纽笔记', source: '资料', uncategorized: '未分类', unlinked: '未关联', toggle: '点击显示或隐藏' },
+    legend: {
+      stale: '已过时 / 存疑',
+      categories: '分类',
+      mastery: '掌握度',
+      relations: '关系',
+      hub: '枢纽笔记',
+      source: '资料',
+      uncategorized: '未分类',
+      unlinked: '未关联',
+      toggle: '点击显示或隐藏'
+    },
     family: { assoc: '相关', structure: '前置 / 属于', reasoning: '推出 / 例证 / 应用', tension: '对比 / 矛盾 / 取代' },
     zoomIn: '放大',
     zoomOut: '缩小',
@@ -1507,7 +1519,8 @@ const zhCN = {
       title: '整理与发现',
       suggestions: 'AI 关系建议 {{n}}',
       acceptAll: '全部确认',
-      intro: '让积微读一读连线所在的句子和笔记开头，判断它们是前置、推出、对比还是别的关系，并找出相似却还没连起来的笔记。结果只是建议，确认后才会生效。',
+      intro:
+        '让积微读一读连线所在的句子和笔记开头，判断它们是前置、推出、对比还是别的关系，并找出相似却还没连起来的笔记。结果只是建议，确认后才会生效。',
       run: '整理关系',
       running: '正在整理…',
       done: '看了 {{judged}} 对笔记，给出 {{suggested}} 条建议',

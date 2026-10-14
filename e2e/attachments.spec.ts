@@ -30,6 +30,7 @@ test.beforeAll(async () => {
     }
   })
   page = await app.firstWindow()
+  page.on('pageerror', (error) => console.error('ATTACHMENT_PAGE_ERROR', error.message))
   await page.waitForSelector('nav')
   providerId = await page.evaluate(async (baseUrl) => {
     const p = await window.jiwei.providers.save({
@@ -47,6 +48,8 @@ test.beforeAll(async () => {
     })
     return p.id
   }, model.url)
+  await page.reload()
+  await page.waitForSelector('nav')
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1440, 900))
 })
 test.afterAll(async () => {
@@ -283,4 +286,248 @@ test('P3 pptx第二页引用跳转真实阅读器第2页', async () => {
     .click()
   await expect(page.locator('[data-page="2"].is-flash')).toBeVisible()
   model.setAnswer('受控回答')
+})
+
+async function newChat(): Promise<void> {
+  await navTo(page, /AI 对话/)
+  await page.getByRole('button', { name: '新对话', exact: true }).first().click()
+}
+async function pickPaths(paths: string[]): Promise<void> {
+  await app.evaluate(({ dialog }, paths) => {
+    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: paths })
+  }, paths)
+  await page.getByRole('button', { name: '添加附件', exact: true }).last().click()
+}
+test('P4 按钮添加附件，空文字建议，首次云提示与消息卡', async () => {
+  await newChat()
+  const path = join(userDataDir, 'ui-slides.pptx')
+  writeFileSync(path, await pptxFixture(4))
+  await pickPaths([path])
+  const chip = page.getByTestId('attachment-chip').filter({ hasText: 'ui-slides.pptx' }).first()
+  await expect(chip).toHaveAttribute('data-status', 'ready')
+  await expect(page.getByText('逐页概括', { exact: true })).toBeVisible()
+  await expect(page.getByTestId('attachment-cloud-notice')).toBeVisible()
+  await page.getByRole('button', { name: '知道了', exact: true }).click()
+  await expect(page.getByTestId('attachment-cloud-notice')).toHaveCount(0)
+  await page.getByRole('button', { name: '逐页概括', exact: true }).click()
+  await expect(page.getByTestId('message-attachments')).toBeVisible()
+  await expect(page.getByRole('button', { name: '本对话附件 1', exact: true })).toBeVisible()
+})
+
+test('P4 拖放覆盖层、无路径粘贴截图与附件移除', async () => {
+  await newChat()
+  const input = page.locator('textarea').last()
+  const transfer = await page.evaluateHandle(() => {
+    const d = new DataTransfer()
+    d.items.add(new File(['DROP-FILE-CONTENT'], 'ui-drop.txt', { type: 'text/plain' }))
+    return d
+  })
+  await input.dispatchEvent('dragenter', { dataTransfer: transfer })
+  await expect(page.getByTestId('attachment-drop-overlay')).toBeVisible()
+  await input.dispatchEvent('drop', { dataTransfer: transfer })
+  await expect(page.getByTestId('attachment-drop-overlay')).toHaveCount(0)
+  const drop = page.getByTestId('attachment-chip').filter({ hasText: 'ui-drop.txt' })
+  await expect(drop).toHaveAttribute('data-status', 'ready')
+  await drop.getByRole('button', { name: '移除附件 ui-drop.txt', exact: true }).click()
+  await expect(drop).toHaveCount(0)
+  const pasted = await page.evaluateHandle(async () => {
+    const canvas = document.createElement('canvas')
+    canvas.width = 8
+    canvas.height = 8
+    const ctx = canvas.getContext('2d')!
+    ctx.fillStyle = '#35a799'
+    ctx.fillRect(0, 0, 8, 8)
+    const blob = await new Promise<Blob>((resolve) => canvas.toBlob((blob) => resolve(blob!), 'image/png'))
+    const d = new DataTransfer()
+    d.items.add(new File([blob], 'paste.png', { type: 'image/png' }))
+    return d
+  })
+  await input.evaluate(
+    (el, data) => el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true })),
+    pasted
+  )
+  const chip = page.getByTestId('attachment-chip').filter({ hasText: 'paste.png' }).first()
+  await expect(chip).toHaveAttribute('data-status', 'ready')
+  await expect(chip.locator('img')).toBeVisible()
+  model.setAnswer('图片附件答复')
+  await input.fill('识别截图')
+  await page.getByRole('button', { name: '发送', exact: true }).last().click()
+  await expect(page.getByTestId('message-attachments')).toBeVisible()
+  await expect.poll(() => JSON.stringify(model.requests.at(-1))).toContain('image_url')
+})
+
+test('P4 标题栏移出后下一轮不送附件，附件空间仍保留', async () => {
+  await newChat()
+  const path = join(userDataDir, 'ui-remove.txt')
+  writeFileSync(path, 'REMOVE-PRIVATE-ATTACHMENT-MARKER')
+  await pickPaths([path])
+  await expect(page.getByTestId('attachment-chip').first()).toHaveAttribute('data-status', 'ready')
+  model.setAnswer('REMOVE-PRIVATE-ATTACHMENT-MARKER')
+  await page.locator('textarea').last().fill('读取资料')
+  await page.getByRole('button', { name: '发送', exact: true }).last().click()
+  await expect(page.getByText('REMOVE-PRIVATE-ATTACHMENT-MARKER', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '本对话附件 1', exact: true }).click()
+  await page.getByTestId('conversation-attachments').getByRole('button', { name: '移出本对话', exact: true }).click()
+  await page.keyboard.press('Escape')
+  model.setAnswer('继续答复')
+  const before = model.requests.length
+  await page.locator('textarea').last().fill('继续')
+  await page.getByRole('button', { name: '发送', exact: true }).last().click()
+  await expect.poll(() => model.requests.length).toBeGreaterThan(before)
+  expect(lastRequestText()).not.toContain('REMOVE-PRIVATE-ATTACHMENT-MARKER')
+  expect((await page.evaluate(() => window.jiwei.attachments.list({ state: 'unarchived' }))).some((a) => a.name === 'ui-remove.txt')).toBe(
+    true
+  )
+})
+
+test('P4 @引用库内资料合并范围，不给AI的资料拦截；也支持笔记', async () => {
+  const paths = [join(userDataDir, 'mention-allowed.txt'), join(userDataDir, 'mention-private.txt')]
+  paths.forEach((path, i) => writeFileSync(path, i ? 'PRIVATE-LIBRARY-MENTION' : 'ALLOWED-LIBRARY-MENTION'))
+  const r = await page.evaluate((paths) => window.jiwei.sources.importPaths(paths), paths)
+  await page.evaluate((id) => window.jiwei.sources.update(id, { aiExcluded: true }), r.imported[1].id)
+  const base = await send('引用测试起点')
+  await showConversation(base.conversation.title)
+  await page.locator('textarea').last().fill('@mention-private')
+  await page
+    .getByRole('dialog', { name: '引用资料库或笔记' })
+    .getByRole('button', { name: /mention-private/ })
+    .click()
+  await expect(page.getByText('这份资料设为不给 AI', { exact: true }).last()).toBeVisible()
+  await expect(page.getByTestId('attachment-chip')).toHaveCount(0)
+  await page.locator('textarea').last().fill('@mention-allowed')
+  await page.getByRole('dialog', { name: '引用资料库或笔记' }).getByRole('button', { name: 'mention-allowed', exact: true }).click()
+  await expect(page.getByTestId('attachment-chip')).toHaveCount(1)
+  await page.locator('textarea').last().fill('使用引用')
+  await page.evaluate((id) => window.jiwei.sources.update(id, { aiExcluded: true }), r.imported[0].id)
+  await page.getByRole('button', { name: '发送', exact: true }).last().click()
+  await expect(page.getByText('这份资料设为不给 AI', { exact: true }).last()).toBeVisible()
+  await expect(page.locator('textarea').last()).toHaveValue('使用引用')
+  await expect(page.getByTestId('attachment-chip')).toHaveCount(1)
+  await page.evaluate((id) => window.jiwei.sources.update(id, { aiExcluded: false }), r.imported[0].id)
+  await page.getByRole('button', { name: '发送', exact: true }).last().click()
+  await expect
+    .poll(async () => (await page.evaluate(() => window.jiwei.chat.conversations())).find((c) => c.id === base.conversation.id)?.scope)
+    .toEqual({ type: 'items', notes: [], sources: [r.imported[0].id] })
+  const n = await page.evaluate(() => window.jiwei.notes.create({ title: 'mention-note' }))
+  await newChat()
+  await page.locator('textarea').last().fill('@mention-note')
+  await page.getByRole('dialog', { name: '引用资料库或笔记' }).getByRole('button', { name: 'mention-note', exact: true }).click()
+  await expect(page.getByTestId('attachment-chip').filter({ hasText: 'mention-note' })).toBeVisible()
+  expect(n.id).toBeTruthy()
+})
+
+test('P4 工作区旁添加并提问，就地追问短文与PDF限制', async () => {
+  const note = await page.evaluate(() => window.jiwei.notes.create({ title: '附件工作区笔记' }))
+  await page.reload()
+  await page.waitForSelector('nav')
+  await navTo(page, /笔记/)
+  await page.getByText('附件工作区笔记', { exact: true }).first().click()
+  await page.keyboard.press('ControlOrMeta+j')
+  const panel = page.getByRole('complementary', { name: '积微助手' })
+  await expect(panel).toBeVisible()
+  const path = join(userDataDir, 'workspace-attachment.txt')
+  writeFileSync(path, 'WORKSPACE-ATTACHMENT-CONTENT')
+  await pickPaths([path])
+  await expect(panel.getByTestId('attachment-chip')).toHaveAttribute('data-status', 'ready')
+  model.setAnswer('工作区附件答复')
+  await panel.locator('textarea').fill('工作区附件提问')
+  await panel.getByRole('button', { name: '发送', exact: true }).click()
+  await expect(panel.getByText('工作区附件答复', { exact: true })).toBeVisible()
+  expect(lastRequestText()).toContain('WORKSPACE-ATTACHMENT-CONTENT')
+  await page.keyboard.press('Escape')
+  const sourcePath = join(userDataDir, 'inline-reading.txt')
+  writeFileSync(sourcePath, '这是就地提问测试的可选正文。')
+  const imported = await page.evaluate((path) => window.jiwei.sources.importPaths([path]), sourcePath)
+  await page.reload()
+  await page.waitForSelector('nav')
+  await navTo(page, /资料库/)
+  await page.getByText('inline-reading', { exact: true }).first().dblclick()
+  await expect(page.locator('.source-text p').first()).toBeVisible()
+  await page
+    .locator('.source-text p')
+    .first()
+    .evaluate((el) => {
+      const range = document.createRange()
+      range.selectNodeContents(el)
+      const s = window.getSelection()!
+      s.removeAllRanges()
+      s.addRange(range)
+      el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))
+    })
+  await page.getByRole('button', { name: '问 AI', exact: true }).click()
+  const card = page.getByRole('dialog', { name: '就地答复' })
+  await card.getByRole('textbox').fill('就地初次提问')
+  await card.getByRole('button', { name: '想问什么？例如：这里为什么这样说', exact: true }).click()
+  await expect(card.getByRole('textbox', { name: '追问…' })).toBeVisible()
+  const inlinePath = join(userDataDir, 'inline-short.txt')
+  writeFileSync(inlinePath, 'INLINE-SHORT-ATTACHMENT')
+  await app.evaluate(
+    ({ dialog }, paths) => {
+      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: paths })
+    },
+    [inlinePath, join(userDataDir, 'long.pdf')]
+  )
+  await card.getByRole('button', { name: '添加附件', exact: true }).click()
+  await expect(card.getByTestId('attachment-chip').filter({ hasText: 'inline-short.txt' })).toHaveAttribute('data-status', 'ready')
+  await expect(card.getByTestId('attachment-chip').filter({ hasText: 'long.pdf' })).toContainText('请在积微助手对话里添加这类附件')
+  model.setAnswer('就地附件答复')
+  await card.getByRole('textbox', { name: '追问…' }).fill('就地附件追问')
+  await card.getByRole('button', { name: '发送', exact: true }).click()
+  await expect(card.getByText('就地附件答复', { exact: true })).toBeVisible()
+  expect(lastRequestText()).toContain('INLINE-SHORT-ATTACHMENT')
+  expect(imported.imported).toHaveLength(1)
+  expect(note.id).toBeTruthy()
+})
+
+test('P4 云提示只出现一次，ollama不出现；切换会话丢弃旧选择结果', async () => {
+  await page.keyboard.press('Escape')
+  const local = await page.evaluate(async (baseUrl) => {
+    const p = await window.jiwei.providers.save({ kind: 'ollama', name: '受控本地服务', baseUrl, models: ['attachments-controlled'] })
+    const s = await window.jiwei.settings.get()
+    await window.jiwei.settings.set({
+      attachments: { cloudNoticeSeen: false },
+      ai: { ...s.ai, chat: { providerId: p.id, model: 'attachments-controlled' } }
+    })
+    return p.id
+  }, model.url)
+  await page.reload()
+  await page.waitForSelector('nav')
+  await newChat()
+  const path = join(userDataDir, 'local-notice.txt')
+  writeFileSync(path, 'LOCAL-NOTICE-CONTENT')
+  await pickPaths([path])
+  await expect(page.getByTestId('attachment-chip')).toHaveAttribute('data-status', 'ready')
+  await expect(page.getByTestId('attachment-cloud-notice')).toHaveCount(0)
+  await page.evaluate(async (providerId) => {
+    const s = await window.jiwei.settings.get()
+    await window.jiwei.settings.set({ ai: { ...s.ai, chat: { providerId, model: 'attachments-controlled' } } })
+  }, providerId)
+  await page.reload()
+  await page.waitForSelector('nav')
+  await newChat()
+  await pickPaths([path])
+  await expect(page.getByTestId('attachment-cloud-notice')).toBeVisible()
+  await page.getByRole('button', { name: '知道了', exact: true }).click()
+  await expect(page.getByTestId('attachment-cloud-notice')).toHaveCount(0)
+  await newChat()
+  await pickPaths([path])
+  await expect(page.getByTestId('attachment-chip')).toHaveAttribute('data-status', 'ready')
+  await expect(page.getByTestId('attachment-cloud-notice')).toHaveCount(0)
+  await newChat()
+  // 延迟原生选择返回；用户切换到已有会话后，不得把旧文件加入新会话。
+  await app.evaluate(({ dialog }, path) => {
+    dialog.showOpenDialog = async () => {
+      await new Promise((r) => setTimeout(r, 600))
+      return { canceled: false, filePaths: [path] }
+    }
+  }, path)
+  await page.getByRole('button', { name: '添加附件', exact: true }).click()
+  const base = await send('切换目标对话')
+  await showConversation(base.conversation.title)
+  await expect
+    .poll(async () => (await page.evaluate((id) => window.jiwei.attachments.ofConversation(id), base.conversation.id)).length)
+    .toBe(0)
+  await page.waitForTimeout(700)
+  await expect(page.getByTestId('attachment-chip')).toHaveCount(0)
+  expect(local).toBeTruthy()
 })

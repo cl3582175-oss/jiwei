@@ -214,6 +214,7 @@ export type Palette = 'qinglu' | 'celadon' | 'dunhuang'
 export type SidebarPage = 'notes' | 'library' | 'chat'
 
 export interface Settings {
+  attachments?: { cloudNoticeSeen: boolean }
   retrieval: import('./retrieval').RetrievalSettings
   plugins: { recommendedDismissed: boolean }
   discover: {

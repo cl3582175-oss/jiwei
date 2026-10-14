@@ -1,3 +1,8 @@
+import { attachmentContext } from '../attachments/context'
+import { useAttachments, resetAttachmentDraft } from '../attachments/useAttachments'
+import { AttachmentInput, AttachmentDropZone } from '../attachments/AttachmentInput'
+import { AttachmentButton } from '../attachments/AttachmentBar'
+import { ConversationAttachments } from '../attachments/ConversationAttachments'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -112,6 +117,7 @@ export function AiPanelBody({ pinned }: { pinned: boolean }) {
   const conversationId = useAssist((s) => s.panelConversationId)
   const { data: conversations = [] } = useConversations()
   const conv = conversations.find((c) => c.id === conversationId)
+  const attachments = useAttachments({ kind: 'workspace', conversationId, incognito: conv?.incognito })
   const { web, setWeb } = useWebMode(conversationId, conv?.web)
   const { choice, setChoice, effort, setEffort, provider } = useModelChoice()
   const { msgs, setMsgs, streaming } = useChatThread(conversationId)
@@ -142,8 +148,9 @@ export function AiPanelBody({ pinned }: { pinned: boolean }) {
   useEffect(() => input.current?.focus(), [])
 
   const send = async (q: string, uiEvent?: UiEvent): Promise<void> => {
-    if (!q.trim() || streaming || sending.current) return
+    if ((!q.trim() && !attachments.ids().length) || attachments.adding || streaming || sending.current) return
     if (!choice.providerId || !choice.model) return void toast.error(t('chat.needModel'))
+    const attachmentIds = attachments.ids()
     sending.current = true
     setPreparing(true)
     try {
@@ -190,6 +197,7 @@ export function AiPanelBody({ pinned }: { pinned: boolean }) {
       const r = await sendChat({
         conversationId,
         text: q.trim(),
+        attachments: attachmentIds,
         uiEvent,
         providerId: choice.providerId,
         model: choice.model,
@@ -198,8 +206,10 @@ export function AiPanelBody({ pinned }: { pinned: boolean }) {
         // 既有会话由模式菜单立即更新；发送不写回旧渲染值，避免待回包的切换被撤销。
         ...(conversationId ? {} : { web }),
         kind: 'workspace',
-        context: packet
+        context: await attachmentContext(packet, conversationId, attachmentIds)
       })
+      attachments.clear(attachmentIds)
+      if (useAssist.getState().panelConversationId !== conversationId) return
       setText('')
       setMsgs((list) => [...list, r.userMessage, r.assistant])
       if (!conversationId) {
@@ -242,227 +252,249 @@ export function AiPanelBody({ pinned }: { pinned: boolean }) {
   }, [conversationId])
 
   return (
-    <div className="flex h-full flex-col" role="complementary" aria-label={t('assist.panel')}>
-      <header className="flex h-11 shrink-0 items-center gap-1 border-b border-border/70 pr-2 pl-4">
-        <Sparkles className="size-4 text-accent" />
-        <span className="ml-1.5 flex-1 text-sm font-medium text-fg">{t('assist.panel')}</span>
-        <Tip label={t('assist.expand')} side="bottom">
+    <AttachmentDropZone controller={attachments} className="flex h-full flex-col">
+      <div className="flex h-full flex-col" role="complementary" aria-label={t('assist.panel')}>
+        <header className="flex h-11 shrink-0 items-center gap-1 border-b border-border/70 pr-2 pl-4">
+          <Sparkles className="size-4 text-accent" />
+          <span className="ml-1.5 flex-1 text-sm font-medium text-fg">{t('assist.panel')}</span>
+          <ConversationAttachments conversationId={conversationId} incognito={conv?.incognito} />
+          <Tip label={t('assist.expand')} side="bottom">
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              aria-label={t('assist.expand')}
+              onClick={() => {
+                const id = useAssist.getState().panelConversationId
+                useAssist.getState().setPanel({ panelOpen: false, panelPinned: false })
+                useApp.getState().openConversation(id)
+              }}
+            >
+              <Maximize2 />
+            </Button>
+          </Tip>
+          <Tip label={t('chat.new')} side="bottom">
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              aria-label={t('chat.new')}
+              onClick={() => {
+                resetAttachmentDraft('workspace')
+                useAssist.getState().setPanel({ panelConversationId: null })
+              }}
+            >
+              <SquarePen />
+            </Button>
+          </Tip>
+          <Tip label={pinned ? t('assist.unpin') : t('assist.pin')} side="bottom">
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              aria-label={pinned ? t('assist.unpin') : t('assist.pin')}
+              aria-pressed={pinned}
+              onClick={() => useAssist.getState().setPanel({ panelPinned: !pinned })}
+            >
+              {pinned ? <PinOff /> : <Pin />}
+            </Button>
+          </Tip>
           <Button
             size="icon-sm"
             variant="ghost"
-            aria-label={t('assist.expand')}
-            onClick={() => {
-              const id = useAssist.getState().panelConversationId
-              useAssist.getState().setPanel({ panelOpen: false, panelPinned: false })
-              useApp.getState().openConversation(id)
-            }}
+            aria-label={t('common.close')}
+            onClick={() => useAssist.getState().setPanel({ panelOpen: false, panelPinned: false })}
           >
-            <Maximize2 />
+            <X />
           </Button>
-        </Tip>
-        <Tip label={t('chat.new')} side="bottom">
-          <Button
-            size="icon-sm"
-            variant="ghost"
-            aria-label={t('chat.new')}
-            onClick={() => useAssist.getState().setPanel({ panelConversationId: null })}
-          >
-            <SquarePen />
-          </Button>
-        </Tip>
-        <Tip label={pinned ? t('assist.unpin') : t('assist.pin')} side="bottom">
-          <Button
-            size="icon-sm"
-            variant="ghost"
-            aria-label={pinned ? t('assist.unpin') : t('assist.pin')}
-            aria-pressed={pinned}
-            onClick={() => useAssist.getState().setPanel({ panelPinned: !pinned })}
-          >
-            {pinned ? <PinOff /> : <Pin />}
-          </Button>
-        </Tip>
-        <Button
-          size="icon-sm"
-          variant="ghost"
-          aria-label={t('common.close')}
-          onClick={() => useAssist.getState().setPanel({ panelOpen: false, panelPinned: false })}
-        >
-          <X />
-        </Button>
-      </header>
+        </header>
 
-      <div ref={scroller} className="min-h-0 flex-1 space-y-5 overflow-y-auto px-4 py-4 text-sm">
-        {msgs.length === 0 ? (
-          <div className="pt-4">
-            <p className="text-xs leading-relaxed text-muted">{t(view === 'notes' ? 'assist.panelHint' : 'assist.pageHint')}</p>
-            <div className="mt-4 flex flex-col items-start gap-2">
-              {(view === 'notes' ? SUGGESTIONS : (PAGE_SUGGESTIONS[view] ?? GENERAL_SUGGESTIONS)).map((k) => (
-                <button
-                  key={k}
-                  onClick={() => void send(t(k))}
-                  className="rounded-full border border-border bg-surface px-3 py-1.5 text-left text-xs text-muted transition-colors hover:border-accent hover:text-accent"
-                >
-                  {t(k)}
-                </button>
-              ))}
+        <div ref={scroller} className="min-h-0 flex-1 space-y-5 overflow-y-auto px-4 py-4 text-sm">
+          {msgs.length === 0 ? (
+            <div className="pt-4">
+              <p className="text-xs leading-relaxed text-muted">{t(view === 'notes' ? 'assist.panelHint' : 'assist.pageHint')}</p>
+              <div className="mt-4 flex flex-col items-start gap-2">
+                {(view === 'notes' ? SUGGESTIONS : (PAGE_SUGGESTIONS[view] ?? GENERAL_SUGGESTIONS)).map((k) => (
+                  <button
+                    key={k}
+                    onClick={() => void send(t(k))}
+                    className="rounded-full border border-border bg-surface px-3 py-1.5 text-left text-xs text-muted transition-colors hover:border-accent hover:text-accent"
+                  >
+                    {t(k)}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
-        ) : (
-          msgs.map((m, i) => <MessageItem key={m.id} m={m} compact grounded={msgs[i - 1]?.contextual} last={i === msgs.length - 1} />)
-        )}
-      </div>
+          ) : (
+            msgs.map((m, i) => <MessageItem key={m.id} m={m} compact grounded={msgs[i - 1]?.contextual} last={i === msgs.length - 1} />)
+          )}
+        </div>
 
-      <div className="shrink-0 border-t border-border/70 p-3">
-        {(chips.length > 0 || selectedTabs.length > 0 || (browserOpen && availableTabs.length > 1)) && (
-          <div className="mb-2 flex flex-wrap gap-1.5" aria-label={t('assist.context')}>
-            {chips.map((c) => (
-              <span
-                key={c.id}
-                className={cn(
-                  'inline-flex h-6 max-w-full items-center gap-1 rounded-md border px-1.5 text-2xs [&_svg]:size-3 [&_svg]:shrink-0',
-                  off.has(c.id) ? 'border-dashed border-border text-subtle line-through' : 'border-border bg-surface text-muted'
-                )}
-              >
-                {c.icon}
-                <span className="truncate">{c.label}</span>
-                <button
-                  aria-label={
-                    off.has(c.id) ? t('assist.restoreContext', { label: c.label }) : t('assist.removeContext', { label: c.label })
-                  }
-                  onClick={() =>
-                    setOff((s) => {
-                      const n = new Set(s)
-                      if (n.has(c.id)) n.delete(c.id)
-                      else n.add(c.id)
-                      return n
-                    })
-                  }
-                  className="-mr-0.5 rounded p-0.5 hover:bg-surface-hover hover:text-fg"
-                >
-                  <X />
-                </button>
-              </span>
-            ))}
-            {selectedTabs
-              .filter((tab) => tab.id !== browserState.activeId)
-              .map((tab) => (
+        <div className="shrink-0 border-t border-border/70 p-3">
+          {(chips.length > 0 || selectedTabs.length > 0 || (browserOpen && availableTabs.length > 1)) && (
+            <div className="mb-2 flex flex-wrap gap-1.5" aria-label={t('assist.context')}>
+              {chips.map((c) => (
                 <span
-                  key={tab.id}
-                  className="inline-flex h-6 max-w-full items-center gap-1 rounded-md border border-border bg-surface px-1.5 text-2xs text-muted [&_svg]:size-3 [&_svg]:shrink-0"
+                  key={c.id}
+                  className={cn(
+                    'inline-flex h-6 max-w-full items-center gap-1 rounded-md border px-1.5 text-2xs [&_svg]:size-3 [&_svg]:shrink-0',
+                    off.has(c.id) ? 'border-dashed border-border text-subtle line-through' : 'border-border bg-surface text-muted'
+                  )}
                 >
-                  <Globe />
-                  <span className="truncate">{t('assist.tabContext', { title: tab.title })}</span>
-                  <Tip label={t('assist.removeContext', { label: tab.title })}>
-                    <button
-                      aria-label={t('assist.removeContext', { label: tab.title })}
-                      onClick={() => setSelectedTabs((tabs) => tabs.filter((item) => item.id !== tab.id))}
-                      className="-mr-0.5 rounded p-0.5 hover:bg-surface-hover hover:text-fg"
-                    >
-                      <X />
-                    </button>
-                  </Tip>
+                  {c.icon}
+                  <span className="truncate">{c.label}</span>
+                  <button
+                    aria-label={
+                      off.has(c.id) ? t('assist.restoreContext', { label: c.label }) : t('assist.removeContext', { label: c.label })
+                    }
+                    onClick={() =>
+                      setOff((s) => {
+                        const n = new Set(s)
+                        if (n.has(c.id)) n.delete(c.id)
+                        else n.add(c.id)
+                        return n
+                      })
+                    }
+                    className="-mr-0.5 rounded p-0.5 hover:bg-surface-hover hover:text-fg"
+                  >
+                    <X />
+                  </button>
                 </span>
               ))}
-            {browserOpen && availableTabs.length > 1 && (
-              <Menu>
-                <Tip label={selectedTabs.length >= 6 ? t('assist.tabsLimit') : t('assist.addTabs')}>
-                  <MenuTrigger asChild>
-                    <button
-                      disabled={preparing}
-                      aria-label={t('assist.addTabs')}
-                      className="inline-flex h-6 items-center gap-1 rounded-md border border-dashed border-border px-1.5 text-2xs text-muted hover:border-accent hover:text-accent disabled:opacity-50"
-                    >
-                      <Plus className="size-3" />
-                      {t('assist.addTabs')}
-                    </button>
-                  </MenuTrigger>
-                </Tip>
-                <MenuContent align="start" className="max-h-64 max-w-80 overflow-y-auto">
-                  {availableTabs
-                    .filter((tab) => tab.id !== browserState.activeId)
-                    .map((tab) => {
-                      const selected = selectedTabs.some((item) => item.id === tab.id)
-                      return (
-                        <DropdownMenu.CheckboxItem
-                          key={tab.id}
-                          checked={selected}
-                          disabled={!selected && selectedTabs.length >= 6}
-                          onSelect={(event) => event.preventDefault()}
-                          onCheckedChange={(checked) =>
-                            setSelectedTabs((tabs) =>
-                              checked
-                                ? [...tabs.filter((item) => item.id !== tab.id), { id: tab.id, url: tab.url, title: tab.title }].slice(0, 6)
-                                : tabs.filter((item) => item.id !== tab.id)
-                            )
-                          }
-                          className="flex h-8 cursor-default items-center gap-2 rounded-md px-2 text-xs text-fg outline-none select-none data-[highlighted]:bg-surface-hover data-[disabled]:opacity-40"
-                        >
-                          <span className="grid size-4 shrink-0 place-items-center">
-                            <DropdownMenu.ItemIndicator>
-                              <Check className="size-3" />
-                            </DropdownMenu.ItemIndicator>
-                          </span>
-                          <Globe className="size-3 shrink-0 text-muted" />
-                          <span className="truncate">{tab.title || tab.url}</span>
-                        </DropdownMenu.CheckboxItem>
-                      )
-                    })}
-                </MenuContent>
-              </Menu>
-            )}
-          </div>
-        )}
-        <div className="rounded-xl border border-border bg-surface focus-within:border-accent">
-          <textarea
-            ref={input}
-            rows={2}
-            value={text}
-            disabled={preparing}
-            aria-label={t('assist.panelPh')}
-            placeholder={t('assist.panelPh')}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-                e.preventDefault()
-                void send(text)
-              }
-            }}
-            className="block max-h-40 w-full resize-none bg-transparent px-3 pt-2.5 text-sm leading-relaxed text-fg outline-none placeholder:text-subtle"
-          />
-          <div className="flex flex-wrap items-center gap-1.5 px-2 pb-2">
-            <ModelPicker compact value={choice} onChange={setChoice} />
-            {provider && <EffortPicker compact kind={provider.kind} value={effort} onChange={setEffort} />}
-            <span className="contents" data-testid="panel-web-mode">
-              <WebModePicker value={web} onChange={setWeb} />
-            </span>
-            <span className="flex-1" />
-            {streaming ? (
-              <Button
-                size="icon-sm"
-                variant="secondary"
-                className="rounded-full"
-                onClick={() => void api.chat.stop(streaming.id)}
-                aria-label={t('chat.stop')}
-              >
-                <Square className="size-3 fill-current" />
-              </Button>
-            ) : (
-              <Button
-                size="icon-sm"
-                variant="primary"
-                className="rounded-full"
-                disabled={!text.trim() || preparing}
-                aria-busy={preparing}
-                onClick={() => void send(text)}
-                aria-label={t('chat.send')}
-              >
-                <ArrowUp />
-              </Button>
-            )}
+              {selectedTabs
+                .filter((tab) => tab.id !== browserState.activeId)
+                .map((tab) => (
+                  <span
+                    key={tab.id}
+                    className="inline-flex h-6 max-w-full items-center gap-1 rounded-md border border-border bg-surface px-1.5 text-2xs text-muted [&_svg]:size-3 [&_svg]:shrink-0"
+                  >
+                    <Globe />
+                    <span className="truncate">{t('assist.tabContext', { title: tab.title })}</span>
+                    <Tip label={t('assist.removeContext', { label: tab.title })}>
+                      <button
+                        aria-label={t('assist.removeContext', { label: tab.title })}
+                        onClick={() => setSelectedTabs((tabs) => tabs.filter((item) => item.id !== tab.id))}
+                        className="-mr-0.5 rounded p-0.5 hover:bg-surface-hover hover:text-fg"
+                      >
+                        <X />
+                      </button>
+                    </Tip>
+                  </span>
+                ))}
+              {browserOpen && availableTabs.length > 1 && (
+                <Menu>
+                  <Tip label={selectedTabs.length >= 6 ? t('assist.tabsLimit') : t('assist.addTabs')}>
+                    <MenuTrigger asChild>
+                      <button
+                        disabled={preparing}
+                        aria-label={t('assist.addTabs')}
+                        className="inline-flex h-6 items-center gap-1 rounded-md border border-dashed border-border px-1.5 text-2xs text-muted hover:border-accent hover:text-accent disabled:opacity-50"
+                      >
+                        <Plus className="size-3" />
+                        {t('assist.addTabs')}
+                      </button>
+                    </MenuTrigger>
+                  </Tip>
+                  <MenuContent align="start" className="max-h-64 max-w-80 overflow-y-auto">
+                    {availableTabs
+                      .filter((tab) => tab.id !== browserState.activeId)
+                      .map((tab) => {
+                        const selected = selectedTabs.some((item) => item.id === tab.id)
+                        return (
+                          <DropdownMenu.CheckboxItem
+                            key={tab.id}
+                            checked={selected}
+                            disabled={!selected && selectedTabs.length >= 6}
+                            onSelect={(event) => event.preventDefault()}
+                            onCheckedChange={(checked) =>
+                              setSelectedTabs((tabs) =>
+                                checked
+                                  ? [...tabs.filter((item) => item.id !== tab.id), { id: tab.id, url: tab.url, title: tab.title }].slice(
+                                      0,
+                                      6
+                                    )
+                                  : tabs.filter((item) => item.id !== tab.id)
+                              )
+                            }
+                            className="flex h-8 cursor-default items-center gap-2 rounded-md px-2 text-xs text-fg outline-none select-none data-[highlighted]:bg-surface-hover data-[disabled]:opacity-40"
+                          >
+                            <span className="grid size-4 shrink-0 place-items-center">
+                              <DropdownMenu.ItemIndicator>
+                                <Check className="size-3" />
+                              </DropdownMenu.ItemIndicator>
+                            </span>
+                            <Globe className="size-3 shrink-0 text-muted" />
+                            <span className="truncate">{tab.title || tab.url}</span>
+                          </DropdownMenu.CheckboxItem>
+                        )
+                      })}
+                  </MenuContent>
+                </Menu>
+              )}
+            </div>
+          )}
+          <div className="rounded-xl border border-border bg-surface focus-within:border-accent">
+            <AttachmentInput
+              controller={attachments}
+              provider={provider}
+              text={text}
+              newConversation={!conversationId}
+              onSend={(q) => void send(q)}
+              onMentionPicked={() => setText(text.replace(/@[^\s@]*$/, ''))}
+            />
+            <textarea
+              ref={input}
+              rows={2}
+              value={text}
+              disabled={preparing}
+              aria-label={t('assist.panelPh')}
+              placeholder={t('assist.panelPh')}
+              onPaste={attachments.paste}
+              onChange={(e) => {
+                setText(e.target.value)
+                attachments.textChanged(e.target.value)
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                  e.preventDefault()
+                  void send(text)
+                }
+              }}
+              className="block max-h-40 w-full resize-none bg-transparent px-3 pt-2.5 text-sm leading-relaxed text-fg outline-none placeholder:text-subtle"
+            />
+            <div className="flex flex-wrap items-center gap-1.5 px-2 pb-2">
+              <AttachmentButton controller={attachments} />
+              <ModelPicker compact value={choice} onChange={setChoice} />
+              {provider && <EffortPicker compact kind={provider.kind} value={effort} onChange={setEffort} />}
+              <span className="contents" data-testid="panel-web-mode">
+                <WebModePicker value={web} onChange={setWeb} />
+              </span>
+              <span className="flex-1" />
+              {streaming ? (
+                <Button
+                  size="icon-sm"
+                  variant="secondary"
+                  className="rounded-full"
+                  onClick={() => void api.chat.stop(streaming.id)}
+                  aria-label={t('chat.stop')}
+                >
+                  <Square className="size-3 fill-current" />
+                </Button>
+              ) : (
+                <Button
+                  size="icon-sm"
+                  variant="primary"
+                  className="rounded-full"
+                  disabled={(!text.trim() && !attachments.ids().length) || attachments.adding || preparing}
+                  aria-busy={preparing}
+                  onClick={() => void send(text)}
+                  aria-label={t('chat.send')}
+                >
+                  <ArrowUp />
+                </Button>
+              )}
+            </div>
           </div>
         </div>
       </div>
-    </div>
+    </AttachmentDropZone>
   )
 }
 

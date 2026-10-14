@@ -94,6 +94,7 @@ export const CategoryPatchSchema = z.object({
 })
 
 export const SettingsPatchSchema = z.object({
+  attachments: z.object({ cloudNoticeSeen: z.boolean() }).optional(),
   retrieval: RetrievalSettingsSchema.partial().optional(),
   plugins: z.object({ recommendedDismissed: z.boolean().optional() }).optional(),
   tasks: z

@@ -172,17 +172,22 @@ export async function followUp(
   text: string,
   anchor: Anchor,
   extra: Anchor[] = [],
-  uiEvent?: UiEvent
-): Promise<void> {
+  uiEvent?: UiEvent,
+  attachments: string[] = []
+): Promise<boolean> {
   const settings = await api.settings.get()
   const providers = await api.providers.list()
   const p = providers.find((x) => x.id === settings.ai.chat.providerId)
-  if (!p || !settings.ai.chat.model) return void toast.error(i18n.t('chat.needModel'))
+  if (!p || !settings.ai.chat.model) {
+    toast.error(i18n.t('chat.needModel'))
+    return false
+  }
   const ws = useApp.getState().context
   try {
     const { userMessage, assistant } = await sendChat({
       conversationId,
       text,
+      attachments,
       providerId: p.id,
       model: settings.ai.chat.model,
       effort: effortFor('ask', settings, p),
@@ -191,8 +196,10 @@ export async function followUp(
       context: { targets: [anchor, ...extra].slice(0, 8), noteId: ws.noteId, sourceId: ws.sourceId }
     })
     queryClient.setQueryData<ChatMessage[]>(['messages', conversationId], (list) => [...(list ?? []), userMessage, assistant])
+    return true
   } catch (e) {
     toast.error(errText(e))
+    return false
   }
 }
 
