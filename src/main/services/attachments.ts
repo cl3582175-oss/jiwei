@@ -12,6 +12,7 @@ import {
   conversationAttachments as conversationAttachmentsTable,
   categories,
   conversations,
+  decisions,
   notes,
   jobs,
   sources
@@ -219,9 +220,9 @@ export async function addAttachments(input: z.infer<typeof AttachmentAddSchema>)
           ? candidates.find(
               (s) =>
                 s.space === 'attachment' &&
-                !!input.conversationId &&
-                relations(s.id).some((r) => r.conversationId === input.conversationId) &&
-                relations(s.id).every((r) => r.conversationId === input.conversationId)
+                !!(input.conversationId || input.draftId) &&
+                relations(s.id).some((r) => r.conversationId === (input.conversationId ?? PRIVATE_DRAFT + input.draftId)) &&
+                relations(s.id).every((r) => r.conversationId === (input.conversationId ?? PRIVATE_DRAFT + input.draftId))
             )
           : (candidates.find((s) => s.space === 'library') ?? candidates.find((s) => s.space === 'attachment' && !privateSource(s.id)))
         const id = existing?.id ?? newId(),
@@ -244,7 +245,7 @@ export async function addAttachments(input: z.infer<typeof AttachmentAddSchema>)
             .run()
           if (incognito && !input.conversationId)
             db.insert(conversationAttachmentsTable)
-              .values({ conversationId: PRIVATE_DRAFT + newId(), sourceId: id, createdAt: now })
+              .values({ conversationId: PRIVATE_DRAFT + (input.draftId ?? newId()), sourceId: id, createdAt: now })
               .run()
           queue(id, asset.ext, entry.path ?? path)
         }
@@ -339,7 +340,23 @@ export function removeFromConversation(conversationId: string, sourceId: string)
   if (sourceId.startsWith('note:')) {
     const db = getDb(),
       c = db.select().from(conversations).where(eq(conversations.id, conversationId)).get()
-    if (!c) return
+    if (!c) {
+      const d = db.select().from(decisions).where(eq(decisions.id, conversationId)).get()
+      if (d?.memo) {
+        const memo = JSON.parse(d.memo)
+        db.update(decisions)
+          .set({
+            memo: JSON.stringify({
+              ...memo,
+              attachmentNotes: conversationNoteIds(conversationId).filter((id) => `note:${id}` !== sourceId)
+            })
+          })
+          .where(eq(decisions.id, conversationId))
+          .run()
+        changed([sourceId], conversationId)
+      }
+      return
+    }
     const scope = JSON.parse(c.scope) as import('@shared/schemas').ChatScope
     const meta = c.meta ? JSON.parse(c.meta) : {}
     db.update(conversations)
@@ -452,7 +469,7 @@ export function detachConversationAttachments(conversationId: string): void {
   for (const id of ids) {
     const s = getSource(id)
     if (incognito && s?.space === 'attachment') purgeSourceData(id)
-    else if (s?.space === 'attachment' && !relations(id).length)
+    else if (s && !relations(id).length)
       db.insert(conversationAttachmentsTable)
         .values({ conversationId: ORPHAN + conversationId, sourceId: id, createdAt: Date.now() })
         .run()
@@ -483,9 +500,12 @@ export function observeAttachmentChanges(): () => void {
 }
 
 function conversationNoteIds(conversationId: string): string[] {
-  const c = getDb().select({ meta: conversations.meta }).from(conversations).where(eq(conversations.id, conversationId)).get()
+  const db = getDb(),
+    c = db.select({ meta: conversations.meta }).from(conversations).where(eq(conversations.id, conversationId)).get()
+  const d = !c ? db.select({ meta: decisions.memo }).from(decisions).where(eq(decisions.id, conversationId)).get() : null
   try {
-    return c?.meta ? ((JSON.parse(c.meta) as { attachmentNotes?: string[] }).attachmentNotes ?? []) : []
+    const meta = c?.meta ?? d?.meta
+    return meta ? ((JSON.parse(meta) as { attachmentNotes?: string[] }).attachmentNotes ?? []) : []
   } catch {
     return []
   }

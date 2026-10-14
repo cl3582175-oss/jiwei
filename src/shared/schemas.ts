@@ -549,7 +549,8 @@ export const AttachmentAddSchema = z
       .optional(),
     conversationId: Id.nullable().optional(),
     // 无痕草稿也要持久隔离；没有会话ID时用私有草稿关系记录，发送时替换。
-    incognito: z.boolean().optional()
+    incognito: z.boolean().optional(),
+    draftId: Id.optional()
   })
   .refine((v) => (v.paths?.length ?? 0) + (v.files?.length ?? 0) <= 10, 'At most 10 attachments')
 export const AttachmentListSchema = z.object({ state: z.enum(['unarchived', 'archived', 'all']), query: z.string().max(500).optional() })

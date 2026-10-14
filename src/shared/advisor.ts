@@ -54,7 +54,12 @@ export interface MemoSource {
   /** 读取时复核：已删除或改为“不给 AI”时为 false */
   available?: boolean
 }
-export type DecisionMemo = DecisionMemoDraft & { sources: MemoSource[]; generatedAt: number }
+export type DecisionMemo = DecisionMemoDraft & {
+  sources: MemoSource[]
+  generatedAt: number
+  attachmentNotes?: string[]
+  attachmentSourceIds?: string[]
+}
 
 export type DecisionStatus = 'draft' | 'decided' | 'reviewed' | 'dropped'
 export interface Decision {
@@ -78,6 +83,7 @@ export interface Decision {
 }
 
 export const AdvisorAskSchema = z.object({
+  attachments: z.array(z.string().min(1).max(64)).max(5).default([]),
   frameworkId: z.string().max(257).optional(),
   question: z.string().trim().min(4).max(500),
   context: z.string().max(3000).default(''),

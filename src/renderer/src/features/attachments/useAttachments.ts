@@ -37,11 +37,13 @@ export function useAttachments(target: AttachmentTarget): AttachmentsController 
   const { t } = useTranslation(),
     key = JSON.stringify(target),
     current = useRef(key),
-    generation = useRef(0)
+    generation = useRef(0),
+    draftId = useRef(crypto.randomUUID())
   // 异步回包携带世代；切换会话后旧上传结果不能落进新输入框。
   if (current.current !== key) {
     current.current = key
     generation.current++
+    draftId.current = crypto.randomUUID()
   }
   const [state, setState] = useState<{ key: string; items: Attachment[] }>({ key, items: [] })
   const [mention, setMention] = useState(false),
@@ -54,6 +56,7 @@ export function useAttachments(target: AttachmentTarget): AttachmentsController 
     const reset = (e: Event) => {
       if ((e as CustomEvent).detail === target.kind) {
         generation.current++
+        draftId.current = crypto.randomUUID()
         live.current = []
         setState({ key: current.current, items: [] })
         setMention(false)
@@ -132,7 +135,8 @@ export function useAttachments(target: AttachmentTarget): AttachmentsController 
         const rows = await api.attachments.add({
           ...(f.path ? { paths: [f.path] } : { files: [{ name: f.name, data: new Uint8Array(await f.file!.arrayBuffer()) }] }),
           conversationId: target.conversationId ?? null,
-          incognito: target.incognito
+          incognito: target.incognito,
+          draftId: draftId.current
         })
         if (version === generation.current)
           update((xs) => {

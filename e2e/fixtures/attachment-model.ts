@@ -39,13 +39,35 @@ export async function attachmentModel(): Promise<{
       if (!input.stream) {
         const properties = (submit?.function.parameters?.properties ?? {}) as Record<string, unknown>
         const output =
-          'memories' in properties
-            ? { memories: [], concepts: [], episode: null }
-            : 'picks' in properties
-              ? { picks: [] }
-              : 'items' in properties
-                ? { items: [] }
-                : { picks: [], items: [], memories: [], concepts: [], episode: null }
+          'restated' in properties
+            ? {
+                restated: answer.slice(0, 250),
+                options: [
+                  { id: 'O1', title: '方案一', summary: '结合所供资料' },
+                  { id: 'O2', title: '方案二', summary: '继续收集信息' }
+                ],
+                criteria: [
+                  { name: '收益', weight: 3, why: '' },
+                  { name: '成本', weight: 3, why: '' }
+                ],
+                scores: [],
+                evidence: [],
+                assumptions: [],
+                premortem: [],
+                secondOrder: [],
+                counter: '',
+                risks: [],
+                recommendation: { option: 'O1', why: '根据所供资料分析' },
+                confidence: 3,
+                unknowns: []
+              }
+            : 'memories' in properties
+              ? { memories: [], concepts: [], episode: null }
+              : 'picks' in properties
+                ? { picks: [] }
+                : 'items' in properties
+                  ? { items: [] }
+                  : { picks: [], items: [], memories: [], concepts: [], episode: null }
         res.writeHead(200, { 'content-type': 'application/json' }).end(
           JSON.stringify({
             id: 'controlled-structured',

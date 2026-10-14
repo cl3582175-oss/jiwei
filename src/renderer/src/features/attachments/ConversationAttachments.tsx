@@ -68,7 +68,7 @@ export function ArchiveAttachmentsDialog({
               void api.attachments
                 .archive(ids, category || null)
                 .then(() => {
-                  toast.success(t('attach.space.archivedToast', { n: ids.length }))
+                  if (!onArchived) toast.success(t('attach.space.archivedToast', { n: ids.length }))
                   onArchived?.(category || null)
                   onClose()
                 })

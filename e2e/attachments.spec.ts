@@ -531,3 +531,146 @@ test('P4 云提示只出现一次，ollama不出现；切换会话丢弃旧选�
   await expect(page.getByTestId('attachment-chip')).toHaveCount(0)
   expect(local).toBeTruthy()
 })
+
+test('P5 附件空间入口、角标与未归档列表', async () => {
+  await navTo(page, /资料库/)
+  const count = await page.evaluate(() => window.jiwei.attachments.count())
+  await expect(page.getByTestId('attachment-space-entry')).toContainText(String(count))
+  await page.getByTestId('attachment-space-entry').click()
+  await expect(page.getByTestId('attachment-space')).toBeVisible()
+  await expect(page.getByRole('heading', { name: '附件空间', exact: true })).toBeVisible()
+})
+
+let lifecycleId = '',
+  lifecycleConversation = ''
+test('P5 归档到分类、查看资料库、删除灰卡不再发送、最近删除恢复', async () => {
+  await newChat()
+  model.setAnswer('附件生命周期答复')
+  const path = join(userDataDir, 'lifecycle-file.txt')
+  writeFileSync(path, 'LIFECYCLE-PRIVATE-CONTENT')
+  await pickPaths([path])
+  await expect(page.getByTestId('attachment-chip').first()).toHaveAttribute('data-status', 'ready')
+  await page.locator('textarea').last().fill('附件生命周期测试')
+  await page.getByRole('button', { name: '发送', exact: true }).last().click()
+  await expect(page.getByText('附件生命周期答复', { exact: true })).toBeVisible()
+  const all = await page.evaluate(() => window.jiwei.attachments.list({ state: 'unarchived' })),
+    a = all.find((a) => a.name === 'lifecycle-file.txt')!
+  lifecycleId = a.sourceId
+  lifecycleConversation = a.conversations[0].id
+  const cat = await page.evaluate(() => window.jiwei.categories.create('source', '附件归档分类')),
+    count = await page.evaluate(() => window.jiwei.attachments.count())
+  await page.reload()
+  await page.waitForSelector('nav')
+  await navTo(page, /资料库/)
+  await page.getByTestId('attachment-space-entry').click()
+  const row = page.getByTestId('attachment-space-row').filter({ hasText: 'lifecycle-file.txt' })
+  await row.getByRole('checkbox').check()
+  await page.getByTestId('attachment-space-actions').getByRole('button', { name: '归档到…', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: '归档到资料库', exact: true })
+  await dialog.getByRole('combobox').selectOption(cat.id)
+  await dialog.getByRole('button', { name: '归档到资料库', exact: true }).click()
+  await expect.poll(() => page.evaluate(() => window.jiwei.attachments.count())).toBe(count - 1)
+  await page.getByRole('button', { name: '已归档', exact: true }).click()
+  await expect(row).toContainText('已归档到「附件归档分类」')
+  await page.getByRole('button', { name: '查看', exact: true }).click()
+  await expect(page.getByTestId('library-scroll')).toContainText('lifecycle-file')
+  await showConversation('附件生命周期测试')
+  await page.getByRole('button', { name: '本对话附件 1', exact: true }).click()
+  await page.getByTestId('conversation-attachments').getByRole('button', { name: '删除', exact: true }).click()
+  await page.getByRole('alertdialog').getByRole('button', { name: '确认', exact: true }).click()
+  await page.keyboard.press('Escape')
+  await expect(page.getByTestId('message-attachments')).toContainText('附件已删除')
+  model.setAnswer('已删除附件后的答复')
+  await page.locator('textarea').last().fill('继续提问')
+  await page.getByRole('button', { name: '发送', exact: true }).last().click()
+  await expect(page.getByText('已删除附件后的答复', { exact: true })).toBeVisible()
+  expect(lastRequestText()).not.toContain('LIFECYCLE-PRIVATE-CONTENT')
+  const trash = await page.evaluate(() => window.jiwei.trash.list())
+  expect(trash.some((x) => x.id === lifecycleId)).toBe(true)
+  await page.evaluate((id) => window.jiwei.trash.restore('source', id), lifecycleId)
+  await navTo(page, /资料库/)
+  await page.getByTestId('attachment-space-entry').click()
+  await page.getByRole('button', { name: '未归档', exact: true }).click()
+  await expect(row).toBeVisible()
+  expect((await page.evaluate((id) => window.jiwei.sources.get(id), lifecycleId))?.aiExcluded).toBe(true)
+})
+
+test('P5 相同文件再附第二个对话复用一条资料；普通删除对话留下孤儿附件', async () => {
+  const before = await page.evaluate(() => window.jiwei.attachments.count()),
+    second = await send('第二个明确附上的对话', [lifecycleId])
+  expect(await page.evaluate(() => window.jiwei.attachments.count())).toBe(before)
+  let rows = await page.evaluate(() => window.jiwei.attachments.list({ state: 'unarchived' }))
+  expect(rows.filter((a) => a.sourceId === lifecycleId)).toHaveLength(1)
+  expect(rows.find((a) => a.sourceId === lifecycleId)?.conversations).toHaveLength(2)
+  await page.evaluate(
+    async ({ one, two }) => {
+      await window.jiwei.chat.remove(one)
+      await window.jiwei.chat.remove(two)
+    },
+    { one: lifecycleConversation, two: second.conversation.id }
+  )
+  rows = await page.evaluate(() => window.jiwei.attachments.list({ state: 'unarchived' }))
+  expect(rows.find((a) => a.sourceId === lifecycleId)?.conversations).toHaveLength(0)
+  await navTo(page, /资料库/)
+  await page.getByTestId('attachment-space-entry').click()
+  await expect(page.getByTestId('attachment-space-row').filter({ hasText: 'lifecycle-file.txt' })).toContainText('所属对话已删除')
+})
+
+test('P5 无痕草稿去重、隐藏、删除对话彻底清理', async () => {
+  await newChat()
+  await page.getByRole('switch', { name: '无痕', exact: true }).click()
+  const path = join(userDataDir, 'incognito-owned.txt')
+  writeFileSync(path, 'INCOGNITO-ATTACHMENT-CONTENT')
+  await pickPaths([path])
+  await expect(page.getByTestId('attachment-chip')).toHaveAttribute('data-status', 'ready')
+  await pickPaths([path])
+  await expect(page.getByTestId('attachment-chip')).toHaveCount(1)
+  expect(JSON.stringify(await page.evaluate(() => window.jiwei.attachments.list({ state: 'all' })))).not.toContain('incognito-owned.txt')
+  model.setAnswer('无痕附件答复')
+  await page.locator('textarea').last().fill('无痕附件提问')
+  await page.getByRole('button', { name: '发送', exact: true }).last().click()
+  await expect(page.getByText('无痕附件答复', { exact: true })).toBeVisible()
+  const c = (await page.evaluate(() => window.jiwei.chat.conversations())).find((c) => c.title === '无痕附件提问')!,
+    [a] = await page.evaluate((id) => window.jiwei.attachments.ofConversation(id), c.id)
+  expect(lastRequestText()).toContain('INCOGNITO-ATTACHMENT-CONTENT')
+  await page.evaluate((id) => window.jiwei.chat.remove(id), c.id)
+  expect(await page.evaluate((id) => window.jiwei.sources.get(id), a.sourceId)).toBeNull()
+  expect(await page.evaluate((id) => window.jiwei.segments.list(id), a.sourceId)).toHaveLength(0)
+})
+
+test('P5 参谋短文全文、长文截断、图片、决策归属隔离与再生成', async () => {
+  await navTo(page, /参谋/)
+  const path = join(userDataDir, 'advisor-private.txt')
+  writeFileSync(path, 'ADVISOR-PRIVATE-ATTACHMENT-MARKER')
+  model.setAnswer('ADVISOR-PRIVATE-ATTACHMENT-MARKER')
+  await pickPaths([path])
+  await expect(page.getByTestId('attachment-chip')).toHaveAttribute('data-status', 'ready')
+  await page.getByRole('textbox', { name: '参谋', exact: true }).fill('选择哪一种安排更合适？')
+  await page.getByRole('button', { name: '请参谋', exact: true }).click()
+  await expect(page.getByTestId('decision-memo')).toBeVisible()
+  expect(lastRequestText()).toContain('<external-data source="attachment:advisor-private.txt">')
+  expect(lastRequestText()).toContain('ADVISOR-PRIVATE-ATTACHMENT-MARKER')
+  const [decision] = await page.evaluate(() => window.jiwei.advisor.list()),
+    [a] = await page.evaluate((id) => window.jiwei.attachments.ofConversation(id), decision.id)
+  expect(a.conversations[0].id).toBe(decision.id)
+  expect(JSON.stringify(await page.evaluate(() => window.jiwei.advisor.list()))).not.toContain('ADVISOR-PRIVATE-ATTACHMENT-MARKER')
+  await page.evaluate((id) => window.jiwei.advisor.regenerate(id), decision.id)
+  expect(lastRequestText()).toContain('ADVISOR-PRIVATE-ATTACHMENT-MARKER')
+  model.setAnswer('另一个对话答复')
+  await send('全知识库查询参谋附件', [], null, true)
+  expect(lastRequestText()).not.toContain('ADVISOR-PRIVATE-ATTACHMENT-MARKER')
+  const long = await add('advisor-long.txt', '长文开始\n' + '正文'.repeat(8500) + 'ADVISOR-TAIL-MUST-NOT-BE-SENT')
+  await page.evaluate((id) => window.jiwei.advisor.ask({ question: '请根据这份长文做决策', attachments: [id] }), long)
+  expect(lastRequestText()).toContain('已截断为前12000字')
+  expect(lastRequestText()).not.toContain('ADVISOR-TAIL-MUST-NOT-BE-SENT')
+  const image = await add(
+    'advisor-image.png',
+    new Uint8Array(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a6AAAAABJRU5ErkJggg==', 'base64'))
+  )
+  await page.evaluate((id) => window.jiwei.advisor.ask({ question: '请根据这张图片给出选择', attachments: [id] }), image)
+  expect(JSON.stringify(model.requests.at(-1))).toContain('image_url')
+  await page.evaluate((id) => window.jiwei.advisor.remove(id), decision.id)
+  expect((await page.evaluate(() => window.jiwei.attachments.list({ state: 'unarchived' }))).some((x) => x.sourceId === a.sourceId)).toBe(
+    true
+  )
+})

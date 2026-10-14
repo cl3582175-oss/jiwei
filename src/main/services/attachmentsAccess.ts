@@ -1,4 +1,4 @@
-import { and, eq, isNull } from 'drizzle-orm'
+import { and, eq, isNull, inArray } from 'drizzle-orm'
 import { getDb, getSqlite } from '../db'
 import { sources, conversations, decisions, conversationAttachments as conversationAttachmentsTable } from '../db/schema'
 
@@ -69,4 +69,22 @@ export function hasAttachmentHistory(conversationId: string): boolean {
     UNION ALL SELECT 1 FROM messages m JOIN json_each(CASE WHEN json_valid(m.context) THEN json_extract(m.context,'$.attachmentSourceIds') END) j WHERE m.conversation_id=? AND EXISTS (SELECT 1 FROM conversation_attachments ca WHERE ca.source_id=j.value) LIMIT 1`
     )
     .get(conversationId, conversationId)
+}
+
+/** 参谋备忘录可能复述原文；派生摘要不能成为洞察等其他AI入口的材料。 */
+export function hasPrivateDecisionAttachments(decisionId: string): boolean {
+  const db = getDb(),
+    row = db.select({ memo: decisions.memo }).from(decisions).where(eq(decisions.id, decisionId)).get()
+  if (!row?.memo) return false
+  try {
+    const ids = (JSON.parse(row.memo) as { attachmentSourceIds?: string[] }).attachmentSourceIds ?? []
+    if (!ids.length) return false
+    const all = db.select().from(sources).where(inArray(sources.id, ids)).all()
+    return ids.some((id) => {
+      const s = all.find((s) => s.id === id)
+      return !s || s.space === 'attachment' || s.aiExcluded || s.deletedAt !== null
+    })
+  } catch {
+    return true
+  }
 }

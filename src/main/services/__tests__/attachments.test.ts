@@ -386,3 +386,18 @@ it('附件派生笔记保留引用但不可进入其他 AI；归档前不得解�
   ;(await svc()).archiveAttachments([a.sourceId], null)
   expect(noteHasPrivateAttachments('derived')).toBe(false)
 })
+
+it('无痕草稿同一输入框去重，不同输入框独立，归档后删除对话保留归档列表身份', async () => {
+  const s = await svc(),
+    path = file('private-draft.txt', 'private-draft-content')
+  const [a] = await s.addAttachments({ paths: [path], incognito: true, draftId: 'draft1' })
+  const [same] = await s.addAttachments({ paths: [path], incognito: true, draftId: 'draft1' })
+  const [other] = await s.addAttachments({ paths: [path], incognito: true, draftId: 'draft2' })
+  expect(same.sourceId).toBe(a.sourceId)
+  expect(other.sourceId).not.toBe(a.sourceId)
+  expect(s.listAttachmentSpace({ state: 'all' })).toHaveLength(0)
+  const ordinary = await attachment('c1')
+  s.archiveAttachments([ordinary.sourceId], null)
+  s.detachConversationAttachments('c1')
+  expect(s.listAttachmentSpace({ state: 'archived' }).map((a) => a.sourceId)).toContain(ordinary.sourceId)
+})

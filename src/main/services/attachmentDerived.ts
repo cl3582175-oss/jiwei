@@ -1,16 +1,24 @@
-import { getSqlite } from '../db'
+import { getSqlite, getDb } from '../db'
+import { eq } from 'drizzle-orm'
+import { conversationAttachments as refs, sources } from '../db/schema'
 import { emit } from '../events'
 
 /** 没有新建派生内容表：沿用提案的来源元数据，防止保存回答后反向泄露附件。 */
 export function conversationAttachmentIds(conversationId: string): string[] {
-  return (
-    getSqlite().prepare('SELECT source_id FROM conversation_attachments WHERE conversation_id=?').all(conversationId) as {
-      source_id: string
-    }[]
-  ).map((r) => r.source_id)
+  return getDb()
+    .select({ id: refs.sourceId })
+    .from(refs)
+    .where(eq(refs.conversationId, conversationId))
+    .all()
+    .map((r) => r.id)
 }
 
 export function protectProposalAttachments(proposalId: string, sourceIds: string[]): void {
+  const db = getDb()
+  sourceIds = sourceIds.filter((id) => {
+    const s = db.select().from(sources).where(eq(sources.id, id)).get()
+    return !s || s.space === 'attachment' || !!db.select().from(refs).where(eq(refs.sourceId, id)).get()
+  })
   if (!sourceIds.length) return
   const sql = getSqlite(),
     row = sql.prepare('SELECT note_id,ops FROM proposals WHERE id=?').get(proposalId) as { note_id: string; ops: string } | undefined
