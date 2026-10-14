@@ -33,7 +33,13 @@ export function UiFrame({
   const items = [
     ...(node
       ? [
-          { label: t(asText ? 'ui.menu.asComponent' : 'ui.menu.asText'), run: () => ctx.setState(uiKey, { asText: !asText }) },
+          {
+            label: t(asText ? 'ui.menu.asComponent' : 'ui.menu.asText'),
+            run: () => {
+              ctx.setState(uiKey, { asText: !asText })
+              return ctx.flushState?.(uiKey)
+            }
+          },
           {
             label: t('ui.menu.copy'),
             run: () => navigator.clipboard.writeText(uiToText(node))

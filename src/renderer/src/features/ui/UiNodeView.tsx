@@ -7,6 +7,7 @@ import { TimelineBox } from '@/features/visuals/TimelineBox'
 import { CodeStepsBox } from '@/features/visuals/CodeStepsBox'
 import type { UiContext } from './context'
 import { Columns, Tabs, TableNode, ListNode } from './nodes/Basic'
+import { DataNodeView } from './nodes/Data'
 
 export function estimateHeight(type?: string, value: Record<string, unknown> = {}): number {
   const count = (key: string, min = 0) => Math.max(min, Array.isArray(value[key]) ? value[key].length : 0)
@@ -47,6 +48,12 @@ export function UiNodeView({ node, uiKey, ctx, partial = false }: { node: UiNode
   if (partial && !['table', 'list', 'stat', 'steps', 'timeline', 'columns', 'tabs'].includes(node.type))
     return <UiSkeleton type={node.type} value={node as unknown as Record<string, unknown>} />
   switch (node.type) {
+    case 'schedule':
+    case 'tasks':
+    case 'note':
+    case 'excerpt':
+    case 'mastery':
+      return <DataNodeView node={node} uiKey={uiKey} ctx={ctx} />
     case 'columns':
       return (
         <Columns compact={ctx.compact} ratio={node.ratio}>

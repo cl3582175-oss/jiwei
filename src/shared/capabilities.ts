@@ -617,6 +617,7 @@ export const capabilities = {
     trash: cap<void>()({ description: '删除资料（进入最近删除）', params: [id()] })
   },
   segments: {
+    get: cap<Segment | null>()({ description: '按片段身份读取允许用于智能界面的资料原文', params: [id()] }),
     update: cap<Segment | null>()({
       description: '修改片段文字（如纠正转写错误）',
       params: [id(), ['text', z.string().min(1).max(20000)]]
@@ -667,7 +668,15 @@ export const capabilities = {
       description: '修改对话标题、检索范围或置顶',
       params: [
         id(),
-        ['patch', z.object({ title: z.string().max(200).optional(), scope: S.ChatScopeSchema.optional(), pinned: z.boolean().optional(), web: WebModeSchema.nullable().optional() })]
+        [
+          'patch',
+          z.object({
+            title: z.string().max(200).optional(),
+            scope: S.ChatScopeSchema.optional(),
+            pinned: z.boolean().optional(),
+            web: WebModeSchema.nullable().optional()
+          })
+        ]
       ]
     }),
     remove: cap<void>()({ description: '删除对话', params: [id()] })
@@ -1441,6 +1450,17 @@ export const capabilities = {
     savePage: cap<{ sourceId: string }>()({ description: '将网页快照存为资料', params: [id()] }),
     clearCache: cap<{ searches: number; pages: number }>()({ description: '清理搜索缓存与未被引用的网页快照', params: none }),
     usage: cap<RetrievalUsage>()({ description: '联网搜索与读取次数', params: [['range', z.enum(['today', 'month'])]] })
+  },
+  ui: {
+    states: cap<Record<string, unknown>>()({ description: '读取某条回答里组件的状态', params: [id('messageId')] }),
+    saveState: cap<void>()({
+      description: '保存组件状态（滑块、勾选、作答）',
+      params: [id('messageId'), ['componentId', z.string().max(80)], ['state', z.unknown()]]
+    }),
+    saveToNote: cap<{ noteId: string; created: boolean; proposalId: string }>()({
+      description: '把回答里的组件存进笔记',
+      params: [['input', S.UiSaveToNoteSchema]]
+    })
   }
 } as const
 

@@ -7,6 +7,7 @@ export { InboxCreateSchema, InboxUpdateSchema, InboxAcceptSchema } from './inbox
 import { z } from 'zod'
 import { UiSettingsSchema, UI_DEFAULTS } from './ui/settings'
 import { UiEventSchema } from './ui/events'
+import { UiNodeSchema } from './ui/catalog'
 import { ExternalBackupSchema } from './backup'
 import { DomainSchema, NetworkRuleSchema } from './browserSafety'
 import { AnchorSchema, ContextPacketSchema } from './context'
@@ -17,6 +18,16 @@ import { RetrievalSettingsSchema, WebModeSchema } from './retrieval'
 // 所有跨进程输入的 zod 模式。类型由模式推导，保证“声明一次、处处一致”。
 
 export const Id = z.string().min(1).max(64)
+export const UiSaveToNoteSchema = z.object({
+  conversationId: Id,
+  messageId: Id,
+  uiKey: z.string().max(80),
+  node: UiNodeSchema,
+  state: z.unknown().optional(),
+  target: z.object({ noteId: Id.optional(), newTitle: z.string().max(200).optional() }),
+  mode: z.enum(['auto', 'rows'])
+})
+export type UiSaveToNote = z.input<typeof UiSaveToNoteSchema>
 /** 二进制数据（Yjs 增量、文件字节） */
 export const Bytes = z.custom<Uint8Array>((v) => v instanceof Uint8Array, { message: 'Expected Uint8Array' })
 export const CategoryKindSchema = z.enum(['note', 'source'])

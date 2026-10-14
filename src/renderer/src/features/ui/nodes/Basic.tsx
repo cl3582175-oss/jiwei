@@ -3,6 +3,8 @@ import { useTranslation } from 'react-i18next'
 import type { UiNode } from '@shared/ui/catalog'
 import type { UiContext } from '../context'
 import { cn } from '@/lib/utils'
+import { api } from '@/lib/utils'
+import { ConfirmSheet, type ConfirmItem } from '../ConfirmSheet'
 
 export function Columns({ children, compact, ratio }: { children: ReactNode; compact: boolean; ratio?: string }) {
   const ref = useRef<HTMLDivElement>(null)
@@ -186,30 +188,65 @@ export function ListNode({
   ctx: UiContext
   disabled: boolean
 }) {
+  const { t } = useTranslation()
+  const [pending, setPending] = useState<ConfirmItem[] | null>(null)
   const checked = ctx.states[uiKey]?.checked as Record<string, boolean> | undefined
+  const created = (ctx.states[uiKey]?.created ?? {}) as Record<string, string>
+  const items = (node.items ?? []).flatMap((item, i) =>
+    (checked?.[i] ?? item.done ?? false) || created[i] ? [] : [{ id: String(i), label: item.text }]
+  )
   const Tag = node.ordered ? 'ol' : 'ul'
   return (
-    <Tag className="space-y-2 px-4 py-3 text-sm">
-      {(node.items ?? []).map((item, i) => (
-        <li key={i} className="flex items-start gap-2">
-          {node.checkable ? (
-            <input
-              aria-label={item.text}
-              type="checkbox"
-              checked={checked?.[i] ?? item.done ?? false}
-              disabled={disabled}
-              onChange={(e) => ctx.setState(uiKey, { checked: { ...checked, [i]: e.target.checked } })}
-              className="mt-1 accent-accent"
-            />
-          ) : (
-            <span className="text-subtle">{node.ordered ? `${i + 1}.` : '•'}</span>
-          )}
-          <div className="min-w-0">
-            <span>{item.text}</span>
-            {item.note && <p className="mt-1 text-xs text-muted">{item.note}</p>}
-          </div>
-        </li>
-      ))}
-    </Tag>
+    <div>
+      <Tag className="space-y-2 px-4 py-3 text-sm">
+        {(node.items ?? []).map((item, i) => (
+          <li key={i} className="flex items-start gap-2">
+            {node.checkable ? (
+              <input
+                aria-label={item.text}
+                type="checkbox"
+                checked={checked?.[i] ?? item.done ?? false}
+                disabled={disabled}
+                onChange={(e) => ctx.setState(uiKey, { checked: { ...checked, [i]: e.target.checked } })}
+                className="mt-1 accent-accent"
+              />
+            ) : (
+              <span className="text-subtle">{node.ordered ? `${i + 1}.` : '•'}</span>
+            )}
+            <div className="min-w-0">
+              <span>{item.text}</span>
+              {created[i] && <small className="ml-2 text-subtle">{t('ui.saved')}</small>}
+              {item.note && <p className="mt-1 text-xs text-muted">{item.note}</p>}
+            </div>
+          </li>
+        ))}
+      </Tag>
+      {node.checkable && (
+        <button
+          className="mx-4 mb-3 rounded-lg border border-border px-3 py-1.5 text-xs hover:bg-sunken disabled:opacity-40"
+          disabled={disabled || !items.length}
+          onClick={() => setPending(items)}
+        >
+          {t('ui.action.toTasks')}
+        </button>
+      )}
+      {pending && (
+        <ConfirmSheet
+          items={pending}
+          target={t('ui.target.tasks')}
+          onCancel={() => setPending(null)}
+          onConfirm={async (ids) => {
+            const written = { ...created }
+            for (const id of ids) {
+              if (written[id]) continue
+              written[id] = (await api.actions.create(node.items[Number(id)].text, null)).id
+              ctx.setState(uiKey, { created: { ...written } })
+              await ctx.flushState?.(uiKey)
+            }
+            setPending(null)
+          }}
+        />
+      )}
+    </div>
   )
 }

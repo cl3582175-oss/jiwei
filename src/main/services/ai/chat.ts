@@ -1,9 +1,9 @@
 import { hasToolCall, stepCountIs, streamText, type ModelMessage, type ToolSet } from 'ai'
 import { ASK_USER, buildScopeTools } from './scopeTools'
-import { and, asc, desc, eq, isNull, ne } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, isNull, ne } from 'drizzle-orm'
 import log from 'electron-log/main'
 import { getDb } from '../../db'
-import { conversations, messages, webPageRefs, webPages } from '../../db/schema'
+import { conversations, messages, uiStates, webPageRefs, webPages } from '../../db/schema'
 import { newId } from '../../lib/ids'
 import { deviceId } from '../device'
 import { emit } from '../../events'
@@ -178,6 +178,9 @@ export function deleteConversation(id: string): void {
   })
   db.transaction((tx) => {
     tx.delete(webPageRefs).where(eq(webPageRefs.conversationId, id)).run()
+    tx.delete(uiStates)
+      .where(inArray(uiStates.messageId, tx.select({ id: messages.id }).from(messages).where(eq(messages.conversationId, id))))
+      .run()
     tx.delete(messages).where(eq(messages.conversationId, id)).run()
     tx.delete(conversations).where(eq(conversations.id, id)).run()
   })

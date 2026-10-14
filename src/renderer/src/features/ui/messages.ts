@@ -1,4 +1,10 @@
 export const uiZh = {
+  errors: { note: '这篇笔记已不可用或设置了不给 AI', goal: '这个方向已被删除', excerpt: '这段原文已不可用或设置了不给 AI' },
+  target: { calendar: '写入日历', tasks: '新建或修改行动项' },
+  loading: '正在读取…',
+  free: '空档',
+  due: '到期 {{n}} 张',
+  dataChanged: '数据已更新',
   menu: {
     label: '组件菜单',
     asText: '改成文字',
@@ -64,6 +70,16 @@ export const uiZh = {
   details: '更多信息'
 }
 export const uiEn: typeof uiZh = {
+  errors: {
+    note: 'Note is unavailable or excluded from AI',
+    goal: 'This direction was deleted',
+    excerpt: 'Passage is unavailable or excluded from AI'
+  },
+  target: { calendar: 'Write to calendar', tasks: 'Create or update action items' },
+  loading: 'Loading…',
+  free: 'Free',
+  due: '{{n}} cards due',
+  dataChanged: 'Data updated',
   menu: {
     label: 'Component menu',
     asText: 'Show as text',

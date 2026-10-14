@@ -1,4 +1,5 @@
 import { manimAvailable } from '../plugins/manim'
+import { visual as embedVisual } from './embedProposal'
 import { neutralizeUiFences } from '@shared/ui/sanitize'
 import { ANIMATION_GUIDE, AnimationSchema, checkAnimation } from '@shared/manim'
 import { GraphDataSchema, checkGraph } from '@shared/embeds/graph'
@@ -296,11 +297,16 @@ export function buildTools(s: AgentSession): ToolSet {
     afterBlockId
       ? [{ op: 'insert_after', blockId: afterBlockId, nodes }]
       : [{ op: 'insert_row', afterRowId: null, cue: cue?.trim() ? markdownToNodes(cue) : [], body: nodes }]
-  const visual = (noteId: string, title: string, kind: string, data: unknown, cue?: string, afterBlockId?: string, segs?: string[]) =>
-    proposal(noteId, title, placeOps([{ type: 'embed', attrs: { id: 'v', kind } }], cue, afterBlockId), {
-      embeds: { v: { kind, data } },
-      segs
+  const visual = (noteId: string, title: string, kind: string, data: unknown, cue?: string, afterBlockId?: string, segs?: string[]) => {
+    const p = embedVisual(noteId, title, kind, data, cue, afterBlockId, {
+      model: s.model,
+      skill: s.skills.at(-1),
+      sources: segs?.length ? [...new Set(segs)].map((id) => ({ type: 'segment' as const, id })) : undefined
     })
+    return zh
+      ? `已提交提案“${title}”（${p.ops.length} 处修改），等待用户在笔记中确认。不要在回答中重复提案内容。`
+      : `Proposal "${title}" submitted (${p.ops.length} change(s)); the user will review it in the note.`
+  }
 
   const tools: ToolSet = {
     skills_load: tool({
