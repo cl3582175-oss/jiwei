@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Streamdown } from 'streamdown'
-import { parseUiNode, partialUiNode, uiFallbackMarkdown, UI_TYPES, UI_LIMITS, type UiNode } from '@shared/ui/catalog'
+import { parseUiJson, parseUiNode, partialUiNode, uiFallbackMarkdown, UI_TYPES, UI_LIMITS, type UiNode } from '@shared/ui/catalog'
 import { parsePartialJson } from '@shared/ui/partialJson'
 import type { UiContext } from './context'
 import { UiFrame } from './UiFrame'
@@ -36,7 +36,7 @@ export function UiBlock({ raw, incomplete, index, ctx }: { raw: string; incomple
     const partial = partialUiNode(parsePartialJson(code).value)
     if (!incomplete) {
       try {
-        value = JSON.parse(code)
+        value = parseUiJson(code)
         unknown = !value || typeof value !== 'object' || !UI_TYPES.some((n) => n.type === (value as { type?: string }).type)
         const r = parseUiNode(value)
         if (r.ok) node = r.node

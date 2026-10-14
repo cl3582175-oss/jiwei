@@ -117,7 +117,9 @@ test.beforeAll(async () => {
       ...process.env,
       JIWEI_LANG: 'zh-CN',
       JIWEI_SKIP_ONBOARDING: '1',
-      JIWEI_IMPORT_PROVIDERS_FROM: '',
+      // 真实模式：Playwright 默认注入 --use-mock-keychain，临时配置里手动保存的密钥解不开。
+      // 用现有测试导入（只复制服务商表与 AI 设置，密钥保持加密）并让应用移除 mock keychain。
+      JIWEI_IMPORT_PROVIDERS_FROM: controlled ? '' : (process.env.JIWEI_EVAL_PROVIDERS_FROM ?? ''),
       JIWEI_TEST_NETWORK: controlled ? '1' : '',
       JIWEI_TEST_UI_FULL: controlled ? '1' : ''
     }
@@ -399,7 +401,8 @@ for (const q of UI_EVAL)
           ({ BrowserWindow }, id) => BrowserWindow.getAllWindows()[0].webContents.send('event:nav:chat', { conversationId: id }),
           conversationId
         )
-        await expect(page.locator('main .paper.whitespace-pre-wrap').last()).toHaveText(turn.text)
+        // 真实模型首包可能超过 5 秒，界面在开始流式时才刷新出这条用户消息
+        await expect(page.locator('main .paper.whitespace-pre-wrap').last()).toHaveText(turn.text, { timeout: controlled ? 5_000 : 30_000 })
         await expect
           .poll(
             () =>

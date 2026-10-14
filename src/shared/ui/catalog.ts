@@ -47,7 +47,7 @@ const Field = z.object({
   placeholder: s(40).optional(),
   options: z
     .array(z.object({ label: s(40), value: s(60) }))
-    .max(8)
+    .max(12)
     .optional(),
   min: z.number().optional(),
   max: z.number().optional(),
@@ -130,17 +130,18 @@ const LeafSchema = z.discriminatedUnion('type', [
     options: z
       .array(z.object({ label: s(40), value: s(60), hint: s(80).optional() }))
       .min(2)
-      .max(6),
+      .max(10),
     multi: z.boolean().optional()
   }),
-  z.object({ ...Base, type: z.literal('form'), fields: z.array(Field).min(1).max(6), submitLabel: s(12).optional() }),
+  z.object({ ...Base, type: z.literal('form'), fields: z.array(Field).min(1).max(10), submitLabel: s(12).optional() }),
   z.object({
     ...Base,
     type: z.literal('calc'),
     inputs: z
       .array(
         z.object({
-          key: z.string().regex(/^[a-z][a-z0-9_]{0,15}$/),
+          // 模型常写 sciW、H 这类变量名：允许大写，长度放宽到 24
+          key: z.string().regex(/^[A-Za-z][A-Za-z0-9_]{0,23}$/),
           label: s(30),
           kind: z.enum(['slider', 'number']),
           min: z.number(),
@@ -392,6 +393,108 @@ function children(n: UiNode): UiNode[] {
   return n.type === 'tabs' ? n.tabs.flatMap((t) => t.children) : n.type === 'columns' || n.type === 'details' ? n.children : []
 }
 
+/**
+ * 解析围栏里的 JSON。模型偶尔在完整对象后多写一截（例如多关一个括号再接字段），
+ * 这时取第一个完整的顶层对象；后面多出来的只要不长就忽略，否则仍按非法处理。
+ */
+export function parseUiJson(code: string): unknown {
+  try {
+    return JSON.parse(code)
+  } catch (e) {
+    const start = code.indexOf('{')
+    if (start < 0) throw e
+    let depth = 0,
+      inString = false,
+      escaped = false
+    for (let i = start; i < code.length; i++) {
+      const ch = code[i]
+      if (inString) {
+        if (escaped) escaped = false
+        else if (ch === '\\') escaped = true
+        else if (ch === '"') inString = false
+      } else if (ch === '"') inString = true
+      else if (ch === '{') depth++
+      else if (ch === '}' && --depth === 0) {
+        if (code.length - i - 1 > 400) throw e
+        return JSON.parse(code.slice(start, i + 1))
+      }
+    }
+    throw e
+  }
+}
+
+const toCite = (v: unknown): unknown => {
+  const one = (x: unknown): unknown =>
+    typeof x === 'string' && /^\[?\d{1,2}\]?$/.test(x.trim()) ? Number(x.trim().replace(/[[\]]/g, '')) : x
+  if (Array.isArray(v)) return v.map(one)
+  const n = one(v)
+  return typeof n === 'number' ? [n] : v
+}
+const toOptions = (v: unknown): unknown =>
+  Array.isArray(v) ? v.map((o) => (typeof o === 'string' || typeof o === 'number' ? { label: String(o), value: String(o) } : o)) : v
+/**
+ * 模型常见的“意思对、格式差一点”的写法，在校验前整理成标准形状，而不是整块退回成文字。
+ * 只做无歧义的转换；拿不准的照旧交给校验报错。
+ */
+function coerce(n: Record<string, unknown>): Record<string, unknown> {
+  if ('cite' in n && n.type !== 'excerpt') n.cite = toCite(n.cite)
+  for (const key of ['items', 'cards'] as const)
+    if (Array.isArray(n[key]))
+      n[key] = (n[key] as unknown[]).map((it) =>
+        it && typeof it === 'object' && 'cite' in it ? { ...it, cite: toCite((it as { cite: unknown }).cite) } : it
+      )
+  switch (n.type) {
+    case 'choice':
+      n.options = toOptions(n.options)
+      break
+    case 'form':
+      if (Array.isArray(n.fields))
+        n.fields = n.fields.map((f) => (f && typeof f === 'object' && 'options' in f ? { ...f, options: toOptions(f.options) } : f))
+      break
+    case 'calc':
+      if (Array.isArray(n.inputs))
+        n.inputs = n.inputs.map((i) =>
+          i && typeof i === 'object' && (i as { kind?: unknown }).kind === 'range' ? { ...i, kind: 'slider' } : i
+        )
+      break
+    case 'columns':
+      // ratio 写成 [1,1] 或 "2:1" 之类：去掉，用默认等分
+      if (n.ratio !== undefined && !['1:1', '382:618', '618:382', '1:1:1'].includes(n.ratio as string)) delete n.ratio
+      break
+    case 'table':
+      // highlight 的 col 写成列序号：换成列的 key
+      if (Array.isArray(n.highlight) && Array.isArray(n.columns)) {
+        const cols = n.columns as { key?: unknown }[]
+        n.highlight = n.highlight.map((h) =>
+          h && typeof h === 'object' && typeof (h as { col?: unknown }).col === 'number'
+            ? { ...h, col: cols[(h as { col: number }).col]?.key }
+            : h
+        )
+      }
+      break
+    case 'excerpt':
+      // cite 写成数字字符串转成编号；写成资料片段 ID 时当作 segmentId
+      if (typeof n.cite === 'string') {
+        const c = n.cite.trim().replace(/[[\]]/g, '')
+        if (/^\d{1,2}$/.test(c)) n.cite = Number(c)
+        else {
+          if (!n.segmentId) n.segmentId = n.cite
+          delete n.cite
+        }
+      }
+      break
+    case 'decision':
+      // 已有决策从备忘录读选项和准则，模型附带的空数组不该让整块失败
+      if (typeof n.decisionId === 'string' && n.decisionId) {
+        delete n.options
+        delete n.criteria
+        delete n.scores
+      }
+      break
+  }
+  return n
+}
+
 export function parseUiNode(value: unknown): { ok: true; node: UiNode } | { ok: false; error: string } {
   try {
     const json = JSON.stringify(value)
@@ -401,7 +504,7 @@ export function parseUiNode(value: unknown): { ok: true; node: UiNode } | { ok: 
       if (depth > UI_LIMITS.depth) throw new Error('组件嵌套过深')
       if (++count > UI_LIMITS.nodes) throw new Error('组件节点过多')
       if (!v || typeof v !== 'object' || Array.isArray(v)) return v
-      const n = { ...v } as Record<string, unknown>
+      const n = coerce({ ...v } as Record<string, unknown>)
       if (n.type === 'table' && Array.isArray(n.rows)) n.rows = n.rows.slice(0, 50)
       if ((n.type === 'columns' || n.type === 'details') && Array.isArray(n.children))
         n.children = n.children.map((c) => normalize(c, depth + 1))

@@ -28,9 +28,10 @@ export function compileExpr(
     if (src.length > 200) throw new Error('表达式过长')
     const tokens: string[] = []
     for (let offset = 0; offset < src.length;) {
-      const m = /^\s*(?:(\d+(?:\.\d*)?(?:[eE][+-]?\d+)?|\.\d+(?:[eE][+-]?\d+)?)|([a-z][a-z0-9_]*)|(<=|>=|==|!=|[+*/^%(),<>?:-]))/.exec(
-        src.slice(offset)
-      )
+      const m =
+        /^\s*(?:(\d+(?:\.\d*)?(?:[eE][+-]?\d+)?|\.\d+(?:[eE][+-]?\d+)?)|([A-Za-z][A-Za-z0-9_]*)|(<=|>=|==|!=|[+*/^%(),<>?:-]))/.exec(
+          src.slice(offset)
+        )
       if (!m) {
         if (!src.slice(offset).trim()) break
         throw new Error('表达式含不允许的字符')
@@ -62,7 +63,7 @@ export function compileExpr(
         const token = tokens[pos++]
         if (!token) throw new Error('缺少表达式')
         if (/^(?:\d|\.)/.test(token)) return { kind: 'number', value: Number(token) }
-        if (!/^[a-z][a-z0-9_]*$/.test(token)) throw new Error('无效变量')
+        if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(token)) throw new Error('无效变量')
         if (take('(')) {
           const fn = Object.hasOwn(functions, token) ? functions[token] : undefined
           if (!fn) throw new Error('未知函数')

@@ -103,7 +103,7 @@ export function UiFrame({
       <header className="flex min-h-9 items-center justify-between gap-2 border-b border-border/60 px-4 py-2">
         <span className="flex min-w-0 items-center gap-2">
           <UiTypeIcon type={type} />
-          <span className="min-w-0 truncate text-sm font-medium">{node?.title ?? title ?? ''}</span>
+          <span className="min-w-0 truncate text-sm font-medium">{node?.title ?? (node?.type === 'diagram' ? node.diagramTitle : undefined) ?? title ?? ''}</span>
         </span>
         <button
           type="button"

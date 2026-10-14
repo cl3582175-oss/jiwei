@@ -1,4 +1,4 @@
-import { parseUiNode, type UiNode, type UiType } from '../../src/shared/ui/catalog'
+import { parseUiJson, parseUiNode, type UiNode, type UiType } from '../../src/shared/ui/catalog'
 import { scanUiFences } from '../../src/shared/ui/fences'
 import type { EvalGroup } from './uiEval'
 import { z } from 'zod'
@@ -68,7 +68,7 @@ export function analyzeAnswer(answer: string): ParsedComponent[] {
   return scanUiFences(answer).map((fence) => {
     let type: string | null = null
     try {
-      const value: unknown = JSON.parse(fence.code)
+      const value: unknown = parseUiJson(fence.code)
       if (value && typeof value === 'object' && 'type' in value && typeof value.type === 'string') type = value.type
       if (!fence.closed) return { raw: fence.code, type, types: [], valid: false, error: 'unclosed-fence' }
       const parsed = parseUiNode(value)

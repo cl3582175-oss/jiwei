@@ -18,7 +18,9 @@ JIWEI_EVAL_PROVIDER="$UI_EVAL_PROVIDER" JIWEI_EVAL_MODEL="$UI_EVAL_MODEL" \
 npx playwright test e2e/ui-eval.spec.ts
 ```
 
-`JIWEI_EVAL_MODEL` 可省略：优先用这个服务商在临时设置中选定的模型，否则用它的第一个模型。脚本不会导入机器上的服务商，关闭自动记忆与联网，使用适中档。真实本地模型仍遵守其本地目录设置；完整目录的受控开关仅用于开发态假服务器。日程使用固定样本日期和本机时区。
+Playwright 会给 Electron 加上 `--use-mock-keychain`，临时配置里保存的密钥在评测时解不开。真实评测改用 `JIWEI_EVAL_PROVIDERS_FROM=<应用数据库 jiwei.db>`：启动时只复制服务商表与 AI 设置（密钥保持加密、不输出），并移除 mock keychain；这时临时目录可以是空目录。
+
+`JIWEI_EVAL_MODEL` 可省略：优先用这个服务商在临时设置中选定的模型，否则用它的第一个模型。除上述显式指定的导入外，脚本不会导入机器上的服务商，关闭自动记忆与联网，使用适中档。真实本地模型仍遵守其本地目录设置；完整目录的受控开关仅用于开发态假服务器。日程使用固定样本日期和本机时区。
 
 输出是 `test-results/ui-eval.md`、`ui-eval.json`、`ui-eval-review-template.json`，另有每题截图和 Playwright 附件。报告包含每轮回答、完整解析数据、实际组件文字与状态、预置数据和未经确认的业务表变化。每题结束时写报告，中断保留已运行部分，并明确标出运行题数；不完整运行不能作为验收。下一次 Playwright 会覆盖输出，比较模型前应将整份结果复制到独立证据目录。
 

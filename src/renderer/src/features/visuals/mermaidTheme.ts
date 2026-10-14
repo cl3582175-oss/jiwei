@@ -21,6 +21,11 @@ export function mermaidThemeVariables(c: Tokens, fontSize = '14px'): Record<stri
   )
   return {
     darkMode: !!c.dark,
+    // Mermaid 12 的 base 主题默认渐变描边（主色 → 次色）和较重的投影，节点边框会变成蓝橙渐变
+    useGradient: false,
+    dropShadow: 'drop-shadow(0 1px 1px rgba(0, 0, 0, 0.06))',
+    mainBkg: c.vizSoft[0],
+    nodeBorder: mix(c.viz[0], c.surface, 0.6),
     background: 'transparent',
     fontSize,
     textColor: c.fg,
@@ -172,12 +177,15 @@ export async function decorateDiagram(code: string, mermaid: MermaidLike, c: Tok
     ins.set(e.end, (ins.get(e.end) ?? 0) + 1)
   }
   const roles = edges.length > 0 && vertices.length > 2
+  // 起点：没有入边的节点；整张图都有回边（如“驳回”回到第一步）时，取最先写出的节点
+  const starts = new Set(vertices.filter((v) => !ins.get(v.id) && outs.get(v.id)).map((v) => v.id))
+  if (roles && !starts.size && vertices[0] && outs.get(vertices[0].id)) starts.add(vertices[0].id)
   for (const v of vertices) {
     if (v.classes.some((cls) => cls !== 'default') || subgraphs.some((sg) => sg.id === v.id)) continue
     const k = group.get(v.id)
     if (v.type === 'diamond') put('jwdecide', v.id)
     else if (k !== undefined) put(`c${k + 1}`, v.id)
-    else if (roles && !ins.get(v.id) && outs.get(v.id)) put('jwstart', v.id)
+    else if (roles && starts.has(v.id)) put('jwstart', v.id)
     else if (roles && !outs.get(v.id) && ins.get(v.id)) put('jwend', v.id)
   }
   for (const [cls, ids] of assign) lines.push(`class ${ids.join(',')} ${cls}`)

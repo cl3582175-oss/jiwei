@@ -10,6 +10,9 @@ import type { VideoScene } from '@shared/works'
 export const STAGE_W = 1280
 export const STAGE_H = 720
 
+import { mix, type Tokens } from '@/features/visuals/tokens'
+import { decorateDiagram, mermaidThemeVariables } from '@/features/visuals/mermaidTheme'
+
 const C = {
   paper: '#FBFCFA',
   ink: '#1F2523',
@@ -17,8 +20,35 @@ const C = {
   accent: '#2F6F62',
   soft: '#E7F0EC',
   line: '#DCE3DF',
-  series: ['#2F6F62', '#B4654A', '#3E6680', '#8A5A22']
+  // 与应用里的图表同一套分类色（--viz-1…4 的浅色版本），视频固定浅底
+  series: ['#2f6fb3', '#d9682b', '#1f9a8a', '#c94540']
 }
+/** 视频里示意图的配色：固定浅色主题，规则与应用内示意图相同（按角色上色） */
+const VIDEO_TOKENS: Tokens = (() => {
+  const viz = ['#2f6fb3', '#d9682b', '#1f9a8a', '#c94540', '#7a5cc2', '#b07d0a', '#d0527a', '#3d7f2a']
+  return {
+    accent: C.accent,
+    accentFg: '#ffffff',
+    fg: C.ink,
+    muted: C.muted,
+    subtle: '#9aa39e',
+    border: C.line,
+    borderStrong: '#c6d0cb',
+    surface: '#ffffff',
+    sunken: '#f1f4f2',
+    danger: '#c0473a',
+    dark: '',
+    p1: '',
+    p2: '',
+    p3: '',
+    p4: '',
+    p5: '',
+    emph: viz[1],
+    rest: '#c9cfcc',
+    viz,
+    vizSoft: viz.map((v) => mix(v, '#ffffff', 0.14))
+  }
+})()
 const SANS = '"PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", -apple-system, sans-serif'
 const SERIF = '"Songti SC", "Noto Serif CJK SC", Georgia, serif'
 
@@ -367,19 +397,12 @@ function Mermaid({ code, onReady }: { code: string; onReady: () => void }) {
           flowchart: { htmlLabels: false },
           theme: 'base',
           fontFamily: SANS,
-          themeVariables: {
-            background: 'transparent',
-            primaryColor: '#FFFFFF',
-            primaryBorderColor: C.accent,
-            primaryTextColor: C.ink,
-            lineColor: C.muted,
-            secondaryColor: C.soft,
-            tertiaryColor: C.soft,
-            textColor: C.ink,
-            fontSize: '22px'
-          }
+          themeVariables: mermaidThemeVariables(VIDEO_TOKENS, '22px')
         })
-        const out = await mermaid.render(`scene-mermaid-${++mermaidSeq}`, code)
+        const decorated = await decorateDiagram(code, mermaid, VIDEO_TOKENS)
+        const out = await mermaid
+          .render(`scene-mermaid-${++mermaidSeq}`, decorated)
+          .catch(() => mermaid.render(`scene-mermaid-${++mermaidSeq}`, code))
         // Mermaid 自带 max-width（原始尺寸），视频里要按比例撑满内容区
         const fit = out.svg
           .replace(/style="max-width:[^"]*"/, 'style="width:100%;height:100%"')

@@ -88,6 +88,23 @@ describe('示意图按角色上色', () => {
     expect(out).toContain('class C c2')
     expect(out).toMatch(/style in fill:#[0-9a-f]{6},stroke:/)
   })
+  it('第一步有回边时仍把最先写出的节点当起点', async () => {
+    const m = fake(
+      [
+        { id: 'A', classes: [] },
+        { id: 'B', classes: [] },
+        { id: 'C', classes: [] }
+      ],
+      [
+        ['A', 'B'],
+        ['B', 'A'],
+        ['B', 'C']
+      ]
+    )
+    const out = await decorateDiagram('flowchart TD\n  A-->B', m, c)
+    expect(out).toContain('class A jwstart')
+    expect(out).toContain('class C jwend')
+  })
   it('不是流程图或解析失败时原样返回', async () => {
     const broken = { mermaidAPI: { getDiagramFromText: async () => Promise.reject(new Error('x')) } }
     expect(await decorateDiagram('sequenceDiagram\n A->>B: hi', broken, c)).toBe('sequenceDiagram\n A->>B: hi')

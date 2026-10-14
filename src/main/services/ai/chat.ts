@@ -34,7 +34,7 @@ import { UI_DEFAULTS } from '@shared/ui/settings'
 import { neutralizeUiFences } from '@shared/ui/sanitize'
 import { appendUiEvent, UiEventSchema } from '@shared/ui/events'
 import { scanUiFences } from '@shared/ui/fences'
-import { parseUiNode, uiToText, UI_TYPES } from '@shared/ui/catalog'
+import { parseUiJson, parseUiNode, uiToText, UI_TYPES } from '@shared/ui/catalog'
 import { withRun } from '../agent/context'
 import { guardTools, type ToolMeta } from '../agent/wrap'
 import { perRunLimit } from '../agent/usage'
@@ -553,7 +553,7 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
           ok = false,
           error = ''
         try {
-          const value: unknown = JSON.parse(fence.code)
+          const value: unknown = parseUiJson(fence.code)
           if (value && typeof value === 'object' && UI_TYPES.some((item) => item.type === (value as { type?: unknown }).type))
             type = (value as { type: string }).type
           const parsed = parseUiNode(value)
