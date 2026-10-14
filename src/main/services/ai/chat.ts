@@ -134,8 +134,8 @@ const toMessage = (r: MsgRow): ChatMessage => ({
   error: r.error,
   skill: r.skill,
   steps: r.steps ? (JSON.parse(r.steps) as AgentStep[]) : [],
-  // 用户消息附带了当前页面（「今日」、复习卡片、错题……）：回答依据的是用户自己的数据，不是“通用知识”
-  contextual: r.role === 'user' && !!r.context && /"page":\{"title"/.test(r.context),
+  // 用户消息附带了当前页面（「今日」、复习卡片、错题……）或本轮带着附件：回答依据的是用户自己的数据，不是“通用知识”
+  contextual: r.role === 'user' && !!r.context && (/"page":\{"title"/.test(r.context) || /"attachmentSourceIds":\["/.test(r.context)),
   createdAt: r.createdAt
 })
 

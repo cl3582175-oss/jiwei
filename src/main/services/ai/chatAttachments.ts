@@ -31,15 +31,19 @@ export { tablePreview } from '../../lib/attachmentText'
 import { tablePreview } from '../../lib/attachmentText'
 
 const states = (a: Attachment, zh: boolean): string =>
-  ({
-    adding: zh ? '添加中' : 'adding',
-    parsing: zh ? '解析中' : 'parsing',
-    recognizing: zh ? '识别图片文字中' : 'recognizing image text',
-    transcribing: zh ? '转写中' : 'transcribing',
-    ready: zh ? '已就绪' : 'ready',
-    failed: zh ? '失败' : 'failed',
-    unsupported: zh ? '不支持' : 'unsupported'
-  })[a.status] + (a.progress !== null && a.status !== 'ready' ? ` ${Math.round(a.progress * 100)}%` : '')
+  // 文字层已可用、只剩图表识别时如实说明，避免模型把文字版 PDF 当作扫描件
+  a.status === 'recognizing' && a.askable
+    ? (zh ? '正文已就绪，部分表格与插图仍在识别' : 'text ready; some tables and figures still being recognized') +
+      (a.progress !== null ? ` ${Math.round(a.progress * 100)}%` : '')
+    : {
+        adding: zh ? '添加中' : 'adding',
+        parsing: zh ? '解析中' : 'parsing',
+        recognizing: zh ? '识别文字中（扫描页或图片）' : 'recognizing text (scanned pages or image)',
+        transcribing: zh ? '转写中' : 'transcribing',
+        ready: zh ? '已就绪' : 'ready',
+        failed: zh ? '失败' : 'failed',
+        unsupported: zh ? '不支持' : 'unsupported'
+      }[a.status] + (a.progress !== null && a.status !== 'ready' ? ` ${Math.round(a.progress * 100)}%` : '')
 
 export async function prepareAttachmentTurn(
   conversationId: string,

@@ -5,7 +5,8 @@ export const attachZh = {
     status: {
       adding: '添加中',
       parsing: '解析中 {{p}}%',
-      recognizing: '识别图片文字中',
+      recognizing: '识别文字中 {{p}}%',
+      recognizingAskable: '可以提问 · 图表识别中 {{p}}%',
       transcribing: '转写中 {{p}}%',
       ready: '可以提问',
       failed: '失败：{{reason}}',
@@ -85,7 +86,8 @@ export const attachEn = {
     status: {
       adding: 'Adding',
       parsing: 'Parsing {{p}}%',
-      recognizing: 'Recognizing image text',
+      recognizing: 'Recognizing text {{p}}%',
+      recognizingAskable: 'Ready to ask · recognizing figures {{p}}%',
       transcribing: 'Transcribing {{p}}%',
       ready: 'Ready to ask',
       failed: 'Failed: {{reason}}',

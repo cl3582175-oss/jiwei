@@ -1201,6 +1201,8 @@ export interface Attachment {
   thumbUrl: string | null
   status: AttachmentStatus
   progress: number | null
+  /** 文字已经可用（例如 PDF 文字层已解析，只剩图表识别）：可以先提问 */
+  askable?: boolean
   error: string | null
   space: 'attachment' | 'library'
   archivedCategoryId: string | null

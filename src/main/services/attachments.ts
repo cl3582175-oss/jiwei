@@ -124,6 +124,7 @@ export function attachmentStatus(sourceIds: string[]): Attachment[] {
         thumbUrl: source.kind === 'image' ? source.assetUrl : null,
         status,
         progress: rec ?? pending?.progress ?? null,
+        askable: status === 'recognizing' && segments > 0,
         error,
         space: source.space ?? 'library',
         archivedCategoryId: source.categoryId,

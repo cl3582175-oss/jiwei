@@ -80,7 +80,7 @@ export function AttachmentBar({
               <span className="block truncate text-2xs text-muted" title={a.error ?? undefined}>
                 {a.deleted
                   ? t('attach.deleted')
-                  : `${formatAttachmentSize(a.size)} · ${t('attach.status.' + a.status, { p: Math.round((a.progress ?? 0) * 100), reason: a.error ?? '' })}`}
+                  : `${formatAttachmentSize(a.size)} · ${t('attach.status.' + (a.status === 'recognizing' && a.askable ? 'recognizingAskable' : a.status), { p: Math.round((a.progress ?? 0) * 100), reason: a.error ?? '' })}`}
               </span>
               {a.space === 'library' && <span className="block text-right text-2xs text-muted">{t('attach.archived')}</span>}
             </span>
