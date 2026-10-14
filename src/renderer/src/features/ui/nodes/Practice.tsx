@@ -131,7 +131,14 @@ export function QuizNode({
           {q.options.map((option, i) => (
             <label
               key={i}
-              className={cn('flex gap-2 rounded-lg border border-border p-2 text-sm', current?.value === i && 'border-accent bg-accent/5')}
+              // 核对后：正确答案标绿，选错的标红，其余淡出
+              className={cn(
+                'flex gap-2 rounded-lg border border-border p-2 text-sm transition-colors',
+                !current?.checked && current?.value === i && 'border-accent bg-accent/5',
+                current?.checked && i === q.answer && 'border-viz-8/60 bg-viz-8/10',
+                current?.checked && current.value === i && i !== q.answer && 'border-viz-4/60 bg-viz-4/10',
+                current?.checked && current.value !== i && i !== q.answer && 'opacity-60'
+              )}
             >
               <input
                 type="radio"
@@ -165,8 +172,14 @@ export function QuizNode({
           {t('ui.action.check')}
         </button>
       ) : (
-        <div role="status" className="rounded-lg bg-sunken p-3 text-xs">
-          <p className={equal(current.value, q.answer) ? 'text-accent' : 'text-danger'}>
+        <div
+          role="status"
+          className={cn(
+            'rounded-lg border-l-[3px] bg-sunken p-3 text-xs',
+            equal(current.value, q.answer) ? 'border-viz-8' : 'border-viz-4'
+          )}
+        >
+          <p className={cn('font-medium', equal(current.value, q.answer) ? 'text-viz-8' : 'text-viz-4')}>
             {t(equal(current.value, q.answer) ? 'ui.correct' : 'ui.incorrect')}
           </p>
           <p className="mt-1 whitespace-pre-wrap">
@@ -259,7 +272,11 @@ export function FlashcardsNode({
         aria-label={t('ui.flip')}
         aria-pressed={flipped}
         disabled={disabled}
-        className="min-h-36 w-full rounded-xl border border-border bg-sunken p-5 text-left text-sm leading-relaxed whitespace-pre-wrap focus:ring-2 focus:ring-accent"
+        // 正面中性底色，背面换成藤紫浅底，翻面前后一眼能分清
+        className={cn(
+          'min-h-36 w-full rounded-xl border p-5 text-left text-sm leading-relaxed whitespace-pre-wrap transition-colors focus:ring-2 focus:ring-accent',
+          flipped ? 'border-viz-5/40 bg-viz-5/10' : 'border-border bg-sunken'
+        )}
         onClick={() => ctx.setState(uiKey, { flipped: !flipped })}
       >
         {flipped ? node.cards[index].back : node.cards[index].front}
@@ -319,7 +336,7 @@ export function ClozeNode({
                   onChange={(e) => ctx.setState(uiKey, { values: { ...values, [i]: e.target.value }, checked: false })}
                 />
                 {checked && (
-                  <small className={equal(values[i] ?? '', blanks[i][1]) ? 'text-center text-accent' : 'text-center text-danger'}>
+                  <small className={equal(values[i] ?? '', blanks[i][1]) ? 'text-center text-viz-8' : 'text-center text-viz-4'}>
                     {t(equal(values[i] ?? '', blanks[i][1]) ? 'ui.correct' : 'ui.incorrect')}
                   </small>
                 )}

@@ -10,7 +10,7 @@ export function TimelineBox({
   return (
     <div className="px-5 py-4">
       {d.title && <p className="mb-3 text-center font-serif text-sm font-semibold text-fg">{d.title}</p>}
-      <ol className="timeline">
+      <ol className="timeline ui-plain-list">
         {d.events.map((e, i) => (
           <li key={i} className="timeline-item">
             <span className="timeline-date">{e.date}</span>

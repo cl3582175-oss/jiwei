@@ -11,6 +11,7 @@ import { DecideDialog } from '@/features/advisor/AdvisorView'
 import { setAdvisorDraft } from '@/features/advisor/generation'
 import type { UiContext } from '../context'
 import { uiAction } from '../ConfirmSheet'
+import { cn } from '@/lib/utils'
 
 export function DecisionBox({
   node,
@@ -63,7 +64,7 @@ export function DecisionBox({
   if (!matrix) return null
   return (
     <div className="space-y-3">
-      {!node.decisionId && <p className="text-2xs text-accent">{t('ui.suggestion')}</p>}
+      {!node.decisionId && <p className="inline-block rounded bg-emph-soft px-1.5 py-0.5 text-2xs text-emph">{t('ui.suggestion')}</p>}
       <p className="text-sm">{decision?.question ?? node.question}</p>
       <div className="overflow-auto">
         <table className="w-full text-xs">
@@ -71,8 +72,9 @@ export function DecisionBox({
             <tr>
               <th className="p-2 text-left">{t('ui.criterion')}</th>
               <th className="p-2">{t('ui.weight')}</th>
+              {/* 当前权重下得分最高的选项整列标出，调权重时跟着变 */}
               {matrix.options.map((o) => (
-                <th className="p-2" key={o.id}>
+                <th className={cn('p-2', o.id === best && 'rounded-t-md bg-emph-soft text-emph')} key={o.id}>
                   {o.title}
                 </th>
               ))}
@@ -101,11 +103,25 @@ export function DecisionBox({
                     +
                   </button>
                 </td>
-                {matrix.options.map((o) => (
-                  <td className="p-2 text-center tabular-nums" key={o.id}>
-                    {matrix.scores.find((s) => s.option === o.id && s.criterion === c.name)?.score ?? '—'}
-                  </td>
-                ))}
+                {matrix.options.map((o) => {
+                  const score = matrix.scores.find((s) => s.option === o.id && s.criterion === c.name)?.score
+                  return (
+                    <td className={cn('p-2 text-center tabular-nums', o.id === best && 'bg-emph-soft/50')} key={o.id}>
+                      {score ?? '—'}
+                      {score !== undefined && (
+                        <span className="mx-auto mt-1 block h-1 w-10 overflow-hidden rounded-full bg-border" aria-hidden="true">
+                          <span
+                            className="block h-full rounded-full"
+                            style={{
+                              width: `${Math.min(100, (score / 5) * 100)}%`,
+                              background: o.id === best ? 'var(--emph)' : 'var(--viz-1)'
+                            }}
+                          />
+                        </span>
+                      )}
+                    </td>
+                  )
+                })}
               </tr>
             ))}
           </tbody>
@@ -115,7 +131,10 @@ export function DecisionBox({
                 {t('ui.total')}
               </td>
               {matrix.options.map((o) => (
-                <td className="p-2 text-center tabular-nums" key={o.id}>
+                <td
+                  className={cn('p-2 text-center text-sm tabular-nums', o.id === best && 'rounded-b-md bg-emph-soft text-emph')}
+                  key={o.id}
+                >
                   {totals[o.id]}
                 </td>
               ))}
@@ -157,12 +176,16 @@ export function UsageBox({ node, summary }: { node: Extract<UiNode, { type: 'usa
       : summary.days.filter((d) => d.date.startsWith(localDay(Date.now()).slice(0, 7)))
   return (
     <div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-2 gap-2.5">
         {[
           { label: t('ui.today'), value: summary.today },
           { label: t('ui.month'), value: summary.month }
-        ].map((item) => (
-          <div key={item.label}>
+        ].map((item, i) => (
+          <div
+            key={item.label}
+            className="ui-tile rounded-lg py-2.5 pr-3 pl-4"
+            style={{ boxShadow: `inset 3px 0 0 var(--viz-${i + 1})` }}
+          >
             <p className="text-xs text-muted">
               {item.label} · {money.currency}
             </p>
@@ -170,12 +193,15 @@ export function UsageBox({ node, summary }: { node: Extract<UiNode, { type: 'usa
           </div>
         ))}
       </div>
-      {!!days.length && (
+      {/* 一分钱都没花时不画空坐标轴 */}
+      {days.some((d) => d.cost > 0) && (
         <ChartBox
           data={{
             type: 'bar',
             categories: days.map((d) => d.date),
-            series: [{ name: money.currency, data: days.map((d) => money.toDisplay(d.cost)) }]
+            series: [{ name: money.currency, data: days.map((d) => money.toDisplay(d.cost)) }],
+            // 本月视图里把今天标出来
+            highlight: days.some((d) => d.date === localDay(Date.now())) && days.length > 1 ? [localDay(Date.now())] : undefined
           }}
         />
       )}

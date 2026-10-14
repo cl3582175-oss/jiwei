@@ -2,7 +2,7 @@ import { ChartBox } from '@/features/visuals/ChartBox'
 import { DiagramBox, validateMermaid } from '@/features/visuals/DiagramBox'
 import { TimelineBox } from '@/features/visuals/TimelineBox'
 import { CodeStepsBox } from '@/features/visuals/CodeStepsBox'
-import { useTokens } from '@/features/visuals/tokens'
+import { useTokens, type Tokens } from '@/features/visuals/tokens'
 import { useEffect, useMemo, useState } from 'react'
 import { CircleAlert } from 'lucide-react'
 import { ChartDataSchema, DiagramDataSchema, InteractiveDataSchema, StepsDataSchema, TimelineDataSchema } from '@shared/embeds/visuals'
@@ -61,7 +61,7 @@ function StepsView({ entry }: EmbedViewProps) {
 /* ——— 交互演示（沙箱 iframe：不允许同源、不允许网络、不允许弹窗与表单提交） ——— */
 
 /** 演示页面：注入配色变量与基础样式（CSP 由沙箱协议的响应头提供） */
-export function sandboxDoc(html: string, c: Record<string, string>): string {
+export function sandboxDoc(html: string, c: Tokens): string {
   const head = `<meta charset="utf-8"><style>:root{--accent:${c.accent};--fg:${c.fg};--muted:${c.muted};--border:${c.border};--surface:${c.surface};color-scheme:${c.dark ? 'dark' : 'light'}}html,body{margin:0;background:transparent;color:var(--fg);accent-color:var(--accent);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif}</style>`
   return /<head[^>]*>/i.test(html)
     ? html.replace(/<head[^>]*>/i, (m) => m + head)

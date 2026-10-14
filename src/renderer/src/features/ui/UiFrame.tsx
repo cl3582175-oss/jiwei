@@ -6,6 +6,7 @@ import { uiToText, type UiNode } from '@shared/ui/catalog'
 import type { UiContext } from './context'
 import { canReply, restyle } from './reply'
 import { SaveToNote } from './SaveToNote'
+import { UiTypeIcon } from './typeIcon'
 import { collectSvgImage, EMBED_SVG_SELECTOR } from '@/features/notes/exportNote'
 
 export function UiFrame({
@@ -100,7 +101,10 @@ export function UiFrame({
       className="relative my-3 min-w-0 overflow-hidden rounded-xl border border-border bg-surface text-fg shadow-[var(--shadow-1)]"
     >
       <header className="flex min-h-9 items-center justify-between gap-2 border-b border-border/60 px-4 py-2">
-        <span className="min-w-0 truncate text-sm font-medium">{node?.title ?? title ?? ''}</span>
+        <span className="flex min-w-0 items-center gap-2">
+          <UiTypeIcon type={type} />
+          <span className="min-w-0 truncate text-sm font-medium">{node?.title ?? title ?? ''}</span>
+        </span>
         <button
           type="button"
           className="shrink-0 rounded p-1 text-subtle hover:bg-sunken disabled:opacity-40"

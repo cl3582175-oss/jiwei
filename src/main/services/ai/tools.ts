@@ -558,8 +558,8 @@ export function buildTools(s: AgentSession): ToolSet {
     }),
     note_add_chart: tool({
       description: zh
-        ? '在笔记中插入图表（提案）：bar 柱状 / line 折线 / pie 饼图 / scatter 散点 / radar 雷达。只给数据，样式由程序处理。'
-        : 'Insert a chart (proposal): bar / line / pie / scatter / radar. Provide data only.',
+        ? '在笔记中插入图表（提案）：bar 柱状 / line 折线 / pie 饼图 / scatter 散点 / radar 雷达。只给数据，样式由程序处理；要突出的类目或系列写进 highlight（一两项），其余会自动变灰。'
+        : 'Insert a chart (proposal): bar / line / pie / scatter / radar. Provide data only; put the one or two categories or series to emphasize in highlight.',
       inputSchema: z.object({ ...PLACE, chart: ChartDataSchema.omit({ anchor: true }) }),
       execute: async ({ noteId, title, cue, afterBlockId, chart }) => {
         mustNote(noteId, zh)
@@ -570,8 +570,8 @@ export function buildTools(s: AgentSession): ToolSet {
     }),
     note_add_diagram: tool({
       description: zh
-        ? '在笔记中插入图示（提案），code 为 Mermaid 源码：flowchart 流程图、sequenceDiagram 时序图、classDiagram、stateDiagram-v2、erDiagram、quadrantChart 四象限等。'
-        : 'Insert a diagram (proposal); code = Mermaid source.',
+        ? '在笔记中插入图示（提案），code 为 Mermaid 源码：flowchart 流程图、sequenceDiagram 时序图、classDiagram、stateDiagram-v2、erDiagram、quadrantChart 四象限等。不写颜色和 style；流程图里重点节点写 A:::key，同组节点写 :::c1…c8，积微会按用途上色。'
+        : 'Insert a diagram (proposal); code = Mermaid source. No colors or style; in flowcharts mark key nodes A:::key and groups :::c1…c8.',
       inputSchema: z.object({ ...PLACE, code: z.string().min(5).max(12000), diagramTitle: z.string().max(120).optional() }),
       execute: async ({ noteId, title, cue, afterBlockId, code, diagramTitle }) => {
         mustNote(noteId, zh)

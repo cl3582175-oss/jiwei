@@ -218,7 +218,82 @@ test('P7 二十四类组件的浅深主题、窄面板、确认和笔记截图',
       proposals: [{ title: '复习建议', start: '2026-10-28T19:00', end: '2026-10-28T20:00' }]
     },
     tasks: { type: 'tasks', filter: { scope: 'today' }, drafts: [{ title: '整理参考文献' }] },
-    details: { ...samples.details, open: true }
+    details: { ...samples.details, open: true },
+    // 审查截图用接近真实回答的数据，才能看出配色、重点和结构
+    chart: {
+      type: 'chart',
+      kind: 'bar',
+      categories: ['一月', '二月', '三月', '四月', '五月'],
+      series: [
+        { name: '阅读', data: [12, 15, 9, 18, 21] },
+        { name: '练习', data: [8, 11, 14, 10, 16] },
+        { name: '复习', data: [5, 7, 6, 9, 12] }
+      ],
+      yLabel: '小时'
+    },
+    stat: {
+      type: 'stat',
+      items: [
+        { label: '已完成', value: '9', unit: '项', delta: '+3', trend: 'up' },
+        { label: '平均用时', value: '42', unit: '分钟', delta: '-6', trend: 'down' },
+        { label: '正确率', value: '86', unit: '%', note: '近 7 天' }
+      ]
+    },
+    steps: {
+      type: 'steps',
+      current: 1,
+      items: [
+        { title: '提交申请', detail: '填写表格并上传身份证明。' },
+        { title: '审核材料', detail: '一般 3 个工作日。' },
+        { title: '领取结果' }
+      ]
+    },
+    diagram: {
+      type: 'diagram',
+      code: 'flowchart LR\n  A[提交报销] --> B{金额超过五千?}\n  B -- 是 --> C[部门经理审批]\n  B -- 否 --> D[财务审核]\n  C --> D\n  D --> E[到账]\n  C:::key'
+    },
+    columns: {
+      type: 'columns',
+      children: [
+        {
+          type: 'chart',
+          title: '本周步数',
+          kind: 'bar',
+          categories: ['周一', '周二', '周三', '周四', '周五'],
+          series: [{ name: '步数', data: [4000, 6500, 5200, 9800, 7100] }],
+          highlight: ['周四']
+        },
+        {
+          type: 'diagram',
+          title: '分组',
+          code: 'flowchart TB\n  subgraph 输入\n    A[读资料] --> B[做笔记]\n  end\n  subgraph 输出\n    C[讲给别人] --> D[写总结]\n  end\n  B --> C'
+        }
+      ]
+    },
+    table: {
+      type: 'table',
+      columns: [
+        { key: 'name', label: '方案' },
+        { key: 'days', label: '交付天数', kind: 'number' },
+        { key: 'years', label: '保修年数', kind: 'number' }
+      ],
+      rows: [
+        { name: 'A 供应商', days: 10, years: 2 },
+        { name: 'B 供应商', days: 7, years: 1 }
+      ],
+      highlight: [
+        { row: 1, col: 'days' },
+        { row: 0, col: 'years' }
+      ]
+    },
+    timeline: {
+      type: 'timeline',
+      events: [
+        { date: '前 221 年', title: '秦统一六国' },
+        { date: '前 209 年', title: '大泽乡起义' },
+        { date: '前 202 年', title: '汉朝建立' }
+      ]
+    }
   }
   const root = test.info().outputPath('ui-gallery')
   mkdirSync(root, { recursive: true })
@@ -235,6 +310,10 @@ test('P7 二十四类组件的浅深主题、窄面板、确认和笔记截图',
       await expect(page.getByRole('button', { name: '停止生成', exact: true })).toHaveCount(0)
       if (type === 'chart') await expect(block().locator('.chart-canvas svg')).toBeVisible()
       if (type === 'diagram') await expect(block().locator('.diagram-svg svg')).toBeVisible()
+      if (type === 'columns') {
+        await expect(block().locator('.chart-canvas svg')).toBeVisible()
+        await expect(block().locator('.diagram-svg svg')).toBeVisible()
+      }
       if (['schedule', 'tasks', 'note', 'excerpt', 'mastery', 'usage'].includes(type)) await expect(block()).not.toContainText('正在读取…')
       if (type === 'note') await expect(block()).toContainText('如何验证结果？')
       if (type === 'excerpt') await expect(block()).toContainText('真实产品路径需要验证')

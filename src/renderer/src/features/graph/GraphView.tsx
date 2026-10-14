@@ -12,7 +12,7 @@ import { useApp } from '@/store/app'
 import { tintFor } from '@/lib/tint'
 import { FloatingPanel } from '@/components/FloatingPanel'
 import { Button } from '@/components/ui/button'
-import { useTokens } from '../notes/editor/embeds/VisualViews'
+import { useTokens, type Tokens } from '@/features/visuals/tokens'
 import { STATUS_ORDER, statusColor } from '../review/MasteryView'
 
 // 知识结构图（v0.5.1）：sigma.js（WebGL）渲染，graphology 存图，ForceAtlas2 在 Web Worker 中布局。
@@ -45,7 +45,7 @@ function neighborhood(g: KnowledgeGraph, focus: string, depth: number): Set<stri
   return seen
 }
 
-function nodeColor(n: GraphNode, by: ColorBy, c: Record<string, string>, catColor: Map<string, string>): string {
+function nodeColor(n: GraphNode, by: ColorBy, c: Tokens, catColor: Map<string, string>): string {
   if (n.type === 'source') return c.subtle
   if (by === 'mastery') return statusColor(n.mastery ?? 'blank', c)
   return n.categoryId ? (catColor.get(n.categoryId) ?? c.muted) : c.muted

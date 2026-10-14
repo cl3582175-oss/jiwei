@@ -28,6 +28,8 @@ export const ChartDataSchema = z.object({
     .max(12),
   xLabel: z.string().max(40).optional(),
   yLabel: z.string().max(40).optional(),
+  /** 要突出的类目名或系列名（其余退为灰色）；不写则按分类色正常显示 */
+  highlight: z.array(z.string().max(60)).max(12).optional(),
   /** 数据出处说明 */
   note: z.string().max(300).optional(),
   anchor: Anchor
@@ -52,6 +54,9 @@ export function checkChart(d: ChartData): string | null {
   const bad = d.series.find((s) => s.data.length !== d.categories!.length)
   if (bad) return `系列“${bad.name}”有 ${bad.data.length} 个数值，但 categories 有 ${d.categories.length} 个`
   if (d.series.some((s) => s.data.some((v) => Array.isArray(v)))) return '只有 scatter 使用 [x, y] 数对'
+  const names = new Set([...d.categories, ...d.series.map((s) => s.name)])
+  const missing = d.highlight?.find((h) => !names.has(h))
+  if (missing) return `highlight 里的“${missing}”不是类目或系列名`
   return null
 }
 

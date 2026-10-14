@@ -30,6 +30,7 @@ export const uiZh = {
   },
   loading: '正在读取…',
   free: '空档',
+  freeDay: '白天都空闲',
   due: '到期 {{n}} 张',
   dataChanged: '数据已更新',
   menu: {
@@ -128,6 +129,7 @@ export const uiEn: typeof uiZh = {
   },
   loading: 'Loading…',
   free: 'Free',
+  freeDay: 'Free all day',
   due: '{{n}} cards due',
   dataChanged: 'Data updated',
   menu: {

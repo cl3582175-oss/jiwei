@@ -10,6 +10,7 @@ it.each([
   '```jiwei-ui-extra',
   '｀｀｀jiwei-ui',
   '&#96;&#96;&#96;jiwei-ui',
+  '&#0096;&#x060;&#X60jiwei-ui',
   '&grave;&grave;&grave;JIWEI-UI',
   '> ```jiwei-ui',
   '- ```jiwei-ui',

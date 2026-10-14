@@ -12,6 +12,8 @@ import { ChoiceNode, FormNode } from './nodes/Input'
 import { QuizNode, FlashcardsNode, ClozeNode } from './nodes/Practice'
 import { CalcNode } from './nodes/Calc'
 import { openCitation } from '@/features/chat/MessageItem'
+import { cn } from '@/lib/utils'
+import { UiTypeIcon } from './typeIcon'
 
 export function estimateHeight(type?: string, value: Record<string, unknown> = {}): number {
   const count = (key: string, min = 0) => Math.max(min, Array.isArray(value[key]) ? value[key].length : 0)
@@ -84,7 +86,12 @@ function UiContent({ node, uiKey, ctx, partial = false }: ViewProps) {
   const disabled = partial || ctx.stopped
   const child = (n: UiNode, i: string | number) => (
     <div key={`${uiKey}.${i}`} className="min-w-0">
-      {n.title && <p className="px-4 pt-3 text-sm font-medium">{n.title}</p>}
+      {n.title && (
+        <p className="flex items-center gap-2 px-4 pt-3 text-sm font-medium">
+          <UiTypeIcon type={n.type} />
+          {n.title}
+        </p>
+      )}
       <UiNodeView node={n} uiKey={`${uiKey}.${i}`} ctx={ctx} partial={partial} />
     </div>
   )
@@ -133,22 +140,37 @@ function UiContent({ node, uiKey, ctx, partial = false }: ViewProps) {
     case 'stat':
       return (
         <div
-          className="grid gap-3 px-4 py-3"
+          className="grid gap-2.5 px-4 py-3"
           style={{ gridTemplateColumns: `repeat(${Math.min(3, Math.max(1, node.items?.length ?? 0))}, minmax(0, 1fr))` }}
         >
           {(node.items ?? []).map((item, i) => (
-            <div key={i}>
-              <p className="text-xs text-muted">{item.label}</p>
-              <p className="mt-1 text-xl font-semibold tabular-nums">
+            // 数字卡：左侧色条按分类色区分各项，数字本身用正文色保证可读
+            <div
+              key={i}
+              data-testid="ui-stat-item"
+              className="ui-tile relative min-w-0 overflow-hidden rounded-lg py-2.5 pr-3 pl-4"
+              style={{ boxShadow: `inset 3px 0 0 var(--viz-${(i % 8) + 1})` }}
+            >
+              <p className="truncate text-xs text-muted">{item.label}</p>
+              <p className="mt-1 text-2xl leading-tight font-semibold tabular-nums">
                 {item.value}
-                <span className="ml-1 text-xs text-subtle">{item.unit}</span>
+                <span className="ml-1 text-xs font-normal text-subtle">{item.unit}</span>
               </p>
               {item.delta && (
-                <p className="text-xs text-muted">
+                <p
+                  className={cn(
+                    'mt-1 inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-2xs font-medium tabular-nums',
+                    item.trend === 'up'
+                      ? 'bg-viz-3/12 text-viz-3'
+                      : item.trend === 'down'
+                        ? 'bg-viz-4/12 text-viz-4'
+                        : 'bg-border/60 text-muted'
+                  )}
+                >
                   {item.trend === 'up' ? '↑' : item.trend === 'down' ? '↓' : '–'} {item.delta}
                 </p>
               )}
-              {item.note && <p className="text-2xs text-subtle">{item.note}</p>}
+              {item.note && <p className="mt-1 text-2xs text-subtle">{item.note}</p>}
             </div>
           ))}
         </div>
@@ -159,23 +181,37 @@ function UiContent({ node, uiKey, ctx, partial = false }: ViewProps) {
       return <ListNode node={node} uiKey={uiKey} ctx={ctx} disabled={disabled} />
     case 'steps':
       return (
-        <ol className="space-y-3 px-4 py-3">
-          {(node.items ?? []).map((item, i) => (
-            <li key={i} className={node.current === i ? 'text-accent' : 'text-fg'}>
-              <details>
-                <summary className="text-sm">
-                  {i + 1}. {item.title}
-                </summary>
-                {item.detail && <p className="mt-1 text-xs leading-relaxed text-muted">{item.detail}</p>}
-              </details>
-            </li>
-          ))}
+        <ol className="ui-steps ui-plain-list px-4 py-3">
+          {(node.items ?? []).map((item, i) => {
+            const state = node.current === undefined ? 'todo' : i < node.current ? 'done' : i === node.current ? 'current' : 'todo'
+            const head = (
+              <>
+                <span className="ui-step-dot" aria-hidden="true">
+                  {i + 1}
+                </span>
+                <span className="min-w-0 pt-0.5 text-sm">{item.title}</span>
+              </>
+            )
+            return (
+              <li key={i} className="ui-step" data-state={state} aria-current={state === 'current' ? 'step' : undefined}>
+                {item.detail ? (
+                  <details>
+                    <summary className="ui-step-head">{head}</summary>
+                    <p className="ui-step-detail">{item.detail}</p>
+                  </details>
+                ) : (
+                  <div className="ui-step-head">{head}</div>
+                )}
+              </li>
+            )
+          })}
         </ol>
       )
     case 'chart':
       return (
         <div>
-          <ChartBox data={toChartData(node)} />
+          {/* 标题和说明已由组件框显示，图里不再重复 */}
+          <ChartBox data={{ ...toChartData(node), note: undefined }} showTitle={false} />
           <details className="px-4 pb-3 text-xs text-muted">
             <summary>{t('ui.dataTable')}</summary>
             <Streamdown mode="static">
@@ -205,10 +241,10 @@ function UiContent({ node, uiKey, ctx, partial = false }: ViewProps) {
           ))}
         </ol>
       ) : (
-        <TimelineBox data={node} />
+        <TimelineBox data={{ ...node, title: undefined }} />
       )
     case 'codesteps':
-      return <CodeStepsBox data={node} />
+      return <CodeStepsBox data={{ ...node, title: undefined }} />
     // 其它阶段的类型先保持数据可读，真实互动由各阶段交付。
     default:
       return (

@@ -154,8 +154,18 @@ export function DataNodeView({ node, uiKey, ctx }: { node: DataNode; uiKey: stri
                   </label>
                 ))}
               {(node.drafts ?? []).map((draft, i) => (
-                <div key={i} className="rounded-lg border border-accent/30 p-2 text-sm">
-                  <span className="mr-2 text-2xs text-accent">{created[i] ? t('ui.saved') : t('ui.suggestion')}</span>
+                <div
+                  key={i}
+                  className={cn(
+                    'rounded-lg border p-2 text-sm',
+                    created[i] ? 'border-border' : 'border-dashed border-emph/60 bg-emph-soft/40'
+                  )}
+                >
+                  <span
+                    className={cn('mr-2 rounded px-1.5 py-0.5 text-2xs', created[i] ? 'bg-sunken text-subtle' : 'bg-emph-soft text-emph')}
+                  >
+                    {created[i] ? t('ui.saved') : t('ui.suggestion')}
+                  </span>
                   {draft.title}
                   {draft.due && <small className="ml-2 text-subtle">{draft.due}</small>}
                 </div>
@@ -195,7 +205,7 @@ export function DataNodeView({ node, uiKey, ctx }: { node: DataNode; uiKey: stri
             </div>
           )}
           {data?.type === 'excerpt' && (
-            <blockquote className="border-l-2 border-accent/50 pl-3">
+            <blockquote className="rounded-r-lg border-l-[3px] border-viz-8 bg-sunken py-2.5 pr-3 pl-3.5">
               <p className="whitespace-pre-wrap text-sm leading-relaxed">{data.text}</p>
               <button className="mt-2 text-xs text-accent" onClick={() => data.citation && openCitation(data.citation)}>
                 {data.title}
@@ -274,39 +284,61 @@ function Schedule({
           const start = new Date(`${day}T00:00`).getTime(),
             end = addDays(start, 1),
             events = (data?.events ?? []).filter((e) => e.startAt < end && e.endAt > start && !Object.values(created).includes(e.id))
+          // 空档只在白天（8:00–22:00）里找，并略去不足 30 分钟的零碎时间；整天都空就显示一条“全天空闲”
+          const dayFrom = start + 8 * 3600_000,
+            dayTo = start + 22 * 3600_000
           const free: { start: number; end: number }[] = []
-          let cursor = start
+          let cursor = dayFrom
           for (const e of [...events].sort((a, b) => a.startAt - b.startAt)) {
-            if (e.startAt > cursor) free.push({ start: cursor, end: Math.min(end, e.startAt) })
-            cursor = Math.max(cursor, Math.min(end, e.endAt))
+            if (e.startAt > cursor) free.push({ start: cursor, end: Math.min(dayTo, e.startAt) })
+            cursor = Math.max(cursor, Math.min(dayTo, e.endAt))
           }
-          if (cursor < end) free.push({ start: cursor, end })
+          if (cursor < dayTo) free.push({ start: cursor, end: dayTo })
+          const slots = free.filter((f) => f.end - f.start >= 30 * 60_000)
           const clock = (v: number): string =>
-            new Date(v).toLocaleTimeString(i18n.language, { hour: '2-digit', minute: '2-digit', hour12: false })
+            v === end ? '24:00' : new Date(v).toLocaleTimeString(i18n.language, { hour: '2-digit', minute: '2-digit', hour12: false })
           return (
             <div key={day} className="min-w-0 space-y-2">
               <p className="text-center text-2xs font-medium">
                 {new Date(`${day}T00:00`).toLocaleDateString(i18n.language, { weekday: 'short', month: 'numeric', day: 'numeric' })}
               </p>
               {events.map((e) => (
-                <div data-testid="ui-existing-event" key={e.id} className="rounded-md bg-sunken p-2 text-2xs text-muted">
-                  <p>{e.title}</p>
+                <div
+                  data-testid="ui-existing-event"
+                  key={e.id}
+                  className="rounded-md border-l-[3px] border-viz-1 bg-sunken p-2 text-2xs text-muted"
+                >
+                  <p className="font-medium text-fg">{e.title}</p>
                   <p>
                     {clock(e.startAt)}–{clock(e.endAt)}
                   </p>
                 </div>
               ))}
               {data &&
-                free.map((slot, i) => (
-                  <div key={i} className="rounded-md border border-dashed border-border p-1.5 text-2xs text-subtle">
-                    {t('ui.free')} {clock(slot.start)}–{clock(slot.end)}
+                (slots.length === 1 && !events.length ? (
+                  <div className="rounded-md border border-dashed border-border p-1.5 text-center text-2xs text-subtle">
+                    {t('ui.freeDay')}
                   </div>
+                ) : (
+                  slots.map((slot, i) => (
+                    <div key={i} className="rounded-md border border-dashed border-border p-1.5 text-2xs text-subtle">
+                      {t('ui.free')} {clock(slot.start)}–{clock(slot.end)}
+                    </div>
+                  ))
                 ))}
               {(node.proposals ?? []).flatMap((p, i) =>
                 p.start.slice(0, 10) === day
                   ? [
-                      <label key={i} className="block rounded-md border border-accent/40 p-2 text-2xs">
-                        <span className="mb-1 block text-accent">{created[i] ? t('ui.done.scheduled') : t('ui.suggestion')}</span>
+                      <label
+                        key={i}
+                        className={cn(
+                          'block rounded-md border p-2 text-2xs',
+                          created[i] ? 'border-l-[3px] border-viz-1 bg-sunken' : 'border-dashed border-emph/60 bg-emph-soft/40'
+                        )}
+                      >
+                        <span className={cn('mb-1 block font-medium', created[i] ? 'text-viz-1' : 'text-emph')}>
+                          {created[i] ? t('ui.done.scheduled') : t('ui.suggestion')}
+                        </span>
                         <span className="flex items-start gap-1">
                           <input
                             type="checkbox"
@@ -341,7 +373,11 @@ function Schedule({
 }
 function Mastery({ data }: { data: Extract<UiData, { type: 'mastery' }> }) {
   const { t } = useTranslation()
-  const weakest = [...data.notes].sort((a, b) => (a.recall ?? 0) - (b.recall ?? 0)).slice(0, 3)
+  // 薄弱前三项只从“薄弱 / 学习中”里挑，已掌握的不该出现在这里
+  const weakest = data.notes
+    .filter((n) => n.status === 'weak' || n.status === 'learning')
+    .sort((a, b) => (a.recall ?? 0) - (b.recall ?? 0))
+    .slice(0, 3)
   return (
     <div>
       <p className="mb-2 text-sm">{t('ui.due', { n: data.due })}</p>
@@ -350,12 +386,14 @@ function Mastery({ data }: { data: Extract<UiData, { type: 'mastery' }> }) {
           <button
             key={note.id}
             className={cn(
-              'rounded border px-2 py-1 text-2xs',
+              'rounded-md border px-2 py-1 text-2xs',
               note.status === 'weak'
-                ? 'border-danger/40 bg-danger/5'
+                ? 'border-viz-4/40 bg-viz-4/10 text-viz-4'
                 : note.status === 'solid'
-                  ? 'border-accent/40 bg-accent/10'
-                  : 'border-border bg-sunken'
+                  ? 'border-viz-8/40 bg-viz-8/10 text-viz-8'
+                  : note.status === 'learning'
+                    ? 'border-viz-6/40 bg-viz-6/10 text-viz-6'
+                    : 'border-border bg-sunken text-muted'
             )}
             onClick={() => useApp.getState().openNote(note.id)}
           >

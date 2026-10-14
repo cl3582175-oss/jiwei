@@ -134,12 +134,12 @@ export function TableNode({
   return (
     <div className="max-h-[400px] overflow-auto px-3 py-2">
       <table className="w-full border-collapse text-xs">
-        <thead className="sticky top-0 bg-surface">
+        <thead className="sticky top-0 bg-surface text-muted">
           <tr>
             {shown.map((col) => (
               <th
                 key={col.key}
-                className="border-b border-border px-2 py-2 text-left font-medium"
+                className="border-b border-border-strong px-2 py-2 text-left font-medium"
                 aria-sort={
                   sort?.key === col.key ? (sort.direction === 1 ? 'ascending' : sort.direction === -1 ? 'descending' : 'none') : 'none'
                 }
@@ -177,7 +177,7 @@ export function TableNode({
                     'border-b border-border/50 px-2 py-2',
                     (col.align === 'right' || col.kind === 'number') && 'text-right tabular-nums',
                     node.highlight?.some((h) => (h.row === undefined || h.row === index) && (h.col === undefined || h.col === col.key)) &&
-                      'bg-accent/10'
+                      'bg-emph-soft font-medium'
                   )}
                 >
                   {editing?.row === index && editing.col === col.key ? (
@@ -261,7 +261,7 @@ export function ListNode({
   const Tag = node.ordered ? 'ol' : 'ul'
   return (
     <div>
-      <Tag className="space-y-2 px-4 py-3 text-sm">
+      <Tag className="ui-plain-list space-y-2 px-4 py-3 text-sm">
         {(node.items ?? []).map((item, i) => (
           <li key={i} className="flex items-start gap-2">
             {node.checkable ? (

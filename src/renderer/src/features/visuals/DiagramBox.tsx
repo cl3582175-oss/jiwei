@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import type { DiagramData } from '@shared/embeds/visuals'
-import { useTokens } from './tokens'
+import { useTokens, type Tokens } from './tokens'
+import { decorateDiagram, mermaidThemeVariables } from './mermaidTheme'
 let mermaidSeq = 0
-async function loadMermaid(c: Record<string, string>) {
+async function loadMermaid(c?: Tokens) {
   const mermaid = (await import('mermaid')).default
   mermaid.initialize({
     startOnLoad: false,
@@ -12,18 +13,7 @@ async function loadMermaid(c: Record<string, string>) {
     flowchart: { htmlLabels: false },
     theme: 'base',
     fontFamily: 'inherit',
-    themeVariables: {
-      darkMode: !!c.dark,
-      background: 'transparent',
-      primaryColor: c.surface,
-      primaryBorderColor: c.accent,
-      primaryTextColor: c.fg,
-      lineColor: c.muted,
-      secondaryColor: c.sunken,
-      tertiaryColor: c.sunken,
-      textColor: c.fg,
-      fontSize: '14px'
-    }
+    themeVariables: c ? mermaidThemeVariables(c) : { background: 'transparent', fontSize: '14px' }
   })
   return mermaid
 }
@@ -31,7 +21,7 @@ async function loadMermaid(c: Record<string, string>) {
 /** 供主进程校验 AI 生成的 Mermaid（语法错误时把错误反馈给模型修正） */
 export async function validateMermaid(code: string): Promise<string | null> {
   try {
-    const m = await loadMermaid({ accent: '#000', fg: '#000', muted: '#666', surface: '#fff', sunken: '#eee' })
+    const m = await loadMermaid()
     await m.parse(code)
     return null
   } catch (e) {
@@ -50,7 +40,9 @@ export function DiagramBox({ data: d }: { data: DiagramData }) {
     void (async () => {
       try {
         const m = await loadMermaid(c)
-        const { svg } = await m.render(`mmd-${++mermaidSeq}`, d.code)
+        const code = await decorateDiagram(d.code, m, c)
+        // 补上的配色语句万一和模型写的冲突，退回原文渲染，保证图能出来
+        const { svg } = await m.render(`mmd-${++mermaidSeq}`, code).catch(() => m.render(`mmd-${++mermaidSeq}`, d.code))
         if (alive) {
           setSvg(svg)
           setError(null)

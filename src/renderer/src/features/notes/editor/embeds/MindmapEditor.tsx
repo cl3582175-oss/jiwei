@@ -23,7 +23,8 @@ function theme(): NonNullable<ConstructorParameters<typeof MindElixir>[0]['theme
   return {
     name: 'jiwei',
     type: dark ? 'dark' : 'light',
-    palette: [accent],
+    // 每条主干一种分类色（与图表、示意图同一套 --viz-*），层级和分支一眼能分开
+    palette: Array.from({ length: 8 }, (_, i) => v(`--viz-${i + 1}`, accent)),
     cssVar: {
       '--main-color': v('--fg', '#222'),
       '--main-bgcolor': v('--surface', '#fff'),
