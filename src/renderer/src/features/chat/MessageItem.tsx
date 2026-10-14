@@ -391,7 +391,8 @@ export function MessageItem({
         <div className="chat-md">
           <UiMessageProvider message={m} isLatest={!!last} compact={!!compact}>
             <Streamdown
-              mode={streaming ? 'streaming' : 'static'}
+              // 两种模式采用不同的块树；组件回答保持流式树，结束只停止动画，保留组件实例。
+              mode={plain && !streaming ? 'static' : 'streaming'}
               isAnimating={streaming}
               components={components as never}
               controls={{ code: true, table: true, mermaid: false }}

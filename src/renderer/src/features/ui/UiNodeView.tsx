@@ -132,7 +132,10 @@ function UiContent({ node, uiKey, ctx, partial = false }: ViewProps) {
       )
     case 'stat':
       return (
-        <div className="grid grid-cols-[repeat(auto-fit,minmax(100px,1fr))] gap-3 px-4 py-3">
+        <div
+          className="grid gap-3 px-4 py-3"
+          style={{ gridTemplateColumns: `repeat(${Math.min(3, Math.max(1, node.items?.length ?? 0))}, minmax(0, 1fr))` }}
+        >
           {(node.items ?? []).map((item, i) => (
             <div key={i}>
               <p className="text-xs text-muted">{item.label}</p>

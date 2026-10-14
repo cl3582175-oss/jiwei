@@ -1,10 +1,12 @@
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
 import { createServer, type Server } from 'node:http'
-import { mkdtempSync, realpathSync, writeFileSync, readdirSync, readFileSync } from 'node:fs'
+import { mkdtempSync, realpathSync, writeFileSync, readdirSync, readFileSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
 import Database from 'better-sqlite3'
 import { navTo } from './fixtures/nav'
+import { samples } from '../src/shared/ui/__tests__/fixtures'
+import { UI_TYPES } from '../src/shared/ui/catalog'
 
 test.describe.configure({ mode: 'serial' })
 let app: ElectronApplication, page: Page, server: Server
@@ -68,28 +70,26 @@ test.beforeAll(async () => {
       const input = JSON.parse(body || '{}')
       requests.push(input.messages)
       if (input.tools?.some((tool: { function?: { name?: string } }) => tool.function?.name === 'submit')) {
-        res
-          .writeHead(200, { 'content-type': 'application/json' })
-          .end(
-            JSON.stringify({
-              id: 'memo',
-              object: 'chat.completion',
-              created: 1,
-              model: 'test-ui',
-              choices: [
-                {
-                  index: 0,
-                  message: {
-                    role: 'assistant',
-                    content: null,
-                    tool_calls: [{ id: 'submit', type: 'function', function: { name: 'submit', arguments: JSON.stringify(decisionMemo) } }]
-                  },
-                  finish_reason: 'tool_calls'
-                }
-              ],
-              usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 }
-            })
-          )
+        res.writeHead(200, { 'content-type': 'application/json' }).end(
+          JSON.stringify({
+            id: 'memo',
+            object: 'chat.completion',
+            created: 1,
+            model: 'test-ui',
+            choices: [
+              {
+                index: 0,
+                message: {
+                  role: 'assistant',
+                  content: null,
+                  tool_calls: [{ id: 'submit', type: 'function', function: { name: 'submit', arguments: JSON.stringify(decisionMemo) } }]
+                },
+                finish_reason: 'tool_calls'
+              }
+            ],
+            usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 }
+          })
+        )
         return
       }
       res.writeHead(200, { 'content-type': 'text/event-stream' })
@@ -145,6 +145,166 @@ test.beforeAll(async () => {
   )
   await navTo(page, /AI 对话/)
 })
+
+test('P7 回答结束保留同一组件实例，菜单不因结束而重建', async () => {
+  await ask('组件身份检查', fence({ ...samples.list, title: '完整组件身份' }) + '\n\n' + '回答的补充说明。'.repeat(100))
+  await expect(block()).toHaveAttribute('data-ui-type', 'list')
+  await done()
+  await expect(page.getByRole('button', { name: '停止生成', exact: true })).toBeVisible()
+  const element = await block().elementHandle()
+  await expect(page.getByRole('button', { name: '停止生成', exact: true })).toHaveCount(0)
+  expect(await element!.evaluate((node) => node.isConnected)).toBe(true)
+  await expect(block()).toHaveAttribute('data-ui-state', 'ready')
+})
+
+test('P7 二十四类组件的浅深主题、窄面板、确认和笔记截图', async () => {
+  test.setTimeout(300_000)
+  await page.keyboard.press('ControlOrMeta+n')
+  await page.getByPlaceholder('笔记标题').fill('截图真实笔记')
+  await page.keyboard.press('Enter')
+  await page.keyboard.type('这是通过编辑器写入的笔记正文。')
+  await expect.poll(() => page.evaluate(() => window.jiwei.notes.list({ search: '截图真实笔记' }).then((ns) => ns.length))).toBe(1)
+  const noteId = await page.evaluate(async () => {
+    const id = (await window.jiwei.notes.list({ search: '截图真实笔记' }))[0].id
+    await window.jiwei.proposals.create({
+      noteId: id,
+      title: '截图真实康奈尔行',
+      auto: true,
+      ops: [
+        {
+          op: 'insert_row',
+          afterRowId: null,
+          cue: [{ type: 'paragraph', content: [{ type: 'text', text: '如何验证结果？' }] }],
+          body: [{ type: 'paragraph', content: [{ type: 'text', text: '沿用户路径操作，读回真实状态，再检查错误恢复。' }] }]
+        }
+      ]
+    })
+    return id
+  })
+  await expect
+    .poll(() => page.evaluate((id) => window.jiwei.notes.blocks(id).then((bs) => bs.some((b) => b.text === '如何验证结果？')), noteId))
+    .toBe(true)
+  const dir = mkdtempSync(join(tmpdir(), 'jiwei-ui-gallery-')),
+    sourcePath = join(dir, '证据原文.md')
+  writeFileSync(sourcePath, '# 证据原文\n\n真实产品路径需要验证状态、持久化与错误恢复。')
+  const sourceId = await page.evaluate(async (path) => (await window.jiwei.sources.importPaths([path])).imported[0].id, sourcePath)
+  await expect
+    .poll(() =>
+      page.evaluate((id) => window.jiwei.segments.list(id).then((ss) => ss.some((s) => s.text.includes('真实产品路径'))), sourceId)
+    )
+    .toBe(true)
+  const segmentId = await page.evaluate(
+    (id) => window.jiwei.segments.list(id).then((ss) => ss.find((s) => s.text.includes('真实产品路径'))!.id),
+    sourceId
+  )
+  await page.evaluate(async () => {
+    await window.jiwei.plan.eventSave({
+      kind: 'event',
+      title: '已有：项目讨论',
+      startAt: new Date('2026-10-27T19:00').getTime(),
+      endAt: new Date('2026-10-27T20:00').getTime()
+    })
+    await window.jiwei.actions.create('已有：检查交付证据', new Date().setHours(0, 0, 0, 0))
+  })
+  await navTo(page, /AI 对话/)
+  const nodes: Record<string, unknown> = {
+    ...samples,
+    note: { type: 'note', noteId },
+    excerpt: { type: 'excerpt', segmentId },
+    mastery: { type: 'mastery', scope: { kind: 'note', id: noteId } },
+    schedule: {
+      type: 'schedule',
+      range: { from: '2026-10-26', to: '2026-11-01' },
+      proposals: [{ title: '复习建议', start: '2026-10-28T19:00', end: '2026-10-28T20:00' }]
+    },
+    tasks: { type: 'tasks', filter: { scope: 'today' }, drafts: [{ title: '整理参考文献' }] },
+    details: { ...samples.details, open: true }
+  }
+  const root = test.info().outputPath('ui-gallery')
+  mkdirSync(root, { recursive: true })
+  const captured: { name: string; width: number; height: number }[] = []
+  for (const theme of ['light', 'dark'] as const) {
+    await page.evaluate((theme) => window.jiwei.settings.set({ theme }), theme)
+    await expect(page.locator('html')).toHaveAttribute('data-theme', theme)
+    for (const { type } of UI_TYPES) {
+      await ask(`审查截图 ${theme} ${type}`, fence({ ...(nodes[type] as object), title: `${type} · 智能界面` }))
+      await expect(page.locator('main .paper.whitespace-pre-wrap').last()).toHaveText(`审查截图 ${theme} ${type}`)
+      await expect(block()).toHaveAttribute('data-ui-type', type)
+      await done()
+      // 围栏闭合早于回答 done；等消息结束，避免截取 Streamdown 正在替换的流式 DOM。
+      await expect(page.getByRole('button', { name: '停止生成', exact: true })).toHaveCount(0)
+      if (type === 'chart') await expect(block().locator('.chart-canvas svg')).toBeVisible()
+      if (type === 'diagram') await expect(block().locator('.diagram-svg svg')).toBeVisible()
+      if (['schedule', 'tasks', 'note', 'excerpt', 'mastery', 'usage'].includes(type)) await expect(block()).not.toContainText('正在读取…')
+      if (type === 'note') await expect(block()).toContainText('如何验证结果？')
+      if (type === 'excerpt') await expect(block()).toContainText('真实产品路径需要验证')
+      const box = (await block().boundingBox())!
+      captured.push({ name: `${theme}-${type}.png`, width: box.width, height: box.height })
+      // 页面截图不持有某次 Streamdown DOM 实例；前后仍核查当前组件类型与完成状态。
+      await page.screenshot({ path: join(root, `${theme}-${type}.png`), animations: 'disabled' })
+      await expect(block()).toHaveAttribute('data-ui-type', type)
+      await done()
+    }
+  }
+  expect(captured).toHaveLength(48)
+  await page.evaluate(() => window.jiwei.settings.set({ theme: 'light' }))
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1000, 900))
+  await expect(page.getByTestId('sidebar-chat')).toHaveAttribute('data-collapsed', 'true')
+  await page.getByTestId('sidebar-spine').click()
+  await expect(page.getByTestId('sidebar-chat')).toHaveAttribute('data-collapsed', 'false')
+  await expect(page.getByTestId('sidebar-chat')).toHaveCSS('width', '300px')
+  await page.getByTestId('sidebar-resize').hover()
+  const resize = (await page.getByTestId('sidebar-resize').boundingBox())!
+  await page.mouse.move(resize.x + resize.width / 2, resize.y + 140)
+  await page.mouse.down()
+  await expect.poll(() => page.evaluate(() => document.body.style.cursor)).toBe('col-resize')
+  await page.mouse.move(resize.x + resize.width / 2 + 160, resize.y + 140, { steps: 8 })
+  await page.mouse.up()
+  await expect(page.getByTestId('sidebar-chat')).toHaveCSS('width', '420px')
+  await ask('窄面板计算工具', fence({ type: 'columns', title: '计算与趋势', children: [samples.calc, samples.chart] }))
+  await expect(block()).toHaveAttribute('data-ui-type', 'columns')
+  await done()
+  await expect.poll(() => block().evaluate((el) => el.getBoundingClientRect().width)).toBeLessThan(480)
+  await expect(block().getByTestId('ui-columns')).toHaveAttribute('data-layout', 'stack')
+  await page.screenshot({ path: join(root, 'narrow-columns.png'), animations: 'disabled' })
+  await ask(
+    '窄面板表单',
+    fence({
+      type: 'form',
+      title: '学习条件',
+      fields: [
+        { key: 'hours', label: '每周学习小时数', kind: 'number', required: true },
+        { key: 'goal', label: '希望达到的目标', kind: 'text', required: true }
+      ]
+    })
+  )
+  await expect(block()).toHaveAttribute('data-ui-type', 'form')
+  await done()
+  await page.screenshot({ path: join(root, 'narrow-form.png'), animations: 'disabled' })
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1440, 900))
+  await page.getByTestId('sidebar-resize').dblclick()
+  await ask(
+    '确认面板审查截图',
+    fence({ type: 'list', title: '交付检查', checkable: true, items: [{ text: '检查差异' }, { text: '读回测试证据' }] })
+  )
+  await expect(block()).toHaveAttribute('data-ui-type', 'list')
+  await done()
+  await block().getByRole('button', { name: '变成待办', exact: true }).click()
+  await expect(block().getByTestId('ui-confirm')).toBeVisible()
+  await page.screenshot({ path: join(root, 'confirmation.png'), animations: 'disabled' })
+  await block().getByTestId('ui-confirm').getByRole('button', { name: '取消', exact: true }).click()
+  await ask('笔记组件审查截图', fence({ ...samples.calc, title: '笔记中的计算工具' }))
+  await expect(block()).toHaveAttribute('data-ui-type', 'calc')
+  await done()
+  await block().getByRole('button', { name: '组件菜单' }).click()
+  await block().getByRole('menuitem', { name: '存进笔记', exact: true }).click()
+  await block().getByTestId('ui-save-target').getByRole('button', { name: '新建笔记', exact: true }).click()
+  await block().getByTestId('ui-confirm').getByRole('button', { name: '确认', exact: true }).click()
+  await expect(page.getByTestId('ui-note-embed')).toBeVisible()
+  await page.screenshot({ path: join(root, 'note-embed.png'), animations: 'disabled' })
+  writeFileSync(join(root, 'manifest.json'), JSON.stringify(captured, null, 2))
+  await navTo(page, /AI 对话/)
+})
 test.afterAll(async () => {
   await app?.close()
   await new Promise<void>((r) => server?.close(() => r()))
@@ -166,6 +326,128 @@ const block = () => page.getByTestId('ui-block').last()
 async function done(): Promise<void> {
   await expect(block()).toHaveAttribute('data-ui-state', 'ready')
 }
+
+test('P7 目标搜索给出最近八篇可用笔记，追加后仍可撤销', async () => {
+  const ids = await page.evaluate(async () => {
+    const out: string[] = []
+    for (let i = 0; i < 12; i++) {
+      const note = await window.jiwei.notes.create({ title: `目标排序 ${i}` })
+      await window.jiwei.notes.update(note.id, { pinned: i < 2, aiExcluded: i === 11 })
+      out.push(note.id)
+    }
+    return out
+  })
+  const dataDir = await page.evaluate(() => window.jiwei.app.info().then((s) => s.dataDir))
+  const db = new Database(join(dataDir, 'jiwei.db'))
+  try {
+    for (const [i, id] of ids.entries()) db.prepare('UPDATE notes SET edited_at=? WHERE id=?').run(Date.now() + i * 1000, id)
+  } finally {
+    db.close()
+  }
+  await ask('目标排序验证', fence({ ...samples.calc, title: '追加计算器' }))
+  await expect(block()).toHaveAttribute('data-ui-type', 'calc')
+  await done()
+  await block().getByRole('button', { name: '组件菜单' }).click()
+  await block().getByRole('menuitem', { name: '存进笔记', exact: true }).click()
+  const target = block().getByTestId('ui-save-target')
+  await target.getByRole('textbox', { name: '搜索笔记' }).fill('目标排序')
+  const matches = target.getByRole('button', { name: /^目标排序 / })
+  await expect(matches).toHaveCount(8)
+  expect(await matches.allTextContents()).toEqual(Array.from({ length: 8 }, (_, i) => `目标排序 ${10 - i}`))
+  await target.getByRole('button', { name: '目标排序 10', exact: true }).click()
+  await block().getByTestId('ui-confirm').getByRole('button', { name: '确认', exact: true }).click()
+  await expect(page.getByPlaceholder('笔记标题')).toHaveValue('目标排序 10')
+  await expect(page.getByTestId('ui-note-embed')).toBeVisible()
+  await expect
+    .poll(() => page.evaluate((id) => window.jiwei.notes.blocks(id).then((bs) => bs.some((b) => b.text.includes('追加计算器'))), ids[10]))
+    .toBe(true)
+  await page.locator('.tiptap').click()
+  await page.keyboard.press('ControlOrMeta+z')
+  await expect(page.getByTestId('ui-note-embed')).toHaveCount(0)
+  await expect
+    .poll(() => page.evaluate((id) => window.jiwei.notes.blocks(id).then((bs) => bs.some((b) => b.text.includes('追加计算器'))), ids[10]))
+    .toBe(false)
+  await navTo(page, /AI 对话/)
+})
+
+test('P7 布局后代状态保存与笔记重载保留，回到对话按钮隐藏', async () => {
+  await ask('保存布局后代状态', fence({ type: 'columns', title: '持久布局状态', children: [samples.calc, samples.list] }))
+  await expect(block()).toHaveAttribute('data-ui-type', 'columns')
+  await done()
+  await block().getByRole('slider', { name: '输入', exact: true }).press('ArrowRight')
+  await block().getByRole('checkbox', { name: '检查证据', exact: true }).check()
+  await block().getByRole('button', { name: '组件菜单' }).click()
+  await block().getByRole('menuitem', { name: '存进笔记', exact: true }).click()
+  await block().getByTestId('ui-save-target').getByRole('button', { name: '新建笔记', exact: true }).click()
+  await block().getByTestId('ui-confirm').getByRole('button', { name: '确认', exact: true }).click()
+  const embed = page.getByTestId('ui-note-embed')
+  await expect(embed.getByRole('slider', { name: '输入', exact: true })).toHaveValue('3')
+  await expect(embed.getByRole('checkbox', { name: '检查证据', exact: true })).toBeChecked()
+  await embed.getByRole('slider', { name: '输入', exact: true }).press('ArrowRight')
+  await expect(embed.getByTestId('ui-calc-output')).toContainText('8')
+  await expect(embed.getByRole('button', { name: '按这个改', exact: true })).toHaveCount(0)
+  await page.reload()
+  await page.waitForSelector('nav')
+  await navTo(page, /^笔记/)
+  await page.getByText('持久布局状态', { exact: true }).first().click()
+  await expect(page.getByTestId('ui-note-embed').getByRole('slider', { name: '输入', exact: true })).toHaveValue('4')
+  await expect(page.getByTestId('ui-note-embed').getByRole('checkbox', { name: '检查证据', exact: true })).toBeChecked()
+  await navTo(page, /AI 对话/)
+})
+
+test('P7 数字卡最多三列，六项分两行', async () => {
+  await ask('数字卡列数检查', fence({ type: 'stat', items: Array.from({ length: 6 }, (_, i) => ({ label: `指标${i}`, value: i })) }))
+  await expect(block()).toHaveAttribute('data-ui-type', 'stat')
+  await done()
+  const positions = await block()
+    .locator('.tabular-nums')
+    .evaluateAll((els) =>
+      els.map((el) => {
+        const rect = el.getBoundingClientRect()
+        return { left: Math.round(rect.left), top: Math.round(rect.top) }
+      })
+    )
+  expect(new Set(positions.map((p) => p.left)).size).toBe(3)
+  expect(new Set(positions.map((p) => p.top)).size).toBe(2)
+})
+
+test('P7 资料引用存入笔记后仍能刷新原文并跳回出处', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'jiwei-ui-ref-save-')),
+    path = join(dir, '持久原文.md')
+  writeFileSync(path, '# 持久原文\n\n出处刷新旧文本。')
+  const id = await page.evaluate(async (path) => (await window.jiwei.sources.importPaths([path])).imported[0].id, path)
+  await expect
+    .poll(() => page.evaluate((id) => window.jiwei.segments.list(id).then((ss) => ss.some((s) => s.text.includes('旧文本'))), id))
+    .toBe(true)
+  const segmentId = await page.evaluate(
+    (id) => window.jiwei.segments.list(id).then((ss) => ss.find((s) => s.text.includes('旧文本'))!.id),
+    id
+  )
+  await ask('保存原文定位', fence({ type: 'excerpt', title: '持久原文卡', segmentId }))
+  await expect(block()).toHaveAttribute('data-ui-type', 'excerpt')
+  await done()
+  await expect(block()).toContainText('出处刷新旧文本。')
+  await block().getByRole('button', { name: '组件菜单' }).click()
+  await block().getByRole('menuitem', { name: '存进笔记', exact: true }).click()
+  await block().getByTestId('ui-save-target').getByRole('button', { name: '新建笔记', exact: true }).click()
+  await block().getByTestId('ui-confirm').getByRole('button', { name: '确认', exact: true }).click()
+  const embed = page.getByTestId('ui-note-embed')
+  await expect(embed).toContainText('出处刷新旧文本。')
+  await page.evaluate((id) => window.jiwei.segments.update(id, '出处刷新新文本。'), segmentId)
+  await embed.getByRole('button', { name: '刷新为最新', exact: true }).click()
+  await expect(embed).toContainText('出处刷新新文本。')
+  await embed.getByRole('button', { name: '更新快照', exact: true }).click()
+  await page.reload()
+  await page.waitForSelector('nav')
+  await navTo(page, /^笔记/)
+  await page.getByText('持久原文卡', { exact: true }).first().click()
+  await expect(page.getByTestId('ui-note-embed')).toContainText('出处刷新新文本。')
+  await page.getByTestId('ui-note-embed').getByRole('button', { name: '刷新为最新', exact: true }).click()
+  await page.getByTestId('ui-note-embed').getByRole('button', { name: '持久原文', exact: true }).click()
+  await expect(page.getByRole('article')).toContainText('出处刷新新文本。')
+  await page.getByRole('button', { name: '关闭资料', exact: true }).click()
+  await navTo(page, /AI 对话/)
+})
 
 test('P2 流式表格逐行显示、结束后排序', async () => {
   await ask('流式表格', `下面逐行显示数据。\n\n${fence(table)}\n\n数据已经列全。`)
@@ -999,12 +1281,10 @@ test.describe('P6', () => {
     try {
       await expect.poll(() => readdirSync(dir).filter((name) => name.endsWith('.svg')).length).toBe(1)
     } finally {
-      await test
-        .info()
-        .attach('svg-download-trace', {
-          body: JSON.stringify(await app.evaluate(() => (globalThis as unknown as { uiSvgTrace: unknown }).uiSvgTrace)),
-          contentType: 'application/json'
-        })
+      await test.info().attach('svg-download-trace', {
+        body: JSON.stringify(await app.evaluate(() => (globalThis as unknown as { uiSvgTrace: unknown }).uiSvgTrace)),
+        contentType: 'application/json'
+      })
     }
     const svg = readFileSync(
       join(

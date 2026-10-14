@@ -60,7 +60,7 @@ export function ConfirmSheet({
       )}
       <div className="flex gap-2">
         <button
-          className="rounded-lg bg-accent px-3 py-1.5 text-xs text-on-accent disabled:opacity-40"
+          className="rounded-lg bg-accent px-3 py-1.5 text-xs text-accent-fg disabled:opacity-40"
           disabled={busy || !selected.size}
           onClick={() => {
             setBusy(true)

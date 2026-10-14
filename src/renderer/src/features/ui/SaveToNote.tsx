@@ -16,7 +16,8 @@ export function SaveToNote({ node, uiKey, ctx, onClose }: { node: UiNode; uiKey:
   const written = useRef<{ noteId: string; title: string } | null>(null)
   const { data: notes = [] } = useQuery({
     queryKey: ['ui-note-targets', search],
-    queryFn: () => api.notes.list({ search, sort: 'edited', limit: 8 })
+    // 既有列表先置顶再截断；目标弹层需先排除不可用项、按编辑时间排序，再取八篇。
+    queryFn: () => api.notes.list({ search, sort: 'edited' })
   })
   const { data: conversations = [] } = useQuery({ queryKey: ['conversations'], queryFn: () => api.chat.conversations() })
   const title = node.title ?? conversations.find((c) => c.id === ctx.conversationId)?.title ?? t('common.untitled')
@@ -35,8 +36,9 @@ export function SaveToNote({ node, uiKey, ctx, onClose }: { node: UiNode; uiKey:
             onChange={(e) => setSearch(e.target.value)}
           />
           {notes
-            .filter((n) => !n.aiExcluded)
+            .filter((n) => n.deletedAt === null && !n.aiExcluded)
             .sort((a, b) => b.editedAt - a.editedAt)
+            .slice(0, 8)
             .map((note) => (
               <button
                 key={note.id}
