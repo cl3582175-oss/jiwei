@@ -1,3 +1,4 @@
+import { RELATIONS } from './graphRelations'
 import { AnimationSchema } from './manim'
 import { BACKEND_IDS, BackendSaveSchema, WebModeSchema, type RetrievalStatus, type RetrievalUsage, type WebPageView } from './retrieval'
 import {
@@ -892,8 +893,14 @@ export const capabilities = {
       ai: { effect: 'read' }
     }),
     relate: cap<void>()({
-      description: '把笔记与另一篇笔记或资料关联（双向）',
-      params: [id('noteId'), ['toType', z.enum(['note', 'source'])], id('toId')]
+      description: '把笔记与另一篇笔记或资料关联（双向）；可指定关系类型（前置、推出、对比……），reverse 表示“对方 <关系> 本篇”',
+      params: [
+        id('noteId'),
+        ['toType', z.enum(['note', 'source'])],
+        id('toId'),
+        ['relation', z.enum(RELATIONS).optional()],
+        ['reverse', z.boolean().optional()]
+      ]
     }),
     unrelate: cap<void>()({
       description: '取消关联，或把推荐标为不相关（以后不再推荐）',

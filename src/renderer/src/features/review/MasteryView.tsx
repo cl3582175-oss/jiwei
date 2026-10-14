@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import type { MasteryMap, MasteryStatus, NoteMastery } from '@shared/types'
 import { api, cn } from '@/lib/utils'
 import { useApp } from '@/store/app'
-import { useTokens, type Tokens } from '@/features/visuals/tokens'
+import { mix, useTokens, type Tokens } from '@/features/visuals/tokens'
 
 // 掌握度地图：分类 → 笔记的矩形树图（ECharts treemap）。面积 = 复习卡片数，颜色 = 掌握情况。
 // 下方列表可以按“薄弱 / 空白 / 未开始 / 学习中 / 牢固”筛选，点击回到笔记。
@@ -13,17 +13,17 @@ export const STATUS_ORDER: MasteryStatus[] = ['weak', 'blank', 'new', 'learning'
 
 export function statusColor(s: MasteryStatus, c: Tokens): string {
   switch (s) {
+    // 与图表同一套分类色：薄弱朱红、学习中姜黄、牢固竹绿、未开始浅黛蓝、空白灰
     case 'weak':
-      return c.danger
+      return c.viz[3]
     case 'learning':
-      return '#c8963e'
+      return c.viz[5]
     case 'solid':
-      return c.accent
+      return c.viz[7]
     case 'new':
-      // 浅一些的蓝灰：与“牢固”的主题色明显区分
-      return '#8ba5ba'
+      return mix(c.viz[0], c.surface, 0.6)
     default:
-      return c.border
+      return c.borderStrong
   }
 }
 
