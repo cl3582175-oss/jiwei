@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Crosshair, ExternalLink, Plus, X } from 'lucide-react'
+import { Check, Crosshair, ExternalLink, Plus, X } from 'lucide-react'
 import type { GraphEdge, GraphNode, KnowledgeGraph } from '@shared/types'
 import { RELATIONS, RELATION_META, relationSentence, type Relation } from '@shared/graphRelations'
 import { api, cn } from '@/lib/utils'
@@ -146,7 +146,7 @@ export function NodePanel({
                   >
                     {sentence}
                   </button>
-                  {e.kind === 'related' && node.type === 'note' && (
+                  {e.kind === 'related' && e.status !== 'suggested' && node.type === 'note' && (
                     <button
                       aria-label={t('graph.remove')}
                       title={t('graph.remove')}
@@ -160,25 +160,54 @@ export function NodePanel({
                     </button>
                   )}
                 </div>
-                <div className="mt-1.5 flex items-center gap-2 pl-6 text-2xs text-subtle">
-                  <span>
-                    {e.kind === 'reference' ? t('graph.textLink') : e.status === 'suggested' ? t('graph.suggested') : t('graph.manual')}
-                  </span>
-                  {node.type === 'note' && other.type === 'note' && (
-                    <select
-                      aria-label={t('graph.setType')}
-                      value={value}
-                      onChange={(ev) => void set(other, ev.target.value)}
-                      className="min-w-0 flex-1 truncate rounded-md border border-border bg-surface px-1.5 py-1 text-2xs text-fg"
-                    >
-                      {relationOptions(title(node.key), other.title, zh).map((o) => (
-                        <option key={o.value} value={o.value} title={o.title}>
-                          {o.label}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                </div>
+                {e.status === 'suggested' && e.linkId ? (
+                  // AI 建议：显示理由，确认后才算数
+                  <div className="mt-1.5 pl-6 text-2xs">
+                    {e.reason && <p className="mb-1.5 leading-relaxed text-muted">{e.reason}</p>}
+                    <div className="flex items-center gap-1.5">
+                      <span className="rounded bg-emph-soft px-1.5 py-0.5 text-emph">{t('graph.suggested')}</span>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={async () => {
+                          await api.graph.accept(e.linkId!)
+                          onChanged()
+                        }}
+                      >
+                        <Check className="size-3.5" />
+                        {t('graph.discover.accept')}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={async () => {
+                          await api.graph.reject(e.linkId!)
+                          onChanged()
+                        }}
+                      >
+                        {t('graph.discover.reject')}
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-1.5 flex items-center gap-2 pl-6 text-2xs text-subtle">
+                    <span>{e.kind === 'reference' ? t('graph.textLink') : t('graph.manual')}</span>
+                    {node.type === 'note' && other.type === 'note' && (
+                      <select
+                        aria-label={t('graph.setType')}
+                        value={value}
+                        onChange={(ev) => void set(other, ev.target.value)}
+                        className="min-w-0 flex-1 truncate rounded-md border border-border bg-surface px-1.5 py-1 text-2xs text-fg"
+                      >
+                        {relationOptions(title(node.key), other.title, zh).map((o) => (
+                          <option key={o.value} value={o.value} title={o.title}>
+                            {o.label}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+                )}
               </li>
             )
           })}

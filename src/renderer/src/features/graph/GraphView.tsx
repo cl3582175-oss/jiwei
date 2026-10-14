@@ -5,7 +5,7 @@ import Graph from 'graphology'
 import Sigma from 'sigma'
 import forceAtlas2 from 'graphology-layout-forceatlas2'
 import FA2Layout from 'graphology-layout-forceatlas2/worker'
-import { Network, Search, X, Crosshair, Plus, Minus, Maximize2 } from 'lucide-react'
+import { Network, Search, X, Crosshair, Plus, Minus, Maximize2, Sparkles, History, Play, Pause } from 'lucide-react'
 import type { MasteryStatus } from '@shared/types'
 import { RELATION_META, type RelationFamily } from '@shared/graphRelations'
 import { api, cn } from '@/lib/utils'
@@ -16,6 +16,9 @@ import { STATUS_ORDER, statusColor } from '../review/MasteryView'
 import { FAMILIES, categoryColors, convexHull, degrees, edgeStyle, hubs, neighborhood, nodeSize } from './model'
 import { NodePanel } from './NodePanel'
 import { RelationList } from './RelationList'
+import { LearningPath } from './LearningPath'
+import { DiscoverPanel } from './DiscoverPanel'
+import { relationOptions } from './NodePanel'
 
 // 知识结构图（v0.5.1，v0.14.2 改版）：sigma.js（WebGL）渲染，graphology 存图，ForceAtlas2 在 Web Worker 中布局。
 // 改版要点：分类用分类色并聚成带底色的区域，节点大小看连接数，连线按关系家族编码（前置、推理、对比……有方向的画箭头），
@@ -38,7 +41,13 @@ export function GraphView() {
   const focus = useApp((s) => s.graphFocus)
   const { data: g, refetch } = useQuery({ queryKey: ['graph'], queryFn: () => api.graph.data(), staleTime: 0 })
   const [colorBy, setColorBy] = useState<ColorBy>('category')
-  const [view, setView] = useState<'map' | 'list'>('map')
+  const [view, setView] = useState<'map' | 'path' | 'list'>('map')
+  const [discover, setDiscover] = useState(false)
+  // 时间回放（v0.14.3）：只显示这个时间之前建立的笔记
+  const [until, setUntil] = useState<number | null>(null)
+  const [playing, setPlaying] = useState(false)
+  // Shift + 拖动连线（v0.14.3）：松开在另一篇笔记上时选关系类型
+  const [connect, setConnect] = useState<{ from: string; to: string; x: number; y: number } | null>(null)
   const [depth, setDepth] = useState(2)
   const [hiddenCats, setHiddenCats] = useState<Set<string>>(new Set())
   const [hiddenFams, setHiddenFams] = useState<Set<string>>(new Set())
@@ -62,15 +71,57 @@ export function GraphView() {
   )
   const { shown, shownEdges } = useMemo(() => {
     if (!g) return { shown: [], shownEdges: [] }
-    const nodes = g.nodes.filter(
-      (n) => (!visible || visible.has(n.key)) && (n.type === 'source' ? !hiddenFams.has('source') : !hiddenCats.has(n.categoryId ?? NONE))
+    let nodes = g.nodes.filter(
+      (n) =>
+        (!visible || visible.has(n.key)) &&
+        (n.type === 'source'
+          ? !hiddenFams.has('source')
+          : !hiddenCats.has(n.categoryId ?? NONE) && (until === null || n.createdAt <= until))
     )
-    const keys = new Set(nodes.map((n) => n.key))
+    let keys = new Set(nodes.map((n) => n.key))
     const edges = g.edges.filter(
       (e) => keys.has(e.from) && keys.has(e.to) && !hiddenFams.has(e.kind === 'source' ? 'source' : RELATION_META[e.relation].family)
     )
-    return { shown: nodes, shownEdges: edges }
-  }, [g, visible, hiddenCats, hiddenFams])
+    // 回放时资料跟着引用它的笔记出现
+    if (until !== null) {
+      const used = new Set(edges.flatMap((e) => [e.from, e.to]))
+      nodes = nodes.filter((n) => n.type === 'note' || used.has(n.key))
+      keys = new Set(nodes.map((n) => n.key))
+    }
+    return { shown: nodes, shownEdges: edges.filter((e) => keys.has(e.from) && keys.has(e.to)) }
+  }, [g, visible, hiddenCats, hiddenFams, until])
+  // 别处改了笔记或关系（笔记底部的关联面板、积微助手）时，图跟着更新
+  useEffect(() => {
+    let timer: number | undefined
+    const off = window.jiweiEvents.on('notes:changed', () => {
+      window.clearTimeout(timer)
+      timer = window.setTimeout(() => void refetch(), 400)
+    })
+    return () => {
+      off()
+      window.clearTimeout(timer)
+    }
+  }, [refetch])
+  const suggestions = useMemo(() => (g?.edges ?? []).filter((e) => e.status === 'suggested').length, [g])
+  const span = useMemo(() => {
+    const times = (g?.nodes ?? []).filter((n) => n.type === 'note' && n.createdAt).map((n) => n.createdAt)
+    return times.length ? { min: Math.min(...times), max: Math.max(...times) } : null
+  }, [g])
+  useEffect(() => {
+    if (!playing || !span) return
+    const step = Math.max(1, (span.max - span.min) / 60)
+    const timer = window.setInterval(() => {
+      setUntil((u) => {
+        const next = (u ?? span.min) + step
+        if (next >= span.max) {
+          setPlaying(false)
+          return span.max
+        }
+        return next
+      })
+    }, 120)
+    return () => window.clearInterval(timer)
+  }, [playing, span])
   const deg = useMemo(() => degrees(shownEdges), [shownEdges])
   const hubSet = useMemo(() => hubs(shown, shownEdges), [shown, shownEdges])
   const typedCount = useMemo(() => (g?.edges ?? []).filter((e) => e.relation !== 'related').length, [g])
@@ -107,6 +158,7 @@ export function GraphView() {
         color,
         nodeType: n.type,
         hub: hubSet.has(n.key),
+        stale: n.status === 'outdated' || n.status === 'disputed',
         group: n.type === 'note' ? group(n.key) : null
       })
       if (n.type === 'note') graph.addEdge(`anchor:${group(n.key)}`, n.key, { hidden: true, weight: 1.6, size: 0 })
@@ -159,6 +211,12 @@ export function GraphView() {
       allowInvalidContainer: true
     })
     sigmaRef.current = renderer
+    // 端到端测试从画布元素上换算节点位置（只挂在这个 DOM 元素上，不是全局变量）
+    ;(box.current as HTMLDivElement & { __graphPoint?: (key: string) => { x: number; y: number } | null }).__graphPoint = (key) => {
+      if (!graph.hasNode(key)) return null
+      const attr = graph.getNodeAttributes(key) as { x: number; y: number }
+      return renderer.graphToViewport({ x: attr.x, y: attr.y })
+    }
     renderer.setSetting('nodeReducer', (node, data) => {
       if (data.hidden) return data
       const h = hovered.current ?? selectedRef.current
@@ -174,6 +232,8 @@ export function GraphView() {
         : { ...data, color: mix(data.color, c.surface, 0.2), size: Math.max(0.5, data.size * 0.6), label: '' }
     })
 
+    let dragging: string | null = null
+    let dragTo: { x: number; y: number } | null = null
     let scratchCanvas: HTMLCanvasElement | null = null
     const scratch = (width: number, height: number, dpr: number): CanvasRenderingContext2D => {
       scratchCanvas ??= document.createElement('canvas')
@@ -273,7 +333,33 @@ export function GraphView() {
             ctxO.strokeStyle = c.emph
             ctxO.stroke()
           }
+          // 已过时 / 存疑的笔记：红色虚线圈
+          if (attr.stale) {
+            ctxO.save()
+            ctxO.setLineDash([3, 3])
+            ctxO.beginPath()
+            ctxO.arc(p.x, p.y, p.r + (attr.hub ? 7 : 3.5), 0, Math.PI * 2)
+            ctxO.lineWidth = 1.6
+            ctxO.strokeStyle = c.viz[3]
+            ctxO.stroke()
+            ctxO.restore()
+          }
         })
+      // 正在拖出的连线
+      if (ctxO && dragging && dragTo) {
+        const p = at(dragging)
+        if (p) {
+          ctxO.save()
+          ctxO.setLineDash([6, 4])
+          ctxO.lineWidth = 2
+          ctxO.strokeStyle = c.accent
+          ctxO.beginPath()
+          ctxO.moveTo(p.x, p.y)
+          ctxO.lineTo(dragTo.x, dragTo.y)
+          ctxO.stroke()
+          ctxO.restore()
+        }
+      }
       const hk = hovered.current
       if (hk) {
         const p = at(hk)
@@ -297,7 +383,43 @@ export function GraphView() {
       renderer.refresh({ skipIndexation: true })
       if (box.current) box.current.style.cursor = ''
     })
-    renderer.on('clickNode', ({ node }) => setSelected(node))
+    let dragged = false
+    renderer.on('clickNode', ({ node }) => {
+      // 拖线松手时也会触发一次点击：忽略，免得把目标笔记选中
+      if (dragged) {
+        dragged = false
+        return
+      }
+      setSelected(node)
+    })
+    renderer.on('downNode', (e) => {
+      const original = e.event.original as MouseEvent
+      if (!original.shiftKey || !e.node.startsWith('note:')) return
+      dragging = e.node
+      e.preventSigmaDefault()
+    })
+    renderer.on('moveBody', ({ event }) => {
+      if (!dragging) return
+      dragTo = { x: event.x, y: event.y }
+      event.preventSigmaDefault()
+      event.original.preventDefault()
+      event.original.stopPropagation()
+      renderer.refresh({ skipIndexation: true })
+    })
+    renderer.on('upNode', ({ node }) => {
+      if (dragging && node !== dragging && node.startsWith('note:') && dragTo) {
+        dragged = true
+        setConnect({ from: dragging, to: node, x: dragTo.x, y: dragTo.y })
+      }
+    })
+    const endDrag = (): void => {
+      if (!dragging) return
+      dragging = null
+      dragTo = null
+      renderer.refresh({ skipIndexation: true })
+    }
+    renderer.on('upStage', endDrag)
+    renderer.getMouseCaptor().on('mouseup', () => window.setTimeout(endDrag, 0))
     renderer.on('doubleClickNode', (e) => {
       e.preventSigmaDefault()
       openNode(e.node)
@@ -352,7 +474,7 @@ export function GraphView() {
   const goTo = (key: string): void => {
     setSelected(key)
     setQ('')
-    if (view !== 'map') setView('map')
+    if (view === 'list') setView('map')
     const s = sigmaRef.current
     const d = s?.getNodeDisplayData(key)
     if (s && d) void s.getCamera().animate({ x: d.x, y: d.y, ratio: 0.45 }, { duration: 500 })
@@ -408,14 +530,32 @@ export function GraphView() {
           {t('graph.count', { notes: notesN, sources: shown.length - notesN, edges: shownEdges.length })}
         </span>
         <div className="flex-1" />
+        <button
+          onClick={() => {
+            setDiscover(!discover)
+            setSelected(null)
+          }}
+          aria-pressed={discover}
+          data-testid="graph-discover-toggle"
+          className={cn(
+            'no-drag inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs transition-colors',
+            discover ? 'bg-accent-soft text-accent' : 'text-muted hover:bg-surface-hover hover:text-fg'
+          )}
+        >
+          <Sparkles className="size-3.5" />
+          {t('graph.discover.title')}
+          {suggestions > 0 && <span className="rounded-full bg-emph px-1.5 text-2xs leading-4 text-white">{suggestions}</span>}
+        </button>
         {view === 'map' && tabs('colorBy', ['category', 'mastery'], colorBy, setColorBy)}
-        {tabs('view', ['map', 'list'], view, setView)}
+        {tabs('view', ['map', 'path', 'list'], view, setView)}
       </header>
       <div className="relative min-h-0 flex-1 overflow-hidden">
         {g && !g.nodes.length ? (
           <p className="absolute inset-0 grid place-items-center px-8 text-center text-sm text-muted">{t('graph.empty')}</p>
         ) : view === 'list' ? (
           <RelationList nodes={shown} edges={shownEdges} c={c} onSelect={goTo} />
+        ) : view === 'path' ? (
+          <LearningPath nodes={shown} edges={shownEdges} c={c} selected={selected} onSelect={setSelected} />
         ) : (
           <>
             {/* 底部留出图例的高度，节点不会被图例挡住 */}
@@ -588,6 +728,12 @@ export function GraphView() {
                 <span className="size-2.5 rounded-full border-2" style={{ borderColor: mix(c.subtle, c.fg, 0.7) }} />
                 {t('graph.legend.source')}
               </button>
+              {shown.some((n) => n.status === 'outdated' || n.status === 'disputed') && (
+                <span className="inline-flex items-center gap-1.5 px-1.5 py-0.5">
+                  <span className="size-2.5 rounded-full border-2 border-dashed" style={{ borderColor: c.viz[3] }} />
+                  {t('graph.legend.stale')}
+                </span>
+              )}
               {hubSet.size > 0 && (
                 <span className="inline-flex items-center gap-1.5 px-1.5 py-0.5" title={t('graph.hubHint')}>
                   <span className="size-2.5 rounded-full border-2" style={{ borderColor: c.emph }} />
@@ -602,7 +748,7 @@ export function GraphView() {
         {view === 'map' && g && g.nodes.length > 0 && (
           <div
             className="paper absolute bottom-24 flex flex-col overflow-hidden rounded-xl shadow-[var(--shadow-1)]"
-            style={{ right: selectedNode ? 344 : 16 }}
+            style={{ right: selectedNode || discover ? 344 : 16 }}
           >
             {(
               [
@@ -621,7 +767,104 @@ export function GraphView() {
                 <Icon className="size-4" />
               </button>
             ))}
+            {span && span.max > span.min && (
+              <button
+                aria-label={t('graph.timeline')}
+                title={t('graph.timeline')}
+                aria-pressed={until !== null}
+                onClick={() => {
+                  if (until === null) {
+                    setUntil(span.min)
+                    setPlaying(true)
+                  } else {
+                    setUntil(null)
+                    setPlaying(false)
+                  }
+                }}
+                className={cn(
+                  'grid size-9 place-items-center border-t border-border/70 hover:bg-surface-hover',
+                  until !== null ? 'text-accent' : 'text-muted hover:text-fg'
+                )}
+              >
+                <History className="size-4" />
+              </button>
+            )}
           </div>
+        )}
+        {connect && g && (
+          <div
+            className="paper absolute z-20 w-72 rounded-xl p-2 shadow-[var(--shadow-3)]"
+            style={{
+              left: Math.min(connect.x + 12, (box.current?.clientWidth ?? 300) - 300),
+              top: Math.min(connect.y + 12, (box.current?.clientHeight ?? 300) - 320)
+            }}
+            data-testid="graph-connect"
+          >
+            <p className="px-2 pt-1 pb-2 text-2xs text-subtle">{t('graph.connectTitle')}</p>
+            <div className="max-h-72 overflow-y-auto">
+              {relationOptions(byKey.get(connect.from)?.title ?? '', byKey.get(connect.to)?.title ?? '', true).map((o) => (
+                <button
+                  key={o.value}
+                  title={o.title}
+                  className="block w-full truncate rounded-md px-2 py-1.5 text-left text-xs text-fg hover:bg-surface-hover"
+                  onClick={async () => {
+                    const [r, rev] = o.value.split('|')
+                    await api.connections.relate(connect.from.slice(5), 'note', connect.to.slice(5), r as never, rev === '1')
+                    setConnect(null)
+                    void refetch()
+                  }}
+                >
+                  {o.label}
+                </button>
+              ))}
+            </div>
+            <button
+              className="mt-1 w-full rounded-md px-2 py-1.5 text-left text-xs text-subtle hover:bg-surface-hover"
+              onClick={() => setConnect(null)}
+            >
+              {t('common.cancel')}
+            </button>
+          </div>
+        )}
+        {view === 'map' && until !== null && span && (
+          <div
+            className="paper absolute bottom-4 left-1/2 flex w-[min(520px,50%)] -translate-x-1/2 items-center gap-3 rounded-xl px-3.5 py-2.5 shadow-[var(--shadow-2)]"
+            data-testid="graph-timeline"
+          >
+            <button
+              aria-label={playing ? t('graph.pause') : t('graph.play')}
+              onClick={() => setPlaying(!playing)}
+              className="text-muted hover:text-fg"
+            >
+              {playing ? <Pause className="size-4" /> : <Play className="size-4" />}
+            </button>
+            <input
+              type="range"
+              min={span.min}
+              max={span.max}
+              value={until}
+              aria-label={t('graph.timeline')}
+              onChange={(e) => {
+                setPlaying(false)
+                setUntil(Number(e.target.value))
+              }}
+              className="flex-1 accent-accent"
+            />
+            <span className="w-24 text-right text-2xs text-muted tabular-nums">{new Date(until).toLocaleDateString()}</span>
+            <button aria-label={t('graph.clear')} onClick={() => setUntil(null)} className="text-subtle hover:text-fg">
+              <X className="size-3.5" />
+            </button>
+          </div>
+        )}
+        {discover && !selectedNode && g && (
+          <DiscoverPanel
+            graph={g}
+            c={c}
+            catColor={catColor}
+            onSelect={goTo}
+            onClose={() => setDiscover(false)}
+            onChanged={() => void refetch()}
+          />
         )}
         {selectedNode && g && (
           <NodePanel

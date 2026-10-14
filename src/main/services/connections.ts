@@ -42,7 +42,7 @@ function manualLinks(noteId: string, includeDeleted = false) {
 }
 
 /** 相关笔记推荐：用本篇各段落的向量找最近的其他笔记 / 资料，按命中排名累计得分 */
-async function relatedByVectors(noteId: string, exclude: Set<string>): Promise<NoteConnections['related']> {
+export async function relatedByVectors(noteId: string, exclude: Set<string>): Promise<NoteConnections['related']> {
   if (!(await isReady().catch(() => false))) return []
   const mine = getDb()
     .select({ rowid: chunks.rowid, ownerId: chunks.ownerId, ownerType: chunks.ownerType })
@@ -299,14 +299,18 @@ export function unrelate(noteId: string, toType: 'note' | 'source', toId: string
 
 /** 知识结构图用：全部未删除的笔记间 / 笔记到资料的关系 */
 export function allEdges(): {
+  id: string
   from: string
   to: string
   kind: 'reference' | 'related' | 'source'
   relation: string
   status: 'confirmed' | 'suggested' | 'rejected'
+  reason: string | null
 }[] {
   return getDb()
     .select({
+      id: links.id,
+      reason: links.reason,
       fromType: links.fromType,
       fromId: links.fromId,
       toType: links.toType,
@@ -320,6 +324,8 @@ export function allEdges(): {
     .all()
     .filter((l) => (l.toType === 'note' || l.toType === 'source') && l.status !== 'rejected')
     .map((l) => ({
+      id: l.id,
+      reason: l.reason,
       from: `note:${l.fromId}`,
       to: `${l.toType}:${l.toId}`,
       kind: l.toType === 'source' ? ('source' as const) : l.origin === 'doc' ? ('reference' as const) : ('related' as const),

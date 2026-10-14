@@ -912,7 +912,18 @@ export const capabilities = {
     })
   },
   graph: {
-    data: cap<KnowledgeGraph>()({ description: '知识结构图：笔记、资料与它们之间的链接、关联、出处', params: none, ai: { effect: 'read' } })
+    data: cap<KnowledgeGraph>()({
+      description: '知识结构图：笔记、资料与它们之间的链接、关联、出处',
+      params: none,
+      ai: { effect: 'read' }
+    }),
+    suggest: cap<{ judged: number; suggested: number }>()({
+      description: '让 AI 判断连线的关系类型并发现缺失的关系；结果只是建议，需用户确认',
+      params: none
+    }),
+    accept: cap<void>()({ description: '确认一条 AI 建议的关系', params: [id('linkId')] }),
+    reject: cap<void>()({ description: '否决一条 AI 建议的关系（以后不再建议）', params: [id('linkId')] }),
+    acceptAll: cap<number>()({ description: '确认全部 AI 建议的关系', params: none })
   },
   mastery: {
     map: cap<MasteryMap>()({ description: '掌握度地图：各笔记的掌握情况（可按目标筛选）', params: [['goalId', S.Id.nullable()]] })

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { GraphEdge, GraphNode } from '@shared/types'
 import { arrowEnds, relationSentence, RELATIONS, RELATION_META } from '@shared/graphRelations'
-import { convexHull, hubs, neighborhood } from '../model'
+import { convexHull, hubs, knowledgeGaps, learningPath, neighborhood } from '../model'
 
 const node = (key: string, categoryId: string | null): GraphNode => ({
   key,
@@ -65,5 +65,42 @@ describe('图的几何与结构', () => {
     const nodes = [node('hub', 'x'), node('a', 'y'), node('b', 'z'), node('c', 'x'), node('d', 'y'), node('lone', 'x')]
     const edges = [edge('hub', 'a'), edge('hub', 'b'), edge('hub', 'c'), edge('hub', 'd'), edge('lone', 'c')]
     expect([...hubs(nodes, edges)]).toEqual(['hub'])
+  })
+})
+
+describe('学习路径与知识缺口', () => {
+  const solid = (n: GraphNode): GraphNode => ({ ...n, mastery: 'solid' })
+  it('先修在左；前置都已牢固的标为可以学了，挡住多篇的标为卡点，成环单独标出', () => {
+    const nodes = [solid(node('a', 'x')), node('b', 'x'), node('c', 'x'), node('d', 'x'), node('e', 'y'), node('f', 'y')]
+    const edges = [
+      edge('a', 'b', 'prerequisite'),
+      edge('b', 'c', 'prerequisite'),
+      edge('b', 'd', 'prerequisite'),
+      edge('e', 'f', 'prerequisite'),
+      edge('f', 'e', 'prerequisite')
+    ]
+    const p = learningPath(nodes, edges)
+    expect(p.layers[0]).toEqual(['a'])
+    expect(p.layers[1]).toEqual(['b'])
+    expect([...p.frontier]).toEqual(['b'])
+    expect(p.blockers[0]).toEqual({ key: 'b', blocked: 2 })
+    expect([...p.cycle].sort()).toEqual(['e', 'f'])
+  })
+  it('只看已确认的前置关系', () => {
+    const p = learningPath([node('a', 'x'), node('b', 'x')], [{ ...edge('a', 'b', 'prerequisite'), status: 'suggested' }])
+    expect(p.layers).toHaveLength(0)
+  })
+  it('缺口：孤立笔记、少与外界相连的分类、两个分类之间缺桥', () => {
+    const nodes = [
+      ...['x1', 'x2', 'x3'].map((k) => node(k, 'x')),
+      ...['y1', 'y2', 'y3'].map((k) => node(k, 'y')),
+      ...['z1', 'z2', 'z3'].map((k) => node(k, 'z')),
+      node('lone', null)
+    ]
+    const edges = [edge('x1', 'x2'), edge('y1', 'y2'), edge('z1', 'z2'), edge('x3', 'y3')]
+    const g = knowledgeGaps({ nodes, edges, categories: [{ id: 'x' }, { id: 'y' }, { id: 'z' }] })
+    expect(g.isolated.map((n) => n.key).sort()).toEqual(['lone', 'z3'])
+    expect(g.lonely.map((l) => l.categoryId).sort()).toEqual(['x', 'y', 'z'])
+    expect(g.bridges.map((b) => [b.a, b.b].join()).sort()).toEqual(['x,z', 'y,z'])
   })
 })

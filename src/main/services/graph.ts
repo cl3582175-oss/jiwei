@@ -89,9 +89,10 @@ export function knowledgeGraph(): KnowledgeGraph {
       have.add(`source:${s.id}`)
     }
   }
-  // 去重（同一对节点多条链接只画一条）：有类型的关系 > 手动关联 > 正文链接；已确认的优先于建议
+  // 去重（同一对节点多条链接只画一条）：已确认的有类型关系 > AI 建议的有类型关系 > 手动关联 > 正文链接
+  // （建议要压过普通的“相关”，否则看不到 AI 给出的类型）
   const rank = (e: KnowledgeGraph['edges'][number]): number =>
-    (e.status === 'confirmed' ? 4 : 0) + (e.relation !== 'related' ? 2 : 0) + (e.kind === 'related' ? 1 : 0)
+    (e.relation !== 'related' ? 4 : 0) + (e.status === 'confirmed' ? 2 : 0) + (e.kind === 'related' ? 1 : 0)
   const uniq = new Map<string, KnowledgeGraph['edges'][number]>()
   for (const raw of edges) {
     if (!have.has(raw.to) || raw.from === raw.to) continue
@@ -100,7 +101,9 @@ export function knowledgeGraph(): KnowledgeGraph {
       to: raw.to,
       kind: raw.kind,
       relation: asRelation(raw.relation),
-      status: raw.status === 'suggested' ? ('suggested' as const) : ('confirmed' as const)
+      status: raw.status === 'suggested' ? ('suggested' as const) : ('confirmed' as const),
+      linkId: raw.id,
+      reason: raw.reason
     }
     const k = [e.from, e.to].sort().join('|')
     const prev = uniq.get(k)

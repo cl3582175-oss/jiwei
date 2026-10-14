@@ -1,3 +1,4 @@
+import * as graphAi from './services/graphAi'
 import * as pluginMarkets from './services/plugins/markets'
 import * as ui from './services/ui'
 import * as updates from './services/updates'
@@ -583,7 +584,11 @@ const handlers: Handlers = {
     linkMention: (_, noteId, mentionNoteId, blockId, undo) => connections.linkMention(noteId, mentionNoteId, blockId, undo)
   },
   graph: {
-    data: () => knowledgeGraph()
+    data: () => knowledgeGraph(),
+    suggest: () => graphAi.suggestRelations(),
+    accept: (_, linkId) => graphAi.acceptSuggestion(linkId),
+    reject: (_, linkId) => graphAi.rejectSuggestion(linkId),
+    acceptAll: () => graphAi.acceptAllSuggestions()
   },
   mastery: {
     map: (_, goalId) => progress.masteryMap(goalId)
