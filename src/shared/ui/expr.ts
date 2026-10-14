@@ -77,6 +77,8 @@ export function compileExpr(
           if (args.length < fn.min || args.length > fn.max) throw new Error('函数参数个数错误')
           return { kind: 'call', name: token, args }
         }
+        // 圆周率常量（变量名同名时以变量为准）
+        if (!vars.includes(token) && (token === 'pi' || token === 'PI')) return { kind: 'number', value: Math.PI }
         if (!vars.includes(token)) throw new Error('未知变量')
         return { kind: 'variable', name: token }
       })

@@ -41,12 +41,12 @@ const time = z
   .refine((v) => date.safeParse(v.slice(0, 10)).success && Number(v.slice(11, 13)) < 24 && Number(v.slice(14)) < 60, '时间无效')
 const Field = z.object({
   key: s(30).min(1),
-  label: s(30),
+  label: s(80),
   kind: z.enum(['text', 'number', 'select', 'date', 'slider', 'toggle']),
   required: z.boolean().optional(),
   placeholder: s(40).optional(),
   options: z
-    .array(z.object({ label: s(40), value: s(60) }))
+    .array(z.object({ label: s(80), value: s(80) }))
     .max(12)
     .optional(),
   min: z.number().optional(),
@@ -128,7 +128,7 @@ const LeafSchema = z.discriminatedUnion('type', [
     type: z.literal('choice'),
     question: s(200),
     options: z
-      .array(z.object({ label: s(40), value: s(60), hint: s(80).optional() }))
+      .array(z.object({ label: s(80), value: s(80), hint: s(120).optional() }))
       .min(2)
       .max(10),
     multi: z.boolean().optional()
@@ -399,6 +399,20 @@ function children(n: UiNode): UiNode[] {
  */
 export function parseUiJson(code: string): unknown {
   try {
+    return parseFirstObject(code)
+  } catch (e) {
+    // 中文模型常在字符串里直接写 "加个XX就好了" 而不转义：只在已经失败时，把夹在文字中间的直引号换成中文引号
+    let count = 0
+    const fixed = code.replace(
+      /(?<=[\p{Script=Han}\p{L}\p{N}，。、：；！？（）])"(?=[\p{Script=Han}\p{L}\p{N}，。、：；！？（）])/gu,
+      () => (count++ % 2 ? '”' : '“')
+    )
+    if (fixed === code) throw e
+    return parseFirstObject(fixed)
+  }
+}
+function parseFirstObject(code: string): unknown {
+  try {
     return JSON.parse(code)
   } catch (e) {
     const start = code.indexOf('{')
@@ -453,9 +467,41 @@ function coerce(n: Record<string, unknown>): Record<string, unknown> {
       break
     case 'calc':
       if (Array.isArray(n.inputs))
-        n.inputs = n.inputs.map((i) =>
-          i && typeof i === 'object' && (i as { kind?: unknown }).kind === 'range' ? { ...i, kind: 'slider' } : i
-        )
+        n.inputs = n.inputs.map((raw) => {
+          if (!raw || typeof raw !== 'object') return raw
+          const i = { ...(raw as Record<string, unknown>) }
+          if (i.kind === 'range') i.kind = 'slider'
+          // 数字输入框常只写 value：补上范围和步长
+          if (typeof i.value === 'number') {
+            if (typeof i.min !== 'number') i.min = Math.min(0, i.value)
+            if (typeof i.max !== 'number') i.max = Math.max(i.value * 5, (i.min as number) + 100)
+            if (typeof i.step !== 'number') i.step = Number.isInteger(i.value) ? 1 : 0.1
+          }
+          return i
+        })
+      if (Array.isArray(n.outputs))
+        n.outputs = n.outputs.map((raw) => {
+          if (!raw || typeof raw !== 'object') return raw
+          const o = { ...(raw as Record<string, unknown>) }
+          // 模型按 JavaScript 习惯写 Math.PI、Math.round(…)：去掉前缀，交给白名单解析器
+          if (typeof o.expr === 'string')
+            o.expr = o.expr.replace(/\bMath\.(PI|[a-z]+)\b/g, (_m, name: string) => (name === 'PI' ? 'pi' : name))
+          if (!('format' in o)) return o
+          const f = String(o.format)
+          const known = ['0', '0.0', '0.00', '0,0', '0%', '0.0%']
+          o.format = known.includes(f)
+            ? f
+            : /^0\.0{3,}$/.test(f)
+              ? '0.00'
+              : (
+                  { fixed0: '0', fixed1: '0.0', fixed2: '0.00', integer: '0', int: '0', percent: '0%', thousands: '0,0' } as Record<
+                    string,
+                    string
+                  >
+                )[f]
+          if (!o.format) delete o.format
+          return o
+        })
       break
     case 'columns':
       // ratio 写成 [1,1] 或 "2:1" 之类：去掉，用默认等分
@@ -471,6 +517,10 @@ function coerce(n: Record<string, unknown>): Record<string, unknown> {
             : h
         )
       }
+      break
+    case 'tasks':
+      // 只写了类型：按“未完成的待办”显示
+      if (n.filter === undefined && (!Array.isArray(n.drafts) || !n.drafts.length)) n.filter = { scope: 'open' }
       break
     case 'excerpt':
       // cite 写成数字字符串转成编号；写成资料片段 ID 时当作 segmentId
@@ -489,7 +539,30 @@ function coerce(n: Record<string, unknown>): Record<string, unknown> {
         delete n.options
         delete n.criteria
         delete n.scores
+        break
       }
+      // 权重写成百分比（25、20…）时按比例换算到 1–5；评分 0 表示没填，去掉，超过 5 的压到 5
+      if (Array.isArray(n.criteria)) {
+        const ws = n.criteria.map((c) => (c && typeof c === 'object' ? (c as { weight?: unknown }).weight : undefined))
+        const max = Math.max(...ws.map((w) => (typeof w === 'number' ? w : 0)))
+        if (max > 5)
+          n.criteria = n.criteria.map((c, k) =>
+            typeof ws[k] === 'number'
+              ? { ...(c as object), weight: Math.min(5, Math.max(1, Math.round(((ws[k] as number) / max) * 5))) }
+              : c
+          )
+      }
+      if (Array.isArray(n.scores))
+        n.scores = n.scores
+          .filter(
+            (x) =>
+              !(x && typeof x === 'object' && typeof (x as { score?: unknown }).score === 'number' && (x as { score: number }).score < 1)
+          )
+          .map((x) =>
+            x && typeof x === 'object' && typeof (x as { score?: unknown }).score === 'number' && (x as { score: number }).score > 5
+              ? { ...(x as object), score: 5 }
+              : x
+          )
       break
   }
   return n

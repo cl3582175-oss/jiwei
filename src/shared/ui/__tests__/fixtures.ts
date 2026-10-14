@@ -99,7 +99,7 @@ export const invalid = {
   flashcards: { ...samples.flashcards, cards: [] },
   cloze: { ...samples.cloze, text: '没有空格' },
   schedule: { ...samples.schedule, range: { from: '2026-02-30', to: '2026-03-01' } },
-  tasks: { type: 'tasks' },
+  tasks: { type: 'tasks', filter: { scope: 'someday' } },
   note: { type: 'note' },
   excerpt: { ...samples.excerpt, segmentId: 'segment-1' },
   mastery: { ...samples.mastery, scope: { kind: 'goal' } },
