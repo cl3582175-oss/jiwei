@@ -47,6 +47,10 @@ describe('真实语料评测的独立检索与计分', () => {
     const r = scoreQuestion(q, [], [hit(), hit(), hit(undefined, '第二份方案说明')], { ms8: 1, ms30: 2, scopeIds: [] })
     expect(r.coverage30).toBe(1)
   })
+  it('有限部首例外不会把正确的风压命中计为失败', () => {
+    const q = { ...question, gold: [{ title: '合成试验', quote: '合成⻛压条件' }] }
+    expect(scoreQuestion(q, [hit('合成风压条件')], [], { ms8: 1, ms30: 2, scopeIds: [] }).rank8).toBe(1)
+  })
   it('分别记录 8 条与 30 条查询的范围越界', () => {
     const q = { ...question, subtype: 'scoped', scope: ['合成试验'] }
     const r = scoreQuestion(q, [hit()], [{ ...hit(), parentId: 'outside' }], { ms8: 1, ms30: 2, scopeIds: ['source-a'] })

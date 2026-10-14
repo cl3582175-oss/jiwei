@@ -8,6 +8,18 @@ const item = (str: string, y: number, x = 30, height = 10): PdfTextItem => ({
   width: str.length * height
 })
 describe('PDF structure', () => {
+  it('keeps recurring numeric body lines on sparse pages', () => {
+    const pages = Array.from({ length: 4 }, (_, i) => ({
+      page: i + 1,
+      bounds: { bottom: 0, top: 800 },
+      items: [item(`合成参数 ${i + 1} 毫米。`, 500), item(`验收结果 ${i + 1} 合格。`, 480)]
+    }))
+    const text = pdfLayout(pages)
+      .map((b) => (b.type === 'table' ? '' : b.text))
+      .join('')
+    expect(text).toContain('合成参数 1 毫米。')
+    expect(text).toContain('验收结果 4 合格。')
+  })
   it('clusters by baseline tolerance, orders items by x and uses median height', () => {
     const lines = linesFromItems([item('内容', 100, 50), item('第一', 102, 30), item('下一行', 70)])
     expect(lines.map((l) => l.text)).toEqual(['第一内容', '下一行'])
@@ -16,6 +28,7 @@ describe('PDF structure', () => {
   it('removes recurring edge furniture and page numbers without removing a matching body line', () => {
     const pages = Array.from({ length: 4 }, (_, i) => ({
       page: i + 1,
+      bounds: { bottom: 0, top: 800 },
       items: [
         item(`合成资料 ${i + 1}`, 790),
         item('引言', 770),

@@ -2,6 +2,15 @@ import { describe, expect, it } from 'vitest'
 import { htmlBlocks } from './htmlBlocks'
 import { chunkBlocks } from '../main/lib/chunker'
 describe('HTML document blocks', () => {
+  it('excludes hidden and script descendants inside visible paragraphs and tables', () => {
+    const b = htmlBlocks(
+      '<p>可见<span hidden>隐藏干扰</span><script>不应收录</script>正文。</p><table><tr><th>字段</th></tr><tr><td>值<span aria-hidden="true">秘密</span></td></tr></table>'
+    )
+    expect(b).toEqual([
+      { type: 'paragraph', text: '可见正文。' },
+      { type: 'table', header: ['字段'], rows: [['值']] }
+    ])
+  })
   it('keeps order, numbered headings, list lines and preformatted code', () => {
     const b = htmlBlocks('<h1>知识</h1><p>2.3验证</p><p>⼈需要证据。</p><ol><li>第一项</li><li>第二项</li></ol><pre>x  =  2\n  y</pre>')
     expect(b.map((a) => a.type)).toEqual(['heading', 'heading', 'paragraph', 'paragraph', 'code'])

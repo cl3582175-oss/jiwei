@@ -96,7 +96,12 @@ async function parsePdfInternal(path: string, progress: (p: number) => void, str
         if (item.hasEOL) text += '\n'
         lastY = y ?? lastY
       }
-      if (structured) layout.push({ page: p, items: content.items.filter((i) => 'str' in i) as PdfTextItem[] })
+      if (structured)
+        layout.push({
+          page: p,
+          bounds: { bottom: page.view[1], top: page.view[3] },
+          items: content.items.filter((i) => 'str' in i) as PdfTextItem[]
+        })
       else
         out.push(
           ...splitWithLocator(

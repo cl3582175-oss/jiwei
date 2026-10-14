@@ -33,10 +33,32 @@ export function structuredTextBlocks(text: string): DocBlock[] {
     }
     if (/<table\b/i.test(line)) {
       flush()
-      const table = [lines[i]]
-      while (!/<\/table>/i.test(table.at(-1)!) && ++i < lines.length) table.push(lines[i])
-      const block = tableBlockFromHtml(table.join('\n'))
+      let source = lines[i]
+      const start = source.search(/<table\b/i)
+      const before = source.slice(0, start).trim()
+      if (before) out.push(...structuredTextBlocks(before))
+      source = source.slice(start)
+      let depth = 0,
+        end = -1,
+        scanned = 0
+      while (true) {
+        const tags = /<\/?table\b[^>]*>/gi
+        tags.lastIndex = scanned
+        let tag: RegExpExecArray | null
+        while ((tag = tags.exec(source))) {
+          depth += /^<\//.test(tag[0]) ? -1 : 1
+          scanned = tags.lastIndex
+          if (depth === 0) {
+            end = scanned
+            break
+          }
+        }
+        if (end >= 0 || i + 1 >= lines.length) break
+        source += '\n' + lines[++i]
+      }
+      const block = tableBlockFromHtml(end >= 0 ? source.slice(0, end) : source)
       if (block.header?.some(Boolean) || block.rows.length) out.push(block)
+      if (end >= 0 && source.slice(end).trim()) out.push(...structuredTextBlocks(source.slice(end)))
       continue
     }
     if (/^\|/.test(line) && lines[i + 1] && divider(lines[i + 1])) {

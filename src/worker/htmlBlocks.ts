@@ -1,6 +1,6 @@
 import { parseHTML } from 'linkedom'
 import { headingLevel, type DocBlock } from '../main/lib/docBlocks'
-import { tableBlockFromHtml } from '../main/lib/tableBlocks'
+import { HIDDEN_HTML, tableBlockFromHtml } from '../main/lib/tableBlocks'
 
 /** Word、保存的 HTML 与 EPUB 共用文档顺序遍历，避免父子块重复抽取。 */
 export function htmlBlocks(html: string): DocBlock[] {
@@ -8,6 +8,7 @@ export function htmlBlocks(html: string): DocBlock[] {
   const out: DocBlock[] = []
   const textOf = (node: Node): string => {
     if (node.nodeType === 3) return node.textContent ?? ''
+    if (node.nodeType === 1 && (node as Element).matches(HIDDEN_HTML)) return ''
     if (node.nodeName === 'BR') return '\n'
     return [...node.childNodes].map(textOf).join('')
   }
@@ -28,7 +29,7 @@ export function htmlBlocks(html: string): DocBlock[] {
     }
     if (node.nodeType !== 1) return
     const el = node as Element
-    if (el.matches('head,script,style,noscript,template,[hidden],[aria-hidden="true"],[data-jiwei-ui]')) return
+    if (el.matches(HIDDEN_HTML)) return
     const tag = el.tagName.toLowerCase()
     if (/^h[1-6]$/.test(tag)) {
       const text = clean(el)
@@ -48,7 +49,7 @@ export function htmlBlocks(html: string): DocBlock[] {
         .join('\n')
       if (text) out.push({ type: 'paragraph', text })
     } else if (tag === 'pre') {
-      const text = el.textContent ?? ''
+      const text = textOf(el)
       if (text.trim()) out.push({ type: 'code', text })
     } else if (['p', 'li', 'blockquote', 'figcaption'].includes(tag)) paragraph(clean(el))
     else [...el.childNodes].forEach(visit)

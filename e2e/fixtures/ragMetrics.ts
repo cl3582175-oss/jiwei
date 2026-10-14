@@ -31,6 +31,7 @@ export function normalizeGold(text: string): string {
   return [...text]
     .map((ch) => {
       const n = ch.codePointAt(0)!
+      if (ch === '⻛') return '风'
       if ((n >= 0x2e80 && n <= 0x2eff) || (n >= 0x2f00 && n <= 0x2fdf) || (n >= 0xf900 && n <= 0xfaff) || (n >= 0x2f800 && n <= 0x2fa1f)) {
         const normalized = ch.normalize('NFKC')
         if (/^\p{Script=Han}$/u.test(normalized)) return normalized

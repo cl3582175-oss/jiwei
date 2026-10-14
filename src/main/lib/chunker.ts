@@ -1,5 +1,6 @@
 import type { DocBlock } from './docBlocks'
 import { normalizeExtracted } from './textNormalize'
+import { expandedTableBlockFromHtml } from './tableBlocks'
 
 export interface ChunkOut {
   kind: 'paragraph' | 'table' | 'code' | 'page'
@@ -135,6 +136,14 @@ export function chunkBlocks(blocks: DocBlock[], opts: Options): ChunkOut[] {
       if (caption.length + html.length <= cap) {
         emit('table', caption + html, block)
         return
+      }
+      if (/\browspan\s*=/i.test(html)) {
+        const expanded = expandedTableBlockFromHtml(html)
+        // 异常表格的列数与表头不一致时保留原布局，避免替作者猜测所属列。
+        if (expanded.rows.every((r) => r.length <= (expanded.header?.length ?? 0))) {
+          table({ ...expanded, caption: block.caption, page: block.page })
+          return
+        }
       }
       const rows = html.match(/<tr\b[^>]*>[\s\S]*?<\/tr>/gi) ?? []
       const thead = html.match(/<thead\b[^>]*>([\s\S]*?)<\/thead>/i)

@@ -11,6 +11,7 @@ export interface PdfTextItem {
 export interface PdfPageItems {
   page: number
   items: PdfTextItem[]
+  bounds?: { bottom: number; top: number }
 }
 export interface PdfLine {
   text: string
@@ -66,10 +67,15 @@ const toc = (s: string): boolean => /(?:[.．·─]\s*){4,}\s*\d+\s*$|…+\s*\d+
 
 /** 全篇分析边缘重复行，随后按页恢复段落；这里只处理文字层，不推断表格语义。 */
 export function pdfLayout(pages: PdfPageItems[]): DocBlock[] {
-  const all = pages.map((p) => ({ page: p.page, lines: linesFromItems(p.items) }))
+  const all = pages.map((p) => ({ ...p, lines: linesFromItems(p.items) }))
+  const edge = (p: (typeof all)[number], l: PdfLine, i: number): boolean => {
+    if (!p.bounds) return false
+    const margin = Math.min(50, (p.bounds.top - p.bounds.bottom) * 0.08)
+    return (i < 2 && l.y + l.height >= p.bounds.top - margin) || (i >= p.lines.length - 2 && l.y <= p.bounds.bottom + margin)
+  }
   const count = new Map<string, number>()
   for (const p of all) {
-    for (const key of new Set([...p.lines.slice(0, 2), ...p.lines.slice(-2)].map((l) => furnitureKey(l.text))))
+    for (const key of new Set(p.lines.filter((l, i) => edge(p, l, i)).map((l) => furnitureKey(l.text))))
       count.set(key, (count.get(key) ?? 0) + 1)
   }
   const repeated = new Set([...count].filter(([, n]) => all.length >= 4 && n >= all.length * 0.3).map(([key]) => key))
@@ -80,7 +86,8 @@ export function pdfLayout(pages: PdfPageItems[]): DocBlock[] {
   const out: DocBlock[] = []
   for (const p of all) {
     const lines = p.lines.filter(
-      (l, i) => !pageNumber(l.text) && !((i < 2 || i >= p.lines.length - 2) && repeated.has(furnitureKey(l.text)))
+      // 稀疏页的首尾行仍可能是正文；只有物理页边缘有证据时才删除重复行。
+      (l, i) => !pageNumber(l.text) && !(edge(p, l, i) && repeated.has(furnitureKey(l.text)))
     )
     if (lines.filter((l) => toc(l.text)).length >= 5) {
       out.push({ type: 'paragraph', text: lines.map((l) => l.text).join('\n'), page: p.page })
