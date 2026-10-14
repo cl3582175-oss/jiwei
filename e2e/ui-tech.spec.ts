@@ -18,7 +18,8 @@ test.afterAll(async () => {
   await server?.close()
 })
 
-test('流式属性逐步增长，多个代码块保持组件实例', async ({}, info) => {
+test('流式属性逐步增长，多个代码块保持组件实例', async () => {
+  const info = test.info()
   const first = '```jiwei-ui\n{"type":"list","items":[{"text":"第一条"}]}'
   const frames = [
     first.slice(0, 31),
