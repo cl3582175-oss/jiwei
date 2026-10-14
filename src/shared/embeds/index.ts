@@ -14,6 +14,7 @@ import {
 import { GraphDataSchema, checkGraph, graphText } from './graph'
 import { AnimationEmbedSchema, animationText, checkAnimation } from '../manim'
 import type { z } from 'zod'
+import { UiEmbedSchema, uiEmbedText } from '../ui/catalog'
 
 const def = <T>(kind: string, schema: z.ZodType<T>, text: (d: T) => string): EmbedKindDef => ({
   kind,
@@ -49,6 +50,7 @@ export const EMBED_KINDS: Record<string, EmbedKindDef> = {
   timeline: def('timeline', TimelineDataSchema, timelineText),
   steps: def('steps', StepsDataSchema, stepsText),
   interactive: def('interactive', InteractiveDataSchema, interactiveText),
+  ui: def('ui', UiEmbedSchema, uiEmbedText),
   animation: {
     ...def('animation', AnimationEmbedSchema, animationText),
     validate: (d) => {

@@ -347,6 +347,7 @@ export function send(input: ChatSend): SendResult {
     conversationId: convId,
     role: 'user',
     content: input.text,
+    uiText: null,
     reasoning: null,
     citations: null,
     context: input.context ? JSON.stringify(input.context) : null,

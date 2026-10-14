@@ -5,6 +5,7 @@ import { CurrencyCode, MoneySettingsSchema } from './money'
 import { PodcastVoiceSchema } from './discover'
 export { InboxCreateSchema, InboxUpdateSchema, InboxAcceptSchema } from './inbox'
 import { z } from 'zod'
+import { UiSettingsSchema, UI_DEFAULTS } from './ui/settings'
 import { ExternalBackupSchema } from './backup'
 import { DomainSchema, NetworkRuleSchema } from './browserSafety'
 import { AnchorSchema, ContextPacketSchema } from './context'
@@ -82,9 +83,23 @@ export const CategoryPatchSchema = z.object({
 export const SettingsPatchSchema = z.object({
   retrieval: RetrievalSettingsSchema.partial().optional(),
   plugins: z.object({ recommendedDismissed: z.boolean().optional() }).optional(),
-  tasks: z.object({ paused: z.boolean().optional(), launchAtLogin: z.boolean().optional(), keepRunning: z.boolean().optional() }).optional(),
+  tasks: z
+    .object({ paused: z.boolean().optional(), launchAtLogin: z.boolean().optional(), keepRunning: z.boolean().optional() })
+    .optional(),
   plan: z.object({ autoComplete: z.boolean() }).optional(),
-  discover: z.object({ dailyLimit: z.number().int().min(0).max(5).optional(), dailyBudget: z.number().min(0).max(1000).optional(), budgetCurrency: z.string().regex(/^[A-Z]{3}$/).optional(), useSearch: z.boolean().optional(), podcast: z.boolean().optional(), podcastVoice: PodcastVoiceSchema.optional() }).optional(),
+  discover: z
+    .object({
+      dailyLimit: z.number().int().min(0).max(5).optional(),
+      dailyBudget: z.number().min(0).max(1000).optional(),
+      budgetCurrency: z
+        .string()
+        .regex(/^[A-Z]{3}$/)
+        .optional(),
+      useSearch: z.boolean().optional(),
+      podcast: z.boolean().optional(),
+      podcastVoice: PodcastVoiceSchema.optional()
+    })
+    .optional(),
   recordingScene: z.enum(['meeting', 'lecture', 'thought']).optional(),
   capture: CaptureSettingsSchema.optional(),
   language: z.enum(['zh-CN', 'en']).optional(),
@@ -96,7 +111,7 @@ export const SettingsPatchSchema = z.object({
   sidebars: z
     .partialRecord(z.enum(['notes', 'library', 'chat']), z.object({ collapsed: z.boolean(), width: z.number().min(150).max(600) }))
     .optional(),
-  ai: z.lazy(() => AiSettingsSchema).optional(),
+  ai: z.lazy(() => AiSettingsSchema.extend({ ui: UiSettingsSchema.partial().optional() })).optional(),
   /** 费用上限（v0.7） */
   budget: z.lazy(() => BudgetSchema).optional(),
   /** 币种、汇率、省钱选项（v0.7.5） */
@@ -280,6 +295,7 @@ export const ChatSendSchema = z.object({
 export type ChatSend = z.infer<typeof ChatSendSchema>
 
 export const AiSettingsSchema = z.object({
+  ui: UiSettingsSchema.default(UI_DEFAULTS),
   chat: z.object({ providerId: Id.nullable(), model: z.string().max(200).nullable() }),
   effort: EffortSchema,
   embedding: z.object({
