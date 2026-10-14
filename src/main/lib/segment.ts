@@ -1,5 +1,8 @@
 // 文本分段（纯函数）：Markdown 按标题与空行分段，纯文本按空行分段。
 // 定位使用 W3C TextPositionSelector（字符偏移），重新解析时可稳定对齐。
+import { chunkBlocks, type ChunkOut } from './chunker'
+import { structuredTextBlocks } from './structuredText'
+import type { DocBlock } from './docBlocks'
 
 export interface TextSegment {
   kind: 'heading' | 'paragraph' | 'code'
@@ -67,4 +70,28 @@ export function segmentText(raw: string, mode: 'markdown' | 'plain'): TextSegmen
     i = end + 1
   }
   return out
+}
+
+/** B 线切换文本解析时使用；旧 segmentText 的其他消费者保持原切分。 */
+export function segmentTextStructured(raw: string, mode: 'markdown' | 'plain'): ChunkOut[] {
+  const positions = new Map<DocBlock, Record<string, unknown>>()
+  const blocks: DocBlock[] = []
+  const text = raw.replace(/\r\n?/g, '\n')
+  const grouped: TextSegment[] = []
+  for (const segment of segmentText(raw, mode)) {
+    const previous = grouped.at(-1)
+    // 旧切分的硬长度界可能落在表格行或代码行中间，先恢复这个块，再作结构切分。
+    if (previous && previous.kind === segment.kind && previous.locator.end === segment.locator.start) {
+      previous.locator.end = segment.locator.end
+      previous.text = text.slice(previous.locator.start, previous.locator.end).trim()
+    } else grouped.push({ ...segment, locator: { ...segment.locator } })
+  }
+  for (const segment of grouped) {
+    const next: DocBlock[] = segment.kind === 'code' ? [{ type: 'code', text: segment.text }] : structuredTextBlocks(segment.text)
+    for (const b of next) {
+      positions.set(b, segment.locator)
+      blocks.push(b)
+    }
+  }
+  return chunkBlocks(blocks, { locatorOf: (b) => positions.get(b)! })
 }

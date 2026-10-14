@@ -137,8 +137,10 @@ export function chunkBlocks(blocks: DocBlock[], opts: Options): ChunkOut[] {
         return
       }
       const rows = html.match(/<tr\b[^>]*>[\s\S]*?<\/tr>/gi) ?? []
-      const header = html.match(/<thead\b[^>]*>([\s\S]*?)<\/thead>/i)?.[1] ?? rows[0] ?? ''
-      const data = html.includes('<thead') ? rows.filter((r) => !header.includes(r)) : rows.slice(1)
+      const thead = html.match(/<thead\b[^>]*>([\s\S]*?)<\/thead>/i)
+      const header = thead?.[1] ?? rows[0] ?? ''
+      // 按结构移除表头；数据行即使与表头文字完全相同也不能丢掉。
+      const data = thead ? (html.replace(thead[0], '').match(/<tr\b[^>]*>[\s\S]*?<\/tr>/gi) ?? []) : rows.slice(1)
       let pending = ''
       const render = (body: string): string => `${caption}<table>${header}${body}</table>`
       if (render('').length >= cap - 80) {

@@ -74,6 +74,23 @@ test('scenario retrieval baseline with separately requested 8 and 30 hits', asyn
   const ocrErrors: { id: string; failed: number }[] = []
   expect(new Set(questions.map((q) => q.id)).size).toBe(questions.length)
   if (reuse) await page.evaluate(() => window.jiwei.embedding.installLocal())
+  if (reuse && ocr && process.env.JIWEI_RAG_RETRY_OCR === '1') {
+    // 修复后只重试隔离库里的失败页；保存原失败结果，不重写素材或全库基线。
+    for (const source of await page.evaluate(() => window.jiwei.sources.list({}))) {
+      const before = await page.evaluate((id) => window.jiwei.recognition.source(id), source.id)
+      if (!before.failed) continue
+      await page.evaluate((id) => window.jiwei.recognition.start(id), source.id)
+      await expect
+        .poll(
+          async () => {
+            const r = await page.evaluate((id) => window.jiwei.recognition.source(id), source.id)
+            return !r.running && r.done + r.failed === r.total
+          },
+          { timeout: 1_800_000, intervals: [2000] }
+        )
+        .toBe(true)
+    }
+  }
   if (!reuse) {
     await page.evaluate(async () => {
       const s = await window.jiwei.settings.get()

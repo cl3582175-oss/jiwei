@@ -3,6 +3,11 @@
 // - 表格页只保留表格和表标题（正文已在文字层中）
 // - 长表格按行切分，每段重复表头，检索命中任何一段都能看懂各列含义
 // - 并入资料分段：插在同一页的文字之后
+import { normalizeExtracted } from './textNormalize'
+import { structuredTextBlocks } from './structuredText'
+import { chunkBlocks } from './chunker'
+import type { DocBlock } from './docBlocks'
+import { tableBlockFromHtml } from './tableBlocks'
 
 export type RecognizedNeed = 'scan' | 'table' | 'figure'
 
@@ -10,6 +15,7 @@ export interface SegmentLike {
   kind: string
   locator: Record<string, unknown>
   text: string
+  heading?: string
 }
 
 export const OCR_KIND_PREFIX = 'ocr:'
@@ -32,19 +38,20 @@ const decode = (s: string): string =>
 /** 一张 HTML 表格 → Markdown；有合并单元格时返回精简的 HTML */
 export function htmlTableToMarkdown(html: string): string {
   const rows = [...html.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)].map((m) =>
-    [...m[1].matchAll(/<t([hd])([^>]*)>([\s\S]*?)<\/t[hd]>/gi)].map((c) => ({ th: c[1].toLowerCase() === 'h', attrs: c[2], text: decode(c[3]) }))
+    [...m[1].matchAll(/<t([hd])([^>]*)>([\s\S]*?)<\/t[hd]>/gi)].map((c) => ({
+      th: c[1].toLowerCase() === 'h',
+      attrs: c[2],
+      text: decode(c[3])
+    }))
   )
   if (!rows.length) return decode(html)
-  if (rows.some((r) => r.some((c) => /(row|col)span\s*=\s*["']?\s*[2-9]/i.test(c.attrs)))) {
+  if (rows.some((r) => r.some((c) => [...c.attrs.matchAll(/(?:row|col)span\s*=\s*["']?\s*(\d+)/gi)].some((m) => Number(m[1]) >= 2)))) {
     // 保留结构，去掉样式属性和多余空白
-    return html
-      .replace(/\s(?:style|class|border|align|width|valign)\s*=\s*("[^"]*"|'[^']*'|\S+)/gi, '')
-      .replace(/>\s+</g, '><')
-      .replace(/<\/?(?:thead|tbody|tfoot)>/gi, '')
-      .trim()
+    return tableBlockFromHtml(html).html ?? ''
   }
   // 表头：首行全部为空的“标题行”（如“项目特性”横跨整行）跳过，取下一行
   let body = rows.filter((r) => r.some((c) => c.text))
+  if (!body.length) return ''
   if (body.length && body[0].filter((c) => c.text).length === 1 && body[0].length > 1 && body.length > 1) body = body.slice(1)
   const width = Math.max(...body.map((r) => r.length))
   const cell = (s: string): string => s.replace(/\|/g, '\\|')
@@ -72,7 +79,10 @@ export function extractTables(text: string): string {
   for (let i = 0; i < lines.length; i++) {
     const l = lines[i]
     // 标题行可能带 Markdown 标记（# 标题、**加粗**）
-    const plain = l.replace(/^[#>\s]+/, '').replace(/[*_]{1,2}/g, '').trim()
+    const plain = l
+      .replace(/^[#>\s]+/, '')
+      .replace(/[*_]{1,2}/g, '')
+      .trim()
     if (TABLE_CAPTION.test(plain) && plain.length <= 90) out.push(plain)
     else if (/^\s*\|/.test(l)) {
       const block: string[] = []
@@ -183,6 +193,59 @@ export function mergeRecognized(segments: SegmentLike[], recs: { page: number; n
   return out
 }
 
+export type HeadingBlock = Extract<DocBlock, { type: 'heading' }>
+/** 结构入口：按页传递标题栈。B 线同步写入 heading 与页多需求后替换兼容入口。 */
+export function mergeRecognizedStructured(
+  segments: SegmentLike[],
+  recs: { page: number; need: RecognizedNeed; text: string }[],
+  initialHeadings: HeadingBlock[] = []
+): SegmentLike[] {
+  const out = segments.filter((s) => !s.kind.startsWith(OCR_KIND_PREFIX))
+  const stack = [...initialHeadings]
+  for (const r of [...recs].sort((a, b) => a.page - b.page)) {
+    const text = normalizeExtracted(r.text)
+    const kind = `${OCR_KIND_PREFIX}${r.need}`,
+      locator = pageLocator(r.page)
+    const add: SegmentLike[] = []
+    const blocks = structuredTextBlocks(text)
+    let pending: DocBlock[] = []
+    const path = (): string =>
+      stack
+        .slice(0, 4)
+        .map((h) => h.text)
+        .join(' › ')
+        .slice(0, 120)
+    const flush = (): void => {
+      if (pending.length) add.push(...chunkBlocks([...stack, ...pending], { locatorOf: () => locator }).map((c) => ({ ...c, kind })))
+      for (const b of pending)
+        if (b.type === 'heading') {
+          while (stack.length && stack.at(-1)!.level >= b.level) stack.pop()
+          stack.push(b)
+        }
+      pending = []
+    }
+    if (r.need === 'figure') {
+      if (text.trim()) add.push({ kind, locator, heading: path(), text: text.startsWith(FIGURE_PREFIX) ? text : FIGURE_PREFIX + text })
+    } else {
+      for (const b of blocks) {
+        if (b.type === 'paragraph' && b.text.startsWith(FIGURE_PREFIX)) {
+          flush()
+          add.push({ kind, locator, heading: path(), text: b.text })
+        } else pending.push({ ...b, page: r.page })
+      }
+      flush()
+    }
+    let at = -1
+    for (let i = 0; i < out.length; i++) {
+      const page = pageOf(out[i])
+      if (page !== null && page <= r.page) at = i
+      if (page !== null && page > r.page) break
+    }
+    out.splice(at + 1, 0, ...add)
+  }
+  return out
+}
+
 /* ——— LightOnOCR-3 的 grounding 输出 ——— */
 
 /** 一个版面块：类型、坐标（页面归一化到 0–1000：左、上、右、下）、内容 */
@@ -259,7 +322,13 @@ export function groundedText(blocks: GroundBlock[], need: RecognizedNeed): strin
     }
     if (need !== 'scan') return
     // 图 / 表的标题已随图表输出
-    if (b.label === 'caption' && (blocks[i - 1]?.label === 'image' || blocks[i - 1]?.label === 'chart' || blocks[i + 1]?.label === 'table' || blocks[i - 1]?.label === 'table'))
+    if (
+      b.label === 'caption' &&
+      (blocks[i - 1]?.label === 'image' ||
+        blocks[i - 1]?.label === 'chart' ||
+        blocks[i + 1]?.label === 'table' ||
+        blocks[i - 1]?.label === 'table')
+    )
       return
     parts.push(b.label === 'title' && !b.text.startsWith('#') ? `## ${b.text}` : b.text)
   })
