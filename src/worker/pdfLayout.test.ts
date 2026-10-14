@@ -63,7 +63,7 @@ describe('PDF structure', () => {
   })
   it('retains numbered clauses with colon content as body, even in a large font', () => {
     expect(
-      pdfLayout([{ page: 1, items: [item('正文'.repeat(30), 600), item('2.3.2生产节拍：≤20min/件。', 500, 30, 18)] }]).every(
+      pdfLayout([{ page: 1, items: [item('正文'.repeat(30), 600), item('2.3.2合成条件：≤19min/件。', 500, 30, 18)] }]).every(
         (b) => b.type === 'paragraph'
       )
     ).toBe(true)
