@@ -158,7 +158,7 @@ describe('job cancellation coordination', () => {
     expect(cancel).toHaveBeenCalledExactlyOnceWith({ itemId: 'capture' })
     expect(run).not.toHaveBeenCalled()
     retryJob(row.id)
-    expect(retry).toHaveBeenCalledExactlyOnceWith({ itemId: 'capture' })
+    expect(retry).toHaveBeenCalledExactlyOnceWith({ itemId: 'capture' }, row.id)
     await vi.advanceTimersByTimeAsync(1)
     expect(run).toHaveBeenCalledTimes(1)
     expect(row.status).toBe('done')

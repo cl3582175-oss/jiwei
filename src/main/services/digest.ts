@@ -24,7 +24,7 @@ import {
   TemporaryJobError,
   type JobContext
 } from './jobs'
-import { digestWaiting, ensureRecognition, pendingRecognition, sourceRecognition, unrecognizedPages } from './recognize'
+import { applyRecognized, digestWaiting, ensureRecognition, pendingRecognition, sourceRecognition, unrecognizedPages } from './recognize'
 import { listSegments } from './segments'
 import { createNote, getNote } from './notes'
 import { createProposal } from './proposals'
@@ -262,7 +262,9 @@ async function digestSource(input: DigestJobInput, ctx: JobContext): Promise<{ n
   const zh = getSettings().language.startsWith('zh')
   const src = getDb().select().from(sources).where(eq(sources.id, input.sourceId)).get()!
   if (src.space === 'attachment') protectNoteAttachments(input.noteId, [src.id])
+  applyRecognized(input.sourceId)
   const parts = chunks(rangeOf(input))
+  const missing = unrecognizedPages(input.sourceId, input.fromPage, input.toPage)
   if (!parts.length) throw new PermanentJobError('No text in this range')
   const quick = quickModel(input.providerId, input.model)
   const keys = parts.map((part) => stepKey(quick, ['map', zh, part.ids, part.text]))
@@ -412,7 +414,6 @@ async function digestSource(input: DigestJobInput, ctx: JobContext): Promise<{ n
       conversationId: input.conversationId,
       title: zh ? `${TASK_ZH[input.task]}：《${src.title}》${range}` : `${TASK_EN[input.task]}: ${src.title}`,
       ops: (() => {
-        const missing = unrecognizedPages(input.sourceId, input.fromPage, input.toPage)
         if (!missing.length) return result.ops
         const pages = missing.slice(0, 10).join(zh ? '、' : ', ')
         const warning = zh

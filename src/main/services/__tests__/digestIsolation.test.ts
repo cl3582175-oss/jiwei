@@ -28,6 +28,7 @@ vi.mock('../notes', () => ({
 vi.mock('../proposals', () => ({ createProposal: () => {} }))
 vi.mock('../settings', () => ({ getSettings: () => ({ language: 'zh-CN', money: {} }) }))
 vi.mock('../recognize', () => ({
+  applyRecognized: () => {},
   digestWaiting: () => null,
   ensureRecognition: () => null,
   pendingRecognition: () => ({ pending: [], total: 0, done: 0 }),

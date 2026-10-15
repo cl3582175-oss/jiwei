@@ -6,13 +6,13 @@ import { and, eq, gte, inArray, lte } from 'drizzle-orm'
 import { generateText } from 'ai'
 import log from 'electron-log/main'
 import { getDb } from '../db'
-import { assets, jobs, sourcePages, sources } from '../db/schema'
+import { assets, jobs, jobSteps, sourcePages, sources } from '../db/schema'
 import { FORMATS } from '@shared/formats'
 import { download } from './download'
 import { ensureRuntime, freePort, llamaSupported, modelsDir, runtimeDownloadSize } from './ai/localEmbedding'
 import { assetPath } from './assets'
 import { emit } from '../events'
-import { enqueue, JobDeferred, patchQueuedPayload, registerJobKind, runJobNow, type JobContext } from './jobs'
+import { enqueue, JobDeferred, PermanentJobError, patchQueuedPayload, registerJobKind, runJobNow, type JobContext } from './jobs'
 import { listSegments, replaceSegments } from './segments'
 import { requestIndex } from './ai/indexer'
 import { getSettings } from './settings'
@@ -502,6 +502,70 @@ interface DigestRange {
   noWait?: boolean
 }
 
+interface RecognitionInput {
+  sourceId: string
+  full?: true
+  /** 新任务显式标记按需语义；旧版本缺少此标记的手动任务仍处理全书。 */
+  scoped?: true
+  retryPages?: number[]
+}
+const OUTCOME_PREFIX = 'recognition:page:'
+const RecognitionOutcomeSchema = z.object({
+  page: z.number().int().positive(),
+  need: z.enum(['scan', 'table', 'figure']),
+  status: z.enum(['done', 'skipped', 'failed'])
+})
+type RecognitionOutcome = z.infer<typeof RecognitionOutcomeSchema>
+const outcomeKey = (page: { page: number; need: string }): string => `${page.page}:${page.need}`
+
+/** 每页结果与页面状态一起提交，跨让出/重启保留本任务的成功与失败依据。 */
+function recognitionOutcomes(jobId: string | undefined, sourceId: string): RecognitionOutcome[] {
+  if (!jobId) return []
+  const current = new Map(pagesInRange(sourceId).map((page) => [outcomeKey(page), page.status]))
+  return getDb()
+    .select()
+    .from(jobSteps)
+    .where(and(eq(jobSteps.jobId, jobId), eq(jobSteps.sourceId, sourceId)))
+    .all()
+    .filter((row) => row.stepKey.startsWith(OUTCOME_PREFIX))
+    .map((row) => {
+      const outcome = RecognitionOutcomeSchema.parse(JSON.parse(row.output))
+      const status = current.get(outcomeKey(outcome))
+      return status === 'done' || status === 'skipped' ? { ...outcome, status } : outcome
+    })
+}
+
+function retryRecognition(input: RecognitionInput, jobId?: string): void {
+  if (!jobId) return
+  const outcomes = recognitionOutcomes(jobId, input.sourceId)
+  if (input.scoped === true && input.full !== true && !outcomes.length && !input.retryPages?.length)
+    throw new PermanentJobError(
+      getSettings().language.startsWith('zh')
+        ? '识别重试检查点已过期，请从资料重新开始识别'
+        : 'The recognition retry checkpoint has expired; start recognition again from the source'
+    )
+  let failed = outcomes.filter((row) => row.status === 'failed')
+  if (!failed.length && (input.scoped !== true || input.full === true || input.retryPages?.length))
+    failed = pagesInRange(input.sourceId)
+      .filter((row) => row.status === 'failed' && (input.scoped !== true || input.full === true || input.retryPages?.includes(row.page)))
+      .map(({ page, need }) => ({ page, need, status: 'failed' as const }))
+  for (const page of failed)
+    getDb()
+      .update(sourcePages)
+      .set({ status: 'pending', error: null, updatedAt: Date.now() })
+      .where(
+        and(
+          eq(sourcePages.sourceId, input.sourceId),
+          eq(sourcePages.page, page.page),
+          eq(sourcePages.need, page.need),
+          eq(sourcePages.status, 'failed')
+        )
+      )
+      .run()
+  patchQueuedPayload(jobId, { retryPages: [...new Set(failed.map((page) => page.page))] })
+  emit('recognition:source', { sourceId: input.sourceId })
+}
+
 /** 只认排队且仍需等待的整理，不把运行中的整理反向变成识别依赖。 */
 function waitingDigests(sourceId: string): { id: string; payload: DigestRange }[] {
   return getDb()
@@ -581,7 +645,7 @@ export function ensureRecognition(sourceId: string): string | null {
     .get()
   if (active) return active.id
   if (!pendingRecognition(sourceId).pending.length) return null
-  return enqueue('source.recognize', { sourceId }, { dedupeKey: `recognize:${sourceId}` })
+  return enqueue('source.recognize', { sourceId, scoped: true }, { dedupeKey: `recognize:${sourceId}` })
 }
 
 export function wakeWaitingDigests(sourceId: string): void {
@@ -660,12 +724,13 @@ const activeSources = new Set<string>()
 
 export function registerRecognizeJob(): void {
   registerNoteImageJob()
-  registerJobKind<{ sourceId: string; full?: true }>('source.recognize', {
+  registerJobKind<RecognitionInput>('source.recognize', {
     lane: ({ sourceId }) => (waitingDigests(sourceId).length ? 'user' : 'background'),
     offPeak: true,
+    onRetry: retryRecognition,
     title: ({ sourceId }) =>
       `识别资料：${getDb().select({ title: sources.title }).from(sources).where(eq(sources.id, sourceId)).get()?.title ?? sourceId}`,
-    async run({ sourceId, full }, ctx) {
+    async run({ sourceId, full, scoped, retryPages }, ctx) {
       const row = getDb()
         .select({ s: sources, a: assets })
         .from(sources)
@@ -678,7 +743,7 @@ export function registerRecognizeJob(): void {
       if (activeSources.has(sourceId)) throw new JobDeferred(1000, 'waiting')
       activeSources.add(sourceId)
       try {
-        return await recognizeSource(sourceId, row.a, ctx, full === true)
+        return await recognizeSource(sourceId, row.a, ctx, full === true || scoped !== true, retryPages)
       } finally {
         activeSources.delete(sourceId)
       }
@@ -690,13 +755,18 @@ async function recognizeSource(
   sourceId: string,
   a: { id: string; ext: string },
   ctx: JobContext,
-  full: boolean
+  full: boolean,
+  retryPages: number[] = []
 ): Promise<{ done: number; failed: number }> {
   const mode = recognitionSettings().mode
   const path = assetPath(a.id, a.ext)
   const abort = new AbortController()
-  let done = 0
-  let failed = 0
+  const outcomes = new Map(recognitionOutcomes(ctx.jobId, sourceId).map((page) => [outcomeKey(page), page]))
+  const report = (): { done: number; failed: number } => ({
+    done: [...outcomes.values()].filter((page) => page.status !== 'failed').length,
+    failed: [...outcomes.values()].filter((page) => page.status === 'failed').length
+  })
+  const retry = new Set(retryPages)
   let sinceApply = 0
   try {
     while (engineState(sourceId) === 'ready') {
@@ -714,16 +784,29 @@ async function recognizeSource(
         .from(sourcePages)
         .where(and(eq(sourcePages.sourceId, sourceId), eq(sourcePages.status, 'pending'), inArray(sourcePages.need, wanted)))
         .all()
-        .filter((page) => all || urgent(page.page))
+        .filter((page) => all || urgent(page.page) || retry.has(page.page))
         .sort((a, b) => Number(urgent(b.page)) - Number(urgent(a.page)) || a.page - b.page)
       if (!todo.length) break
       const p = todo[0]
       const set = (patch: Partial<typeof sourcePages.$inferInsert>): void => {
-        getDb()
-          .update(sourcePages)
-          .set({ ...patch, updatedAt: Date.now() })
-          .where(and(eq(sourcePages.sourceId, sourceId), eq(sourcePages.page, p.page), eq(sourcePages.need, p.need)))
-          .run()
+        ctx.signal?.throwIfAborted()
+        if (ctx.isCanceled()) throw new Error('canceled')
+        const db = getDb()
+        const outcome = RecognitionOutcomeSchema.parse({ page: p.page, need: p.need, status: patch.status })
+        db.transaction(() => {
+          db.update(sourcePages)
+            .set({ ...patch, updatedAt: Date.now() })
+            .where(and(eq(sourcePages.sourceId, sourceId), eq(sourcePages.page, p.page), eq(sourcePages.need, p.need)))
+            .run()
+          if (ctx.jobId) {
+            const output = JSON.stringify(outcome)
+            db.insert(jobSteps)
+              .values({ jobId: ctx.jobId, stepKey: OUTCOME_PREFIX + outcomeKey(p), sourceId, output, createdAt: Date.now() })
+              .onConflictDoUpdate({ target: [jobSteps.jobId, jobSteps.stepKey], set: { output, createdAt: Date.now() } })
+              .run()
+          }
+        })
+        outcomes.set(outcomeKey(p), outcome)
       }
       try {
         const jpeg = await pageImage(path, a.ext, p.page, ctx)
@@ -745,15 +828,14 @@ async function recognizeSource(
         }
         if (p.need === 'table') text = withCaptions(text, pageText(sourceId, p.page))
         set({ status: text ? 'done' : 'skipped', text: text || null, engine, blocks: blocks ? JSON.stringify(blocks) : null, error: null })
-        done++
         sinceApply++
       } catch (e) {
         if (ctx.isCanceled()) break
         const msg = e instanceof Error ? e.message : String(e)
         log.warn('[ocr] page failed', sourceId, p.page, msg)
         set({ status: 'failed', error: msg.slice(0, 500) })
-        failed++
       }
+      const { done, failed } = report()
       ctx.progress((done + failed) / (done + failed + todo.length - 1))
       emit('recognition:source', { sourceId })
       // 边识别边进入知识库：每 10 页并入一次
@@ -768,8 +850,14 @@ async function recognizeSource(
     applyRecognized(sourceId)
     emit('recognition:source', { sourceId })
   }
-  if (failed && !done) throw new Error(`识别失败（${failed} 页）`)
-  return { done, failed }
+  const result = report()
+  if (result.failed && !result.done)
+    throw new PermanentJobError(
+      getSettings().language.startsWith('zh')
+        ? `识别失败（${result.failed} 页），可手动重试`
+        : `Recognition failed for ${result.failed} page(s); retry manually`
+    )
+  return result
 }
 
 /** 删除本地识别模型（释放空间） */

@@ -257,3 +257,136 @@ it('a page failure wakes the digest without retrying that page indefinitely', as
   expect(proposalText()).toContain('第 2 页未能识别，未纳入整理。')
   expect(f.sql!.prepare('SELECT status FROM source_pages').get()).toEqual({ status: 'failed' })
 })
+
+it('a noWait proposal keeps the omissions of its input snapshot when OCR finishes during generation', async () => {
+  await prepare([2])
+  const { jobId } = digest.startDigest(input)
+  const rec = scheduler.listJobs().find((j) => j.kind === 'source.recognize')!
+  f.sql!.prepare('UPDATE jobs SET run_after=? WHERE id=?').run(Date.now() + 300_000, rec.id)
+  digest.digestNow(jobId)
+  f.beforeOutput = (_prompt, map) => {
+    if (!map) return
+    f.sql!.exec("UPDATE source_pages SET status='done',text='生成期间才识别出的文字' WHERE page=2")
+    recognition.applyRecognized('source')
+  }
+  scheduler.startJobs()
+  expect((await settle(jobId)).status).toBe('done')
+  expect(f.calls.join('\n')).not.toContain('生成期间才识别出的文字')
+  expect(proposalText()).toContain('第 2 页未能识别，未纳入整理。')
+})
+
+it('a noWait digest includes completed OCR that had not reached the ten-page publication batch', async () => {
+  await prepare([2])
+  f.sql!.exec("UPDATE source_pages SET status='done',text='已经识别但尚未并入的文字' WHERE page=2")
+  const { jobId } = digest.startDigest(input)
+  digest.digestNow(jobId)
+  scheduler.startJobs()
+  expect((await settle(jobId)).status).toBe('done')
+  expect(f.calls.join('\n')).toContain('已经识别但尚未并入的文字')
+})
+
+it('all OCR failures remain failed beyond the automatic retry window and panel retry processes only the failed scope', async () => {
+  await prepare([1, 2, 3])
+  f.beforePage = async () => {
+    throw new Error('controlled unreadable page')
+  }
+  const { jobId } = digest.startDigest({ ...input, fromPage: 1, toPage: 2 })
+  scheduler.startJobs()
+  expect((await settle(jobId)).status).toBe('done')
+  const rec = scheduler.listJobs().find((j) => j.kind === 'source.recognize')!
+  await vi.advanceTimersByTimeAsync(300_000)
+  expect(state(rec.id).status).toBe('failed')
+  expect(state(rec.id).attempts).toBe(1)
+  f.beforePage = async () => {}
+  scheduler.retryJob(rec.id)
+  await vi.advanceTimersByTimeAsync(2000)
+  expect(state(rec.id).status).toBe('done')
+  expect(f.recognized).toEqual([1, 2])
+  expect(f.sql!.prepare('SELECT status FROM source_pages WHERE page=3').get()).toEqual({ status: 'pending' })
+  expect(JSON.parse((f.sql!.prepare('SELECT result FROM jobs WHERE id=?').get(rec.id) as { result: string }).result)).toEqual({
+    done: 2,
+    failed: 0
+  })
+})
+
+it('page failures and successful results survive a yield without re-recognizing the failed page', async () => {
+  await prepare([1, 2])
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  f.beforePage = async (page) => {
+    if (page === 1) {
+      await gate
+      throw new Error('controlled failed first page')
+    }
+  }
+  recognition.startRecognition('source')
+  scheduler.registerJobKind('recognition.blocker', {
+    title: () => '',
+    run: async (_, ctx) => {
+      await new Promise<void>((resolve) => ctx.signal!.addEventListener('abort', () => resolve(), { once: true }))
+    }
+  })
+  const firstBlocker = scheduler.enqueue('recognition.blocker', {})
+  scheduler.enqueue('recognition.blocker', {})
+  scheduler.startJobs()
+  await vi.advanceTimersByTimeAsync(180_001)
+  const rec = scheduler.listJobs().find((j) => j.kind === 'source.recognize')!
+  release()
+  await vi.advanceTimersByTimeAsync(1)
+  expect(state(rec.id).yielded).toBe(true)
+  scheduler.cancelJob(firstBlocker)
+  await vi.advanceTimersByTimeAsync(2000)
+  expect(state(rec.id).status).toBe('done')
+  expect(f.recognized).toEqual([2])
+  expect(JSON.parse((f.sql!.prepare('SELECT result FROM jobs WHERE id=?').get(rec.id) as { result: string }).result)).toEqual({
+    done: 1,
+    failed: 1
+  })
+})
+
+it.each(['queued', 'running'] as const)(
+  'legacy manual recognition payloads resume full recognition from %s with auto=false',
+  async (status) => {
+    await prepare([1, 2])
+    const id = scheduler.enqueue('source.recognize', { sourceId: 'source' }, { dedupeKey: 'recognize:source' })
+    f.sql!.prepare('UPDATE jobs SET status=? WHERE id=?').run(status, id)
+    scheduler.startJobs()
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(state(id).status).toBe('done')
+    expect(f.recognized).toEqual([1, 2])
+  }
+)
+
+it('a forced all-scan digest with no recognized text fails clearly rather than creating an empty proposal', async () => {
+  await prepare([1], false)
+  const { jobId } = digest.startDigest(input)
+  const rec = scheduler.listJobs().find((j) => j.kind === 'source.recognize')!
+  f.sql!.prepare('UPDATE jobs SET run_after=? WHERE id=?').run(Date.now() + 300_000, rec.id)
+  digest.digestNow(jobId)
+  scheduler.startJobs()
+  expect((await settle(jobId)).status).toBe('failed')
+  expect(state(jobId).error).toContain('No text in this range')
+  expect(state(jobId).attempts).toBe(1)
+  expect(f.sql!.prepare('SELECT count(*) n FROM proposals').get()).toEqual({ n: 0 })
+})
+
+it('an expired scoped retry checkpoint stays failed instead of expanding recognition or claiming empty success', async () => {
+  await prepare([1, 2])
+  f.beforePage = async () => {
+    throw new Error('controlled unreadable page')
+  }
+  const { jobId } = digest.startDigest({ ...input, fromPage: 1, toPage: 1 })
+  scheduler.startJobs()
+  expect((await settle(jobId)).status).toBe('done')
+  const rec = scheduler.listJobs().find((j) => j.kind === 'source.recognize')!
+  expect(rec.status).toBe('failed')
+  f.sql!.prepare('DELETE FROM job_steps WHERE job_id=?').run(rec.id)
+  expect(() => scheduler.retryJob(rec.id)).toThrow('检查点已过期')
+  expect(state(rec.id).status).toBe('failed')
+  expect(f.sql!.prepare('SELECT page,status FROM source_pages ORDER BY page').all()).toEqual([
+    { page: 1, status: 'failed' },
+    { page: 2, status: 'pending' }
+  ])
+})

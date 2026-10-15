@@ -97,7 +97,7 @@ export interface JobKind<P = unknown> {
   /** 同步协调领域状态，排队中和运行中的显式取消都会调用。 */
   onCancel?(payload: P): void
   /** 显式重试重新排队时同步领域状态。 */
-  onRetry?(payload: P): void
+  onRetry?(payload: P, jobId?: string): void
   /** 耗时较长、可以等到低谷时段再跑（v0.7.5，用户开启“低谷时段运行”后生效） */
   offPeak?: boolean
   /** 低优先任务在其他到期任务之后调度，不抢占已经运行的任务。 */
@@ -492,7 +492,7 @@ export function retryJob(id: string): void {
   yielded.delete(id)
   db.transaction(() => {
     setStatus(id, { status: 'queued', attempts: 0, error: null, runAfter: Date.now() })
-    kinds.get(job.kind)?.onRetry?.(JSON.parse(job.payload))
+    kinds.get(job.kind)?.onRetry?.(JSON.parse(job.payload), id)
   })
   // 排队中取消的任务没有 execute.finally 清理标记；运行中的旧尝试则必须继续保持取消，防止迟到写回。
   if (!running.has(id)) canceled.delete(id)
