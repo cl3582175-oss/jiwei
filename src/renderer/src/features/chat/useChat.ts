@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { Effort } from '@shared/ai'
 import type { ChatMessage, Conversation } from '@shared/types'
-import type { ChatSend } from '@shared/schemas'
+import type { ChatSendRequest } from '@shared/schemas'
 import { useProviders, useSettings } from '@/lib/queries'
 import { api } from '@/lib/utils'
 import type { ModelChoice } from '../ai/ModelPicker'
@@ -84,7 +84,7 @@ export interface SendResult {
 }
 
 /** 发送消息；返回会话、用户消息与（空的）助手消息占位 */
-export async function sendChat(input: ChatSend): Promise<SendResult> {
+export async function sendChat(input: ChatSendRequest): Promise<SendResult> {
   const r = await api.chat.send(input)
   const assistant: ChatMessage = {
     id: r.assistantMessageId,

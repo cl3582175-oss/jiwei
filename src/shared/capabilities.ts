@@ -1,3 +1,10 @@
+import {
+  ProjectCreateSchema,
+  ProjectUpdateSchema,
+  type ChatProject,
+  type ChatProjectConversation,
+  type ChatSearchHit
+} from './chatProjects'
 import type { Readiness } from './readiness'
 import { RELATIONS } from './graphRelations'
 import { AnimationSchema } from './manim'
@@ -690,7 +697,17 @@ export const capabilities = {
     fetchModels: cap<string[]>()({ description: '从服务商拉取可用模型列表', params: [id()] }),
     test: cap<ProviderTestResult>()({ description: '测试服务商连接', params: [id()] })
   },
+  chatProjects: {
+    list: cap<ChatProject[]>()({ description: '列出对话项目', params: none }),
+    get: cap<ChatProject | null>()({ description: '读取对话项目', params: [id()] }),
+    create: cap<ChatProject>()({ description: '创建对话项目', params: [['input', ProjectCreateSchema]] }),
+    update: cap<ChatProject>()({ description: '修改对话项目', params: [id(), ['patch', ProjectUpdateSchema]] }),
+    remove: cap<void>()({ description: '删除项目，保留或同时删除对话', params: [id(), ['mode', z.enum(['recent', 'delete'])]] }),
+    conversations: cap<ChatProjectConversation[]>()({ description: '列出项目对话', params: [id()] }),
+    exportMarkdown: cap<string | null>()({ description: '导出项目对话为 Markdown 文件夹', params: [id()] })
+  },
   chat: {
+    search: cap<ChatSearchHit[]>()({ description: '搜索对话标题与消息', params: [['query', z.string().max(200)]] }),
     get: cap<Conversation | null>()({ description: '读取指定对话，包括就地提问，用于重发原问题', params: [id('conversationId')] }),
     conversations: cap<Conversation[]>()({ description: '列出 AI 对话', params: none }),
     messages: cap<ChatMessage[]>()({ description: '读取对话消息', params: [id('conversationId')] }),
@@ -712,6 +729,7 @@ export const capabilities = {
           'patch',
           z.object({
             title: z.string().max(200).optional(),
+            projectId: z.string().min(1).max(64).nullable().optional(),
             scope: S.ChatScopeSchema.optional(),
             pinned: z.boolean().optional(),
             web: WebModeSchema.nullable().optional()

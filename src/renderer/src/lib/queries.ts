@@ -91,8 +91,38 @@ export function invalidate(
   for (const g of groups) void qc.invalidateQueries({ queryKey: [g] })
 }
 
-export function useMemories() {
-  return useQuery({ queryKey: ['memories'], queryFn: () => api.memory.list({}) })
+export function useChatProjects() {
+  const qc = useQueryClient()
+  useEffect(
+    () =>
+      window.jiweiEvents.on('chatProjects:changed', () => {
+        void qc.invalidateQueries({ queryKey: ['chatProjects'] })
+        void qc.invalidateQueries({ queryKey: ['projectConversations'] })
+        void qc.invalidateQueries({ queryKey: ['conversations'] })
+        void qc.invalidateQueries({ queryKey: ['memories'] })
+      }),
+    [qc]
+  )
+  return useQuery({ queryKey: ['chatProjects'], queryFn: () => api.chatProjects.list() })
+}
+
+export function useProjectConversations(id: string) {
+  const qc = useQueryClient()
+  useEffect(
+    () =>
+      window.jiweiEvents.on('chat:done', () => {
+        void qc.invalidateQueries({ queryKey: ['projectConversations', id] })
+      }),
+    [qc, id]
+  )
+  return useQuery({ queryKey: ['projectConversations', id], queryFn: () => api.chatProjects.conversations(id) })
+}
+
+export function useMemories(projectId?: string) {
+  return useQuery({
+    queryKey: projectId ? ['memories', 'project', projectId] : ['memories'],
+    queryFn: () => api.memory.list(projectId ? { projectId } : {})
+  })
 }
 
 export function useUserProfile() {

@@ -2,7 +2,19 @@ import { and, asc, desc, eq, gte, inArray, isNull, lt, lte, ne, or, sql } from '
 import { z } from 'zod'
 import { getDb } from '../db'
 import { mistakeStatistics } from './learningStatistics'
-import { actions, blocks, cards, conversations, goalPhases, insightVersions, insights, links, notes, reviewLogs, reviews } from '../db/schema'
+import {
+  actions,
+  blocks,
+  cards,
+  conversations,
+  goalPhases,
+  insightVersions,
+  insights,
+  links,
+  notes,
+  reviewLogs,
+  reviews
+} from '../db/schema'
 import { profileDb } from '../db/profile'
 import { newId } from '../lib/ids'
 import { markdownToNodes } from '../lib/markdown'
@@ -377,7 +389,7 @@ export function reflectionMaterial(id: string): ReflectionMaterial {
   const episodes = (
     profileDb()
       .prepare(
-        "SELECT content, updated_at, evidence FROM memories WHERE kind = 'episode' AND status = 'active' AND updated_at >= ? AND updated_at < ? ORDER BY updated_at DESC LIMIT 20"
+        "SELECT content, updated_at, evidence FROM memories WHERE kind = 'episode' AND status = 'active' AND project_id IS NULL AND updated_at >= ? AND updated_at < ? ORDER BY updated_at DESC LIMIT 20"
       )
       .all(start, end) as { content: string; updated_at: number; evidence: string | null }[]
   ).map((e) => ({
@@ -524,7 +536,14 @@ export function reflectionMaterial(id: string): ReflectionMaterial {
     ? { concept: '概念不清', calculation: '计算失误', reading: '审题错误', method: '方法不会', careless: '粗心', unknown: '无法判断' }
     : { concept: 'Concept', calculation: 'Calculation', reading: 'Reading', method: 'Method', careless: 'Careless', unknown: 'Unknown' }
   const text = [
-    `${L('本周错题', 'Mistakes this period')}：${mistakeSummary.total}；${L('已核对', 'Verified')} ${Math.round(mistakeSummary.verifiedRatio * 100)}%${mistakeSummary.total ? `；${mistakeSummary.causes.filter((c) => c.count).map((c) => `${causeLabels[c.cause]} ${Math.round(c.percentage)}%`).join('、')}；${mistakeSummary.concepts.map((c) => `${c.name} (${c.count})`).join('、')}` : ''}`,
+    `${L('本周错题', 'Mistakes this period')}：${mistakeSummary.total}；${L('已核对', 'Verified')} ${Math.round(mistakeSummary.verifiedRatio * 100)}%${
+      mistakeSummary.total
+        ? `；${mistakeSummary.causes
+            .filter((c) => c.count)
+            .map((c) => `${causeLabels[c.cause]} ${Math.round(c.percentage)}%`)
+            .join('、')}；${mistakeSummary.concepts.map((c) => `${c.name} (${c.count})`).join('、')}`
+        : ''
+    }`,
     `${L('时间', 'Period')}：${new Date(start).toLocaleDateString()} – ${new Date(end - 1).toLocaleDateString()}`,
     r.scope?.topic ? `${L('主题', 'Topic')}：${r.scope.topic}` : '',
     noteRows.length ? `${L('学习的笔记', 'Notes')}：${noteRows.map((n) => `《${n.title || L('无标题', 'Untitled')}》`).join('、')}` : '',
@@ -611,7 +630,8 @@ export async function harvestReflection(id: string): Promise<ReflectionHarvest> 
     .filter((i) => i.status === 'active')
     .slice(0, 40)
   const refs = new Map(existing.map((x, i) => [`i${i + 1}`, x]))
-  const out = await structured({ purpose: 'reflection',
+  const out = await structured({
+    purpose: 'reflection',
     providerId: s.ai.chat.providerId,
     model: s.ai.chat.model,
     system: zh
@@ -869,10 +889,25 @@ export function createAction(
   return toAction(getDb().select().from(actions).where(eq(actions.id, id)).get()!)
 }
 
-export function updateAction(id: string, patch: { title?: string; status?: ActionItem['status']; dueAt?: number | null; phaseId?: string | null }): ActionItem {
-  const row = getDb().select().from(actions).where(and(eq(actions.id, id), isNull(actions.deletedAt))).get()
+export function updateAction(
+  id: string,
+  patch: { title?: string; status?: ActionItem['status']; dueAt?: number | null; phaseId?: string | null }
+): ActionItem {
+  const row = getDb()
+    .select()
+    .from(actions)
+    .where(and(eq(actions.id, id), isNull(actions.deletedAt)))
+    .get()
   if (!row) throw new Error('Action not found')
-  if (patch.phaseId && !getDb().select().from(goalPhases).where(and(eq(goalPhases.id, patch.phaseId), eq(goalPhases.goalId, row.goalId ?? ''), isNull(goalPhases.deletedAt))).get()) throw new Error('Phase not found in direction')
+  if (
+    patch.phaseId &&
+    !getDb()
+      .select()
+      .from(goalPhases)
+      .where(and(eq(goalPhases.id, patch.phaseId), eq(goalPhases.goalId, row.goalId ?? ''), isNull(goalPhases.deletedAt)))
+      .get()
+  )
+    throw new Error('Phase not found in direction')
   const now = Date.now()
   getDb()
     .update(actions)

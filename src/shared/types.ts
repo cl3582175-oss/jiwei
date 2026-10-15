@@ -376,6 +376,8 @@ export interface Segment {
 export type ProposalOpStatus = 'pending' | 'accepted' | 'rejected'
 
 export interface Proposal {
+  /** Trusted project-only memory provenance, supplied by the main process. */
+  memoryProjectId?: string | null
   attachmentSourceIds?: string[]
   id: string
   noteId: string
@@ -477,6 +479,8 @@ export interface ProviderTestResult {
 }
 
 export interface Conversation {
+  projectId?: string | null
+  lastMessageAt?: number
   id: string
   title: string
   scope: ChatScope
@@ -845,6 +849,7 @@ export type ProfileKey = (typeof PROFILE_KEYS)[number]
 export type UserProfile = Partial<Record<ProfileKey, string>>
 
 export interface Memory {
+  projectId?: string | null
   id: string
   kind: MemoryKind
   key: string | null
@@ -1093,6 +1098,7 @@ export interface SourceRecognition {
 
 /** 主进程 → 渲染进程的事件 */
 export interface JiweiEvents {
+  'chatProjects:changed': Record<string, never>
   'attachments:changed': { sourceIds?: string[]; conversationId?: string }
   'mail:changed': Record<string, never>
   'discover:changed': Record<string, never>

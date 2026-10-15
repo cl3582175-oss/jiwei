@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { and, asc, desc, eq, gt, isNull } from 'drizzle-orm'
 import log from 'electron-log/main'
 import { getDb } from '../db'
-import { conversations, messages, notes } from '../db/schema'
+import { chatProjects, conversations, messages, notes } from '../db/schema'
 import { profileDb } from '../db/profile'
 import { newId } from '../lib/ids'
 import { emit } from '../events'
@@ -28,6 +28,7 @@ import {
 import { recordConcept } from './learner'
 import { quickModel, structured } from './ai/structured'
 import { listSkills } from './ai/skills'
+import { conversationProject, memoryProjectId } from './ai/memoryScope'
 
 // 记忆 v2：让积微在后台“越用越懂你”。设计见 docs/design/v0.3-agent.md §5。
 //   ① 对话安静下来后整理：新增 / 更新 / 作废记忆（参考 Mem0 的 ADD / UPDATE / DELETE / NONE 流程），
@@ -159,6 +160,9 @@ async function extract(conversationId: string): Promise<{ added: number; concept
   const db = getDb()
   const conv = db.select().from(conversations).where(eq(conversations.id, conversationId)).get()
   if (!conv || conv.deletedAt || conv.incognito || hasAttachmentHistory(conversationId)) return none
+  const project = conversationProject(conversationId)
+  if (conv.projectId && !project) return none
+  const projectId = project?.memory === 'project' ? project.id : null
   const pdb = profileDb()
   const since =
     (
@@ -211,11 +215,12 @@ async function extract(conversationId: string): Promise<{ added: number; concept
     .filter((m) => m.role === 'user')
     .map((m) => m.content)
     .join(' ')
-  const candidates = candidateMemories(userText)
+  const candidates = candidateMemories(userText, projectId)
   const refs = new Map(candidates.map((m, i) => [`m${i + 1}`, m]))
   const episodeKey = `conv:${conversationId}`
-  const prevEpisode = pdb.prepare("SELECT content FROM memories WHERE kind = 'episode' AND key = ?").get(episodeKey) as
-    { content: string } | undefined
+  const prevEpisode = pdb
+    .prepare("SELECT content FROM memories WHERE kind = 'episode' AND key = ? AND project_id IS ?")
+    .get(episodeKey, projectId) as { content: string } | undefined
   const profile = getUserProfile()
 
   const prompt = [
@@ -237,21 +242,33 @@ async function extract(conversationId: string): Promise<{ added: number; concept
     schema: ExtractSchema
   })
   if (stopped) return none
-  const result = apply(out, refs, { conversationId, episodeKey, lastMessageId: msgs.at(-1)?.id })
+  // 模型调用期间用户可能移出项目、切换记忆模式或删除项目/对话。旧请求不能重新写回被清理的范围。
+  const current = db.select().from(conversations).where(eq(conversations.id, conversationId)).get()
+  if (
+    !current ||
+    current.deletedAt ||
+    current.incognito ||
+    current.projectId !== conv.projectId ||
+    (current.projectId && !conversationProject(conversationId)) ||
+    memoryProjectId(conversationId) !== projectId ||
+    hasAttachmentHistory(conversationId)
+  )
+    return none
+  const result = apply(out, refs, { conversationId, episodeKey, projectId, lastMessageId: msgs.at(-1)?.id })
   done()
   log.info('[memory] learned from conversation', conversationId, result)
   return result
 }
 
-function candidateMemories(text: string): Memory[] {
+function candidateMemories(text: string, projectId: string | null): Memory[] {
   const db = profileDb()
   type R = { id: string }
   const top = db
     .prepare(
-      `SELECT id FROM memories WHERE status IN ('active', 'pending') AND kind IN ('preference', 'fact', 'glossary')
+      `SELECT id FROM memories WHERE status IN ('active', 'pending') AND kind IN ('preference', 'fact', 'glossary') AND project_id IS ?
        ORDER BY pinned DESC, use_count DESC, updated_at DESC LIMIT 40`
     )
-    .all() as R[]
+    .all(projectId) as R[]
   const ids = new Set(top.map((r) => r.id))
   // 与本次对话相关的（trigram 全文检索；不计入“使用”）
   const terms = [...new Set(text.match(/[\p{L}\p{N}]{3,}/gu) ?? [])].slice(0, 30).map((t) => `"${t.slice(0, 20).replace(/"/g, '')}"`)
@@ -260,9 +277,9 @@ function candidateMemories(text: string): Memory[] {
       const related = db
         .prepare(
           `SELECT m.id FROM memories_fts f JOIN memories m ON m.rowid = f.rowid
-           WHERE memories_fts MATCH ? AND m.status = 'active' AND m.kind IN ('preference', 'fact', 'glossary') ORDER BY rank LIMIT 20`
+           WHERE memories_fts MATCH ? AND m.status = 'active' AND m.kind IN ('preference', 'fact', 'glossary') AND m.project_id IS ? ORDER BY rank LIMIT 20`
         )
-        .all(terms.join(' OR ')) as R[]
+        .all(terms.join(' OR '), projectId) as R[]
       related.forEach((r) => ids.add(r.id))
     } catch {
       /* 检索语法问题：只用常用记忆 */
@@ -274,7 +291,7 @@ function candidateMemories(text: string): Memory[] {
 function apply(
   out: Extract,
   refs: Map<string, Memory>,
-  ev: { conversationId: string; episodeKey: string; lastMessageId?: string }
+  ev: { conversationId: string; episodeKey: string; projectId: string | null; lastMessageId?: string }
 ): { added: number; concepts: number; episode: boolean } {
   const db = profileDb()
   const learned: Memory[] = []
@@ -291,7 +308,7 @@ function apply(
         { kind: m.kind ?? 'preference', content, sensitive },
         'ai',
         { conversationId: ev.conversationId, messageId: ev.lastMessageId, quote: m.quote },
-        { silent: true }
+        { silent: true, projectId: ev.projectId }
       )
       // 已存在的相同记忆只会刷新时间，不算新记住
       if (saved.createdAt >= before) learned.push(saved)
@@ -301,18 +318,20 @@ function apply(
     // 用户亲手写的、钉住的记忆，AI 不改也不作废，只能印证
     if (!target || target.origin !== 'ai' || target.pinned) continue
     if (m.op === 'update' && m.content?.trim() && m.content.trim() !== target.content) {
-      db.prepare('UPDATE memories SET content = ?, evidence = ?, updated_at = ? WHERE id = ?').run(
+      db.prepare('UPDATE memories SET content = ?, evidence = ?, updated_at = ? WHERE id = ? AND project_id IS ?').run(
         m.content.trim(),
         JSON.stringify({ conversationId: ev.conversationId, quote: m.quote, previous: target.content }),
         Date.now(),
-        target.id
+        target.id,
+        ev.projectId
       )
       learned.push(getMemory(target.id)!)
     } else if (m.op === 'invalidate') {
-      db.prepare("UPDATE memories SET status = 'archived', invalid_at = ?, updated_at = ? WHERE id = ?").run(
+      db.prepare("UPDATE memories SET status = 'archived', invalid_at = ?, updated_at = ? WHERE id = ? AND project_id IS ?").run(
         Date.now(),
         Date.now(),
-        target.id
+        target.id,
+        ev.projectId
       )
     }
   }
@@ -324,11 +343,16 @@ function apply(
 
   const episode = out.episode?.trim()
   if (episode)
-    saveMemory({ kind: 'episode', key: ev.episodeKey, content: episode }, 'ai', { conversationId: ev.conversationId }, { silent: true })
+    saveMemory(
+      { kind: 'episode', key: ev.episodeKey, content: episode },
+      'ai',
+      { conversationId: ev.conversationId },
+      { silent: true, projectId: ev.projectId }
+    )
 
   // 敏感内容逐条询问；普通内容合并成一条提示（可撤销）
-  const pending = learned.filter((m) => m.status === 'pending')
-  const active = learned.filter((m) => m.status !== 'pending')
+  const pending = learned.filter((m) => m.projectId === null && m.status === 'pending')
+  const active = learned.filter((m) => m.projectId === null && m.status !== 'pending')
   pending.forEach((m) => emit('memory:changed', { added: m }))
   emit('memory:changed', active.length ? { learned: active } : {})
   return { added: learned.length, concepts, episode: !!episode }
@@ -378,12 +402,24 @@ function opText(op: Proposal['ops'][number], embeds: Proposal['embeds']): string
 /** 提案中的一处修改被接受或拒绝：留下样本（接受的过一段时间再看有没有被改） */
 export function recordProposalDecision(p: Proposal, opIndex: number, decision: 'accepted' | 'rejected', blockIds?: string[]): void {
   if (!p.skill || p.auto || !getMemorySettings().learnSkills || p.attachmentSourceIds?.length) return
+  let projectId = p.memoryProjectId ?? null
+  if (projectId) {
+    const project = getDb()
+      .select()
+      .from(chatProjects)
+      .where(and(eq(chatProjects.id, projectId), isNull(chatProjects.deletedAt)))
+      .get()
+    if (!project) return
+    projectId = project.memory === 'project' ? project.id : null
+  }
   const op = p.ops[opIndex]
   if (!op || op.op === 'delete_block') return
   const before = clip(opText(op, p.embeds), 2000)
   if (!before) return
   profileDb()
-    .prepare('INSERT INTO skill_feedback (id, skill, kind, note_id, block_ids, before, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .prepare(
+      'INSERT INTO skill_feedback (id, skill, kind, note_id, block_ids, before, created_at, project_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+    )
     .run(
       newId(),
       p.skill,
@@ -391,12 +427,14 @@ export function recordProposalDecision(p: Proposal, opIndex: number, decision: '
       p.noteId,
       blockIds?.length ? JSON.stringify(blockIds) : null,
       before,
-      Date.now()
+      Date.now(),
+      projectId
     )
 }
 
 type Feedback = {
   id: string
+  project_id: string | null
   skill: string
   kind: string
   note_id: string | null
@@ -463,25 +501,37 @@ export function induceSkillPreferences(): Promise<Memory[]> {
     const pdb = profileDb()
     const ready = pdb
       .prepare(
-        `SELECT skill, COUNT(*) AS n FROM skill_feedback
-         WHERE consumed_at IS NULL AND kind IN ('rejected', 'edited', 'deleted') GROUP BY skill HAVING n >= ?`
+        `SELECT skill, project_id, COUNT(*) AS n FROM skill_feedback
+         WHERE consumed_at IS NULL AND kind IN ('rejected', 'edited', 'deleted') GROUP BY skill, project_id HAVING n >= ?`
       )
-      .all(INDUCE_MIN) as { skill: string; n: number }[]
+      .all(INDUCE_MIN) as { skill: string; project_id: string | null; n: number }[]
     const s = getSettings()
     const providerId = s.ai.chat.providerId
     const model = s.ai.chat.model
     if (!ready.length || !providerId || !model) return []
     const zh = zhUI()
     const learned: Memory[] = []
-    for (const { skill } of ready) {
+    for (const { skill, project_id: projectId } of ready) {
+      const scopeActive = (): boolean =>
+        !projectId ||
+        !!getDb()
+          .select({ id: chatProjects.id })
+          .from(chatProjects)
+          .where(and(eq(chatProjects.id, projectId), isNull(chatProjects.deletedAt), eq(chatProjects.memory, 'project')))
+          .get()
+      if (!scopeActive()) continue
       const samples = pdb
         .prepare(
-          `SELECT * FROM skill_feedback WHERE skill = ? AND consumed_at IS NULL AND kind IN ('rejected', 'edited', 'deleted')
+          `SELECT * FROM skill_feedback WHERE skill = ? AND project_id IS ? AND consumed_at IS NULL AND kind IN ('rejected', 'edited', 'deleted')
            ORDER BY created_at DESC LIMIT 8`
         )
-        .all(skill) as Feedback[]
-      const kept = (pdb.prepare("SELECT COUNT(*) AS n FROM skill_feedback WHERE skill = ? AND kind = 'kept'").get(skill) as { n: number }).n
-      const existing = skillPreferences(skill)
+        .all(skill, projectId) as Feedback[]
+      const kept = (
+        pdb
+          .prepare("SELECT COUNT(*) AS n FROM skill_feedback WHERE skill = ? AND project_id IS ? AND kind = 'kept'")
+          .get(skill, projectId) as { n: number }
+      ).n
+      const existing = skillPreferences(skill, { projectId })
       const label = (k: string): string =>
         zh
           ? ({ rejected: '用户拒绝了这份输出', edited: '用户接受后改写了它', deleted: '用户接受后又删掉了它' }[k] ?? k)
@@ -516,13 +566,15 @@ export function induceSkillPreferences(): Promise<Memory[]> {
           prompt,
           schema: PrefSchema
         })
+        const unchanged = pdb.prepare('SELECT 1 FROM skill_feedback WHERE id = ? AND project_id IS ? AND consumed_at IS NULL')
+        if (!scopeActive() || samples.some((sample) => !unchanged.get(sample.id, projectId))) continue
         for (const p of out.preferences) {
           const before = Date.now()
           const m = saveMemory(
             { kind: 'skill', skill, content: p.content.trim() },
             'ai',
             { quote: zh ? `来自 ${samples.length} 次修改与拒绝` : `From ${samples.length} edits and rejections` },
-            { silent: true }
+            { silent: true, projectId }
           )
           if (m.createdAt >= before) learned.push(m)
         }
@@ -533,7 +585,10 @@ export function induceSkillPreferences(): Promise<Memory[]> {
         log.warn('[memory] skill induction failed', skill, e instanceof Error ? e.message : e)
       }
     }
-    if (learned.length) emit('memory:changed', { learned })
+    if (learned.length) {
+      const global = learned.filter((memory) => memory.projectId === null)
+      emit('memory:changed', global.length ? { learned: global } : {})
+    }
     return learned
   })
 }

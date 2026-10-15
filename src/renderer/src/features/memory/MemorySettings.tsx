@@ -17,10 +17,13 @@ import {
   RotateCcw,
   MessageSquare,
   Quote,
-  GraduationCap
+  GraduationCap,
+  ChevronRight,
+  Folder
 } from 'lucide-react'
 import { PROFILE_KEYS, type Concept, type Memory, type MemoryKind, type MemorySettings, type ProfileKey } from '@shared/types'
-import { useMemories, useUserProfile } from '@/lib/queries'
+import type { ChatProject } from '@shared/chatProjects'
+import { useChatProjects, useMemories, useUserProfile } from '@/lib/queries'
 import { api, cn, formatDate, formatRelative } from '@/lib/utils'
 import { useApp } from '@/store/app'
 import { Button } from '@/components/ui/button'
@@ -104,7 +107,8 @@ function MemoryRow({ m }: { m: Memory }) {
   const refresh = (): void => void qc.invalidateQueries({ queryKey: ['memories'] })
   const edit = async (): Promise<void> => {
     const v = await prompt({ title: t('memory.edit'), defaultValue: m.content, confirmText: t('common.save') })
-    if (v?.trim() && v.trim() !== m.content) await api.memory.save({ id: m.id, kind: m.kind, content: v.trim() })
+    if (v?.trim() && v.trim() !== m.content)
+      await api.memory.save({ id: m.id, kind: m.kind, projectId: m.projectId ?? null, content: v.trim() })
     refresh()
   }
   const remove = async (): Promise<void> => {
@@ -159,7 +163,11 @@ function MemoryRow({ m }: { m: Memory }) {
           <Button
             size="sm"
             variant="ghost"
-            onClick={() => void api.memory.save({ id: m.id, kind: m.kind, content: m.content, status: 'active' }).then(refresh)}
+            onClick={() =>
+              void api.memory
+                .save({ id: m.id, kind: m.kind, projectId: m.projectId ?? null, content: m.content, status: 'active' })
+                .then(refresh)
+            }
           >
             <RotateCcw />
             {t('memory.restore')}
@@ -177,7 +185,11 @@ function MemoryRow({ m }: { m: Memory }) {
               size="icon-sm"
               variant="ghost"
               aria-label={m.pinned ? t('memory.unpin') : t('memory.pin')}
-              onClick={() => void api.memory.save({ id: m.id, kind: m.kind, content: m.content, pinned: !m.pinned }).then(refresh)}
+              onClick={() =>
+                void api.memory
+                  .save({ id: m.id, kind: m.kind, projectId: m.projectId ?? null, content: m.content, pinned: !m.pinned })
+                  .then(refresh)
+              }
             >
               {m.pinned ? <PinOff /> : <Pin />}
             </Button>
@@ -218,11 +230,66 @@ function LearnSwitches() {
   return <div className="rounded-xl border border-border px-4 py-1.5">{(['autoLearn', 'learnSkills'] as const).map(row)}</div>
 }
 
+function ProjectMemoryGroup({
+  project,
+  kind,
+  episodes = false
+}: {
+  project: ChatProject
+  kind: MemoryKind | 'all' | 'archived'
+  episodes?: boolean
+}) {
+  const { t } = useTranslation()
+  const [open, setOpen] = useState(false)
+  const { data: list = [], isPending, isError } = useMemories(project.id)
+  const { data: archived = [] } = useQuery({
+    queryKey: ['memories', 'project', project.id, 'archived'],
+    queryFn: () => api.memory.list({ projectId: project.id, status: 'archived' }),
+    enabled: kind === 'archived'
+  })
+  const shown = (kind === 'archived' ? archived : list).filter((m) =>
+    episodes ? m.kind === 'episode' : LIST_KINDS.includes(m.kind) && (kind === 'all' || kind === 'archived' || m.kind === kind)
+  )
+  const ordered = [...shown.filter((m) => m.status === 'pending'), ...shown.filter((m) => m.status !== 'pending')]
+  return (
+    <section className="mt-4 overflow-hidden rounded-xl border border-border" data-project-memory={project.id}>
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+        className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm font-medium text-fg hover:bg-surface-hover"
+      >
+        <ChevronRight className={cn('size-3.5 shrink-0 text-subtle transition-transform', open && 'rotate-90')} />
+        <Folder className="size-4 shrink-0 text-muted" />
+        <span className="min-w-0 flex-1 truncate">{project.name}</span>
+        <span className="text-2xs font-normal text-subtle">{ordered.length}</span>
+      </button>
+      {open && (
+        <div className="border-t border-border px-1 py-2">
+          <p className="px-3 py-1 text-2xs text-subtle">{t('projects.memoryProjectDesc')}</p>
+          {ordered.length ? (
+            <ul>
+              {ordered.map((m) => (
+                <MemoryRow key={m.id} m={m} />
+              ))}
+            </ul>
+          ) : (
+            <p className="px-3 py-5 text-xs text-muted">
+              {t(isPending ? 'projects.loading' : isError ? 'projects.loadFailed' : 'projects.noMemories')}
+            </p>
+          )}
+        </div>
+      )}
+    </section>
+  )
+}
+
 function MemoriesSection() {
   const { t } = useTranslation()
   const qc = useQueryClient()
   const { data: list = [] } = useMemories()
   const [kind, setKind] = useState<MemoryKind | 'all' | 'archived'>('all')
+  const { data: projects = [] } = useChatProjects()
   const { data: archived = [] } = useQuery({
     queryKey: ['memories', 'archived'],
     queryFn: () => api.memory.list({ status: 'archived' }),
@@ -279,6 +346,11 @@ function MemoriesSection() {
           ))}
         </ul>
       )}
+      {projects
+        .filter((project) => project.memory === 'project')
+        .map((project) => (
+          <ProjectMemoryGroup key={project.id} project={project} kind={kind} />
+        ))}
     </section>
   )
 }
@@ -395,6 +467,7 @@ function EpisodesSection() {
   const qc = useQueryClient()
   const { data: list = [] } = useMemories()
   const episodes = list.filter((m) => m.kind === 'episode')
+  const { data: projects = [] } = useChatProjects()
   // 费曼练习回到练习页面，其他对话回到对话页
   const open = async (id: string): Promise<void> => {
     const c = await api.feynman.get(id)
@@ -445,6 +518,11 @@ function EpisodesSection() {
           ))}
         </ol>
       )}
+      {projects
+        .filter((project) => project.memory === 'project')
+        .map((project) => (
+          <ProjectMemoryGroup key={project.id} project={project} kind="all" episodes />
+        ))}
     </section>
   )
 }

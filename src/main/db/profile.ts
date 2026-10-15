@@ -86,7 +86,15 @@ const MIGRATIONS: string[] = [
      conversation_id TEXT PRIMARY KEY,
      last_message_at INTEGER NOT NULL
    );
-   CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);`
+   CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);`,
+  // 3：仅限项目的记忆与技能反馈；NULL 仍表示原有的全局记忆。
+  `ALTER TABLE memories ADD project_id TEXT;
+   CREATE INDEX memories_project ON memories(project_id);
+   DROP INDEX memories_kind_key;
+   CREATE UNIQUE INDEX memories_kind_key_global ON memories(kind, key) WHERE key IS NOT NULL AND project_id IS NULL;
+   CREATE UNIQUE INDEX memories_kind_key_project ON memories(project_id, kind, key) WHERE key IS NOT NULL AND project_id IS NOT NULL;
+   ALTER TABLE skill_feedback ADD project_id TEXT;
+   CREATE INDEX skill_feedback_project ON skill_feedback(project_id, kind, skill);`
 ]
 
 export const profileDbPath = (): string => join(app.getPath('userData'), 'profile', 'memory.db')

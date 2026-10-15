@@ -1,3 +1,4 @@
+import { memoryProjectId, conversationProject } from './memoryScope'
 import { tablePreview } from '../../lib/attachmentText'
 import { canReadSource, hasAttachmentHistory } from '../attachmentsAccess'
 import { manimAvailable } from '../plugins/manim'
@@ -11,7 +12,7 @@ import { z } from 'zod'
 import { RecordingFiltersSchema } from '@shared/lens'
 import { eq } from 'drizzle-orm'
 import { getDb } from '../../db'
-import { notes, sources } from '../../db/schema'
+import { conversations, notes, sources } from '../../db/schema'
 import { findNotes, importedSources, noteMetadata, NoteFindInput, ReadDateRange, ReadPage } from './readData'
 import { listSegments } from '../segments'
 import { loadDoc, stateToContent } from '../docs'
@@ -35,6 +36,27 @@ import type { ChatScope, ProposalOp } from '@shared/schemas'
 import type { AgentStep, DocNode, SearchHit } from '@shared/types'
 import type { WebGate } from '../retrieval/webGate'
 
+/** Tool calls may complete after a project move or deletion; never reinterpret old private input as global memory. */
+function currentMemoryScope(session: AgentSession): { projectId: string | null } {
+  const projectId = memoryProjectId(session.conversationId)
+  if (session.projectId !== undefined) {
+    const row = getDb()
+      .select({ projectId: conversations.projectId, deletedAt: conversations.deletedAt })
+      .from(conversations)
+      .where(eq(conversations.id, session.conversationId))
+      .get()
+    if (
+      !row ||
+      row.deletedAt !== null ||
+      (row.projectId ?? null) !== session.projectId ||
+      projectId !== session.memoryProjectId ||
+      (row.projectId !== null && !conversationProject(session.conversationId))
+    )
+      throw new Error('Project memory scope changed')
+  }
+  return { projectId }
+}
+
 // AI 可用的工具（精选、参数简单）：
 //   - 读：知识库检索、读笔记结构、读资料片段、找笔记；
 //   - 写：一律生成“提案”，用户逐条确认后才生效；内容用 Markdown / 嵌套结构表达，由程序转换为正确的文档节点；
@@ -48,6 +70,8 @@ export interface AgentSession {
   tier: ModelTier
   vision?: boolean
   scope: ChatScope
+  projectId?: string | null
+  memoryProjectId?: string | null
   attachmentSourceIds?: string[]
   suppressAttachmentMemory?: boolean
   retrieveAttachments?: (
@@ -336,7 +360,7 @@ export function buildTools(s: AgentSession): ToolSet {
       description: zh ? '加载一个技能的完整流程（技能目录见系统提示）' : 'Load the full instructions of a skill',
       inputSchema: z.object({ name: z.string().max(257) }),
       execute: async ({ name }) => {
-        const body = loadSkill(name, zh)
+        const body = loadSkill(name, zh, currentMemoryScope(s))
         if (!s.skills.includes(name)) s.skills.push(name)
         return body
       }
@@ -832,7 +856,12 @@ export function buildTools(s: AgentSession): ToolSet {
         execute: async ({ kind, content, skill, sensitive }) => {
           if (hasAttachmentHistory(s.conversationId))
             throw new Error(zh ? '附件对话不参与记忆整理' : 'Attachment conversations are not used for memory')
-          const m = saveMemory({ kind, content, skill, sensitive }, 'ai', { conversationId: s.conversationId, messageId: s.messageId })
+          const m = saveMemory(
+            { kind, content, skill, sensitive },
+            'ai',
+            { conversationId: s.conversationId, messageId: s.messageId },
+            currentMemoryScope(s)
+          )
           return m.status === 'pending'
             ? zh
               ? '这是敏感信息，已请用户确认后再记住。'
@@ -848,7 +877,7 @@ export function buildTools(s: AgentSession): ToolSet {
           : 'Recall more about the user (preferences, background, terms, past study, grasp of a concept) when needed.',
         inputSchema: z.object({ query: z.string().min(1).max(200) }),
         execute: async ({ query }) => {
-          const lines = searchMemories(query, 8).map(
+          const lines = searchMemories(query, 8, currentMemoryScope(s)).map(
             (m) => `- ${m.kind === 'episode' ? (zh ? '学习经历：' : 'Studied: ') : ''}${m.content}`
           )
           lines.push(...conceptsIn(query, 5).map((c) => `- ${zh ? '掌握情况：' : 'Grasp: '}${describeConcept(c, zh)}`))

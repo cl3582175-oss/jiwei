@@ -1,3 +1,5 @@
+import { conversationProject, memoryProjectId } from './memoryScope'
+import type { ChatSearchHit } from '@shared/chatProjects'
 import { readinessForSources, readinessDescription, storedReadiness } from '../readiness'
 import { matchSourcesByTitle } from './sourceMentions'
 import { prepareAttachmentTurn, markAttachmentTurnSent, assertAttachmentTurn, type AttachmentTurn } from './chatAttachments'
@@ -10,11 +12,12 @@ import { detachConversationAttachments } from '../attachments'
 import { collectGarbage } from '../assets'
 import { asSchema, hasToolCall, stepCountIs, streamText, type ModelMessage, type ToolSet } from 'ai'
 import { ASK_USER, buildScopeTools } from './scopeTools'
-import { and, asc, desc, eq, inArray, isNull, ne } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import log from 'electron-log/main'
-import { getDb } from '../../db'
+import { getDb, getSqlite } from '../../db'
 import {
   conversations,
+  chatProjects,
   messages,
   sources,
   conversationAttachments as attachmentRefs,
@@ -27,7 +30,7 @@ import { deviceId } from '../device'
 import { emit, onMainEvent } from '../../events'
 import { getSettings } from '../settings'
 import { type Effort, type ModelTier, type Usage, type ProviderKind } from '@shared/ai'
-import type { ChatScope, ChatSend } from '@shared/schemas'
+import type { ChatScope, ChatSend, ChatSendRequest } from '@shared/schemas'
 import type { Anchor } from '@shared/context'
 import type { AgentStep, ChatMessage, Citation, Conversation, SearchHit } from '@shared/types'
 import type { WebMode } from '@shared/retrieval'
@@ -91,7 +94,7 @@ const cards = new Map<string, string | null>()
 export function cardFor(conversationId: string, zh: boolean): string | null {
   if (!cards.has(conversationId)) {
     if (cards.size > 200) cards.delete(cards.keys().next().value!)
-    cards.set(conversationId, userCard(zh))
+    cards.set(conversationId, userCard(zh, { projectId: memoryProjectId(conversationId) }))
   }
   return cards.get(conversationId)!
 }
@@ -101,6 +104,7 @@ export function invalidateUserCards(conversationIds?: string[]): void {
   else cards.clear()
 }
 onMainEvent('memory:profileChanged', () => invalidateUserCards())
+onMainEvent('chatProjects:changed', () => invalidateUserCards())
 
 const resolvedAnchor = (raw: string | null): Anchor | null => {
   if (!raw) return null
@@ -112,6 +116,8 @@ const resolvedAnchor = (raw: string | null): Anchor | null => {
 const toConversation = (r: ConvRow): Conversation => ({
   id: r.id,
   title: r.title,
+  projectId: r.projectId,
+  lastMessageAt: r.createdAt,
   scope: JSON.parse(r.scope) as ChatScope,
   web: r.web as WebMode | null,
   pinned: r.pinned,
@@ -160,20 +166,37 @@ const toMessage = (r: MsgRow): ChatMessage => ({
 
 /** 对话页列表：就地提问（inline）挂在原文旁边，费曼练习（feynman）在复习与学习经历中，都不在其中 */
 export function listConversations(): Conversation[] {
+  const activity = sql<number>`COALESCE((SELECT MAX(m.created_at) FROM messages m WHERE m.conversation_id=${conversations.id}), ${conversations.createdAt})`
   return getDb()
-    .select()
+    .select({ conversation: conversations, lastMessageAt: activity })
     .from(conversations)
-    .where(
-      and(
-        isNull(conversations.deletedAt),
-        ne(conversations.kind, 'inline'),
-        ne(conversations.kind, 'feynman'),
-        ne(conversations.kind, 'reflection')
-      )
-    )
-    .orderBy(desc(conversations.pinned), desc(conversations.updatedAt))
+    .where(and(isNull(conversations.deletedAt), inArray(conversations.kind, ['chat', 'workspace'])))
+    .orderBy(desc(activity), desc(conversations.createdAt), desc(conversations.id))
     .all()
-    .map(toConversation)
+    .map((r) => ({ ...toConversation(r.conversation), lastMessageAt: r.lastMessageAt }))
+}
+
+export function searchConversations(query: string): ChatSearchHit[] {
+  const q = query.trim()
+  if (!q) return []
+  const pattern = `%${q.replace(/[\\%_]/g, '\\$&')}%`
+  const rows = getSqlite()
+    .prepare(
+      `SELECT c.id AS conversationId,c.title,c.project_id AS projectId,p.name AS projectName,
+    COALESCE((SELECT MAX(m.created_at) FROM messages m WHERE m.conversation_id=c.id),c.created_at) AS lastMessageAt
+    FROM conversations c LEFT JOIN chat_projects p ON p.id=c.project_id AND p.deleted_at IS NULL
+    WHERE c.deleted_at IS NULL AND c.kind IN ('chat','workspace') AND
+    (c.title LIKE ? ESCAPE '\\' OR EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id=c.id AND m.content LIKE ? ESCAPE '\\'))
+    ORDER BY lastMessageAt DESC,c.id DESC LIMIT 50`
+    )
+    .all(pattern, pattern) as Omit<ChatSearchHit, 'snippet' | 'messageId'>[]
+  return rows.map((r) => {
+    const hit = getSqlite()
+      .prepare("SELECT id,content FROM messages WHERE conversation_id=? AND content LIKE ? ESCAPE '\\' ORDER BY created_at,rowid LIMIT 1")
+      .get(r.conversationId, pattern) as { id: string; content: string } | undefined
+    const start = hit ? Math.max(0, hit.content.toLocaleLowerCase().indexOf(q.toLocaleLowerCase()) - 50) : 0
+    return { ...r, snippet: hit?.content.slice(start, start + 200) ?? r.title, messageId: hit?.id ?? null }
+  })
 }
 
 export function getConversation(id: string): Conversation | null {
@@ -202,10 +225,23 @@ export function listMessages(conversationId: string): ChatMessage[] {
     .map(toMessage)
 }
 
-export function updateConversation(id: string, patch: { title?: string; scope?: ChatScope; pinned?: boolean; web?: WebMode | null }): void {
+export function updateConversation(
+  id: string,
+  patch: { title?: string; scope?: ChatScope; pinned?: boolean; web?: WebMode | null; projectId?: string | null }
+): void {
+  if (
+    patch.projectId &&
+    !getDb()
+      .select({ id: chatProjects.id })
+      .from(chatProjects)
+      .where(and(eq(chatProjects.id, patch.projectId), isNull(chatProjects.deletedAt)))
+      .get()
+  )
+    throw new Error('Project not found')
   getDb()
     .update(conversations)
     .set({
+      ...(patch.projectId !== undefined ? { projectId: patch.projectId } : {}),
       ...(patch.title !== undefined ? { title: patch.title } : {}),
       ...(patch.scope ? { scope: JSON.stringify(patch.scope) } : {}),
       ...(patch.pinned !== undefined ? { pinned: patch.pinned } : {}),
@@ -215,9 +251,19 @@ export function updateConversation(id: string, patch: { title?: string; scope?: 
     })
     .where(eq(conversations.id, id))
     .run()
+  if (patch.projectId !== undefined) {
+    const family = conversationFamily(id)
+    getDb()
+      .update(conversations)
+      .set({ projectId: patch.projectId, updatedAt: Date.now(), updatedBy: deviceId() })
+      .where(inArray(conversations.id, [...family]))
+      .run()
+    invalidateUserCards([...family])
+    emit('chatProjects:changed', {})
+  }
 }
 
-export async function deleteConversation(id: string): Promise<void> {
+function conversationFamily(id: string): Set<string> {
   const db = getDb(),
     family = new Set([id])
   for (const conversationId of family) {
@@ -235,6 +281,12 @@ export async function deleteConversation(id: string): Promise<void> {
         .all())
         family.add(c.id)
   }
+  return family
+}
+
+export async function deleteConversation(id: string): Promise<void> {
+  const db = getDb(),
+    family = conversationFamily(id)
   running.forEach((ctrl, mid) => {
     const m = db.select({ c: messages.conversationId }).from(messages).where(eq(messages.id, mid)).get()
     if (m && family.has(m.c)) ctrl.abort()
@@ -306,6 +358,12 @@ Rules:
       : 'Use memory_remember when the user explicitly asks to remember, or states stable preferences, goals or background; not for one-off requests.'
   const card = incognito ? null : cardFor(conversationId, zh)
   const goals = incognito ? null : activeGoalsText(zh)
+  const project = conversationProject(conversationId)
+  const projectName = project?.name.replace(
+    /[&<>"']/g,
+    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[c]!
+  )
+  const projectPrompt = project?.instructions.trim() ? `<project name="${projectName}">${project.instructions}</project>` : null
   return [
     rules.replace('{{MEMORY_RULE}}', memoryRule),
     promptCatalog(uiMode, zh, localUi),
@@ -313,6 +371,7 @@ Rules:
     card
       ? `${zh ? '用户卡片（关于这位用户，回答时自然地参考，不要复述）' : 'About the user (use naturally, do not recite)'}：\n${card}`
       : null,
+    projectPrompt,
     goals
       ? `${zh ? '用户正在进行的方向（回答时可以联系到它们）' : "The user's active learning goals (relate to them when useful)"}：\n${goals}`
       : null,
@@ -411,6 +470,7 @@ function sendInTransaction(input: ChatSend): SendResult {
     db.insert(conversations)
       .values({
         id: convId,
+        projectId: input.projectId ?? null,
         title: input.feynman
           ? input.feynman.concept.slice(0, 40)
           : input.text.replace(/\s+/g, ' ').slice(0, 40) || tr('附件对话', 'Attachment chat'),
@@ -552,7 +612,24 @@ function messageNoteIds(context: string | null): string[] {
     return []
   }
 }
-export function send(input: ChatSend): SendResult {
+export function send(request: ChatSendRequest): SendResult {
+  const previous = request.conversationId ? getConversation(request.conversationId) : null
+  if (request.conversationId && !previous) throw new Error('Conversation not found')
+  const replyParent =
+    !request.conversationId && request.anchor?.parentType === 'message' && request.anchor.ownerId
+      ? getConversation(request.anchor.ownerId)
+      : null
+  const projectId = previous ? (previous.projectId ?? null) : replyParent ? (replyParent.projectId ?? null) : (request.projectId ?? null)
+  const project = projectId
+    ? getDb()
+        .select()
+        .from(chatProjects)
+        .where(and(eq(chatProjects.id, projectId), isNull(chatProjects.deletedAt)))
+        .get()
+    : null
+  if (projectId && !project) throw new Error('Project not found')
+  const input: ChatSend = { ...request, projectId, scope: request.scope ?? previous?.scope ?? { type: project?.libraryScope ?? 'all' } }
+
   for (const id of input.attachments ?? []) {
     if (id.startsWith('note:')) {
       const note = noteReference(id.slice(5))
@@ -700,6 +777,8 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
     tier: capsFor(input.providerId, input.model).tier,
     vision: capsFor(input.providerId, input.model).vision,
     scope: input.scope,
+    projectId: conv.projectId ?? null,
+    memoryProjectId: memoryProjectId(conversationId),
     incognito: conv.incognito,
     conversationId,
     messageId,
@@ -739,6 +818,17 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
           }
     return retrieve(query, scope, limit, filters, session.preferSource, { sourceIds: ids }, opts)
   }
+  const initialMemoryProject = memoryProjectId(conversationId)
+  const stopProjectGuard = onMainEvent('chatProjects:changed', () => {
+    const latest = getConversation(conversationId)
+    if (
+      !latest ||
+      (latest.projectId && !conversationProject(conversationId)) ||
+      (latest.projectId ?? null) !== (conv.projectId ?? null) ||
+      memoryProjectId(conversationId) !== initialMemoryProject
+    )
+      ctrl.abort()
+  })
   const stopAttachmentGuard = onMainEvent('attachments:changed', () => {
     if (attachmentTurn.sourceIds.some((id) => !canReadSource(id, conversationId))) ctrl.abort()
   })
@@ -803,6 +893,7 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
     })
     db.update(conversations).set({ updatedAt: Date.now() }).where(eq(conversations.id, conversationId)).run()
     stopAttachmentGuard()
+    stopProjectGuard()
     running.delete(messageId)
     emit('chat:done', { message: toMessage(db.select().from(messages).where(eq(messages.id, messageId)).get()!) })
   }
@@ -895,7 +986,7 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
       })
     let searchFailed = false
     let preSearchAttempted = false
-    const skillBody = input.skill && !special ? loadSkill(input.skill, zh) : null
+    const skillBody = input.skill && !special ? loadSkill(input.skill, zh, { projectId: memoryProjectId(conversationId) }) : null
     if (!special) {
       const status = retrievalStatus()
       session.web.gate = webGate({
