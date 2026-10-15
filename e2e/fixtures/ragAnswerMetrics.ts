@@ -6,8 +6,8 @@ export interface AnswerEvaluationRow {
   subtype: string
   expectNone: boolean
   answerMs?: number
-  usage?: Usage | null
-  score?: { correct: number; citations: number; honesty: number; total?: number; refused?: boolean | null } | null
+  usage?: (Usage & { cost?: number | null }) | null
+  score?: { correct: number; complete: number; citations: number; honesty: number; total?: number; refused?: boolean | null } | null
 }
 function metrics(rows: AnswerEvaluationRow[]) {
   const graded = rows.filter((r) => r.score),
@@ -25,7 +25,7 @@ function metrics(rows: AnswerEvaluationRow[]) {
       graded.length && graded.every((r) => typeof r.score?.total === 'number')
         ? graded.reduce((s, r) => s + r.score!.total!, 0) / graded.length
         : null,
-    correctRate: rate(rows, (r) => r.score!.correct === 2),
+    correctRate: rate(rows, (r) => r.score!.correct === 2 && (r.expectNone || r.score!.complete === 2)),
     citationRate: rate(citations, (r) => r.score!.citations === 2),
     refusalRate:
       none.length && none.every((r) => r.score && typeof r.score.refused === 'boolean')
@@ -41,6 +41,11 @@ function metrics(rows: AnswerEvaluationRow[]) {
       reasoningTokens: sum('reasoningTokens'),
       inputTokensMean: reported.length ? sum('inputTokens') / reported.length : null,
       outputTokensMean: reported.length ? sum('outputTokens') / reported.length : null
+    },
+    cost: {
+      reported: reported.filter((u) => typeof u.cost === 'number').length,
+      missing: rows.length - reported.filter((u) => typeof u.cost === 'number').length,
+      total: reported.some((u) => typeof u.cost === 'number') ? reported.reduce((n, u) => n + (u.cost ?? 0), 0) : null
     }
   }
 }

@@ -11,6 +11,7 @@ const rows: AnswerEvaluationRow[] = ['a', 'b'].flatMap((modelKey) =>
     usage: { inputTokens: 10, outputTokens: 2, cachedInputTokens: 4, reasoningTokens: 0 },
     score: {
       correct: i % 2 === 0 || modelKey === 'b' ? 2 : 0,
+      complete: 2,
       citations: i === 0 || modelKey === 'b' ? 2 : 0,
       honesty: i % 2 === 0 ? 2 : 0,
       refused: i === 2
@@ -46,4 +47,9 @@ it('does not turn missing judgements or unreported usage into a passing rate or 
     refusalRate: null,
     usage: { reported: 0, missing: 1, inputTokensMean: null }
   })
+})
+
+it('does not count an honest non-answer to an answerable question as a correct answer', () => {
+  const report = summarizeAnswerModels([{ ...rows[0], score: { correct: 2, complete: 0, citations: 0, honesty: 2, refused: true } }])
+  expect(report.byModel.a.correctRate).toBe(0)
 })

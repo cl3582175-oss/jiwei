@@ -5,7 +5,7 @@ import { isAbsolute, join, relative, resolve } from 'node:path'
 import { launchRagApp } from './fixtures/ragApp'
 import { runPairedEvaluation, askEvaluationModel, hashInput, type PairedCase } from './fixtures/ragPairedEval'
 import { captureRagRequests, takeRagRequests, initialEvidence } from './fixtures/ragRequests'
-import { askInApp } from './fixtures/ragChat'
+import { askInApp, UnsettledAnswerError, type PendingAnswer } from './fixtures/ragChat'
 import { estimateTokens } from '../src/main/lib/sourceContext'
 import { evaluationModels } from './fixtures/ragModels'
 import type { RagQuestion, ScoredQuestion } from './fixtures/ragMetrics'
@@ -16,6 +16,12 @@ const root = process.env.JIWEI_RAG_EVAL ? resolve(process.env.JIWEI_RAG_EVAL) : 
 const group = process.env.JIWEI_RAG_PAIR_GROUP ?? 'baseline'
 const output = process.env.JIWEI_RAG_PAIR_OUTPUT ? resolve(process.env.JIWEI_RAG_PAIR_OUTPUT) : ''
 const load = <T>(name: string): T => JSON.parse(readFileSync(join(root, name), 'utf8')) as T
+const fileHash = (name: string): string => hashInput(readFileSync(join(root, name), 'utf8'))
+const corpusVersion = () => ({
+  corpus: hashInput(['manifest.json', 'personal.json', 'experiments/dataset.json'].map(fileHash).join(':')),
+  application: process.env.JIWEI_RAG_APPLICATION_BUILD ?? 'unspecified',
+  sourceBudget: process.env.JIWEI_RAG_FULL_SOURCE_MAX_TOKENS ?? 'default'
+})
 type Evidence = { number: number; title: string; heading?: string; text: string }
 type E4Input = {
   cases: { question: RagQuestion; retrieved: Evidence[]; whole: Evidence[]; estimatedTokens: number }[]
@@ -29,6 +35,7 @@ test.beforeAll(async () => {
     if (!path || (!rel.startsWith('..') && !isAbsolute(rel))) throw new Error('评测输入输出必须在仓库外')
   }
   if (!process.env.JIWEI_IMPORT_PROVIDERS_FROM) throw new Error('缺少已授权配置来源')
+  if (['baseline', 'E4', 'E5'].includes(group) && !process.env.JIWEI_RAG_APPLICATION_BUILD) throw new Error('必须记录冻结应用构建版本')
   const library = load<{ userData: string }>(process.env.JIWEI_RAG_LIBRARY_FILE ?? 'library-p6-ocr.json')
   if (!resolve(library.userData).startsWith(resolve(tmpdir()) + '/')) throw new Error('只能使用隔离评测库')
   app = await launchRagApp(
@@ -42,7 +49,8 @@ test.beforeAll(async () => {
   page.on('crash', () => event('renderer-crashed'))
   page.on('close', () => event('page-closed'))
   await page.waitForSelector('nav')
-  await captureRagRequests(app)
+  // 评分请求本身另有完整传送记录；重评160份原答时不在Electron内累计它们。
+  await captureRagRequests(app, 'deepseek-v4-pro')
   await page.evaluate(async () => {
     const s = await window.jiwei.settings.get()
     await window.jiwei.settings.set({
@@ -62,39 +70,50 @@ test.afterAll(async () => {
   await app?.close()
 })
 
-async function nativeAnswer(c: PairedCase, target: Awaited<ReturnType<typeof evaluationModels>>['answers'][number]) {
+async function nativeAnswer(
+  c: PairedCase,
+  target: Awaited<ReturnType<typeof evaluationModels>>['answers'][number],
+  onSent?: (identity: PendingAnswer) => void
+) {
   const scope = c.scope ?? { type: 'all' as const }
   let conversationId: string | undefined
-  if (c.question.prev)
-    conversationId = (
-      await askInApp(page, { providerId: target.providerId, model: target.model, text: c.question.prev, scope, incognito: true })
-    ).conversationId
+  if (c.question.prev) {
+    try {
+      conversationId = (
+        await askInApp(page, { providerId: target.providerId, model: target.model, text: c.question.prev, scope, incognito: true })
+      ).conversationId
+    } catch (error) {
+      if (error instanceof UnsettledAnswerError) error.stage = 'previous'
+      throw error
+    }
+  }
   await takeRagRequests(app)
   const started = performance.now()
-  const answer = await askInApp(page, {
-    providerId: target.providerId,
-    model: target.model,
-    text: c.prompt,
-    scope,
-    conversationId,
-    incognito: true
-  })
+  let answer: Awaited<ReturnType<typeof askInApp>>
+  try {
+    answer = await askInApp(
+      page,
+      {
+        providerId: target.providerId,
+        model: target.model,
+        text: c.prompt,
+        scope,
+        conversationId,
+        incognito: true
+      },
+      onSent
+    )
+  } catch (error) {
+    if (error && typeof error === 'object') Object.assign(error, { requests: await takeRagRequests(app) })
+    throw error
+  }
   const answerMs = performance.now() - started,
     requests = await takeRagRequests(app)
-  const provided = []
-  for (const citation of answer.message.citations) {
-    const segment =
-      citation.parentType === 'source'
-        ? (await page.evaluate((id) => window.jiwei.segments.list(id), citation.parentId)).find((g) => g.id === citation.ownerId)
-        : null
-    provided.push({ number: citation.n, title: citation.title, text: segment?.text ?? citation.snippet })
-  }
   return {
     message: answer.message,
     requests,
     answerMs,
-    evidenceHash: hashInput(initialEvidence(requests)),
-    judgeEvidence: { provided, reference: c.question.gold, actualCitationCount: provided.length }
+    evidenceHash: hashInput(initialEvidence(requests))
   }
 }
 
@@ -137,6 +156,12 @@ test('same 80 questions through automatic RAG with identical initial evidence fo
   const data = load<{ rubric: Record<string, string>; questions: RagQuestion[] }>('answers.json')
   const library = load<{ result: string }>(process.env.JIWEI_RAG_LIBRARY_FILE ?? 'library-p6-ocr.json')
   const retrieval = load<{ rows: ScoredQuestion[] }>('results/' + library.result)
+  const references = load<{ questions: Record<string, unknown> }>('experiments/answer-references-v2.json')
+  const dataVersion = {
+    ...corpusVersion(),
+    retrieval: fileHash('results/' + library.result),
+    library: fileHash(process.env.JIWEI_RAG_LIBRARY_FILE ?? 'library-p6-ocr.json')
+  }
   const sources = await page.evaluate(() => window.jiwei.sources.list({}))
   const notes = await page.evaluate(() => window.jiwei.notes.list({ limit: 1000 }))
   const states = await page.evaluate(
@@ -168,7 +193,8 @@ test('same 80 questions through automatic RAG with identical initial evidence fo
       prompt: q.q,
       native: true,
       scope,
-      evidence: { provided: evidence },
+      evidence: { provided: evidence, reference: references.questions[q.id] },
+      dataVersion,
       statuses,
       rubric: data.rubric
     }
@@ -191,7 +217,8 @@ test('E4 same 20 paired retrieved and whole-source cases for both answer models'
         question: c.question,
         rubric: data.rubric,
         prompt: `请只根据以下编号资料回答问题，引用支持回答的具体编号，如[1]。资料中没有的信息请如实说明。不要调用工具，不要使用组件，直接用文字回答。\n问题：${c.question.q}\n<source-data>${JSON.stringify(evidence)}</source-data>`,
-        evidence: { provided: g === 'whole' ? 'whole-reference' : evidence, reference: c.whole }
+        evidence: { provided: g === 'whole' ? 'whole-reference' : evidence, reference: c.whole },
+        dataVersion: { ...corpusVersion(), retrieval: 'fixed-identical-prompt' }
       }
     })
   )
@@ -207,6 +234,8 @@ test('E5 native selected-source questions at one of four common source budgets',
     datasetHash: string
   }>('experiments/E5-input.json')
   const ceiling = process.env.JIWEI_RAG_FULL_SOURCE_MAX_TOKENS
+  const references = load<{ questions: Record<string, unknown> }>('experiments/answer-references-v2.json')
+  const library = load<{ result: string }>(process.env.JIWEI_RAG_LIBRARY_FILE ?? 'library-p6-ocr.json')
   expect(['0', '60000', '200000', 'window40']).toContain(ceiling)
   const cases: PairedCase[] = data.cases.map((c) => ({
     id: c.question.id,
@@ -215,7 +244,12 @@ test('E5 native selected-source questions at one of four common source budgets',
     prompt: c.question.q,
     scope: { type: 'items', sources: c.sourceIds, notes: [] },
     native: true,
-    evidence: { reference: c.question.gold, sourceTokens: c.tokens, tier: c.tier, datasetHash: data.datasetHash },
+    evidence: { reference: references.questions[c.question.id], sourceTokens: c.tokens, tier: c.tier, datasetHash: data.datasetHash },
+    dataVersion: {
+      ...corpusVersion(),
+      retrieval: fileHash('results/' + library.result),
+      library: fileHash(process.env.JIWEI_RAG_LIBRARY_FILE ?? 'library-p6-ocr.json')
+    },
     rubric: data.rubric
   }))
   await runPairedEvaluation(page, cases, output, process.env.JIWEI_RAG_PAIR_RESUME, [], nativeAnswer)

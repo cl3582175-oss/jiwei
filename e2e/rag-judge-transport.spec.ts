@@ -22,7 +22,8 @@ test('a large judgement reaches the app in bounded messages with complete retain
       '评分规则：只返回合法JSON数字。\n<evaluation-data>' +
       JSON.stringify({ text: 'LONG-JUDGE-START-' + 'Complete synthetic scoring evidence. '.repeat(3600) + '-LONG-JUDGE-TAIL' }) +
       '</evaluation-data>'
-    const answer = await sendJudgement(page, { providerId: p.id, model: 'judge-controlled' }, prompt)
+    const target = { providerId: p.id, model: 'judge-controlled', key: 'fixed-judge', context: 1000000, contextSource: 'builtin' }
+    const answer = await sendJudgement(page, target, prompt)
     expect(answer.transport.preparations).toHaveLength(8)
     expect(parseJudgement(answer.message.content)?.total).toBe(8)
     const requests = model.requests.filter((r) => r.stream)
