@@ -567,16 +567,16 @@ function retryRecognition(input: RecognitionInput, jobId?: string): void {
 }
 
 /** 只认排队且仍需等待的整理，不把运行中的整理反向变成识别依赖。 */
-function waitingDigests(sourceId: string): { id: string; payload: DigestRange }[] {
+function waitingDigests(sourceId: string): { id: string; payload: DigestRange; createdAt: number }[] {
   return getDb()
-    .select({ id: jobs.id, payload: jobs.payload })
+    .select({ id: jobs.id, payload: jobs.payload, createdAt: jobs.createdAt })
     .from(jobs)
     .where(and(eq(jobs.kind, 'source.digest'), eq(jobs.status, 'queued')))
     .all()
     .flatMap((row) => {
       try {
         const payload = JSON.parse(row.payload) as DigestRange | null
-        return payload?.sourceId === sourceId && payload.noWait !== true ? [{ id: row.id, payload }] : []
+        return payload?.sourceId === sourceId && payload.noWait !== true ? [{ id: row.id, payload, createdAt: row.createdAt }] : []
       } catch {
         return []
       }
@@ -620,10 +620,13 @@ export function pendingRecognition(sourceId: string, from?: number, to?: number)
 
 /** 引擎关闭时仍保留原始缺页信息，供确认提示和提案说明使用。 */
 export function unrecognizedPages(sourceId: string, from?: number, to?: number, status?: 'pending'): number[] {
+  // 只算当前设置本该识别的类型（如未开插图解读时插图页不算缺页）；识别关闭时按扫描页与表格页计。
+  const wanted = wantedNeeds(sourceId)
+  const needs = new Set<RecognizedNeed>(wanted.length ? wanted : ['scan', 'table'])
   return [
     ...new Set(
       pagesInRange(sourceId, from, to)
-        .filter((row) => row.status === 'pending' || (!status && row.status === 'failed'))
+        .filter((row) => needs.has(row.need) && (row.status === 'pending' || (!status && row.status === 'failed')))
         .map((row) => row.page)
     )
   ].sort((a, b) => a - b)
@@ -648,15 +651,26 @@ export function ensureRecognition(sourceId: string): string | null {
   return enqueue('source.recognize', { sourceId, scoped: true }, { dedupeKey: `recognize:${sourceId}` })
 }
 
+/**
+ * 整理确认之后，这份资料的识别已经以取消或失败结束、且没有新的识别在跑：不再等待，
+ * 也不替用户重新排识别（取消识别即表示不要识别；失败已用尽自动重试）。
+ */
+export function recognitionEndedSince(sourceId: string, since: number): boolean {
+  const rows = getDb()
+    .select({ status: jobs.status, updatedAt: jobs.updatedAt })
+    .from(jobs)
+    .where(and(eq(jobs.kind, 'source.recognize'), eq(jobs.dedupeKey, `recognize:${sourceId}`)))
+    .all()
+  if (rows.some((row) => row.status === 'queued' || row.status === 'running')) return false
+  return rows.some((row) => (row.status === 'canceled' || row.status === 'failed') && row.updatedAt >= since)
+}
+
+/** 分段由整理开始时的 applyRecognized 发布；这里只负责尽早唤醒，避免用户池占满时每页重切分段。 */
 export function wakeWaitingDigests(sourceId: string): void {
   const waiting = waitingDigests(sourceId)
   if (!waiting.length || sourceParsing(sourceId)) return
-  const ready = waiting.filter(({ payload }) => !digestWaiting(payload))
-  if (ready.length) {
-    // 最后一页通常还没到每十页的并入点；必须先发布分段，再允许整理读取。
-    applyRecognized(sourceId)
-    for (const { id } of ready) runJobNow(id)
-  }
+  const ready = waiting.filter(({ payload, createdAt }) => !digestWaiting(payload) || recognitionEndedSince(sourceId, createdAt))
+  for (const { id } of ready) runJobNow(id)
   if (ready.length !== waiting.length) ensureRecognition(sourceId)
 }
 
@@ -728,6 +742,10 @@ export function registerRecognizeJob(): void {
     lane: ({ sourceId }) => (waitingDigests(sourceId).length ? 'user' : 'background'),
     offPeak: true,
     onRetry: retryRecognition,
+    // 用户取消识别：正在等它的整理改用已有内容立即开始（缺页会写进提案），不重新排识别。
+    onCancel: ({ sourceId }) => {
+      for (const { id } of waitingDigests(sourceId)) runJobNow(id)
+    },
     title: ({ sourceId }) =>
       `识别资料：${getDb().select({ title: sources.title }).from(sources).where(eq(sources.id, sourceId)).get()?.title ?? sourceId}`,
     async run({ sourceId, full, scoped, retryPages }, ctx) {

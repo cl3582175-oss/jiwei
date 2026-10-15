@@ -24,7 +24,16 @@ import {
   TemporaryJobError,
   type JobContext
 } from './jobs'
-import { applyRecognized, digestWaiting, ensureRecognition, pendingRecognition, sourceRecognition, unrecognizedPages } from './recognize'
+import {
+  applyRecognized,
+  digestWaiting,
+  ensureRecognition,
+  pendingRecognition,
+  recognitionEndedSince,
+  sourceParsing,
+  sourceRecognition,
+  unrecognizedPages
+} from './recognize'
 import { listSegments } from './segments'
 import { createNote, getNote } from './notes'
 import { createProposal } from './proposals'
@@ -240,6 +249,13 @@ export function digestNow(jobId: string): void {
   runJobNow(jobId)
 }
 
+/** 确认整理后识别被取消或失败结束：用已有内容整理（缺页写进提案），不再替用户重新排识别。 */
+function recognitionAbandoned(input: DigestJobInput, ctx: JobContext): boolean {
+  if (!ctx.jobId) return false
+  const createdAt = getDb().select({ createdAt: jobs.createdAt }).from(jobs).where(eq(jobs.id, ctx.jobId)).get()?.createdAt
+  return createdAt !== undefined && !sourceParsing(input.sourceId) && recognitionEndedSince(input.sourceId, createdAt)
+}
+
 function guardDigest(input: DigestJobInput, ctx: JobContext): void {
   if (ctx.isCanceled() || ctx.signal?.aborted) throw ctx.signal?.reason ?? new Error('canceled')
   if (!canReadSource(input.sourceId, input.conversationId ?? null)) throw new PermanentJobError('Source access revoked')
@@ -249,7 +265,7 @@ function run(input: DigestJobInput, ctx: JobContext): Promise<{ noteId: string }
   validate(input)
   guardDigest(input, ctx)
   // 同步退回 queued：同一次 tick 启动的识别也必须能看到这份整理的等待范围。
-  if (digestWaiting(input)) {
+  if (digestWaiting(input) && !recognitionAbandoned(input, ctx)) {
     ensureRecognition(input.sourceId)
     throw new JobDeferred(60_000, 'waiting')
   }

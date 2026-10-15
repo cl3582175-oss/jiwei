@@ -32,6 +32,8 @@ export function JobsIndicator() {
   const queuedUsers = active
     .filter((job) => job.lane === 'user' && job.status === 'queued' && !job.waiting && job.runAfter <= now)
     .sort((a, b) => a.runAfter - b.runAfter || a.createdAt - b.createdAt || a.id.localeCompare(b.id))
+  // 名额未满时任务在下一拍就会开始：到期超过 3 秒仍在排队、且前面确实有任务时才提示。
+  const ahead = (id: string): number => runningUsers + Math.max(0, queuedUsers.findIndex((job) => job.id === id))
 
   return (
     <Popover.Root>
@@ -101,17 +103,8 @@ export function JobsIndicator() {
                       </p>
                     )}
                     {j.status === 'queued' && j.yielded && !j.waiting && <p className="text-2xs text-subtle">{t('jobs.yielded')}</p>}
-                    {j.status === 'queued' && !j.waiting && !j.yielded && j.lane === 'user' && j.runAfter <= now && (
-                      <p className="text-2xs text-subtle">
-                        {t('jobs.ahead', {
-                          count:
-                            runningUsers +
-                            Math.max(
-                              0,
-                              queuedUsers.findIndex((job) => job.id === j.id)
-                            )
-                        })}
-                      </p>
+                    {j.status === 'queued' && !j.waiting && !j.yielded && j.lane === 'user' && j.runAfter <= now - 3000 && ahead(j.id) > 0 && (
+                      <p className="text-2xs text-subtle">{t('jobs.ahead', { count: ahead(j.id) })}</p>
                     )}
                     {j.status === 'queued' && !j.waiting && !j.yielded && j.runAfter > now + 60_000 && (
                       <p className="text-2xs text-subtle" data-testid="job-offpeak">

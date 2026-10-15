@@ -390,3 +390,46 @@ it('an expired scoped retry checkpoint stays failed instead of expanding recogni
     { page: 2, status: 'pending' }
   ])
 })
+
+it('canceling recognition while a digest waits starts the digest with existing text instead of re-queueing recognition', async () => {
+  await prepare([2, 3])
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  f.beforePage = async () => gate
+  const { jobId } = digest.startDigest(input)
+  scheduler.startJobs()
+  await vi.advanceTimersByTimeAsync(1)
+  const rec = scheduler.listJobs().find((j) => j.kind === 'source.recognize')!
+  scheduler.cancelJob(rec.id)
+  release()
+  expect((await settle(jobId)).status).toBe('done')
+  await vi.advanceTimersByTimeAsync(120_000)
+  const recognitions = scheduler.listJobs().filter((j) => j.kind === 'source.recognize')
+  expect(recognitions.map((j) => j.status)).toEqual(['canceled'])
+  expect(proposalText()).toMatch(/第 [23、]+ 页未能识别，未纳入整理。/)
+})
+
+it('a recognition job that ends failed with pages still pending does not keep the digest waiting', async () => {
+  await prepare([2])
+  const { jobId } = digest.startDigest(input)
+  const rec = scheduler.listJobs().find((j) => j.kind === 'source.recognize')!
+  f.sql!.prepare("UPDATE jobs SET status='failed', updated_at=? WHERE id=?").run(Date.now() + 1, rec.id)
+  scheduler.startJobs()
+  expect((await settle(jobId)).status).toBe('done')
+  expect(scheduler.listJobs().filter((j) => j.kind === 'source.recognize')).toHaveLength(1)
+  expect(proposalText()).toContain('第 2 页未能识别，未纳入整理。')
+})
+
+it('pages whose type the current settings do not recognize are not reported as missing', async () => {
+  await prepare([])
+  recognition.recordPages('source', [{ page: 5, need: 'figure' }])
+  f.recognition.figures = false
+  const { jobId } = digest.startDigest(input)
+  expect(state(jobId).waiting).toBeNull()
+  expect(digest.describeDigest(input, true).detail).not.toContain('图片或扫描页')
+  scheduler.startJobs()
+  expect((await settle(jobId)).status).toBe('done')
+  expect(proposalText()).not.toContain('未能识别')
+})
