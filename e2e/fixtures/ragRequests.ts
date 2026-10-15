@@ -5,6 +5,8 @@ export interface RagRequest {
   model: string
   messages: { role: string; content: unknown }[]
   toolNames: string[]
+  /** 旧采集文件未记录；新请求只允许成功HTTP响应参与证据评分。0为尚无成功响应。 */
+  status?: number
 }
 /** 只采集模型正文以核对两组证据；不读取地址、headers、密钥或请求的其它字段。 */
 export async function captureRagRequests(app: ElectronApplication, excludedModel?: string): Promise<void> {
@@ -12,7 +14,8 @@ export async function captureRagRequests(app: ElectronApplication, excludedModel
     const state = globalThis as unknown as { ragEvalRequests: RagRequest[] }
     state.ragEvalRequests = []
     const original = net.fetch.bind(net)
-    net.fetch = (input, init) => {
+    net.fetch = async (input, init) => {
+      let captured: RagRequest | undefined
       if (typeof init?.body === 'string') {
         try {
           const body = JSON.parse(init.body) as {
@@ -20,17 +23,27 @@ export async function captureRagRequests(app: ElectronApplication, excludedModel
             messages?: RagRequest['messages']
             tools?: { function?: { name?: string } }[]
           }
-          if (Array.isArray(body.messages) && (!excludedModel || body.model !== excludedModel))
-            state.ragEvalRequests.push({
+          if (Array.isArray(body.messages) && (!excludedModel || body.model !== excludedModel)) {
+            captured = {
               model: body.model ?? '',
+              status: 0,
               messages: body.messages,
               toolNames: (body.tools ?? []).flatMap((t) => (t.function?.name ? [t.function.name] : []))
-            })
+            }
+            state.ragEvalRequests.push(captured)
+          }
         } catch {
           /* 不是聊天 JSON */
         }
       }
-      return original(input, init)
+      try {
+        const response = await original(input, init)
+        if (captured) captured.status = response.status
+        return response
+      } catch (error) {
+        if (captured) captured.status = 0
+        throw error
+      }
     }
   }, excludedModel)
 }
@@ -43,11 +56,13 @@ export async function takeRagRequests(app: ElectronApplication): Promise<RagRequ
   })
 }
 export function initialEvidence(requests: RagRequest[]): string {
-  const first = requests[0]
+  const first = requests.find(acceptedRequest)
   const user = first?.messages.filter((m) => m.role === 'user').at(-1)?.content
   const text = typeof user === 'string' ? user : JSON.stringify(user)
   return text?.match(/<(?:知识库片段|excerpts)>\n([\s\S]*?)\n<\/(?:知识库片段|excerpts)>/)?.[1] ?? ''
 }
+
+const acceptedRequest = (request: RagRequest): boolean => request.status === undefined || (request.status >= 200 && request.status < 300)
 
 function contentText(content: unknown): string {
   if (typeof content === 'string') return content
@@ -86,7 +101,7 @@ function numberedParts(text: string) {
 export function nativeJudgeEvidence(answer: ChatMessage, requests: RagRequest[], reference: unknown) {
   const materials: string[] = [],
     observations: string[] = []
-  for (const request of requests) {
+  for (const request of requests.filter(acceptedRequest)) {
     const user = contentText(request.messages.filter((m) => m.role === 'user').at(-1)?.content)
     for (const match of user.matchAll(/<(?:知识库片段|excerpts)>\n([\s\S]*?)\n<\/(?:知识库片段|excerpts)>/g)) {
       materials.push(match[1])

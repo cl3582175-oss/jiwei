@@ -6,6 +6,7 @@ import { launchRagApp } from './fixtures/ragApp'
 import { attachmentModel, textOf } from './fixtures/attachment-model'
 import { sendJudgement } from './fixtures/ragJudgeTransport'
 import { parseJudgement } from './fixtures/ragJudge'
+import { captureRagRequests, takeRagRequests } from './fixtures/ragRequests'
 
 test('a large judgement reaches the app in bounded messages with complete retained history', async () => {
   const model = await attachmentModel(),
@@ -23,6 +24,7 @@ test('a large judgement reaches the app in bounded messages with complete retain
       JSON.stringify({ text: 'LONG-JUDGE-START-' + 'Complete synthetic scoring evidence. '.repeat(3600) + '-LONG-JUDGE-TAIL' }) +
       '</evaluation-data>'
     const target = { providerId: p.id, model: 'judge-controlled', key: 'fixed-judge', context: 1000000, contextSource: 'builtin' }
+    await captureRagRequests(app)
     const answer = await sendJudgement(page, target, prompt)
     expect(answer.transport.preparations).toHaveLength(8)
     expect(parseJudgement(answer.message.content)?.total).toBe(8)
@@ -46,6 +48,9 @@ test('a large judgement reaches the app in bounded messages with complete retain
       })
       .join('')
     expect(restored).toBe(prompt)
+    const captured = await takeRagRequests(app)
+    expect(captured).toHaveLength(9)
+    expect(captured.every((r) => r.status === 200)).toBe(true)
   } finally {
     await app.close()
     await new Promise<void>((r) => model.server.close(() => r()))

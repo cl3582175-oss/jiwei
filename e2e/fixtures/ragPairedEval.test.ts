@@ -174,3 +174,33 @@ it('grades complete numbered evidence actually sent to the model, retaining meta
   expect(JSON.stringify(evidence.toolObservations)).toContain('没有检索到相关内容')
   expect(evidence.provided[2].text).not.toContain('Invented assistant support')
 })
+
+it('excludes rejected request payloads from citation support after a context retry', async () => {
+  const c = makeCase()
+  c.native = true
+  const header = '[1] 资料《synthetic》（sourceId: source-id） · 片段 segment-id\n'
+  const requests = [400, 200].map((status) => ({
+    status,
+    model: 'answer-model',
+    toolNames: [],
+    messages: [
+      { role: 'user', content: '<知识库片段>\n' + header + (status === 400 ? 'REJECTED-ONLY-TEXT' : 'ACCEPTED-TEXT') + '\n</知识库片段>' }
+    ]
+  }))
+  const answer = {
+    id: 'native',
+    status: 'done',
+    content: 'answer [1]',
+    citations: [{ n: 1, title: 'synthetic', parentType: 'source', parentId: 'source-id', ownerId: 'segment-id' }],
+    steps: []
+  } as unknown as ChatMessage
+  const rows = await runPairedEvaluation(page, [c], output, undefined, [], async () => ({
+    message: answer,
+    requests,
+    evidenceHash: 'same',
+    answerMs: 25
+  }))
+  const text = JSON.stringify(rows[0].judgeEvidence)
+  expect(text).toContain('ACCEPTED-TEXT')
+  expect(text).not.toContain('REJECTED-ONLY-TEXT')
+})
