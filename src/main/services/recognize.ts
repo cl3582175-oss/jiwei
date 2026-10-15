@@ -14,6 +14,7 @@ import { assetPath } from './assets'
 import { emit } from '../events'
 import { enqueue, JobDeferred, PermanentJobError, patchQueuedPayload, registerJobKind, runJobNow, type JobContext } from './jobs'
 import { listSegments, replaceSegments } from './segments'
+import { sourceJobTitle } from './sourceJobTitle'
 import { requestIndex } from './ai/indexer'
 import { getSettings } from './settings'
 import { capsFor, getProviderRow } from './ai/providers'
@@ -746,8 +747,7 @@ export function registerRecognizeJob(): void {
     onCancel: ({ sourceId }) => {
       for (const { id } of waitingDigests(sourceId)) runJobNow(id)
     },
-    title: ({ sourceId }) =>
-      `识别资料：${getDb().select({ title: sources.title }).from(sources).where(eq(sources.id, sourceId)).get()?.title ?? sourceId}`,
+    title: ({ sourceId }) => `识别资料：${sourceJobTitle(sourceId)}`,
     async run({ sourceId, full, scoped, retryPages }, ctx) {
       const row = getDb()
         .select({ s: sources, a: assets })
