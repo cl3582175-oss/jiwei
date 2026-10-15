@@ -69,24 +69,40 @@ export function attachmentHistoryReadable(context: string | null, conversationId
   }
 }
 
+/** Reply-derived inline chats keep their memory restriction even if the original attachment is later archived. */
+function inheritedMemoryRestriction(conversationId: string): boolean {
+  const row = getDb().select({ meta: conversations.meta }).from(conversations).where(eq(conversations.id, conversationId)).get()
+  try {
+    return !!row?.meta && JSON.parse(row.meta).suppressAttachmentMemory === true
+  } catch {
+    return true
+  }
+}
+
 /** 仅删外部数据块不足以清掉模型复述；未归档附件参与过的对话不进入记忆整理。 */
 export function hasPrivateAttachmentHistory(conversationId: string): boolean {
-  return !!getSqlite()
-    .prepare(
-      `SELECT 1 FROM conversation_attachments ca JOIN sources s ON s.id=ca.source_id WHERE ca.conversation_id=? AND s.space='attachment'
+  return (
+    inheritedMemoryRestriction(conversationId) ||
+    !!getSqlite()
+      .prepare(
+        `SELECT 1 FROM conversation_attachments ca JOIN sources s ON s.id=ca.source_id WHERE ca.conversation_id=? AND s.space='attachment'
     UNION ALL SELECT 1 FROM messages m JOIN json_each(CASE WHEN json_valid(m.context) THEN json_extract(m.context,'$.attachmentSourceIds') END) j LEFT JOIN sources s ON s.id=j.value WHERE m.conversation_id=? AND (s.id IS NULL OR s.space='attachment') LIMIT 1`
-    )
-    .get(conversationId, conversationId)
+      )
+      .get(conversationId, conversationId)
+  )
 }
 
 /** 附件材料始终不是个人记忆输入；归档允许知识检索，但不把文件事实当成用户档案。 */
 export function hasAttachmentHistory(conversationId: string): boolean {
-  return !!getSqlite()
-    .prepare(
-      `SELECT 1 FROM conversation_attachments WHERE conversation_id=?
+  return (
+    inheritedMemoryRestriction(conversationId) ||
+    !!getSqlite()
+      .prepare(
+        `SELECT 1 FROM conversation_attachments WHERE conversation_id=?
     UNION ALL SELECT 1 FROM messages m JOIN json_each(CASE WHEN json_valid(m.context) THEN json_extract(m.context,'$.attachmentSourceIds') END) j WHERE m.conversation_id=? AND EXISTS (SELECT 1 FROM conversation_attachments ca WHERE ca.source_id=j.value) LIMIT 1`
-    )
-    .get(conversationId, conversationId)
+      )
+      .get(conversationId, conversationId)
+  )
 }
 
 /** 参谋备忘录可能复述原文；派生摘要不能成为洞察等其他AI入口的材料。 */

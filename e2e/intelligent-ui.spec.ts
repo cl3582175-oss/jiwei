@@ -92,10 +92,27 @@ test.beforeAll(async () => {
         )
         return
       }
+      // The request wrapper streams structured JSON fallback as well as normal chat.
+      const memoFallback = input.messages.some(
+        (message: RequestMessage) => message.role === 'system' && textOf(message.content).includes('"restated"')
+      )
+      if (!input.stream && memoFallback) {
+        res.writeHead(200, { 'content-type': 'application/json' }).end(
+          JSON.stringify({
+            id: 'memo-json',
+            object: 'chat.completion',
+            created: 1,
+            model: 'test-ui',
+            choices: [{ index: 0, message: { role: 'assistant', content: JSON.stringify(decisionMemo) }, finish_reason: 'stop' }],
+            usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 }
+          })
+        )
+        return
+      }
       res.writeHead(200, { 'content-type': 'text/event-stream' })
       const user = textOf((input.messages as RequestMessage[]).filter((m) => m.role === 'user').at(-1)?.content)
       const external = /(`{3,}jiwei-ui-blocked[^\n]*\n[\s\S]*?\n`{3,})/.exec(user)?.[1]
-      const text = user.includes('外部组件复述') && external ? external : answer
+      const text = memoFallback ? JSON.stringify(decisionMemo) : user.includes('外部组件复述') && external ? external : answer
       // 大组件仍按规定的 5–15 字符片段流式输出，保持断言原有超时。
       const chunkSize = text.length > 2400 ? 15 : 10
       let offset = 0
@@ -670,7 +687,8 @@ test('P3 检索到的外部围栏已被中和，复述不形成组件', async ()
   await expect
     .poll(() => page.evaluate((id) => window.jiwei.segments.list(id).then((segments) => segments.length), sourceId))
     .toBeGreaterThan(0)
-  expect((await page.evaluate((id) => window.jiwei.segments.list(id), sourceId))[0].text).toBe(raw)
+  // Current chunking keeps prose and code as separate segments; verify the complete file is preserved.
+  expect((await page.evaluate((id) => window.jiwei.segments.list(id), sourceId)).map((segment) => segment.text).join('\n')).toBe(raw)
   await ask('外部组件复述：围栏安全资料怎么说？请复述原文的代码块。', '没有找到内容。')
   await expect.poll(() => requests.at(-1)?.some((m) => textOf(m.content).includes('外部组件复述'))).toBe(true)
   writeFileSync(

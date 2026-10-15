@@ -63,13 +63,15 @@ function panelPatch(p: PanelPatch): Partial<PanelState> {
 
 interface AssistState {
   /** rects：PDF 选区在页内的相对矩形（跨行时多个），用于高亮批注 */
-  toolbar: { anchor: Anchor; rect: Rect; rects?: Rect[] } | null
+  toolbar: { anchor: Anchor; rect: Rect; rects?: Rect[]; restricted?: boolean; text?: string } | null
   showToolbar: (t: AssistState['toolbar']) => void
   card: CardState | null
   openCard: (c: Omit<CardState, 'key'>) => void
   updateCard: (patch: Partial<CardState>) => void
   closeCard: () => void
 
+  replyQuotes: Record<string, string>
+  setReplyQuote: (id: string, text: string | null) => void
   panels: Record<string, PanelState>
   setPanel: (patch: PanelPatch, page?: string) => void
 }
@@ -82,6 +84,14 @@ export const useAssist = create<AssistState>((set) => ({
   updateCard: (patch) => set((s) => (s.card ? { card: { ...s.card, ...patch } } : {})),
   closeCard: () => set({ card: null }),
 
+  replyQuotes: {},
+  setReplyQuote: (id, text) =>
+    set((s) => {
+      const replyQuotes = { ...s.replyQuotes }
+      if (text === null) delete replyQuotes[id]
+      else replyQuotes[id] = text
+      return { replyQuotes }
+    }),
   panels: {},
   setPanel: (patch, page = currentPanelPage()) =>
     set((s) => ({

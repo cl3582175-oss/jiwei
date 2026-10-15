@@ -227,7 +227,7 @@ export function AnswerCard() {
               <div className="h-3 w-1/2 animate-pulse rounded bg-sunken" />
             </div>
           ) : (
-            shown.map((m, i) => <MessageItem key={m.id} m={m} compact last={i === shown.length - 1} />)
+            shown.map((m, i) => <MessageItem key={m.id} m={m} compact replyRestricted last={i === shown.length - 1} />)
           )}
         </div>
 
@@ -265,6 +265,7 @@ export function AnswerCard() {
             </div>
             {!busy && (
               <ChatComposer
+                conversationId={card.conversationId}
                 placeholder={t('assist.followUp')}
                 attachments={attachments}
                 provider={provider}

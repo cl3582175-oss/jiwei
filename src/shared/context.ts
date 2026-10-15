@@ -9,6 +9,8 @@ const Id = z.string().min(1).max(64)
 export const AnchorKindSchema = z.enum([
   /** 资料中选中的文字 */
   'source-text',
+  /** 助手回复中选中的文字 */
+  'text',
   /** 笔记中选中的文字 */
   'note-text',
   /** 笔记中的整块（段落、行、内容块） */
@@ -23,7 +25,7 @@ export const AnchorKindSchema = z.enum([
 
 export const AnchorSchema = z.object({
   kind: AnchorKindSchema,
-  parentType: z.enum(['note', 'source']),
+  parentType: z.enum(['note', 'source', 'message']),
   parentId: Id,
   /** 资料片段 ID 或笔记段落 ID */
   ownerId: Id.nullable().optional(),
@@ -48,7 +50,10 @@ export const ContextPacketSchema = z.object({
   cursorBlockId: Id.nullable().optional(),
   cursorRowId: Id.nullable().optional(),
   /** 用户在积微助手侧栏提问时所在的页面（v0.6.7）：「今日」、复习卡片、错题……由该页面整理成简短文字 */
-  page: z.object({ title: z.string().max(60), text: z.string().max(4000) }).nullable().optional()
+  page: z
+    .object({ title: z.string().max(60), text: z.string().max(4000) })
+    .nullable()
+    .optional()
 })
 export type ContextPacket = z.infer<typeof ContextPacketSchema>
 

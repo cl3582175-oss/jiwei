@@ -171,7 +171,10 @@ export function MediaPane({ source }: { source: Source }) {
   const annotations = useAnnotations('source', source.id)
   const hlVersion = useMemo(() => ({ segs, editing, structureVersion }), [segs, editing, structureVersion])
   useTextHighlights(`media:${source.id}`, list, annotations, hlVersion)
-  const { data: threads = [] } = useQuery({ queryKey: ['threads', source.id], queryFn: () => api.chat.threads(source.id) })
+  const { data: threads = [] } = useQuery({
+    queryKey: ['threads', source.id],
+    queryFn: () => api.chat.threads(source.id).then((list) => list.filter((c) => c.anchor?.parentType === 'source'))
+  })
   useEffect(
     () =>
       window.jiweiEvents.on('segments:changed', (p) => {

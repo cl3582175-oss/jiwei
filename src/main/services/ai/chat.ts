@@ -218,19 +218,40 @@ export function updateConversation(id: string, patch: { title?: string; scope?: 
 }
 
 export async function deleteConversation(id: string): Promise<void> {
-  const db = getDb()
+  const db = getDb(),
+    family = new Set([id])
+  for (const conversationId of family) {
+    const ids = db
+      .select({ id: messages.id })
+      .from(messages)
+      .where(eq(messages.conversationId, conversationId))
+      .all()
+      .map((m) => m.id)
+    if (ids.length)
+      for (const c of db
+        .select({ id: conversations.id })
+        .from(conversations)
+        .where(and(eq(conversations.kind, 'inline'), inArray(conversations.anchorParentId, ids)))
+        .all())
+        family.add(c.id)
+  }
   running.forEach((ctrl, mid) => {
     const m = db.select({ c: messages.conversationId }).from(messages).where(eq(messages.id, mid)).get()
-    if (m?.c === id) ctrl.abort()
+    if (m && family.has(m.c)) ctrl.abort()
   })
   db.transaction((tx) => {
-    detachConversationAttachments(id)
-    tx.delete(webPageRefs).where(eq(webPageRefs.conversationId, id)).run()
-    tx.delete(uiStates)
-      .where(inArray(uiStates.messageId, tx.select({ id: messages.id }).from(messages).where(eq(messages.conversationId, id))))
-      .run()
-    tx.delete(messages).where(eq(messages.conversationId, id)).run()
-    tx.delete(conversations).where(eq(conversations.id, id)).run()
+    for (const conversationId of family) {
+      detachConversationAttachments(conversationId)
+      tx.delete(webPageRefs).where(eq(webPageRefs.conversationId, conversationId)).run()
+      tx.delete(uiStates)
+        .where(
+          inArray(uiStates.messageId, tx.select({ id: messages.id }).from(messages).where(eq(messages.conversationId, conversationId)))
+        )
+        .run()
+      tx.delete(messages).where(eq(messages.conversationId, conversationId)).run()
+      tx.delete(conversations).where(eq(conversations.id, conversationId)).run()
+      cards.delete(conversationId)
+    }
   })
   await collectGarbage()
 }
@@ -369,6 +390,20 @@ function sendInTransaction(input: ChatSend): SendResult {
   const attachmentIds = input.attachments ?? []
   if (attachmentIds.length && (input.feynman || input.reflectionId || ['feynman', 'reflection'].includes(input.kind ?? '')))
     throw new Error('Attachments are not supported in this conversation')
+  const messageAnchor = input.anchor?.parentType === 'message' ? input.anchor : null
+  const reply = messageAnchor ? db.select().from(messages).where(eq(messages.id, messageAnchor.parentId)).get() : null
+  const parent = reply ? db.select().from(conversations).where(eq(conversations.id, reply.conversationId)).get() : null
+  if (
+    messageAnchor &&
+    (!reply ||
+      reply.role !== 'assistant' ||
+      reply.status === 'streaming' ||
+      !parent ||
+      parent.deletedAt !== null ||
+      parent.id !== messageAnchor.ownerId)
+  )
+    throw new Error(tr('原回复已不可用', 'The original reply is no longer available'))
+  const inheritPrivate = !!parent && (hasPrivateAttachmentHistory(parent.id) || hasAttachmentHistory(parent.id))
   const now = Date.now()
   let convId = input.conversationId
   if (!convId) {
@@ -381,7 +416,7 @@ function sendInTransaction(input: ChatSend): SendResult {
           : input.text.replace(/\s+/g, ' ').slice(0, 40) || tr('附件对话', 'Attachment chat'),
         scope: JSON.stringify(input.scope),
         web: input.web ?? null,
-        incognito: !!input.incognito,
+        incognito: !!input.incognito || !!parent?.incognito,
         kind: input.feynman ? 'feynman' : input.reflectionId ? 'reflection' : (input.kind ?? 'chat'),
         anchor: input.anchor ? JSON.stringify(input.anchor) : null,
         anchorParentId: input.anchor?.parentId ?? input.feynman?.noteId ?? null,
@@ -394,7 +429,9 @@ function sendInTransaction(input: ChatSend): SendResult {
                 cardId: input.feynman.cardId ?? null,
                 report: null
               } satisfies FeynmanMeta)
-            : null,
+            : inheritPrivate
+              ? JSON.stringify({ suppressAttachmentMemory: true })
+              : null,
         createdAt: now,
         updatedAt: now,
         updatedBy: deviceId()

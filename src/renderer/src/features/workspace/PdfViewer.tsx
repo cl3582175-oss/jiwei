@@ -85,9 +85,12 @@ export function PdfViewer({ source }: { source: Source }) {
   const qc = useQueryClient()
   const { data: scanPages = [] } = useQuery({ queryKey: ['scan-pages', source.id], queryFn: () => api.recognition.scanPages(source.id) })
   const { data: segs = [] } = useQuery({ queryKey: ['segments', source.id], queryFn: () => api.segments.list(source.id) })
-  const {data:reading}=useReadingState({kind:'source',id:source.id})
-  const readingActive=!!reading?.foreign&&(reading.mode!=='original'||reading.annotations)
-  const { data: threads = [] } = useQuery({ queryKey: ['threads', source.id], queryFn: () => api.chat.threads(source.id) })
+  const { data: reading } = useReadingState({ kind: 'source', id: source.id })
+  const readingActive = !!reading?.foreign && (reading.mode !== 'original' || reading.annotations)
+  const { data: threads = [] } = useQuery({
+    queryKey: ['threads', source.id],
+    queryFn: () => api.chat.threads(source.id).then((list) => list.filter((c) => c.anchor?.parentType === 'source'))
+  })
   const segRef = useRef(segs)
   segRef.current = segs
   const annotations = useAnnotations('source', source.id)
@@ -378,7 +381,7 @@ export function PdfViewer({ source }: { source: Source }) {
     const { clientX, clientY } = e
     requestAnimationFrame(() => {
       const sel = window.getSelection()
-      const quote = sel?.rangeCount ? originalRangeText(sel.getRangeAt(0)).replace(/\s+/g,' ').trim() : ''
+      const quote = sel?.rangeCount ? originalRangeText(sel.getRangeAt(0)).replace(/\s+/g, ' ').trim() : ''
       if (!sel || !quote || !sel.rangeCount) {
         setContext({ sourceSelection: null })
         useAssist.getState().showToolbar(null)
@@ -480,10 +483,19 @@ export function PdfViewer({ source }: { source: Source }) {
         </Button>
       </div>
       <div className="relative min-h-0 flex-1">
-        <div ref={container} onMouseUp={onMouseUp} className={cn('pdf-container absolute inset-0 overflow-auto',readingActive&&'invisible pointer-events-none')} data-testid="pdf-viewer">
+        <div
+          ref={container}
+          onMouseUp={onMouseUp}
+          className={cn('pdf-container absolute inset-0 overflow-auto', readingActive && 'invisible pointer-events-none')}
+          data-testid="pdf-viewer"
+        >
           <div className="pdfViewer" />
         </div>
-        {readingActive&&<div className="absolute inset-0 min-w-0 overflow-auto" data-reading-scroll><ReadingSourceText sourceId={source.id} segments={segs} pdf /></div>}
+        {readingActive && (
+          <div className="absolute inset-0 min-w-0 overflow-auto" data-reading-scroll>
+            <ReadingSourceText sourceId={source.id} segments={segs} pdf />
+          </div>
+        )}
         {regionMode && (
           <div
             className="absolute inset-0 z-10 cursor-crosshair"

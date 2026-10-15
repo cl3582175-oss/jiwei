@@ -1184,6 +1184,11 @@ const zhCN = {
     skills: '技能'
   },
   assist: {
+    quoteFollowUp: '引用追问',
+    removeQuote: '移除引用',
+    copied: '已复制',
+    selectionTooLong: '选中的内容太长',
+    replyThreads: '{{count}} 处就地提问',
     addTabs: '加入其他标签页',
     tabsLimit: '最多再加入 6 个标签页',
     tabsUnavailable: '部分标签页已关闭、跳转或禁止 AI，已从本次上下文移除',

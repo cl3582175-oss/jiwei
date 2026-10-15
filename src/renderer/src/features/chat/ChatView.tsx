@@ -1,3 +1,6 @@
+import { ReplyQuote, useReplyQuote } from '../assist/ReplyQuote'
+import { quotedMessage } from '../assist/replySelection'
+import { useAssist } from '../assist/store'
 import { attachmentContext } from '../attachments/context'
 import { useAttachments, resetAttachmentDraft, type AttachmentsController } from '../attachments/useAttachments'
 import { AttachmentInput, AttachmentDropZone } from '../attachments/AttachmentInput'
@@ -113,7 +116,8 @@ export function Composer({
   prefill,
   attachments,
   provider,
-  newConversation
+  newConversation,
+  conversationId
 }: {
   busy: boolean
   onSend: (text: string) => void | boolean | Promise<void | boolean>
@@ -124,9 +128,14 @@ export function Composer({
   attachments?: AttachmentsController
   provider?: import('@shared/types').ProviderInfo | null
   newConversation?: boolean
+  conversationId?: string | null
 }) {
   const { t } = useTranslation()
   const [text, setText] = useState('')
+  const quote = useReplyQuote(conversationId)
+  useEffect(() => {
+    if (quote) ref.current?.focus()
+  }, [quote])
   const ref = useRef<HTMLTextAreaElement>(null)
   const [sending, setSending] = useState(false)
   useEffect(() => ref.current?.focus(), [])
@@ -148,7 +157,8 @@ export function Composer({
     if ((!value.trim() && !attachments?.ids().length) || busy || sending || attachments?.adding) return
     setSending(true)
     try {
-      if ((await onSend(value.trim())) !== false) {
+      if ((await onSend(quotedMessage(value.trim(), quote))) !== false) {
+        if (conversationId) useAssist.getState().setReplyQuote(conversationId, null)
         setText((current) => (current === text ? '' : current))
         requestAnimationFrame(resize)
       }
@@ -158,6 +168,7 @@ export function Composer({
   }
   return (
     <div className="relative">
+      <ReplyQuote conversationId={conversationId} />
       {attachments && (
         <AttachmentInput
           controller={attachments}
@@ -391,6 +402,7 @@ function ChatPanel() {
       <div className="shrink-0 px-8 pb-5">
         <div className="paper mx-auto max-w-[760px] rounded-2xl shadow-[var(--shadow-2)]">
           <Composer
+            conversationId={conversationId}
             prefill={prefill}
             busy={!!streaming}
             attachments={attachments}

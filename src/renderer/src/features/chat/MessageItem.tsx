@@ -1,6 +1,9 @@
+import { useQuery } from '@tanstack/react-query'
+import { useReplySelection } from '../assist/replySelection'
+import { elementRect, useAssist } from '../assist/store'
 import { MessageReadiness } from './MessageReadiness'
 import { MessageAttachments } from '../attachments/ConversationAttachments'
-import { useMemo, useState, type ReactNode } from 'react'
+import { useMemo, useRef, useState, type ReactNode } from 'react'
 import { useMoney } from '@/lib/money'
 import { useTranslation } from 'react-i18next'
 import { Streamdown } from 'streamdown'
@@ -22,7 +25,7 @@ import {
   Globe
 } from 'lucide-react'
 import type { AgentStep, ChatMessage, Citation } from '@shared/types'
-import { cn, formatDate } from '@/lib/utils'
+import { api, cn, formatDate } from '@/lib/utils'
 import { useApp } from '@/store/app'
 import { Tip } from '@/components/ui/primitives'
 import { ApprovalCard, BudgetNotice, StepLinkButton, budgetKind } from '@/features/agent/ChatCards'
@@ -336,12 +339,14 @@ function Basis({ citations, conversationId }: { citations: Citation[]; conversat
 export function MessageItem({
   m,
   compact,
+  replyRestricted,
   plain,
   grounded,
   last
 }: {
   m: ChatMessage
   compact?: boolean
+  replyRestricted?: boolean
   plain?: boolean
   grounded?: boolean
   /** 最新一条：其中的选择题可以点 */
@@ -350,6 +355,14 @@ export function MessageItem({
   const { t } = useTranslation()
   const money = useMoney()
   const [copied, setCopied] = useState(false)
+  const bodyRef = useRef<HTMLDivElement>(null)
+  useReplySelection(bodyRef, m.role === 'assistant' && !!m.content)
+  const [threadsOpen, setThreadsOpen] = useState(false)
+  const { data: threads = [] } = useQuery({
+    queryKey: ['threads', m.id],
+    queryFn: () => api.chat.threads(m.id),
+    enabled: m.role === 'assistant' && m.status === 'done' && !plain
+  })
   const byN = useMemo(() => new Map(m.citations.map((c) => [c.n, c])), [m.citations])
   // 引用标记 [n] → 可点击的编号（代码块中的不处理）
   const md = useMemo(() => {
@@ -391,7 +404,14 @@ export function MessageItem({
       {m.reasoning && <Reasoning text={m.reasoning} streaming={streaming && !m.content} seconds={seconds} />}
       {m.steps.length > 0 && <Steps steps={m.steps} streaming={streaming} />}
       {m.content ? (
-        <div className="chat-md">
+        <div
+          ref={bodyRef}
+          className="chat-md select-text"
+          data-reply-id={plain ? undefined : m.id}
+          data-conversation-id={m.conversationId}
+          data-streaming={streaming ? 'true' : undefined}
+          data-reply-restricted={replyRestricted ? 'true' : undefined}
+        >
           <UiMessageProvider message={m} isLatest={!!last} compact={!!compact}>
             <Streamdown
               // 两种模式采用不同的块树；组件回答保持流式树，结束只停止动画，保留组件实例。
@@ -432,6 +452,37 @@ export function MessageItem({
         m.steps.length === 0 &&
         m.content && <p className="mt-2 text-2xs text-subtle">{t('chat.generalOnly')}</p>}
 
+      {threads.length > 0 && !replyRestricted && (
+        <div className="mt-2 text-xs text-muted">
+          <button
+            className="rounded px-1 py-1 hover:bg-sunken hover:text-accent"
+            aria-expanded={threadsOpen}
+            onClick={() => setThreadsOpen(!threadsOpen)}
+          >
+            {t('assist.replyThreads', { count: threads.length })}
+          </button>
+          {threadsOpen && (
+            <div className="mt-1 space-y-1 rounded-lg border border-border p-2">
+              {threads.map((thread) => (
+                <button
+                  key={thread.id}
+                  className="block w-full rounded px-2 py-1 text-left hover:bg-sunken"
+                  onClick={async (event) => {
+                    const rect = elementRect(event.currentTarget)
+                    const messages = await api.chat.messages(thread.id)
+                    const question = messages.find((message) => message.role === 'user')?.content ?? thread.title
+                    if (thread.anchor)
+                      useAssist.getState().openCard({ anchor: thread.anchor, rect, conversationId: thread.id, action: 'ask', question })
+                  }}
+                >
+                  <span className="block line-clamp-1 font-kai">{thread.anchor?.quote}</span>
+                  <span className="block line-clamp-1 text-2xs text-subtle">{thread.title}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
       {!streaming && m.content && !compact && (
         <div className="mt-2 flex items-center gap-2 text-2xs text-subtle opacity-0 transition-opacity group-hover/msg:opacity-100">
           <button onClick={copy} className="inline-flex items-center gap-1 rounded px-1 hover:text-fg" aria-label={t('chat.copy')}>

@@ -1,3 +1,5 @@
+import { ReplyQuote, useReplyQuote } from './ReplyQuote'
+import { quotedMessage } from './replySelection'
 import { attachmentContext } from '../attachments/context'
 import { useAttachments, resetAttachmentDraft } from '../attachments/useAttachments'
 import { AttachmentInput, AttachmentDropZone } from '../attachments/AttachmentInput'
@@ -121,6 +123,10 @@ function PanelBody({ pinned, page }: { pinned: boolean; page: string }) {
   const { conversationId, draft, autoSend } = usePanel()
   const { data: conversations = [] } = useConversations()
   const conv = conversations.find((c) => c.id === conversationId)
+  const quote = useReplyQuote(conversationId)
+  useEffect(() => {
+    if (quote) input.current?.focus()
+  }, [quote])
   const attachments = useAttachments({ kind: 'workspace', conversationId, incognito: conv?.incognito })
   const { web, setWeb } = useWebMode(conversationId, conv?.web)
   const { choice, setChoice, effort, setEffort, provider } = useModelChoice()
@@ -204,7 +210,7 @@ function PanelBody({ pinned, page }: { pinned: boolean; page: string }) {
       }
       const r = await sendChat({
         conversationId,
-        text: q.trim(),
+        text: quotedMessage(q.trim(), quote),
         attachments: attachmentIds,
         uiEvent,
         providerId: choice.providerId,
@@ -218,6 +224,7 @@ function PanelBody({ pinned, page }: { pinned: boolean; page: string }) {
       })
       attachments.clear(attachmentIds)
       if (getPanel(page).conversationId !== conversationId) return
+      if (conversationId) useAssist.getState().setReplyQuote(conversationId, null)
       setText('')
       setMsgs((list) => [...list, r.userMessage, r.assistant])
       if (!conversationId) {
@@ -442,6 +449,7 @@ function PanelBody({ pinned, page }: { pinned: boolean; page: string }) {
               onSend={(q) => void send(q)}
               onMentionPicked={() => setText(text.replace(/@[^\s@]*$/, ''))}
             />
+            <ReplyQuote conversationId={conversationId} />
             <textarea
               ref={input}
               rows={2}

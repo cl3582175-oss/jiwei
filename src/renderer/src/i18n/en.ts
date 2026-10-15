@@ -1230,6 +1230,11 @@ const en: Messages = {
     skills: 'Skills'
   },
   assist: {
+    quoteFollowUp: 'Quote and follow up',
+    removeQuote: 'Remove quote',
+    copied: 'Copied',
+    selectionTooLong: 'The selection is too long',
+    replyThreads: '{{count}} inline questions',
     addTabs: 'Add other tabs',
     tabsLimit: 'Add up to 6 other tabs',
     tabsUnavailable: 'Some tabs were closed, navigated, or made private and were removed from this context',

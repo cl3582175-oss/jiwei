@@ -547,3 +547,22 @@ it('new library imports invalidate cached title routes through the real source e
   const imported = await importPaths([file('NEW-614-synthetic.xls', 'Synthetic event-driven source')])
   expect(matchSourcesByTitle('NEW-614', { type: 'all' })[0]?.sourceId).toBe(imported.imported[0].id)
 })
+
+it('回复子对话继承禁止记忆标记，但不能读取父对话私有附件', async () => {
+  const a = await attachment('c1')
+  const access = await import('../attachmentsAccess')
+  f.sql!.prepare("INSERT INTO conversations(id,title,kind,meta,created_at,updated_at) VALUES('reply-child','child','inline',?,1,1)").run(
+    JSON.stringify({ suppressAttachmentMemory: true })
+  )
+  expect(access.hasAttachmentHistory('reply-child')).toBe(true)
+  expect(access.hasPrivateAttachmentHistory('reply-child')).toBe(true)
+  expect(access.canReadSource(a.sourceId, 'reply-child')).toBe(false)
+  expect(access.canReadSource(a.sourceId, 'c1')).toBe(true)
+  f.sql!.prepare(
+    "INSERT INTO messages(id,conversation_id,role,content,created_at,updated_at) VALUES('parent-reply','c1','assistant','reply',1,1)"
+  ).run()
+  f.sql!.prepare("UPDATE conversations SET anchor_parent_id='parent-reply',anchor=? WHERE id='reply-child'").run(
+    JSON.stringify({ parentType: 'message', parentId: 'parent-reply', ownerId: 'c1', kind: 'text' })
+  )
+  expect((await import('../attachmentDerived')).conversationAttachmentIds('reply-child')).toEqual([a.sourceId])
+})

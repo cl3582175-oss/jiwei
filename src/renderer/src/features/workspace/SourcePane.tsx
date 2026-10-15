@@ -102,7 +102,10 @@ function SegmentList({ sourceId, segs }: { sourceId: string; segs: Segment[] }) 
   const highlight = useApp((s) => s.highlight)
   const ref = useRef<HTMLElement>(null)
   const onSelect = useSourceSelection(sourceId)
-  const { data: threads = [] } = useQuery({ queryKey: ['threads', sourceId], queryFn: () => api.chat.threads(sourceId) })
+  const { data: threads = [] } = useQuery({
+    queryKey: ['threads', sourceId],
+    queryFn: () => api.chat.threads(sourceId).then((list) => list.filter((c) => c.anchor?.parentType === 'source'))
+  })
   // 批注高亮
   const annotations = useAnnotations('source', sourceId)
   useTextHighlights(`source:${sourceId}`, ref, annotations, segs)
