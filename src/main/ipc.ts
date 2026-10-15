@@ -77,6 +77,7 @@ import * as appSvc from './services/app'
 import { getSettings, setSettings } from './services/settings'
 import * as proposals from './services/proposals'
 import * as segments from './services/segments'
+import { readinessMany, retrySource } from './services/readiness'
 import { sourceUpgradeStatus } from './services/sourceUpgrade'
 import * as jobs from './services/jobs'
 import * as vaults from './services/vaults'
@@ -426,6 +427,8 @@ const handlers: Handlers = {
     count: () => attachments.unarchivedCount()
   },
   sources: {
+    readiness: (_, ids, conversationId) => readinessMany(ids, conversationId),
+    retry: (_, id, conversationId) => retrySource(id, conversationId),
     list: (_, q) => sources.listSources(q),
     get: (_, id) => sources.getSource(id),
     indexStatus: (_, id) => sourceIndexStatus(id),
@@ -464,6 +467,7 @@ const handlers: Handlers = {
     test: (_, id) => providers.testProvider(id)
   },
   chat: {
+    get: (_, id) => chat.getConversation(id),
     conversations: () => chat.listConversations(),
     messages: (_, id) => chat.listMessages(id),
     send: (_, input) => chat.send(input),
@@ -761,8 +765,9 @@ const handlers: Handlers = {
       await embedding.installLocal()
       requestIndex()
     },
-    reindex: () => {
+    reindex: async () => {
       clearIndex()
+      await embedding.refreshStatus(true)
       requestIndex()
     }
   },

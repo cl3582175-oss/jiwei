@@ -1,3 +1,4 @@
+import type { Readiness } from './readiness'
 import { RELATIONS } from './graphRelations'
 import { AnimationSchema } from './manim'
 import { BACKEND_IDS, BackendSaveSchema, WebModeSchema, type RetrievalStatus, type RetrievalUsage, type WebPageView } from './retrieval'
@@ -603,6 +604,17 @@ export const capabilities = {
     count: cap<number>()({ description: '未归档附件数量', params: none })
   },
   sources: {
+    readiness: cap<Record<string, Readiness>>()({
+      description: '批量读取允许AI访问的资料处理状态；附件仅所属对话有效',
+      params: [
+        ['ids', z.array(z.string().min(1).max(64)).max(500)],
+        ['conversationId', z.string().max(64).nullable().optional()]
+      ]
+    }),
+    retry: cap<void>()({
+      description: '重新读取允许访问的资料，复用现有解析作业',
+      params: [id(), ['conversationId', z.string().max(64).nullable().optional()]]
+    }),
     list: cap<Source[]>()({ description: '按条件列出 / 检索资料', params: [['query', S.SourceQuerySchema]], ai: { effect: 'read' } }),
     get: cap<Source | null>()({ description: '读取资料信息', params: [id()], ai: { effect: 'read' } }),
     notes: cap<{ id: string; title: string; updatedAt: number }[]>()({ description: '与这份资料关联的笔记', params: [id()] }),
@@ -678,6 +690,7 @@ export const capabilities = {
     test: cap<ProviderTestResult>()({ description: '测试服务商连接', params: [id()] })
   },
   chat: {
+    get: cap<Conversation | null>()({ description: '读取指定对话，包括就地提问，用于重发原问题', params: [id('conversationId')] }),
     conversations: cap<Conversation[]>()({ description: '列出 AI 对话', params: none }),
     messages: cap<ChatMessage[]>()({ description: '读取对话消息', params: [id('conversationId')] }),
     send: cap<{ conversation: Conversation; userMessage: ChatMessage; assistantMessageId: string }>()({

@@ -1,3 +1,4 @@
+import { canUpgradeSource } from './sourceUpgrade'
 import { FORMATS, CURRENT_PARSE_VERSION } from '@shared/formats'
 import { externalFetch } from './externalFetch'
 import { registerIcsJobs } from './plan/ics'
@@ -60,6 +61,7 @@ export function registerJobKinds(): void {
     title: ({ sourceId }) => `解析资料：${sourceTitle(sourceId)}`,
     async run({ sourceId, upgrade }, ctx) {
       if (upgrade && !getSettings().retrieval.autoUpgrade) return { skipped: 'upgrade paused' }
+      if (upgrade && !canUpgradeSource(sourceId)) return { skipped: 'ineligible upgrade' }
       const row = getDb()
         .select({ s: sources, a: assets })
         .from(sources)
@@ -83,6 +85,7 @@ export function registerJobKinds(): void {
         name: row.s.originalName ?? row.s.title
       })
       if (ctx.isCanceled()) return
+      if (upgrade && !canUpgradeSource(sourceId)) return { skipped: 'ineligible upgrade' }
       const segs = Array.isArray(result) ? result : result.segments
       // 网页解析可能晚于字幕与截图完成；正文刷新只能替换正文，不能清空课程材料。
       // 缓存并入之前先保留旧 OCR 身份，随后重切才能为它建立别名与改写批注。

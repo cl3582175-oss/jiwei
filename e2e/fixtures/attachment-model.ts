@@ -7,7 +7,7 @@ export interface ModelRequest {
 }
 export const textOf = (value: unknown): string =>
   typeof value === 'string' ? value : Array.isArray(value) ? value.map((part) => part.text ?? '').join('') : ''
-export async function attachmentModel(): Promise<{
+export async function attachmentModel(options: { embeddingDimensions?: number } = {}): Promise<{
   server: Server
   url: string
   requests: ModelRequest[]
@@ -35,6 +35,29 @@ export async function attachmentModel(): Promise<{
     req.on('end', () => {
       const input = JSON.parse(body || '{}') as ModelRequest
       requests.push(input)
+      if (req.url?.endsWith('/embeddings')) {
+        const rows = (input as ModelRequest & { input: string[] }).input
+        const size = options.embeddingDimensions ?? 512
+        res
+          .writeHead(200, { 'content-type': 'application/json' })
+          .end(JSON.stringify({ data: rows.map((_, index) => ({ index, embedding: [1, ...Array(size - 1).fill(0)] })) }))
+        return
+      }
+
+      // 本地受控的普通非流式调用（例如识别）也遵循同一真实协议。
+      if (!input.stream && !input.tools?.length) {
+        res.writeHead(200, { 'content-type': 'application/json' }).end(
+          JSON.stringify({
+            id: 'controlled-plain',
+            object: 'chat.completion',
+            created: 1,
+            model: 'controlled',
+            choices: [{ index: 0, message: { role: 'assistant', content: answer }, finish_reason: 'stop' }],
+            usage: { prompt_tokens: 4, completion_tokens: 2, total_tokens: 6 }
+          })
+        )
+        return
+      }
       const submit = input.tools?.find((t) => t.function.name === 'submit')
       if (!input.stream) {
         const properties = (submit?.function.parameters?.properties ?? {}) as Record<string, unknown>

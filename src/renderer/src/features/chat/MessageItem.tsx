@@ -1,3 +1,4 @@
+import { MessageReadiness } from './MessageReadiness'
 import { MessageAttachments } from '../attachments/ConversationAttachments'
 import { useMemo, useState, type ReactNode } from 'react'
 import { useMoney } from '@/lib/money'
@@ -44,7 +45,7 @@ export function openCitation(c: Citation, conversationId?: string): void {
   }
   s.setHighlight({ type: c.parentType === 'note' ? 'block' : 'segment', id: c.ownerId, locator: c.locator, conversationId })
   if (c.parentType === 'note') s.openNote(c.parentId)
-  else s.openSource(c.parentId)
+  else s.openSource(c.parentId, conversationId)
 }
 
 function citationSite(c: Citation): string {
@@ -360,7 +361,7 @@ export function MessageItem({
       <div className="flex justify-end">
         <div className="paper max-w-[78%] rounded-2xl rounded-br-md px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap text-fg shadow-[var(--shadow-1)]">
           {m.content}
-          {!!m.attachments?.length && <MessageAttachments items={m.attachments} />}
+          {!!m.attachments?.length && <MessageAttachments items={m.attachments} conversationId={m.conversationId} />}
         </div>
       </div>
     )
@@ -421,10 +422,15 @@ export function MessageItem({
       )}
       {m.status === 'stopped' && <p className="mt-2 text-2xs text-subtle">{t('chat.stopped')}</p>}
 
+      <MessageReadiness message={m} />
       {m.citations.length > 0 && <Basis conversationId={m.conversationId} citations={m.citations} />}
-      {!plain && !grounded && m.status === 'done' && m.citations.length === 0 && m.steps.length === 0 && m.content && (
-        <p className="mt-2 text-2xs text-subtle">{t('chat.generalOnly')}</p>
-      )}
+      {!plain &&
+        !grounded &&
+        m.status === 'done' &&
+        !m.readiness?.length &&
+        m.citations.length === 0 &&
+        m.steps.length === 0 &&
+        m.content && <p className="mt-2 text-2xs text-subtle">{t('chat.generalOnly')}</p>}
 
       {!streaming && m.content && !compact && (
         <div className="mt-2 flex items-center gap-2 text-2xs text-subtle opacity-0 transition-opacity group-hover/msg:opacity-100">

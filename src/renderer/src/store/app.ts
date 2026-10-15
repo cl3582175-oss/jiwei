@@ -114,7 +114,8 @@ interface AppState extends Location {
   setView: (v: View) => void
   openNote: (id: string | null) => void
   /** 在工作区左侧打开资料（null 关闭） */
-  openSource: (id: string | null) => void
+  sourceConversationId: string | null
+  openSource: (id: string | null, conversationId?: string | null) => void
 
   /** 内置浏览器是否显示在工作区左栏（v0.6.0；显示时资料栏让位） */
   browserOpen: boolean
@@ -274,7 +275,9 @@ export const useApp = create<AppState>((set, get) => {
       if (get().browserOpen) set({ browserNote: noteId })
       get().navigate({ view: 'notes', noteId })
     },
-    openSource: (sourceId) => {
+    sourceConversationId: null,
+    openSource: (sourceId, sourceConversationId = null) => {
+      set({ sourceConversationId })
       const s = get()
       if (!sourceId) {
         if (s.sourceReturn) {
@@ -437,7 +440,7 @@ export const getWorkspaceContext = (): WorkspaceContext => useApp.getState().con
  * 打开资料并定位：seg 片段、page 页码、t 秒（出处链接 jiwei://source/<id>?seg=&page=&t=）。
  * 定位信息通过 highlight 交给资料面板处理。
  */
-export function openSourceAt(id: string, q: URLSearchParams): void {
+export function openSourceAt(id: string, q: URLSearchParams, conversationId: string | null = null): void {
   const s = useApp.getState()
   const seg = q.get('seg')
   const locator = q.get('t') ? `t=${q.get('t')}` : q.get('page') ? `page=${q.get('page')}` : null
@@ -454,7 +457,7 @@ export function openSourceAt(id: string, q: URLSearchParams): void {
       await window.jiwei.browser.seek(tabId, at, true)
       return
     }
-    if (seg || locator) s.setHighlight({ type: 'segment', id: seg ?? '', locator })
-    s.openSource(id)
+    if (seg || locator) s.setHighlight({ type: 'segment', id: seg ?? '', locator, conversationId })
+    s.openSource(id, conversationId)
   })().catch((e: Error) => toast.error(e.message))
 }

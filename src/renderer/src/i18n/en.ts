@@ -1,3 +1,4 @@
+import { readyEn } from '../features/library/readinessMessages'
 import { attachEn } from '../features/attachments/messages'
 import { uiEn } from '../features/ui/messages'
 import { pluginsEn } from '../features/plugins/pluginMessages'
@@ -19,6 +20,7 @@ import { safetyEn } from '../features/settings/safetyMessages'
 import { readingEn } from '../features/reading/messages'
 import { retrievalEn } from '../features/retrieval/messages'
 const en: Messages = {
+  ...readyEn,
   ...attachEn,
   ui: uiEn,
   updates: updatesEn,

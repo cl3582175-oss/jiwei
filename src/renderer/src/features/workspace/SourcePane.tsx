@@ -1,3 +1,5 @@
+import { useReadinessMany } from '../library/useReadiness'
+import { ReadinessBanner } from '../library/ReadinessNotice'
 import { FORMATS } from '@shared/formats'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -222,6 +224,8 @@ function IndexChip({ sourceId }: { sourceId: string }) {
 export function SourcePane({ sourceId }: { sourceId: string }) {
   const { t } = useTranslation()
   const openSource = useApp((s) => s.openSource)
+  const conversationId = useApp((s) => s.sourceConversationId)
+  const { data: readiness } = useReadinessMany([sourceId], conversationId)
   const { data: source } = useQuery({ queryKey: ['source', sourceId], queryFn: () => api.sources.get(sourceId) })
   const annotations = useAnnotations('source', sourceId)
   const [showAnnotations, setShowAnnotations] = useState(false)
@@ -289,7 +293,11 @@ export function SourcePane({ sourceId }: { sourceId: string }) {
           </Tip>
         </div>
       </header>
-      {(source.kind === 'pdf' || source.kind === 'image') && <RecognitionBar sourceId={source.id} />}
+      {source.kind === 'pdf' || source.kind === 'image' ? (
+        <RecognitionBar sourceId={source.id} readiness={readiness?.[sourceId]} conversationId={conversationId} />
+      ) : (
+        <ReadinessBanner key={sourceId} sourceId={sourceId} readiness={readiness?.[sourceId]} conversationId={conversationId} />
+      )}
       <div className="relative min-h-0 flex-1">
         <div className={cn('h-full overflow-auto')} data-reading-scroll>
           <Body source={source} />

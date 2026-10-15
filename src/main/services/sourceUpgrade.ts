@@ -9,16 +9,18 @@ import { enqueueSegment } from './segmentJobs'
 import { cancelJob } from './jobs'
 
 let started = false
+let readyAt = 0
 let timer: NodeJS.Timeout | null = null
 let unsubscribers: (() => void)[] = []
 let deferred = false
-const eligible = () =>
+const eligible = (sourceId?: string) =>
   getDb()
     .select({ id: sources.id, parseVersion: sources.parseVersion, ext: assets.ext })
     .from(sources)
     .innerJoin(assets, eq(sources.assetId, assets.id))
     .where(
       and(
+        sourceId ? eq(sources.id, sourceId) : undefined,
         isNull(sources.deletedAt),
         eq(sources.aiExcluded, false),
         eq(sources.space, 'library'),
@@ -30,6 +32,9 @@ const eligible = () =>
     .orderBy(desc(sources.createdAt))
     .all()
     .filter((r) => r.parseVersion >= 0 && !!FORMATS[r.ext]?.parser)
+
+/** 排队之后仍可能改权限/删除；工作进程复用同一资格规则，防止已排任务越过新状态。 */
+export const canUpgradeSource = (sourceId: string): boolean => eligible(sourceId).some((row) => row.parseVersion < CURRENT_PARSE_VERSION)
 
 /** 已失败旧资料持久标为 -1；显式重读成功仍会改为当前版本，不自动反复重试。 */
 export function scheduleSourceUpgrade(): void {
@@ -44,6 +49,7 @@ export function scheduleSourceUpgrade(): void {
       if ((JSON.parse(job.payload) as { upgrade?: boolean }).upgrade) cancelJob(job.id)
     return
   }
+  if (Date.now() < readyAt) return
   if (
     db
       .select({ id: jobs.id })
@@ -107,6 +113,22 @@ export function startSourceUpgrade(): void {
   stopSourceUpgrade()
   started = true
   const since = Date.now()
+  readyAt = since + 5 * 60 * 1000
+  // 重开后遗留的升级任务也遵守同一启动等待；不改普通解析或原本更晚的低谷时间。
+  for (const job of getDb()
+    .select()
+    .from(jobs)
+    .where(and(eq(jobs.kind, 'source.segment'), eq(jobs.status, 'queued')))
+    .all()) {
+    if (!(JSON.parse(job.payload) as { upgrade?: boolean }).upgrade) continue
+    if (!getSettings().retrieval.autoUpgrade) cancelJob(job.id)
+    else
+      getDb()
+        .update(jobs)
+        .set({ runAfter: Math.max(job.runAfter, readyAt) })
+        .where(eq(jobs.id, job.id))
+        .run()
+  }
   timer = setTimeout(later, 5 * 60 * 1000)
   timer.unref?.()
   unsubscribers = [
@@ -124,6 +146,7 @@ export function startSourceUpgrade(): void {
 }
 export function stopSourceUpgrade(): void {
   started = false
+  readyAt = 0
   if (timer) clearTimeout(timer)
   timer = null
   unsubscribers.forEach((unsubscribe) => unsubscribe())

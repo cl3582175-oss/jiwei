@@ -79,6 +79,7 @@ it('启动五分钟后从新到旧一次排一份，沿用去重键与低谷调�
 })
 it('关闭会取消尚未执行的自动升级，普通解析任务保持有效', async () => {
   startSourceUpgrade()
+  await vi.advanceTimersByTimeAsync(300000)
   scheduleSourceUpgrade()
   expect(queued()).toHaveLength(1)
   f.enabled = false
@@ -90,9 +91,10 @@ it('关闭会取消尚未执行的自动升级，普通解析任务保持有效'
   scheduleSourceUpgrade()
   expect(queued()).toHaveLength(1)
 })
-it('默认不升级附件、排除/删除资料、录音和带转写的课程，失败记录跨调度不重试', () => {
+it('默认不升级附件、排除/删除资料、录音和带转写的课程，失败记录跨调度不重试', async () => {
   f.sql!.exec("UPDATE sources SET space='attachment' WHERE id='newer';UPDATE sources SET ai_excluded=1 WHERE id='older'")
   startSourceUpgrade()
+  await vi.advanceTimersByTimeAsync(300000)
   scheduleSourceUpgrade()
   expect(queued()).toEqual([])
   f.sql!.exec(
@@ -103,4 +105,30 @@ it('默认不升级附件、排除/删除资料、录音和带转写的课程，
   expect(queued()).toEqual([])
   expect(f.sql!.prepare('SELECT parse_version FROM sources WHERE id=?').get('older')).toEqual({ parse_version: -1 })
   expect(sourceUpgradeStatus()).toEqual({ total: 0, done: 0, running: false, paused: false })
+})
+
+it('设置和普通作业事件不能绕过启动五分钟等待', async () => {
+  startSourceUpgrade()
+  emit('retrieval:changed', {})
+  await vi.advanceTimersByTimeAsync(1000)
+  expect(queued()).toEqual([])
+  await vi.advanceTimersByTimeAsync(299000)
+  expect(queued()).toHaveLength(1)
+})
+
+it('重开时已有的自动升级仍等五分钟，普通解析保持原调度且关闭能立即取消自动任务', () => {
+  const now = Date.now()
+  const insert = f.sql!.prepare(
+    "INSERT INTO jobs(id,kind,payload,dedupe_key,status,run_after,created_at,updated_at) VALUES(?,'source.segment',?,?,'queued',?,?,?)"
+  )
+  insert.run('auto', JSON.stringify({ sourceId: 'older', upgrade: true }), 'segment:older', now - 1, now, now)
+  insert.run('ordinary', JSON.stringify({ sourceId: 'newer' }), 'segment:newer', now - 1, now, now)
+  startSourceUpgrade()
+  const automatic = queued().find((j) => JSON.parse(j.payload).upgrade)!
+  const ordinary = queued().find((j) => !JSON.parse(j.payload).upgrade)!
+  expect(automatic.run_after).toBeGreaterThanOrEqual(now + 300000)
+  expect(ordinary.run_after).toBe(now - 1)
+  f.enabled = false
+  scheduleSourceUpgrade()
+  expect(queued()).toEqual([ordinary])
 })

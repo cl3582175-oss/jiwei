@@ -1,3 +1,5 @@
+import type { Readiness } from '@shared/readiness'
+import { ReadinessBanner } from '../library/ReadinessNotice'
 import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -25,7 +27,15 @@ export function useRecognitionEvents(sourceId?: string): void {
   }, [qc, sourceId])
 }
 
-export function RecognitionBar({ sourceId }: { sourceId: string }) {
+export function RecognitionBar({
+  sourceId,
+  readiness,
+  conversationId = null
+}: {
+  sourceId: string
+  readiness?: Readiness
+  conversationId?: string | null
+}) {
   const { t } = useTranslation()
   useRecognitionEvents(sourceId)
   // 识别设置变化（换引擎、开启插图解读）时重新计算
@@ -36,6 +46,12 @@ export function RecognitionBar({ sourceId }: { sourceId: string }) {
     staleTime: 0
   })
   const { data: engine } = useQuery({ queryKey: ['recognizer'], queryFn: () => api.recognition.status() })
+  if (readiness && readiness.state !== 'ready')
+    return (
+      <div data-testid="recognition-bar">
+        <ReadinessBanner key={sourceId} sourceId={sourceId} readiness={readiness} conversationId={conversationId} />
+      </div>
+    )
   if (!r || r.engine === 'off') return null
   const any = r.needs.scan + r.needs.table + r.needs.figure
   if (!any) return null
@@ -106,19 +122,16 @@ export function RecognitionBar({ sourceId }: { sourceId: string }) {
     <div className="shrink-0 border-b border-border/70 bg-surface/70 px-4 py-2" data-testid="recognition-bar" role="status">
       {text && (
         <div className="flex items-center gap-2.5">
-          <span
-            className={cn(
-              'shrink-0 [&_svg]:size-3.5',
-              tone === 'warn' ? 'text-[#b8862b]' : 'text-accent'
-            )}
-          >
-            {icon}
-          </span>
+          <span className={cn('shrink-0 [&_svg]:size-3.5', tone === 'warn' ? 'text-[#b8862b]' : 'text-accent')}>{icon}</span>
           <p className="min-w-0 flex-1 text-xs leading-relaxed text-muted">{text}</p>
           {action}
         </div>
       )}
-      {figuresOff && <p className={cn('text-2xs leading-relaxed text-subtle', text && 'mt-1 pl-6')}>{t('workspace.recog.figuresOff', { count: r.needs.figure })}</p>}
+      {figuresOff && (
+        <p className={cn('text-2xs leading-relaxed text-subtle', text && 'mt-1 pl-6')}>
+          {t('workspace.recog.figuresOff', { count: r.needs.figure })}
+        </p>
+      )}
     </div>
   )
 }

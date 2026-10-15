@@ -114,7 +114,7 @@ export function ConversationAttachments({ conversationId, incognito = false }: {
           <div data-testid="conversation-attachments" className="max-h-[60vh] space-y-3 overflow-auto">
             {items.map((a) => (
               <div key={a.sourceId} className="flex flex-wrap items-center gap-2">
-                <AttachmentBar items={[a]} small />
+                <AttachmentBar items={[a]} small conversationId={conversationId} />
                 <div className="flex flex-wrap gap-1">
                   <Button
                     size="sm"
@@ -152,7 +152,7 @@ export function ConversationAttachments({ conversationId, incognito = false }: {
     </>
   )
 }
-export function MessageAttachments({ items }: { items: Attachment[] }) {
+export function MessageAttachments({ items, conversationId = null }: { items: Attachment[]; conversationId?: string | null }) {
   useAttachmentEvents()
   const { data: rows } = useQuery({
     queryKey: ['attachment-message', items.map((a) => a.sourceId)],
@@ -162,6 +162,7 @@ export function MessageAttachments({ items }: { items: Attachment[] }) {
   return (
     <div data-testid="message-attachments" className="mt-2">
       <AttachmentBar
+        conversationId={conversationId}
         small
         items={rows ? items.map((a) => rows.find((r) => r.sourceId === a.sourceId) ?? { ...a, deleted: true }) : items}
       />

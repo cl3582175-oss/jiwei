@@ -1,3 +1,4 @@
+import { SourceUpgradeSettings } from '../library/SourceUpgradeSettings'
 import { VoiceSettings } from '../recording/VoiceSettings'
 import { UiSettingsControls } from '../ui/UiSettings'
 import { useEffect, useState } from 'react'
@@ -319,6 +320,8 @@ function EmbeddingSection() {
   const { data: st } = useEmbeddingStatus()
   const { data: providers = [] } = useProviders()
   if (!s || !st) return null
+  const dimension = /returned (\d+) dimensions/.exec(st.message ?? '')?.[1]
+  const embeddingError = dimension ? t('readyEmbeddingDimension', { dim: Number(dimension) }) : st.message
   const mode = s.ai.embedding.mode
   const install = async (): Promise<void> => {
     try {
@@ -388,7 +391,7 @@ function EmbeddingSection() {
             </div>
           ) : (
             <div className="mt-3 flex items-center justify-between gap-3">
-              {st.state === 'error' && <span className="text-2xs text-danger">{st.message}</span>}
+              {st.state === 'error' && <span className="text-2xs text-danger">{embeddingError}</span>}
               <Button size="sm" variant="primary" className="ml-auto" onClick={() => void install()}>
                 <Download />
                 {t('ai.emb.install')}
@@ -426,9 +429,17 @@ function EmbeddingSection() {
               placeholder={t('ai.emb.model')}
             />
           </div>
-          {st.total > 0 && <p className="text-2xs text-subtle">{t('ai.emb.ready', { indexed: st.indexed, total: st.total })}</p>}
+          {st.state === 'error' && (
+            <p role="alert" className="text-2xs text-danger">
+              {embeddingError}
+            </p>
+          )}
+          {st.state === 'ready' && st.total > 0 && (
+            <p className="text-2xs text-subtle">{t('ai.emb.ready', { indexed: st.indexed, total: st.total })}</p>
+          )}
         </div>
       )}
+      <SourceUpgradeSettings />
     </section>
   )
 }

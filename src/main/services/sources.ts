@@ -155,6 +155,7 @@ export async function importPaths(
       } else if (mossStatus().state === 'ready') enqueueMoss(id)
       else if (canAutoTranscribe()) enqueueTranscribe(id)
     }
+    emit('sources:changed', { id })
   }
   return out
 }
@@ -189,6 +190,7 @@ export async function saveWebPage(input: { url: string; title: string; html: str
     }
     db.update(sources).set(set).where(eq(sources.id, existing.id)).run()
     if (existing.assetId !== ref.id) enqueueSegment(existing.id)
+    emit('sources:changed', { id: existing.id })
     return getSource(existing.id)!
   }
   const id = newId()
@@ -207,6 +209,7 @@ export async function saveWebPage(input: { url: string; title: string; html: str
     .run()
   recordActivity('source_add')
   enqueueSegment(id)
+  emit('sources:changed', { id })
   return getSource(id)!
 }
 
@@ -231,6 +234,7 @@ export function addUrl(url: string, title?: string, categoryId?: string | null):
     .run()
   recordActivity('source_add')
   enqueueFetch(id)
+  emit('sources:changed', { id })
   return getSource(id)!
 }
 
@@ -263,6 +267,7 @@ export async function importContent(name: string, mime: string, bytes: Uint8Arra
     .run()
   recordActivity('source_add')
   if (canSegment(ext)) enqueueSegment(id)
+  emit('sources:changed', { id })
   return getSource(id)!
 }
 

@@ -1,3 +1,4 @@
+import { useReadinessEvents } from './features/library/useReadiness'
 import { AdvisorView } from './features/advisor/AdvisorView'
 import { WorksView } from './features/works/WorksView'
 import { RecordingView, RecordingDialog, RecorderBar } from './features/recording/RecordingView'
@@ -219,6 +220,7 @@ export function App() {
   useUsageAlerts()
   const theme = useThemeSync()
   useMainEvents()
+  useReadinessEvents()
   useCaptureEvents()
   const recording = useRecording((s) => s.current)
   useEffect(

@@ -1,3 +1,5 @@
+import { readinessForSources, readinessDescription, storedReadiness } from '../readiness'
+import { matchSourcesByTitle } from './sourceMentions'
 import { prepareAttachmentTurn, markAttachmentTurnSent, assertAttachmentTurn, type AttachmentTurn } from './chatAttachments'
 import { bindAttachments, bindAttachmentNotes, attachmentStatus, conversationAttachments, noteReference } from '../attachments'
 import { attachmentHistoryReadable, canReadSource, hasPrivateAttachmentHistory, hasAttachmentHistory } from '../attachmentsAccess'
@@ -132,6 +134,7 @@ const toMessage = (r: MsgRow): ChatMessage => ({
       : [],
   conversationId: r.conversationId,
   role: r.role,
+  readiness: r.role === 'assistant' ? storedReadiness(r.context, r.conversationId) : [],
   content: r.content,
   uiText: r.uiText,
   reasoning: r.reasoning,
@@ -910,6 +913,7 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
     // 最后一条（本轮）用户消息附上上下文、片段与技能
     const last = msgs.at(-1)
     if (last?.role === 'user' && coach) last.content = coachTurn(coach, input.text, zh)
+    let lastReadiness = ''
     let fullTextInstruction = ''
     let buildTurn = (): void => {}
     if (last?.role === 'user' && !special) {
@@ -971,11 +975,48 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
           .map((f) => asExternalData('attachment:' + f.name, numberHits(session, f.hits), { maxChars: 60000, overflow: 'reject' }))
           .join('\n\n')
         const attachmentRecognized = attachmentImageText ? asExternalData('attachment-images', attachmentImageText) : ''
+        const involved = [
+          ...new Set([
+            ...(input.scope.type === 'items' ? input.scope.sources : []),
+            ...sourcePlan.sourceIds,
+            ...matchSourcesByTitle(query, input.scope).map((m) => m.sourceId),
+            ...(session.preferSource ? [session.preferSource] : []),
+            ...(session.attachmentSourceIds ?? [])
+          ])
+        ]
+        const readinessItems = readinessForSources(involved, conversationId)
+        const snapshot = JSON.stringify(readinessItems)
+        if (snapshot !== lastReadiness) {
+          const oldContext = db.select({ context: messages.context }).from(messages).where(eq(messages.id, messageId)).get()?.context
+          const metadata = oldContext ? (JSON.parse(oldContext) as Record<string, unknown>) : {}
+          db.update(messages)
+            .set({ context: JSON.stringify({ ...metadata, readiness: readinessItems }) })
+            .where(eq(messages.id, messageId))
+            .run()
+          if (readinessItems.length || lastReadiness) emit('chat:readiness', { messageId, items: readinessItems })
+          lastReadiness = snapshot
+        }
+        const readinessNote = readinessItems.length
+          ? asExternalData(
+              'source-readiness',
+              [
+                zh
+                  ? '资料处理情况（回答时如实说明你没有读到的部分）：'
+                  : 'Source processing status (be explicit about what you could not read):',
+                ...readinessItems.map((item) =>
+                  zh
+                    ? `- 《${item.title}》：${readinessDescription(item.readiness, zh)}`
+                    : `- "${item.title}": ${readinessDescription(item.readiness, zh)}`
+                )
+              ].join('\n')
+            )
+          : ''
+
         assertAttachmentTurn(conversationId, attachmentTurn.sourceIds)
         // 资料还在识别（扫描页、表格、图片）：回答可能不完整，要如实告诉用户（v0.7.6）
         const pending = recognizingSources(
           [...currentHits.filter((h) => h.parentType === 'source').map((h) => h.parentId), 'sourceId' in ctx ? ctx.sourceId : null].filter(
-            (x): x is string => !!x
+            (x): x is string => !!x && !readinessItems.some((item) => item.sourceId === x)
           )
         )
         const pendingNote = pending.length
@@ -997,7 +1038,7 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
             turnMessage(
               zh,
               input.text || (zh ? '请帮助我处理本对话附件。' : 'Help me with these attachments.'),
-              [ctx.text, sourceNote, learner, imageNote, pendingNote].filter(Boolean).join('\n\n'),
+              [ctx.text, sourceNote, readinessNote, learner, imageNote, pendingNote].filter(Boolean).join('\n\n'),
               kb,
               skillBody,
               {
@@ -1162,10 +1203,11 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
     usage.outputTokens = u.outputTokens ?? 0
     usage.reasoningTokens = u.outputTokenDetails?.reasoningTokens ?? 0
     usage.cachedInputTokens = u.inputTokenDetails?.cacheReadTokens ?? 0
-    finish('done', null, { ...usage, cost: costOf(input.providerId, input.model, usage).cost, durationMs: Date.now() - t0 })
+    const finalContext = db.select({ context: messages.context }).from(messages).where(eq(messages.id, messageId)).get()?.context
     db.update(messages)
       .set({
         context: JSON.stringify({
+          ...(finalContext ? (JSON.parse(finalContext) as Record<string, unknown>) : {}),
           attachmentSourceIds: [
             ...new Set([...evidenceIds, ...session.hits.filter((h) => h.parentType === 'source').map((h) => h.parentId)])
           ]
@@ -1173,6 +1215,7 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
       })
       .where(eq(messages.id, messageId))
       .run()
+    finish('done', null, { ...usage, cost: costOf(input.providerId, input.model, usage).cost, durationMs: Date.now() - t0 })
     markAttachmentTurnSent(conversationId, attachmentTurn.sentIds)
     if (!session.incognito && !session.suppressAttachmentMemory) scheduleExtract(conversationId)
     if (Date.now() - t0 > 20_000) notifyDone(conversationId, conv.title, zh)

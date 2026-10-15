@@ -499,3 +499,10 @@ it('资料库引用和已归档的表格在附件会话里仍受200行限制，�
     'LIBRARY-ROW250-BOUND'
   )
 })
+
+it('new library imports invalidate cached title routes through the real source event', async () => {
+  const { matchSourcesByTitle } = await import('../ai/sourceMentions')
+  expect(matchSourcesByTitle('NEW-614', { type: 'all' })).toEqual([])
+  const imported = await importPaths([file('NEW-614-synthetic.xls', 'Synthetic event-driven source')])
+  expect(matchSourcesByTitle('NEW-614', { type: 'all' })[0]?.sourceId).toBe(imported.imported[0].id)
+})

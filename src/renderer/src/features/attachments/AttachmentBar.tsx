@@ -38,19 +38,21 @@ export function AttachmentIcon({ a }: { a: Attachment }) {
     />
   )
 }
-export function openAttachment(a: Attachment): void {
+export function openAttachment(a: Attachment, conversationId: string | null = null): void {
   if (a.deleted) return
   if (a.sourceId.startsWith('note:')) useApp.getState().openNote(a.sourceId.slice(5))
-  else openSourceAt(a.sourceId, new URLSearchParams(a.kind === 'audio' || a.kind === 'video' ? 't=0' : 'page=1'))
+  else openSourceAt(a.sourceId, new URLSearchParams(a.kind === 'audio' || a.kind === 'video' ? 't=0' : 'page=1'), conversationId)
 }
 export function AttachmentBar({
   items,
   onRemove,
-  small = false
+  small = false,
+  conversationId = null
 }: {
   items: Attachment[]
   onRemove?: (id: string) => void
   small?: boolean
+  conversationId?: string | null
 }) {
   const { t } = useTranslation()
   return (
@@ -69,7 +71,7 @@ export function AttachmentBar({
             type="button"
             className="flex min-w-0 flex-1 items-center gap-2 text-left"
             disabled={a.deleted || a.status === 'adding' || a.status === 'unsupported'}
-            onClick={() => openAttachment(a)}
+            onClick={() => openAttachment(a, conversationId)}
             aria-label={`${t('attach.preview')} ${a.name}`}
           >
             <AttachmentIcon a={a} />

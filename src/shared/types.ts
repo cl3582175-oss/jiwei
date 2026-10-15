@@ -1,3 +1,4 @@
+import type { ReadinessItem } from './readiness'
 // 主进程与渲染进程共享的数据类型（输出类型）。
 // 输入类型由 zod 模式推导（schemas.ts），API 由能力注册表推导（capabilities.ts）。
 import type { Anchor } from './context'
@@ -801,6 +802,7 @@ export interface Citation {
 }
 
 export interface ChatMessage {
+  readiness?: ReadinessItem[]
   attachments?: Attachment[]
   id: string
   conversationId: string
@@ -1139,6 +1141,7 @@ export interface JiweiEvents {
   'chat:delta': { messageId: string; conversationId: string; text?: string; reasoning?: string }
   /** AI 回答完成 / 出错 / 停止（携带完整消息） */
   'chat:done': { message: ChatMessage }
+  'chat:readiness': { messageId: string; items: ReadinessItem[] }
   /** AI 执行步骤更新 */
   'chat:step': { messageId: string; conversationId: string; step: AgentStep }
   /** 向量模型与索引状态 */

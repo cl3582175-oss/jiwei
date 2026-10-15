@@ -1,3 +1,6 @@
+import type { Readiness } from '@shared/readiness'
+import { ReadinessLabel } from './ReadinessNotice'
+import { useReadinessMany } from './useReadiness'
 import { Paperclip } from 'lucide-react'
 import { AttachmentSpaceView } from '../attachments/AttachmentSpaceView'
 import { useAttachmentEvents } from '../attachments/ConversationAttachments'
@@ -185,7 +188,7 @@ function SourceInfoDialog({ source: s, open, onOpenChange }: { source: Source; o
   )
 }
 
-function SourceCard({ s }: { s: Source }) {
+function SourceCard({ s, readiness }: { s: Source; readiness?: Readiness }) {
   const { t, i18n } = useTranslation()
   const qc = useQueryClient()
   const { data: cats = [] } = useCategories('source')
@@ -309,6 +312,7 @@ function SourceCard({ s }: { s: Source }) {
         {s.recordingScene && ` · ${t(`recording.scene.${s.recordingScene}`)}`} ·{' '}
         {s.kind === 'web' ? new URL(s.url!).hostname : formatBytes(s.size)} · {formatRelative(s.createdAt, i18n.language)}
       </p>
+      <ReadinessLabel sourceId={s.id} readiness={readiness} />
       <SourceInfoDialog source={s} open={infoOpen} onOpenChange={setInfoOpen} />
     </div>
   )
@@ -360,6 +364,7 @@ export function LibraryView() {
     scroller.current.scrollTop = useLibraryState.getState().scrollTop
     restored.current = true
   }, [isFetched, items.length])
+  const { data: readiness = {} } = useReadinessMany(items.map((s) => s.id))
   const targetCat = cat.type === 'category' ? cat.id : null
 
   const afterImport = (r: ImportResult): void => {
@@ -541,7 +546,7 @@ export function LibraryView() {
               ) : (
                 <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-4 p-8">
                   {items.map((s) => (
-                    <SourceCard key={s.id} s={s} />
+                    <SourceCard key={s.id} s={s} readiness={readiness[s.id]} />
                   ))}
                 </div>
               )}

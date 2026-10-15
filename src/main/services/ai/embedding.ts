@@ -23,13 +23,17 @@ let status: EmbeddingStatus = {
   total: 0
 }
 let installing: Promise<void> | null = null
+let errorModel: string | null = null
 
 export function getStatus(): EmbeddingStatus {
   return status
 }
 
-export function setStatus(patch: Partial<EmbeddingStatus>): void {
+export function setStatus(patch: Partial<EmbeddingStatus>, forModel?: string): void {
+  if (patch.state === 'error') errorModel = forModel ?? currentModelId()
+  else if (patch.state) errorModel = null
   status = { ...status, ...patch }
+  if (patch.state === 'error') status.mode = errorModel?.startsWith('cloud:') ? 'cloud' : 'local'
   emit('embedding:status', status)
 }
 
@@ -46,8 +50,10 @@ function normalize(v: number[]): number[] {
 }
 
 /** 刷新状态（启动时 / 设置变化后） */
-export async function refreshStatus(): Promise<EmbeddingStatus> {
+export async function refreshStatus(resetError = false): Promise<EmbeddingStatus> {
   const e = getSettings().ai.embedding
+  // 同一配置的维度/加载错误不能因界面轮询被抹去；更换模型或明确重试才复位。
+  if (!resetError && status.state === 'error' && errorModel === currentModelId()) return status
   if (e.mode === 'cloud') {
     setStatus({ mode: 'cloud', state: e.providerId && e.model ? 'ready' : 'unconfigured', message: null, progress: 0 })
   } else if (!installing) {
@@ -73,7 +79,7 @@ export function installLocal(): Promise<void> {
     })
     .catch((e: unknown) => {
       log.error('[embedding] install failed', e)
-      setStatus({ state: 'error', message: e instanceof Error ? e.message : String(e) })
+      setStatus({ state: 'error', message: e instanceof Error ? e.message : String(e) }, LOCAL_EMBEDDING.id)
       throw e
     })
     .finally(() => {

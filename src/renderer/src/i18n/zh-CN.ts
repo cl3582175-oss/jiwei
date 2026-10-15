@@ -1,3 +1,4 @@
+import { readyZh } from '../features/library/readinessMessages'
 import { attachZh } from '../features/attachments/messages'
 import { uiZh } from '../features/ui/messages'
 import { pluginsZh } from '../features/plugins/pluginMessages'
@@ -19,6 +20,7 @@ import { readingZh } from '../features/reading/messages'
 import { retrievalZh } from '../features/retrieval/messages'
 
 const zhCN = {
+  ...readyZh,
   ...attachZh,
   ui: uiZh,
   updates: updatesZh,

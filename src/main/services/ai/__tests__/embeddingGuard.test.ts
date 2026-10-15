@@ -2,21 +2,23 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const fixture = vi.hoisted(() => ({
   mode: 'cloud' as 'cloud' | 'local',
+  model: 'fixture',
   fetch: vi.fn(),
   local: vi.fn()
 }))
 vi.mock('electron', () => ({ net: { fetch: fixture.fetch } }))
 vi.mock('electron-log/main', () => ({ default: { error: vi.fn() } }))
 vi.mock('../../settings', () => ({
-  getSettings: () => ({ ai: { embedding: { mode: fixture.mode, providerId: 'fixture', model: 'fixture' } } })
+  getSettings: () => ({ ai: { embedding: { mode: fixture.mode, providerId: 'fixture', model: fixture.model } } })
 }))
 vi.mock('../../../events', () => ({ emit: vi.fn() }))
 vi.mock('../providers', () => ({ getProviderRow: () => ({ baseUrl: 'https://fixture.invalid/v1' }), decryptKey: () => '' }))
 vi.mock('../localEmbedding', () => ({ embedRaw: fixture.local }))
-import { embed } from '../embedding'
+import { embed, getStatus, setStatus, refreshStatus } from '../embedding'
 
 beforeEach(() => {
   fixture.mode = 'cloud'
+  fixture.model = 'fixture'
   fixture.fetch.mockReset().mockImplementation(async (_url, init) => {
     const inputs = JSON.parse(init.body).input as string[]
     return Response.json({ data: inputs.map((_, index) => ({ index, embedding: [1, ...Array(511).fill(0)] })) })
@@ -75,4 +77,16 @@ describe('web embedding send guard', () => {
     expect(fixture.fetch).toHaveBeenCalledTimes(3)
     expect(result).toEqual(Array.from({ length: 33 }, () => [1, ...Array(511).fill(0)]))
   })
+})
+
+it('dimension errors survive status refresh until model changes or explicit retry', async () => {
+  setStatus({ state: 'error', message: 'Embedding model returned768dimensions' })
+  await refreshStatus()
+  expect(getStatus()).toMatchObject({ state: 'error', message: 'Embedding model returned768dimensions' })
+  fixture.model = 'compatible'
+  await refreshStatus()
+  expect(getStatus()).toMatchObject({ state: 'ready', message: null })
+  setStatus({ state: 'error', message: 'retryable error' })
+  await refreshStatus(true)
+  expect(getStatus()).toMatchObject({ state: 'ready', message: null })
 })
