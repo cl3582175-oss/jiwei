@@ -20,7 +20,6 @@ export interface SegmentLike {
 
 export const OCR_KIND_PREFIX = 'ocr:'
 export const FIGURE_PREFIX = '［图解］'
-const MAX = 1800
 
 const decode = (s: string): string =>
   s
@@ -124,43 +123,6 @@ export function isDegenerate(text: string): boolean {
   return !!m
 }
 
-/** 长文本切分；Markdown 表格按行切，每段重复表头 */
-export function splitRecognized(text: string, max = MAX): string[] {
-  if (text.length <= max) return [text]
-  const parts: string[] = []
-  let cur = ''
-  const push = (): void => {
-    if (cur.trim()) parts.push(cur.trim())
-    cur = ''
-  }
-  for (const block of text.split(/\n{2,}/)) {
-    const lines = block.split('\n')
-    const isTable = lines.length > 2 && lines.every((l) => /^\s*\|/.test(l)) && /^\s*\|\s*-{3}/.test(lines[1])
-    if (isTable && block.length > max) {
-      push()
-      const head = lines.slice(0, 2).join('\n')
-      let chunk = head
-      for (const row of lines.slice(2)) {
-        if (chunk.length + row.length + 1 > max && chunk !== head) {
-          parts.push(chunk)
-          chunk = head
-        }
-        chunk += '\n' + row
-      }
-      if (chunk !== head) parts.push(chunk)
-      continue
-    }
-    if (cur.length + block.length + 2 > max) push()
-    if (block.length > max) {
-      for (let i = 0; i < block.length; i += max) parts.push(block.slice(i, i + max))
-      continue
-    }
-    cur += (cur ? '\n\n' : '') + block
-  }
-  push()
-  return parts
-}
-
 const pageOf = (s: SegmentLike): number | null => {
   const m = String((s.locator as { value?: unknown }).value ?? '').match(/^page=(\d+)/)
   return m ? Number(m[1]) : null
@@ -172,30 +134,9 @@ export const pageLocator = (page: number): Record<string, unknown> => ({
   value: `page=${page}`
 })
 
-/**
- * 把识别结果并入分段：去掉旧的识别分段，每页的识别分段插在该页文字之后；
- * 没有文字的页（扫描页）按页码顺序插入。
- */
-export function mergeRecognized(segments: SegmentLike[], recs: { page: number; need: RecognizedNeed; text: string }[]): SegmentLike[] {
-  const base = segments.filter((s) => !s.kind.startsWith(OCR_KIND_PREFIX))
-  const out = [...base]
-  for (const r of [...recs].sort((a, b) => a.page - b.page)) {
-    const text = r.need === 'figure' && !r.text.startsWith(FIGURE_PREFIX) ? `${FIGURE_PREFIX}${r.text}` : r.text
-    const add = splitRecognized(text).map((t) => ({ kind: `${OCR_KIND_PREFIX}${r.need}`, locator: pageLocator(r.page), text: t }))
-    let at = -1
-    for (let i = 0; i < out.length; i++) {
-      const p = pageOf(out[i])
-      if (p !== null && p <= r.page) at = i
-      if (p !== null && p > r.page) break
-    }
-    out.splice(at + 1, 0, ...add)
-  }
-  return out
-}
-
 export type HeadingBlock = Extract<DocBlock, { type: 'heading' }>
-/** 结构入口：按页传递标题栈。B 线同步写入 heading 与页多需求后替换兼容入口。 */
-export function mergeRecognizedStructured(
+/** 按页传递标题栈，识别段插在同页文字后；扫描页按页码并入。 */
+export function mergeRecognized(
   segments: SegmentLike[],
   recs: { page: number; need: RecognizedNeed; text: string }[],
   initialHeadings: HeadingBlock[] = []

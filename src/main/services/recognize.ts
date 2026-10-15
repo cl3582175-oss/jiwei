@@ -22,7 +22,7 @@ import {
   extractTables,
   groundedText,
   isDegenerate,
-  mergeRecognizedStructured,
+  mergeRecognized,
   normalizeRecognized,
   parseGrounding,
   withCaptions,
@@ -468,7 +468,7 @@ export function applyRecognized(sourceId: string): number {
     .map((r) => ({ page: r.page, need: r.need, text: r.text! }))
   const current = listSegments(sourceId)
   if (!recs.length && !current.some((s) => s.kind.startsWith('ocr:'))) return 0
-  const n = replaceSegments(sourceId, mergeRecognizedStructured(current, recs))
+  const n = replaceSegments(sourceId, mergeRecognized(current, recs))
   requestIndex()
   return n
 }

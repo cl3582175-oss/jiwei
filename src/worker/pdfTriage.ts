@@ -38,11 +38,6 @@ export function classifyPageNeeds(s: PageSignals): PageNeed[] {
   return needs
 }
 
-/** 旧调用方与旧页主键的兼容入口；B 线迁移后切换至多需求入口。 */
-export function classifyPage(s: PageSignals): PageNeed | null {
-  return classifyPageNeeds(s)[0] ?? null
-}
-
 type Matrix = [number, number, number, number, number, number]
 const mul = (m: Matrix, n: Matrix): Matrix => [
   m[0] * n[0] + m[2] * n[1],

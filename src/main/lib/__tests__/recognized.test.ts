@@ -8,12 +8,11 @@ import {
   mergeRecognized,
   normalizeRecognized,
   pageLocator,
-  splitRecognized,
   withCaptions,
   parseGrounding,
   groundedText
 } from '../recognized'
-import { classifyPage } from '../../../worker/pdfTriage'
+import { classifyPageNeeds } from '../../../worker/pdfTriage'
 
 // 夹具按 LightOnOCR-2-1B 的真实输出格式编写（HTML 表格、标题横幅行、合并单元格），内容为自拟
 const fixture = (n: string): string => readFileSync(join(__dirname, 'fixtures', n), 'utf8')
@@ -61,9 +60,24 @@ describe('recognized: tables', () => {
 })
 
 describe('recognized: splitting and merging', () => {
+  it('carries the recognized chapter into the next scan page at the production merge entry', () => {
+    const merged = mergeRecognized(
+      [],
+      [
+        { page: 1, need: 'scan', text: '第一章 合成\n⻛压Ａ１０２。' },
+        { page: 2, need: 'scan', text: '后续条件。' }
+      ]
+    )
+    expect(merged.map((s) => ({ heading: s.heading, text: s.text }))).toEqual([
+      { heading: '第一章 合成', text: '风压A102。' },
+      { heading: '第一章 合成', text: '后续条件。' }
+    ])
+  })
   it('splits long Markdown tables by rows and repeats the header', () => {
     const rows = Array.from({ length: 80 }, (_, i) => `| 第 ${i} 行 | ${'内容'.repeat(10)} |`)
-    const parts = splitRecognized(['| 名称 | 说明 |', '| --- | --- |', ...rows].join('\n'), 600)
+    const parts = mergeRecognized([], [{ page: 1, need: 'table', text: ['| 名称 | 说明 |', '| --- | --- |', ...rows].join('\n') }]).map(
+      (s) => s.text
+    )
     expect(parts.length).toBeGreaterThan(2)
     for (const p of parts) expect(p.startsWith('| 名称 | 说明 |\n| --- | --- |')).toBe(true)
     expect(parts.join('\n')).toContain('第 79 行')
@@ -79,7 +93,7 @@ describe('recognized: splitting and merging', () => {
         { page: 4, need: 'figure', text: '三个部分围绕结果' }
       ]
     )
-    expect(merged.map((s) => s.text)).toEqual(['p1', 'p2a', 'p2b', '| a |\n| --- |\n| 1 |', '扫描页全文', 'p4', '［图解］三个部分围绕结果'])
+    expect(merged.map((s) => s.text)).toEqual(['p1', 'p2a', 'p2b', 'a：1', '扫描页全文', 'p4', '［图解］三个部分围绕结果'])
     expect(merged[4].kind).toBe('ocr:scan')
   })
 
@@ -92,22 +106,22 @@ describe('recognized: splitting and merging', () => {
 
 describe('pdf triage', () => {
   const page = (lines: string[], extra: Partial<{ imageCover: number; paths: number }> = {}) =>
-    classifyPage({ chars: lines.join('').replace(/\s/g, '').length, lines, imageCover: 0, paths: 0, ...extra })
+    classifyPageNeeds({ chars: lines.join('').replace(/\s/g, '').length, lines, imageCover: 0, paths: 0, ...extra })
   const body = '项目是为创造独特的产品、服务或成果而进行的临时性工作，具有明确的开始和结束。'.repeat(3)
 
   it('finds scans, tables and figures by captions', () => {
-    expect(page([''], { imageCover: 0.98 })).toBe('scan')
-    expect(page(['表2-1。 组织结构对项目的影响', body])).toBe('table')
-    expect(page([body, '图 3-3：关注价值'])).toBe('figure')
-    expect(page(['Figure 4. Results', body])).toBe('figure')
-    expect(page(['Table 2-1. Effects of organizational structure on projects', body], { imageCover: 0.6 })).toBe('table')
+    expect(page([''], { imageCover: 0.98 })).toContain('scan')
+    expect(page(['表2-1。 组织结构对项目的影响', body])).toContain('table')
+    expect(page([body, '图 3-3：关注价值'])).toContain('figure')
+    expect(page(['Figure 4. Results', body])).toContain('figure')
+    expect(page(['Table 2-1. Effects of organizational structure on projects', body], { imageCover: 0.6 })).toContain('table')
   })
 
   it('ignores references in body text, tables of contents and decorative backgrounds', () => {
-    expect(page(['图1-2展示了一个示例项目组合，说明了组织各组件', body])).toBeNull()
-    expect(page(['表 2-1 项目管理关注领域与绩效域映射 . . . . . . . . . 114'])).toBeNull()
-    expect(page([body, body, body], { imageCover: 1 })).toBeNull()
-    expect(page([body])).toBeNull()
+    expect(page(['图1-2展示了一个示例项目组合，说明了组织各组件', body])).toEqual([])
+    expect(page(['表 2-1 项目管理关注领域与绩效域映射 . . . . . . . . . 114'])).toEqual([])
+    expect(page([body, body, body], { imageCover: 1 })).toEqual([])
+    expect(page([body])).toEqual([])
   })
 })
 

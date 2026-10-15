@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { mergeRecognizedStructured, htmlTableToMarkdown, pageLocator } from '../recognized'
+import { mergeRecognized, htmlTableToMarkdown, pageLocator } from '../recognized'
 import { classifyPageNeeds } from '../../../worker/pdfTriage'
 describe('structured recognition', () => {
   it('retains the part/chapter/section hierarchy when a scan continues on the next page', () => {
-    const chunks = mergeRecognizedStructured(
+    const chunks = mergeRecognized(
       [],
       [
         { page: 1, need: 'scan', text: '第一编 合成\n第一章 条件\n第一节 范围\n正文内容。' },
@@ -27,7 +27,7 @@ describe('structured recognition', () => {
     expect(classifyPageNeeds({ ...s, lines: [], imageCover: 0 })).toEqual([])
   })
   it('carries heading paths through consecutive scan pages and keeps figure descriptions whole', () => {
-    const merged = mergeRecognizedStructured(
+    const merged = mergeRecognized(
       [],
       [
         { page: 2, need: 'scan', text: '第二页内容。'.repeat(50) },
@@ -44,11 +44,7 @@ describe('structured recognition', () => {
     const table = ['| 名称 | 说明 |', '| --- | --- |', ...Array.from({ length: 40 }, (_, i) => `| ${i} | ${'内容'.repeat(20)} |`)].join(
       '\n'
     )
-    const merged = mergeRecognizedStructured(
-      [],
-      [{ page: 4, need: 'table', text: table }],
-      [{ type: 'heading', level: 1, text: '上页章节' }]
-    )
+    const merged = mergeRecognized([], [{ page: 4, need: 'table', text: table }], [{ type: 'heading', level: 1, text: '上页章节' }])
     expect(merged.length).toBeGreaterThan(1)
     for (const c of merged) {
       expect(c.heading).toBe('上页章节')

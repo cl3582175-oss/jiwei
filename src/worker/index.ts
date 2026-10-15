@@ -5,12 +5,7 @@ import { parseCode } from '../main/services/parsers/code'
 import { readFile } from 'fs/promises'
 import { expandICS } from '../main/lib/ics'
 import { segmentTextStructured } from '../main/lib/segment'
-import {
-  parseEpubStructured as parseEpub,
-  parseHtmlStructured as parseHtml,
-  parsePdfStructured as parsePdf,
-  renderPdfPage
-} from './parsers'
+import { parseEpub, parseHtml, parsePdf, renderPdfPage } from './parsers'
 import { parseDocx } from './docx'
 import { parseDoc } from './doc'
 import { transcribe } from './transcribe'

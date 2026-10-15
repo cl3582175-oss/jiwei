@@ -3,7 +3,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import JSZip from 'jszip'
 import { describe, expect, it } from 'vitest'
-import { parseEpubStructured, parseHtmlStructured, parsePdfStructured } from './parsers'
+import { parseEpub, parseHtml, parsePdf } from './parsers'
 import { readingHtmlText } from '../main/lib/reading'
 import { normalizeQuery } from '../main/lib/textNormalize'
 
@@ -23,7 +23,7 @@ describe('structured parser entry points', () => {
       const path = join(dir, 'native-quote.html')
       await writeFile(path, html)
       const raw = readingHtmlText(html),
-        result = await parseHtmlStructured(path)
+        result = await parseHtml(path)
       expect(raw).toContain('⻛压Ａ１０２')
       expect(result.segments[0].text).toContain('风压A102')
       expect(normalizeQuery(result.segments.map((s) => s.text).join('\n'))).toBe(normalizeQuery(raw))
@@ -35,7 +35,7 @@ describe('structured parser entry points', () => {
         path,
         '<html><head><title>合成资料</title></head><body><article><h1>条件</h1><p>⼈需要完整证据。</p><table><tr><th>名</th><th>值</th></tr><tr><td>甲</td><td>2</td></tr><tr><td>乙</td><td>3</td></tr><tr><td>丙</td><td>4</td></tr></table></article></body></html>'
       )
-      const result = await parseHtmlStructured(path)
+      const result = await parseHtml(path)
       expect(result.title).toBe('合成资料')
       expect(result.segments[0]).toMatchObject({ heading: '条件', text: '人需要完整证据。' })
       expect(result.segments[1].kind).toBe('table')
@@ -53,7 +53,7 @@ describe('structured parser entry points', () => {
       const path = join(dir, 'generated.epub')
       await writeFile(path, await zip.generateAsync({ type: 'nodebuffer' }))
       const progress: number[] = []
-      const chunks = await parseEpubStructured(path, (p) => progress.push(p))
+      const chunks = await parseEpub(path, (p) => progress.push(p))
       expect(chunks.map((c) => c.locator.value)).toEqual(['chapter=1', 'chapter=1', 'chapter=2'])
       expect(chunks[1]).toMatchObject({ kind: 'code', heading: 'First chapter', text: 'x  =  2' })
       expect(progress).toEqual([0.5, 1])
@@ -84,7 +84,7 @@ describe('structured parser entry points', () => {
         .join('')}trailer\n<< /Size ${offsets.length} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`
       const path = join(dir, 'generated.pdf')
       await writeFile(path, pdf)
-      const result = await parsePdfStructured(path, () => {})
+      const result = await parsePdf(path, () => {})
       expect(result.segments).toHaveLength(1)
       expect(result.segments[0]).toMatchObject({ kind: 'page', locator: { value: 'page=1', pageEnd: 2 } })
       expect(result.segments[0].text).toContain('Page 2 evidence is retained.')

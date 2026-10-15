@@ -1,9 +1,9 @@
-import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
+import { test, expect, type ElectronApplication, type Page } from '@playwright/test'
 import { mkdtempSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { makePdf } from './fixtures/makePdf'
-import { isolateEmbeddingCache } from './fixtures/embeddingCache'
+import { launchRagApp } from './fixtures/ragApp'
 
 // v0.2 知识库：本地向量模型（多镜像下载、校验）→ 笔记与资料两类来源建索引 → 混合检索（含隐私与范围过滤）
 // 不需要 API Key。
@@ -13,13 +13,9 @@ let app: ElectronApplication
 let page: Page
 
 test.beforeAll(async () => {
-  app = await electron.launch({
-    args: ['.', `--user-data-dir=${userData}`],
-    env: { ...process.env, JIWEI_LANG: 'zh-CN', JIWEI_SKIP_ONBOARDING: '1' }
-  })
+  app = await launchRagApp(userData)
   page = await app.firstWindow()
   await page.waitForSelector('nav')
-  await isolateEmbeddingCache(app)
 })
 test.afterAll(async () => {
   await app?.close()
@@ -45,14 +41,19 @@ test('notes and sources are both indexed', async () => {
   const res = await page.evaluate((p) => window.jiwei.sources.importPaths([p]), join(dir, '遗忘曲线.md'))
   // 先等资料解析完成，再等索引覆盖它（否则可能只等到示例笔记的索引）
   const sid = res.imported[0].id
-  await expect.poll(() => page.evaluate((id) => window.jiwei.segments.list(id).then((s) => s.length), sid), { timeout: 30_000 }).toBeGreaterThan(0)
+  await expect
+    .poll(() => page.evaluate((id) => window.jiwei.segments.list(id).then((s) => s.length), sid), { timeout: 30_000 })
+    .toBeGreaterThan(0)
   await expect
     .poll(
       async () => {
         const s = await page.evaluate(() => window.jiwei.embedding.status())
         if (!(s.total > 5 && s.indexed === s.total)) return false
         // 资料的片段已经进入检索
-        const hits = await page.evaluate((id) => window.jiwei.knowledge.search('艾宾浩斯遗忘曲线', { type: 'items', notes: [], sources: [id] }, 3), sid)
+        const hits = await page.evaluate(
+          (id) => window.jiwei.knowledge.search('艾宾浩斯遗忘曲线', { type: 'items', notes: [], sources: [id] }, 3),
+          sid
+        )
         return hits.length > 0
       },
       { timeout: 90_000 }
@@ -92,17 +93,24 @@ test('scope and privacy filters', async () => {
     .toBe(0)
 })
 
-test('PDF sources are parsed into page segments', async () => {
+test('PDF source text and page range survive cross-page paragraph grouping', async () => {
   // 回归：pdf.js 在 Electron 工作进程中曾因找不到解析器而全部失败
   const dir = mkdtempSync(join(tmpdir(), 'jiwei-kb-pdf-'))
   const file = join(dir, 'Retrieval Practice.pdf')
-  writeFileSync(file, makePdf([['Retrieval practice', 'Testing yourself beats rereading.'], ['Spacing', 'Spread reviews over days.']]))
+  writeFileSync(
+    file,
+    makePdf([
+      ['Retrieval practice', 'Testing yourself beats rereading.'],
+      ['Spacing', 'Spread reviews over days.']
+    ])
+  )
   const res = await page.evaluate((p) => window.jiwei.sources.importPaths([p]), file)
   const id = res.imported[0].id
-  await expect.poll(() => page.evaluate((id) => window.jiwei.segments.list(id).then((s) => s.length), id), { timeout: 30_000 }).toBe(2)
+  await expect.poll(() => page.evaluate((id) => window.jiwei.segments.list(id).then((s) => s.length), id), { timeout: 30_000 }).toBe(1)
   const segs = await page.evaluate((id) => window.jiwei.segments.list(id), id)
-  expect(segs[1].text).toContain('Spread reviews')
-  expect(JSON.stringify(segs[1].locator)).toContain('page=2')
+  for (const text of ['Retrieval practice', 'Testing yourself beats rereading.', 'Spacing', 'Spread reviews over days.'])
+    expect(segs[0].text).toContain(text)
+  expect(segs[0]).toMatchObject({ kind: 'page', locator: { value: 'page=1', pageEnd: 2 } })
   const jobs = await page.evaluate(() => window.jiwei.jobs.list())
   expect(jobs.filter((j) => j.kind === 'source.segment' && j.status === 'failed')).toHaveLength(0)
 })

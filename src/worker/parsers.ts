@@ -2,9 +2,7 @@ import { readFile } from 'fs/promises'
 import { createRequire } from 'module'
 import { dirname, join } from 'path'
 import { createCanvas, DOMMatrix, ImageData, Path2D, type Canvas, type SKRSContext2D } from '@napi-rs/canvas'
-import { classifyPage, classifyPageNeeds, drawingSignals, type PageNeed } from './pdfTriage'
-import { segmentText, type TextSegment } from '../main/lib/segment'
-import { readingHtmlText } from '../main/lib/reading'
+import { classifyPageNeeds, drawingSignals, type PageNeed } from './pdfTriage'
 import { chunkBlocks } from '../main/lib/chunker'
 import { htmlBlocks } from './htmlBlocks'
 import { pdfLayout, type PdfPageItems, type PdfTextItem } from './pdfLayout'
@@ -20,26 +18,6 @@ export interface Segment {
   locator: Record<string, unknown>
   text: string
   heading?: string
-}
-
-const MAX = 1800
-
-/** linkedom 解析出的文档：只声明用到的部分（工作进程不包含 DOM 类型） */
-interface DomDoc {
-  title?: string
-  body?: { textContent: string | null } | null
-  querySelectorAll(selector: string): ArrayLike<{ textContent: string | null }>
-}
-
-/** 长文本按段落切分，保留同一定位 */
-function splitWithLocator(text: string, locator: Record<string, unknown>, kind: string): Segment[] {
-  const clean = text
-    .replace(/[ \t]+\n/g, '\n')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim()
-  if (!clean) return []
-  if (clean.length <= MAX) return [{ kind, locator, text: clean }]
-  return segmentText(clean, 'plain').map((s: TextSegment) => ({ kind, locator, text: s.text }))
 }
 
 type PdfJs = typeof import('pdfjs-dist/legacy/build/pdf.mjs')
@@ -60,15 +38,6 @@ export interface PdfParse {
 }
 
 export async function parsePdf(path: string, progress: (p: number) => void): Promise<PdfParse> {
-  return parsePdfInternal(path, progress, false)
-}
-
-/** G1 后调用方统一切换的入口；A 线不能提前替换旧片段或登记多需求页。 */
-export async function parsePdfStructured(path: string, progress: (p: number) => void): Promise<PdfParse> {
-  return parsePdfInternal(path, progress, true)
-}
-
-async function parsePdfInternal(path: string, progress: (p: number) => void, structured: boolean): Promise<PdfParse> {
   const pdfjs = await loadPdfJs()
   const data = new Uint8Array(await readFile(path))
   const root = dirname(createRequire(import.meta.url).resolve('pdfjs-dist/package.json'))
@@ -96,20 +65,11 @@ async function parsePdfInternal(path: string, progress: (p: number) => void, str
         if (item.hasEOL) text += '\n'
         lastY = y ?? lastY
       }
-      if (structured)
-        layout.push({
-          page: p,
-          bounds: { bottom: page.view[1], top: page.view[3] },
-          items: content.items.filter((i) => 'str' in i) as PdfTextItem[]
-        })
-      else
-        out.push(
-          ...splitWithLocator(
-            text,
-            { type: 'FragmentSelector', conformsTo: 'http://tools.ietf.org/rfc/rfc3778', value: `page=${p}` },
-            'page'
-          )
-        )
+      layout.push({
+        page: p,
+        bounds: { bottom: page.view[1], top: page.view[3] },
+        items: content.items.filter((i) => 'str' in i) as PdfTextItem[]
+      })
       try {
         const ops = await page.getOperatorList()
         const [x0, y0, x1, y1] = page.view
@@ -118,7 +78,7 @@ async function parsePdfInternal(path: string, progress: (p: number) => void, str
           lines: text.split('\n'),
           ...drawingSignals(ops.fnArray, ops.argsArray, (x1 - x0) * (y1 - y0))
         }
-        const needs = structured ? classifyPageNeeds(signals) : [classifyPage(signals)].filter((n): n is PageNeed => !!n)
+        const needs = classifyPageNeeds(signals)
         for (const need of needs) pages.push({ page: p, need })
       } catch {
         // 分流失败不影响文字层
@@ -126,12 +86,11 @@ async function parsePdfInternal(path: string, progress: (p: number) => void, str
       page.cleanup()
       progress(p / doc.numPages)
     }
-    if (structured)
-      out.push(
-        ...chunkBlocks(pdfLayout(layout), {
-          locatorOf: (b) => ({ type: 'FragmentSelector', conformsTo: 'http://tools.ietf.org/rfc/rfc3778', value: `page=${b.page}` })
-        }).map((c) => ({ ...c, kind: 'page' }))
-      )
+    out.push(
+      ...chunkBlocks(pdfLayout(layout), {
+        locatorOf: (b) => ({ type: 'FragmentSelector', conformsTo: 'http://tools.ietf.org/rfc/rfc3778', value: `page=${b.page}` })
+      }).map((c) => ({ ...c, kind: 'page' }))
+    )
     return { segments: out, pages }
   } finally {
     await task.destroy()
@@ -196,27 +155,7 @@ export async function renderPdfPage(path: string, pageNo: number, maxSide = 1600
   }
 }
 
-export async function parseDocx(path: string): Promise<Segment[]> {
-  const mammoth = await import('mammoth')
-  const { value } = await mammoth.extractRawText({ path })
-  return segmentText(value, 'plain')
-}
-
-async function htmlToText(html: string): Promise<{ title: string; text: string }> {
-  const { parseHTML } = await import('linkedom')
-  const { Readability } = await import('@mozilla/readability')
-  const { document } = parseHTML(html) as unknown as { document: DomDoc }
-  const article = new Readability(document as never).parse()
-  if (article?.content) return { title: article.title ?? '', text: readingHtmlText(article.content) }
-  return { title: document.title ?? '', text: readingHtmlText(html) }
-}
-
 export async function parseHtml(path: string): Promise<{ title: string; segments: Segment[] }> {
-  const { title, text } = await htmlToText(await readFile(path, 'utf8'))
-  return { title, segments: segmentText(text.replace(/\n\s*\n/g, '\n\n'), 'plain') }
-}
-
-export async function parseHtmlStructured(path: string): Promise<{ title: string; segments: Segment[] }> {
   const html = await readFile(path, 'utf8')
   const { parseHTML } = await import('linkedom')
   const { Readability } = await import('@mozilla/readability')
@@ -230,14 +169,7 @@ export async function parseHtmlStructured(path: string): Promise<{ title: string
 }
 
 export async function parseEpub(path: string, progress: (p: number) => void): Promise<Segment[]> {
-  return parseEpubInternal(path, progress, false)
-}
-export async function parseEpubStructured(path: string, progress: (p: number) => void): Promise<Segment[]> {
-  return parseEpubInternal(path, progress, true)
-}
-async function parseEpubInternal(path: string, progress: (p: number) => void, structured: boolean): Promise<Segment[]> {
   const JSZip = (await import('jszip')).default
-  const { parseHTML } = await import('linkedom')
   const zip = await JSZip.loadAsync(await readFile(path))
   const container = await zip.file('META-INF/container.xml')?.async('string')
   const opfPath = container?.match(/full-path="([^"]+)"/)?.[1]
@@ -256,18 +188,8 @@ async function parseEpubInternal(path: string, progress: (p: number) => void, st
     const href = manifest.get(spine[i])
     const html = href ? await zip.file(base + href)?.async('string') : null
     if (!html) continue
-    if (structured) {
-      const blocks = htmlBlocks(html)
-      out.push(...chunkBlocks(blocks, { locatorOf: () => ({ type: 'FragmentSelector', value: `chapter=${i + 1}` }) }))
-      progress((i + 1) / spine.length)
-      continue
-    }
-    const { document } = parseHTML(html) as unknown as { document: DomDoc }
-    const blocks = Array.from(document.querySelectorAll('h1,h2,h3,h4,p,li,blockquote,pre'))
-      .map((el) => el.textContent?.trim() ?? '')
-      .filter(Boolean)
-    const text = blocks.length ? blocks.join('\n\n') : (document.body?.textContent ?? '')
-    out.push(...splitWithLocator(text, { type: 'FragmentSelector', value: `chapter=${i + 1}` }, 'chapter'))
+    const blocks = htmlBlocks(html)
+    out.push(...chunkBlocks(blocks, { locatorOf: () => ({ type: 'FragmentSelector', value: `chapter=${i + 1}` }) }))
     progress((i + 1) / spine.length)
   }
   return out
