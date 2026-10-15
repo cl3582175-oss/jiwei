@@ -10,6 +10,7 @@ import { ProviderInputSchema } from '@shared/schemas'
 const state = vi.hoisted(() => ({ db: null as DB | null, sqlite: null as Database.Database | null, fetch: vi.fn() }))
 vi.mock('../../../db', () => ({ getDb: () => state.db, getSqlite: () => state.sqlite }))
 vi.mock('electron', () => ({
+  BrowserWindow: { getAllWindows: () => [] },
   net: {
     fetch: (...args: unknown[]) => state.fetch(...args)
   },

@@ -163,6 +163,7 @@ function useMainEvents(): void {
         useApp.getState().openConversation(conversationId)
       }),
       window.jiweiEvents.on('usage:changed', () => void qc.invalidateQueries({ queryKey: ['usage'] })),
+      window.jiweiEvents.on('providers:changed', () => void qc.invalidateQueries({ queryKey: ['providers'] })),
       window.jiweiEvents.on('settings:changed', () => {
         void qc.invalidateQueries({ queryKey: ['settings'] })
         void qc.invalidateQueries({ queryKey: ['plan', 'forecast'] })

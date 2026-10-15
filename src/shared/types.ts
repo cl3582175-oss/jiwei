@@ -1162,6 +1162,7 @@ export interface JiweiEvents {
   /** 花费接近上限（v0.7.5）：spent、limit 为美元 */
   /** 主进程改了设置（如后台更新汇率），界面重新读取（v0.7.5） */
   'settings:changed': Record<string, never>
+  'providers:changed': Record<string, never>
   /** 整份资料的导图 / 总结 / 提纲已作为提案放进笔记（v0.7.6） */
   'digest:done': { noteId: string; title: string; task: 'mindmap' | 'summary' | 'outline' }
   'usage:alert': { kind: 'daily' | 'monthly'; spent: number; limit: number }

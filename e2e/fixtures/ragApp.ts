@@ -36,7 +36,7 @@ export async function launchRagApp(directory: string, providers = ''): Promise<E
       `app.setPath('userData', ${JSON.stringify(directory)})`,
       `app.setPath('appData', ${JSON.stringify(modelData)})`,
       `app.setAppLogsPath(${JSON.stringify(join(directory, 'logs'))})`,
-      `require(${JSON.stringify(join(repo, 'out/main/index.js'))})`
+      `require(${JSON.stringify(join(process.env.JIWEI_RAG_APP_OUT ? resolve(process.env.JIWEI_RAG_APP_OUT) : join(repo, 'out'), 'main/index.js'))})`
     ].join('\n')
   )
   const application = await electron.launch({

@@ -3,6 +3,7 @@ import { and, asc, eq, isNull } from 'drizzle-orm'
 import log from 'electron-log/main'
 import { getDb, getSqlite } from '../../db'
 import { providers } from '../../db/schema'
+import { emit } from '../../events'
 import { newId } from '../../lib/ids'
 import { deviceId } from '../device'
 import { PROVIDER_PRESETS, resolveCaps, validContext, type ModelCaps, type ModelCapsOverride, type ProviderKind } from '@shared/ai'
@@ -175,23 +176,25 @@ function modelRecords(body: unknown): { id: string; context?: number }[] {
   })
 }
 
-function storeAutomaticContext(id: string, model: string, field: 'reportedContext' | 'learnedContext', limit: number): void {
-  if (!validContext(limit)) return
+function storeAutomaticContext(id: string, model: string, field: 'reportedContext' | 'learnedContext', limit: number): boolean {
+  if (!validContext(limit)) return false
   // 网络等待后重新读取，不能覆盖期间用户修改的能力。
   const row = getProviderRow(id),
     caps = parseCaps(row)
   const next = { ...caps[model], [field]: limit }
   if (field === 'learnedContext' && (next.reportedContext ?? 0) > limit) delete next.reportedContext
+  if (JSON.stringify(caps[model]) === JSON.stringify(next)) return false
   caps[model] = next
   getDb()
     .update(providers)
     .set({ modelCaps: JSON.stringify(caps), updatedAt: Date.now(), updatedBy: deviceId() })
     .where(eq(providers.id, id))
     .run()
+  return true
 }
 
 export function learnContextLimit(id: string, model: string, limit: number): void {
-  storeAutomaticContext(id, model, 'learnedContext', limit)
+  if (storeAutomaticContext(id, model, 'learnedContext', limit)) emit('providers:changed')
 }
 
 async function discoverContexts(row: Row, records: { id: string; context?: number }[]): Promise<void> {
@@ -224,7 +227,9 @@ async function discoverContexts(row: Row, records: { id: string; context?: numbe
   }
   const current = getProviderRow(row.id)
   if (current.baseUrl !== base || current.kind !== row.kind) return
-  for (const m of results) if (m.context) storeAutomaticContext(row.id, m.id, 'reportedContext', m.context)
+  let changed = false
+  for (const m of results) if (m.context) changed = storeAutomaticContext(row.id, m.id, 'reportedContext', m.context) || changed
+  if (changed) emit('providers:changed')
 }
 
 /** 拉取服务商的模型列表（OpenAI 兼容 / Anthropic / Gemini 三种格式） */

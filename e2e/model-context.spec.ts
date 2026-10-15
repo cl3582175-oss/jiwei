@@ -153,6 +153,14 @@ const ask = () =>
   })
 const text = (r: ModelRequest) => r.messages.map((m) => textOf(m.content)).join('\n')
 test('an explicit overflow persists the learned limit and automatically retries with excerpts', async () => {
+  // 先预热模型行缓存；报错学习不能等30秒或靠重载才显示。
+  await page.reload()
+  await page.waitForSelector('nav')
+  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+,' : 'Control+,')
+  await page.getByRole('button', { name: 'AI 模型', exact: true }).click()
+  await page.getByRole('button', { name: /^受控上下文 http/ }).click()
+  const chip = page.locator('[data-model="context-controlled"]').getByRole('button', { name: /上下文/ })
+  await expect(chip).toContainText('服务商报告')
   reject = 1
   const before = requests.length
   const response = await ask()
@@ -167,6 +175,8 @@ test('an explicit overflow persists the learned limit and automatically retries 
   const p = (await page.evaluate(() => window.jiwei.providers.list())).find((p) => p.id === providerId)!
   expect(p.modelCaps['context-controlled'].learnedContext).toBe(32768)
   expect(p.modelCaps['context-controlled'].reportedContext).toBeUndefined()
+  await expect(chip).toContainText('错误学习')
+  await page.keyboard.press('Escape')
 })
 test('a second overflow ends the turn instead of an unbounded retry', async () => {
   reject = 3
