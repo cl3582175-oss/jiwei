@@ -97,7 +97,7 @@ import * as feynman from './services/feynman'
 import * as reflection from './services/reflection'
 import * as progress from './services/progress'
 import * as connections from './services/connections'
-import { sourceOutline } from './services/digest'
+import { digestNow, sourceOutline } from './services/digest'
 import { knowledgeGraph } from './services/graph'
 import * as asr from './services/asr'
 import * as recognize from './services/recognize'
@@ -407,7 +407,8 @@ const handlers: Handlers = {
     list: () => jobs.listJobs(),
     cancel: (_, id) => jobs.cancelJob(id),
     retry: (_, id) => jobs.retryJob(id),
-    runNow: (_, id) => jobs.runJobNow(id)
+    runNow: (_, id) => jobs.runJobNow(id),
+    digestNow: (_, id) => digestNow(id)
   },
   sandbox: {
     register: (_, html) => registerSandbox(html)

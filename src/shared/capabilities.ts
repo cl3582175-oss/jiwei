@@ -674,7 +674,8 @@ export const capabilities = {
     list: cap<Job[]>()({ description: '列出后台任务', params: none }),
     cancel: cap<void>()({ description: '取消后台任务', params: [id()] }),
     retry: cap<void>()({ description: '重试失败的后台任务', params: [id()] }),
-    runNow: cap<void>()({ description: '排到低谷时段的任务现在就开始', params: [id()] })
+    runNow: cap<void>()({ description: '排到低谷时段的任务现在就开始', params: [id()] }),
+    digestNow: cap<void>()({ description: '不再等待识别，使用已有内容现在就整理', params: [id()] })
   },
   trash: {
     list: cap<TrashItem[]>()({ description: '列出最近删除', params: none }),
