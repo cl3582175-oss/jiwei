@@ -73,7 +73,7 @@ export function registerJobKinds(): void {
       if (IMAGE_EXTS.has(row.a.ext)) {
         recordPages(sourceId, [{ page: 1, need: 'scan' }])
         applyRecognized(sourceId)
-        maybeAutoRecognize(sourceId)
+        if (!upgrade) maybeAutoRecognize(sourceId)
         getDb().update(sources).set({ parseVersion: CURRENT_PARSE_VERSION }).where(eq(sources.id, sourceId)).run()
         return { image: true }
       }
@@ -97,7 +97,7 @@ export function registerJobKinds(): void {
       if (!Array.isArray(result) && 'pages' in result) {
         recordPages(sourceId, (result as { pages: { page: number; need: 'scan' | 'table' | 'figure' }[] }).pages)
         applyRecognized(sourceId)
-        maybeAutoRecognize(sourceId)
+        if (!upgrade) maybeAutoRecognize(sourceId)
       }
       requestIndex()
       getDb().update(sources).set({ parseVersion: CURRENT_PARSE_VERSION }).where(eq(sources.id, sourceId)).run()

@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { xlsxFixture, pptxFixture } from '../src/main/services/parsers/__tests__/fixtures'
 import { navTo } from './fixtures/nav'
+import JSZip from 'jszip'
 
 test.describe.configure({ mode: 'serial' })
 let model: Awaited<ReturnType<typeof attachmentModel>>,
@@ -225,9 +226,10 @@ test('P3 短txt全文与60页长PDF：原文封装、处理就绪、附件节和
     const p = pdf.addPage([595, 842])
     // 定位标记使用正文字号且位于正文区，避免被新版提为标题或删除为重复页眉。
     p.drawText(`PAGE_${i}_ONLY`, { x: 50, y: 765, size: 10, font })
-    for (let line = 0; line < 12; line++)
+    // 新的未知云端窗口为64K；60页×30行正文超过其40%预算，仍实际测试长附件路径。
+    for (let line = 0; line < 30; line++)
       p.drawText('Long document evidence with details for source reading and citation.', { x: 50, y: 750 - line * 18, size: 10, font })
-    if (i === 60) p.drawText('PDF_FINAL_TAIL_ONLY', { x: 50, y: 480, size: 10, font })
+    if (i === 60) p.drawText('PDF_FINAL_TAIL_ONLY', { x: 50, y: 120, size: 10, font })
   }
   pdfId = await add('long.pdf', await pdf.save())
   const result = await send('短文与长文总结要点', [txtId, pdfId])
@@ -848,4 +850,35 @@ test('P6 处理状态视觉夹具：真实附件组件的添加解析识别转�
       Reflect.deleteProperty(globalThis, 'attachmentVisualStatus')
     })
   }
+})
+
+test('P6 合并单元格Word附件在初始上下文、关键词命中与source_read均不越200行', async () => {
+  const zip = new JSZip()
+  zip.file(
+    '[Content_Types].xml',
+    '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>'
+  )
+  zip.file(
+    '_rels/.rels',
+    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="r" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>'
+  )
+  const row = (text: string) => `<w:tr><w:tc><w:tcPr><w:gridSpan w:val="2"/></w:tcPr><w:p><w:r><w:t>${text}</w:t></w:r></w:p></w:tc></w:tr>`
+  zip.file(
+    'word/document.xml',
+    `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:tbl><w:tblGrid><w:gridCol w:w="2000"/><w:gridCol w:w="2000"/></w:tblGrid>${row('Synthetic merged column')}${Array.from({ length: 240 }, (_, i) => row('ROW_' + String(i + 1).padStart(3, '0'))).join('')}</w:tbl></w:body></w:document>`
+  )
+  const id = await add('synthetic-merged.docx', await zip.generateAsync({ type: 'uint8array' }))
+  const segments = await page.evaluate((id) => window.jiwei.segments.list(id), id)
+  expect(segments.map((s) => s.text).join('\n')).toContain('ROW_240')
+  model.setAnswer('合并表格数据已读取。[1]')
+  const first = await send('查看这份合并表格', [id])
+  expect(lastRequestText()).toContain('ROW_200')
+  expect(lastRequestText()).not.toMatch(/>ROW_20[1-9]</)
+  expect(lastRequestText()).not.toMatch(/>ROW_240</)
+  model.tool('knowledge_search', { query: 'ROW_240', sourceIds: [id] })
+  await send('检索后面的行', [], first.conversation.id, true)
+  expect(lastRequestText()).not.toMatch(/>ROW_240</)
+  model.tool('source_read', { sourceId: id, from: segments.at(-1)!.ordinal, count: 1 })
+  await send('读后面的行', [], first.conversation.id)
+  expect(lastRequestText()).not.toMatch(/>ROW_240</)
 })

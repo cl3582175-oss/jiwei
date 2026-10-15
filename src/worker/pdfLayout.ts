@@ -87,7 +87,7 @@ export function pdfLayout(pages: PdfPageItems[]): DocBlock[] {
   for (const p of all) {
     const lines = p.lines.filter(
       // 稀疏页的首尾行仍可能是正文；只有物理页边缘有证据时才删除重复行。
-      (l, i) => !pageNumber(l.text) && !(edge(p, l, i) && repeated.has(furnitureKey(l.text)))
+      (l, i) => !(edge(p, l, i) && (pageNumber(l.text) || repeated.has(furnitureKey(l.text))))
     )
     if (lines.filter((l) => toc(l.text)).length >= 5) {
       out.push({ type: 'paragraph', text: lines.map((l) => l.text).join('\n'), page: p.page })

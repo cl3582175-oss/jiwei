@@ -9,22 +9,29 @@ const f = vi.hoisted(() => ({
   db: null as ReturnType<typeof drizzle> | null,
   engine: 'ready',
   vector: false,
-  transcript: false
+  transcript: false,
+  mode: 'local'
 }))
 vi.mock('../../db', () => ({ getDb: () => f.db, getSqlite: () => f.sql }))
 vi.mock('../recognize', () => ({
   sourceRecognition: () => ({ needs: { scan: 1, table: 0, figure: 0 }, total: 1, done: 0, failed: 0, running: false, engine: f.engine })
 }))
-vi.mock('../ai/embedding', () => ({ getStatus: () => ({ state: f.vector ? 'ready' : 'missing' }), currentModelId: () => 'controlled' }))
+vi.mock('../ai/embedding', () => ({
+  getStatus: () => ({ state: f.vector ? 'ready' : 'missing' }),
+  currentModelId: () => 'controlled',
+  isReady: async () => f.vector
+}))
 vi.mock('../asr', () => ({ canAutoTranscribe: () => f.transcript }))
-vi.mock('../settings', () => ({ getSettings: () => ({ language: 'en' }) }))
+vi.mock('../settings', () => ({ getSettings: () => ({ language: 'en', ai: { embedding: { mode: f.mode } } }) }))
 vi.mock('../segmentJobs', () => ({ enqueueSegment: () => {} }))
 import * as ready from '../readiness'
+import { sourceIndexStatus } from '../ai/sourceIndexStatus'
 
 beforeEach(() => {
   f.engine = 'ready'
   f.vector = false
   f.transcript = false
+  f.mode = 'local'
   f.sql = new Database(':memory:')
   f.sql.loadExtension(getLoadablePath())
   f.db = drizzle(f.sql)
@@ -151,4 +158,31 @@ it('persisted notices remain historical, validate old JSON and hide revoked sour
   expect(ready.storedReadiness(JSON.stringify({ attachmentSourceIds: ['s'] }), '')).toEqual([])
   f.sql!.exec("UPDATE sources SET ai_excluded=1 WHERE id='s'")
   expect(ready.storedReadiness(JSON.stringify({ readiness: items }), '')).toEqual([])
+})
+
+it('short readable segments finish without impossible vectors and cloud attachments stay keyword-readable', () => {
+  source('short')
+  segment('short', '甲段')
+  segment('short', '乙段', 'paragraph', 1)
+  f.vector = true
+  expect(ready.sourceReadiness('short')).toEqual({ state: 'ready' })
+  source('attachment', 'pdf', 'pdf', 'attachment', 1)
+  segment('attachment')
+  f.sql!.exec(
+    "INSERT INTO conversations(id,title,created_at,updated_at) VALUES('owner','Owner',1,1); INSERT INTO conversation_attachments(conversation_id,source_id,created_at) VALUES('owner','attachment',1)"
+  )
+  f.mode = 'cloud'
+  expect(ready.sourceReadiness('attachment', 'owner')).toEqual({ state: 'ready' })
+  f.mode = 'local'
+  expect(ready.sourceReadiness('attachment', 'owner')).toEqual({ state: 'preparing', reason: 'indexing', progress: 0 })
+})
+
+it('index progress follows the same library and owning-conversation visibility as readiness', async () => {
+  source('attachment', 'pdf', 'pdf', 'attachment', 1)
+  segment('attachment')
+  f.sql!.exec(
+    "INSERT INTO conversations(id,title,created_at,updated_at) VALUES('owner','Owner',1,1); INSERT INTO conversation_attachments(conversation_id,source_id,created_at) VALUES('owner','attachment',1)"
+  )
+  expect(await sourceIndexStatus('attachment')).toEqual({ segments: 0, indexable: 0, embedded: 0, semantic: false })
+  expect(await sourceIndexStatus('attachment', 'owner')).toMatchObject({ segments: 1, indexable: 1 })
 })

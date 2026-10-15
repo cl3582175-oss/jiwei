@@ -622,9 +622,9 @@ export const capabilities = {
       description: '资料的章节目录（识别出的标题）',
       params: [id()]
     }),
-    indexStatus: cap<{ segments: number; embedded: number; semantic: boolean }>()({
-      description: '资料的检索准备情况：可检索的分段数、已建语义索引的分段数',
-      params: [id()]
+    indexStatus: cap<{ segments: number; indexable: number; embedded: number; semantic: boolean }>()({
+      description: '资料的检索准备情况：正文数、可索引数和当前模型完成数；附件限所属对话',
+      params: [id(), ['conversationId', S.Id.nullable().optional()]]
     }),
     importDialog: cap<ImportResult>()({ description: '通过对话框导入文件', params: [['categoryId', S.Id.nullable().optional()]] }),
     importPaths: cap<ImportResult>()({

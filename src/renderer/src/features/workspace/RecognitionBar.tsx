@@ -46,15 +46,14 @@ export function RecognitionBar({
     staleTime: 0
   })
   const { data: engine } = useQuery({ queryKey: ['recognizer'], queryFn: () => api.recognition.status() })
-  if (readiness && readiness.state !== 'ready')
-    return (
-      <div data-testid="recognition-bar">
-        <ReadinessBanner key={sourceId} sourceId={sourceId} readiness={readiness} conversationId={conversationId} />
-      </div>
-    )
-  if (!r || r.engine === 'off') return null
+  const banner =
+    readiness && readiness.state !== 'ready' ? (
+      <ReadinessBanner key={sourceId} sourceId={sourceId} readiness={readiness} conversationId={conversationId} />
+    ) : null
+  const bannerOnly = banner ? <div data-testid="recognition-bar">{banner}</div> : null
+  if (!r || r.engine === 'off') return bannerOnly
   const any = r.needs.scan + r.needs.table + r.needs.figure
-  if (!any) return null
+  if (!any) return bannerOnly
 
   const detail = (n: SourceRecognition['needs'], withFigures: boolean): string =>
     (withFigures ? (['scan', 'table', 'figure'] as const) : (['scan', 'table'] as const))
@@ -117,21 +116,24 @@ export function RecognitionBar({
   }
   const figuresOff = !figuresIncluded && r.needs.figure > 0 && !r.running
 
-  if (!text && !figuresOff) return null
+  if (!text && !figuresOff) return bannerOnly
   return (
-    <div className="shrink-0 border-b border-border/70 bg-surface/70 px-4 py-2" data-testid="recognition-bar" role="status">
-      {text && (
-        <div className="flex items-center gap-2.5">
-          <span className={cn('shrink-0 [&_svg]:size-3.5', tone === 'warn' ? 'text-[#b8862b]' : 'text-accent')}>{icon}</span>
-          <p className="min-w-0 flex-1 text-xs leading-relaxed text-muted">{text}</p>
-          {action}
-        </div>
-      )}
-      {figuresOff && (
-        <p className={cn('text-2xs leading-relaxed text-subtle', text && 'mt-1 pl-6')}>
-          {t('workspace.recog.figuresOff', { count: r.needs.figure })}
-        </p>
-      )}
+    <div data-testid="recognition-bar">
+      {banner}
+      <div className="shrink-0 border-b border-border/70 bg-surface/70 px-4 py-2" role="status">
+        {text && (
+          <div className="flex items-center gap-2.5">
+            <span className={cn('shrink-0 [&_svg]:size-3.5', tone === 'warn' ? 'text-[#b8862b]' : 'text-accent')}>{icon}</span>
+            <p className="min-w-0 flex-1 text-xs leading-relaxed text-muted">{text}</p>
+            {action}
+          </div>
+        )}
+        {figuresOff && (
+          <p className={cn('text-2xs leading-relaxed text-subtle', text && 'mt-1 pl-6')}>
+            {t('workspace.recog.figuresOff', { count: r.needs.figure })}
+          </p>
+        )}
+      </div>
     </div>
   )
 }

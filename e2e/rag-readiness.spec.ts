@@ -2,7 +2,7 @@ import { test, expect, type ElectronApplication, type Page } from '@playwright/t
 import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve, relative, isAbsolute } from 'node:path'
-import { PDFDocument } from 'pdf-lib'
+import { PDFDocument, StandardFonts } from 'pdf-lib'
 import { scanImage } from './fixtures/makeScanPdf'
 import { launchRagApp } from './fixtures/ragApp'
 import { attachmentModel, textOf } from './fixtures/attachment-model'
@@ -321,4 +321,63 @@ test('queued automatic upgrades recheck exclusion deletion and attachment space 
     )
     expect(saved).toEqual({ version: 0, result: { skipped: 'ineligible upgrade' } })
   }
+})
+
+test('automatic upgrade reuses table cache without scheduling newly discovered figure recognition', async () => {
+  await page.evaluate(async () => {
+    const s = await window.jiwei.settings.get()
+    await window.jiwei.settings.set({
+      ai: { ...s.ai, recognition: { ...s.ai.recognition!, auto: false, figures: true } },
+      retrieval: { autoUpgrade: true }
+    })
+  })
+  const pdf = await PDFDocument.create(),
+    font = await pdf.embedFont(StandardFonts.Helvetica),
+    p = pdf.addPage([600, 800])
+  p.drawText('Table 1. Synthetic data', { x: 30, y: 700, size: 12, font })
+  p.drawText('Figure 1. Synthetic drawing', { x: 30, y: 650, size: 12, font })
+  p.drawText('Readable synthetic document body for the automatic upgrade regression.', { x: 30, y: 600, size: 12, font })
+  const path = join(directory, 'automatic-cache.pdf')
+  writeFileSync(path, await pdf.save())
+  const id = (await page.evaluate((path) => window.jiwei.sources.importPaths([path]), path)).imported[0].id
+  await expect
+    .poll(() => page.evaluate((id) => window.jiwei.recognition.source(id).then((r) => r.needs), id))
+    .toMatchObject({ table: 1, figure: 1 })
+  await app.evaluate(
+    ({ app }, { directory, id }) => {
+      if (app.getPath('userData') !== directory) throw new Error('Isolated test directory mismatch')
+      const load = process.getBuiltinModule('module')!.createRequire(app.getAppPath() + '/package.json'),
+        db = new (load('better-sqlite3'))(directory + '/data/jiwei.db')
+      db.prepare("DELETE FROM source_pages WHERE source_id=? AND need='figure'").run(id)
+      db.prepare(
+        "UPDATE source_pages SET status='done',text='Cached synthetic table',engine='controlled-cache' WHERE source_id=? AND need='table'"
+      ).run(id)
+      db.prepare('UPDATE sources SET parse_version=0 WHERE id=?').run(id)
+      db.close()
+    },
+    { directory, id }
+  )
+  await page.evaluate(async () => {
+    const s = await window.jiwei.settings.get()
+    await window.jiwei.settings.set({ ai: { ...s.ai, recognition: { ...s.ai.recognition!, auto: true } } })
+  })
+  const jobId = 'automatic-cached-figure'
+  await app.evaluate(
+    ({ app }, { directory, id, jobId }) => {
+      if (app.getPath('userData') !== directory) throw new Error('Isolated test directory mismatch')
+      const load = process.getBuiltinModule('module')!.createRequire(app.getAppPath() + '/package.json'),
+        db = new (load('better-sqlite3'))(directory + '/data/jiwei.db'),
+        at = Date.now()
+      db.prepare(
+        "INSERT INTO jobs(id,kind,payload,dedupe_key,status,run_after,created_at,updated_at) VALUES(?,'source.segment',?,?,'queued',?,?,?)"
+      ).run(jobId, JSON.stringify({ sourceId: id, upgrade: true }), 'segment:' + id, at - 1, at, at)
+      db.close()
+    },
+    { directory, id, jobId }
+  )
+  await expect.poll(async () => (await page.evaluate(() => window.jiwei.jobs.list())).find((j) => j.id === jobId)?.status).toBe('done')
+  expect((await page.evaluate(() => window.jiwei.jobs.list())).filter((j) => j.key === 'recognize:' + id)).toHaveLength(0)
+  expect((await page.evaluate((id) => window.jiwei.segments.list(id), id)).some((s) => s.text.includes('Cached synthetic table'))).toBe(
+    true
+  )
 })

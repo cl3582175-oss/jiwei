@@ -1,21 +1,35 @@
 import { getSqlite } from '../../db'
 import { currentModelId, isReady } from './embedding'
+import { getSettings } from '../settings'
+import { isIndexableText } from '../../lib/indexableText'
+import { canReadSource } from '../attachmentsAccess'
 
-/** 只有仍属于当前正文且实际存在当前模型向量的段才计入，批注/残留chunks不能使进度虚满。 */
-export function sourceIndexCounts(sourceId: string): { segments: number; embedded: number } {
+/** 可读正文与可索引正文分开计数；仅当前正文的当前模型真实向量算完成。 */
+export function sourceIndexCounts(sourceId: string): { segments: number; indexable: number; embedded: number } {
   const sql = getSqlite()
-  const segments = (
-    sql.prepare("SELECT count(*) n FROM source_segments WHERE source_id=? AND trim(text)<>''").get(sourceId) as { n: number }
-  ).n
-  const embedded = (
-    sql
-      .prepare(
-        "SELECT count(DISTINCT g.id) n FROM source_segments g JOIN chunks c ON c.owner_type='segment' AND c.owner_id=g.id AND c.parent_type='source' AND c.parent_id=g.source_id JOIN vec_chunks v ON v.rowid=c.rowid WHERE g.source_id=? AND trim(g.text)<>'' AND c.model=?"
-      )
-      .get(sourceId, currentModelId()) as { n: number }
-  ).n
-  return { segments, embedded }
+  const rows = sql.prepare('SELECT id,text FROM source_segments WHERE source_id=?').all(sourceId) as { id: string; text: string }[]
+  const source = sql.prepare('SELECT space FROM sources WHERE id=?').get(sourceId) as { space: string } | undefined
+  const eligible = new Set(
+    (source?.space === 'attachment' && getSettings().ai.embedding?.mode === 'cloud' ? [] : rows.filter((r) => isIndexableText(r.text))).map(
+      (r) => r.id
+    )
+  )
+  const vectors = sql
+    .prepare(
+      "SELECT DISTINCT g.id FROM source_segments g JOIN chunks c ON c.owner_type='segment' AND c.owner_id=g.id AND c.parent_type='source' AND c.parent_id=g.source_id JOIN vec_chunks v ON v.rowid=c.rowid WHERE g.source_id=? AND c.model=?"
+    )
+    .all(sourceId, currentModelId()) as { id: string }[]
+  return {
+    segments: rows.filter((r) => r.text.trim()).length,
+    indexable: eligible.size,
+    embedded: vectors.filter((r) => eligible.has(r.id)).length
+  }
 }
-export async function sourceIndexStatus(sourceId: string): Promise<{ segments: number; embedded: number; semantic: boolean }> {
-  return { ...sourceIndexCounts(sourceId), semantic: await isReady().catch(() => false) }
+export async function sourceIndexStatus(
+  sourceId: string,
+  conversationId: string | null = null
+): Promise<{ segments: number; indexable: number; embedded: number; semantic: boolean }> {
+  if (!canReadSource(sourceId, conversationId)) return { segments: 0, indexable: 0, embedded: 0, semantic: false }
+  const counts = sourceIndexCounts(sourceId)
+  return { ...counts, semantic: counts.indexable > 0 && (await isReady().catch(() => false)) }
 }

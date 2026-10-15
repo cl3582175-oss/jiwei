@@ -7,6 +7,7 @@ import { hashText } from '../../lib/derive'
 import { enqueue, registerJobKind } from '../jobs'
 import { currentModelId, embed, isReady, setStatus } from './embedding'
 import { embeddingText } from '../../lib/chunker'
+import { isIndexableText } from '../../lib/indexableText'
 import { EmbeddingDimensionError } from '../../lib/embeddingDimension'
 
 // 知识库索引：笔记（康奈尔行 + 总结段落）与原始资料（分段）两类来源。
@@ -23,8 +24,6 @@ interface DesiredChunk {
   text: string
   hash: string
 }
-
-const MIN_TEXT = 6
 
 /** 当前应当被索引的全部分片 */
 export function desiredChunks(): DesiredChunk[] {
@@ -87,7 +86,7 @@ export function desiredChunks(): DesiredChunk[] {
         hash: hashText(r.title, r.text)
       })),
     ...noteRows
-      .filter((r) => r.text.trim().length >= MIN_TEXT)
+      .filter((r) => isIndexableText(r.text))
       .map((r) => ({
         ownerType: 'block' as const,
         ownerId: r.id,
@@ -98,7 +97,7 @@ export function desiredChunks(): DesiredChunk[] {
         hash: hashText(r.title, r.text)
       })),
     ...segRows
-      .filter((r) => r.text.trim().length >= MIN_TEXT)
+      .filter((r) => isIndexableText(r.text))
       .map((r) => ({
         ownerType: 'segment' as const,
         ownerId: r.id,
@@ -206,11 +205,18 @@ export async function syncIndex(progress: (p: number) => void, canceled: () => b
       const current = new Map(desiredChunks().map((c) => [`${c.ownerType}:${c.ownerId}`, c.hash]))
       const batch = todo.slice(i, i + BATCH).filter((c) => current.get(`${c.ownerType}:${c.ownerId}`) === c.hash)
       if (!batch.length) continue
+      const guard = (): void => {
+        const live = new Map(desiredChunks().map((c) => [`${c.ownerType}:${c.ownerId}`, c.hash]))
+        if (canceled() || currentModelId() !== model || batch.some((c) => live.get(`${c.ownerType}:${c.ownerId}`) !== c.hash))
+          throw new Error('Index content permission changed')
+      }
       const vecs = await embed(
         batch.map((c) => embeddingText(c.text)),
         'doc',
-        batch.map((c) => c.title)
+        batch.map((c) => c.title),
+        guard
       )
+      guard()
       sqlite.transaction(() => {
         batch.forEach((c, j) => {
           const row = getDb()

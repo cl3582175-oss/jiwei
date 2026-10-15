@@ -44,8 +44,8 @@ function calculate(row: SourceRow): Readiness {
       : { state: 'unreadable', reason: 'scan-pending', pending, total: pages.length, action }
   }
   if (!counts.segments) return { state: 'unreadable', reason: 'empty', action: null }
-  if (getStatus().state === 'ready' && counts.embedded < counts.segments)
-    return { state: 'preparing', reason: 'indexing', progress: counts.embedded / counts.segments }
+  if (getStatus().state === 'ready' && counts.embedded < counts.indexable)
+    return { state: 'preparing', reason: 'indexing', progress: counts.embedded / counts.indexable }
   return { state: 'ready' }
 }
 /** 默认只返回允许AI读取的资料库；附件必须有仍有效的所属对话关系，不能接受调用者自造的allow。 */

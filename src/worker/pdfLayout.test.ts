@@ -8,6 +8,27 @@ const item = (str: string, y: number, x = 30, height = 10): PdfTextItem => ({
   width: str.length * height
 })
 describe('PDF structure', () => {
+  it.each([true, false])('retains standalone amounts and years in body rows (bounds=%s)', (bounded) => {
+    const blocks = pdfLayout([
+      {
+        page: 1,
+        ...(bounded ? { bounds: { bottom: 0, top: 800 } } : {}),
+        items: [
+          item('采购总额', 500),
+          item('20261015', 480),
+          item('数量', 460),
+          item('80', 440),
+          item('单位为元。', 420),
+          item('第 1 页', 20)
+        ]
+      }
+    ])
+    const text = blocks.map((b) => (b.type === 'table' ? '' : b.text)).join('\n')
+    expect(text).toContain('20261015')
+    expect(text).toContain('80')
+    if (bounded) expect(text).not.toContain('第 1 页')
+    else expect(text).toContain('第 1 页')
+  })
   it('keeps recurring numeric body lines on sparse pages', () => {
     const pages = Array.from({ length: 4 }, (_, i) => ({
       page: i + 1,
