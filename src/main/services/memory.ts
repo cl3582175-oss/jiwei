@@ -162,6 +162,7 @@ export function setUserProfile(patch: Partial<Record<ProfileKey, string>>): Part
     else saveMemory({ kind: 'profile', key, content: value }, 'user')
   }
   emit('memory:changed', {})
+  emit('memory:profileChanged', {})
   return getUserProfile()
 }
 

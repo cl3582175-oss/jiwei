@@ -88,13 +88,19 @@ const running = new Map<string, AbortController>()
  * 下一次对话再取最新的。
  */
 const cards = new Map<string, string | null>()
-function cardFor(conversationId: string, zh: boolean): string | null {
+export function cardFor(conversationId: string, zh: boolean): string | null {
   if (!cards.has(conversationId)) {
     if (cards.size > 200) cards.delete(cards.keys().next().value!)
     cards.set(conversationId, userCard(zh))
   }
   return cards.get(conversationId)!
 }
+
+export function invalidateUserCards(conversationIds?: string[]): void {
+  if (conversationIds) for (const id of conversationIds) cards.delete(id)
+  else cards.clear()
+}
+onMainEvent('memory:profileChanged', () => invalidateUserCards())
 
 const resolvedAnchor = (raw: string | null): Anchor | null => {
   if (!raw) return null

@@ -423,7 +423,10 @@ export const useApp = create<AppState>((set, get) => {
     noteSort: 'edited',
     setNoteSort: (noteSort) => set({ noteSort }),
     settingsOpen: false,
-    setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
+    setSettingsOpen: (settingsOpen) => {
+      if (!settingsOpen) window.dispatchEvent(new Event('jiwei:flush-settings'))
+      set({ settingsOpen })
+    },
     settingsTab: null,
     openSettings: (tab) => set({ settingsOpen: true, settingsTab: tab ?? null, modelSetupOpen: false }),
     modelSetupOpen: false,

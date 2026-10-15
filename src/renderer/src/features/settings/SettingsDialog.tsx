@@ -315,7 +315,13 @@ export function SettingsDialog() {
   ]
 
   return (
-    <D.Root open={settingsOpen} onOpenChange={setSettingsOpen}>
+    <D.Root
+      open={settingsOpen}
+      onOpenChange={(open) => {
+        if (!open) window.dispatchEvent(new Event('jiwei:flush-settings'))
+        setSettingsOpen(open)
+      }}
+    >
       <D.Portal>
         <D.Overlay className="fixed inset-0 z-40 bg-black/25 backdrop-blur-[2px] data-[state=open]:animate-[fade-in_160ms_ease-out]" />
         {/* 尺寸 760 × 470 ≈ φ */}
@@ -327,6 +333,7 @@ export function SettingsDialog() {
               <button
                 key={it.id}
                 onClick={() => {
+                  window.dispatchEvent(new Event('jiwei:flush-settings'))
                   setTab(it.id)
                   useApp.setState({ settingsTab: it.id })
                 }}
@@ -527,7 +534,10 @@ export function SettingsDialog() {
             {tab === 'data' && info && <DataTab />}
             {tab === 'about' && <AboutSettings />}
           </div>
-          <D.Close className="absolute top-4 right-4 rounded-md p-1 text-subtle transition-colors hover:bg-surface-hover hover:text-fg">
+          <D.Close
+            aria-label={t('common.close')}
+            className="absolute top-4 right-4 rounded-md p-1 text-subtle transition-colors hover:bg-surface-hover hover:text-fg"
+          >
             <X className="size-4" />
           </D.Close>
         </D.Content>

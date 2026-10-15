@@ -1160,6 +1160,7 @@ export interface JiweiEvents {
   'speech:status': import('./discover').LocalSpeechStatus
   'moss:status': import('./moss').MossStatus
   /** 记忆变化；added 为 AI 新记住的内容（界面提示，可撤销 / 确认） */
+  'memory:profileChanged': Record<string, never>
   'memory:changed': { added?: Memory; learned?: Memory[] }
   /** 深层链接：jiwei://note/<id> 或 jiwei://source/<id> */
   'inbox:changed': Record<string, never>

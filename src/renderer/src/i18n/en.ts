@@ -1723,8 +1723,11 @@ const en: Messages = {
     retentionDesc: 'How much you want to still remember when a card comes up. Higher means more reviews; 90% is a good balance.'
   },
   memory: {
+    saving: 'Saving…',
+    saveFailed: 'Could not save. Please try again.',
     profileTitle: 'Profile',
-    profileDesc: 'Tell Jiwei who you are, what you want to learn and how you like answers. This becomes background for every answer.',
+    profileDesc:
+      'Tell Jiwei who you are, what you want to learn and how you like answers. This becomes background for every answer. Changes save automatically and apply from your next message.',
     profile: {
       role: 'I am',
       rolePh: 'e.g. a CS junior / a PM moving into data analysis',
