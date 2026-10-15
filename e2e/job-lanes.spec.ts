@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { attachmentModel } from './fixtures/attachment-model'
 
+// eslint-disable-next-line no-empty-pattern -- Playwright 需要先写夹具参数才能拿到 testInfo
 test('lane groups, bilingual waits and Digest now persist a real proposal through IPC', async ({}, testInfo) => {
   const userData = mkdtempSync(join(tmpdir(), 'jiwei-job-lanes-'))
   const model = await attachmentModel()
