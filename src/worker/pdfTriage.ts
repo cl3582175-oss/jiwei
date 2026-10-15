@@ -27,14 +27,15 @@ const captionMax = (l: string): number => (/[\u3400-\u9fff]/.test(l) ? 40 : 90)
 const isCaptionLine = (l: string): boolean =>
   l.trim().length <= captionMax(l) && !/(\.\s?){4,}|…{2,}/.test(l) && !/展示|所示|说明了|比较了|列出了/.test(l)
 
-export function classifyPage(s: PageSignals): PageNeed | null {
-  if (s.chars < 30 && s.imageCover > 0.5) return 'scan'
+export function classifyPageNeeds(s: PageSignals): PageNeed[] {
+  if (s.chars < 30 && s.imageCover > 0.5) return ['scan']
   const captions = s.lines.filter(isCaptionLine)
-  if (captions.some((l) => TABLE_CAPTION.test(l))) return 'table'
-  if (captions.some((l) => FIGURE_CAPTION.test(l))) return 'figure'
+  const needs: PageNeed[] = []
+  if (captions.some((l) => TABLE_CAPTION.test(l))) needs.push('table')
+  if (captions.some((l) => FIGURE_CAPTION.test(l))) needs.push('figure')
   // 没有标题但有明显的插图（照片、截图、图表）；铺满整页且文字很多的图片是背景装饰，不算
-  if (s.imageCover > 0.2 && (s.imageCover < 0.9 || s.chars < 200)) return 'figure'
-  return null
+  if (!needs.includes('figure') && s.imageCover > 0.2 && (s.imageCover < 0.9 || s.chars < 200)) needs.push('figure')
+  return needs
 }
 
 type Matrix = [number, number, number, number, number, number]

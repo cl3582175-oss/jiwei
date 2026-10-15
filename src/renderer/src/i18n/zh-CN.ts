@@ -1,3 +1,4 @@
+import { readyZh } from '../features/library/readinessMessages'
 import { attachZh } from '../features/attachments/messages'
 import { uiZh } from '../features/ui/messages'
 import { pluginsZh } from '../features/plugins/pluginMessages'
@@ -19,6 +20,7 @@ import { readingZh } from '../features/reading/messages'
 import { retrievalZh } from '../features/retrieval/messages'
 
 const zhCN = {
+  ...readyZh,
   ...attachZh,
   ui: uiZh,
   updates: updatesZh,
@@ -944,6 +946,12 @@ const zhCN = {
     models: '模型',
     fetchModels: '从服务商获取',
     caps: {
+      context: '上下文',
+      contextTokens: '上下文词元数',
+      contextHelp: '用于资料预算；自动值来自识别或内置参考，可按实际服务修改。',
+      contextAuto: '恢复自动',
+      contextAutomatic: '自动：{{value}}（{{source}}）',
+      contextSource: { manual: '手动设定', provider: '服务商报告', error: '错误学习', builtin: '内置参考', default: '默认值' },
       vision: '看图',
       strong: '强模型',
       visionOn: '能看图：框选区域、视频画面提问时发送图像',

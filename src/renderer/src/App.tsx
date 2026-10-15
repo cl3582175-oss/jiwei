@@ -1,3 +1,4 @@
+import { useReadinessEvents } from './features/library/useReadiness'
 import { AdvisorView } from './features/advisor/AdvisorView'
 import { WorksView } from './features/works/WorksView'
 import { RecordingView, RecordingDialog, RecorderBar } from './features/recording/RecordingView'
@@ -162,6 +163,7 @@ function useMainEvents(): void {
         useApp.getState().openConversation(conversationId)
       }),
       window.jiweiEvents.on('usage:changed', () => void qc.invalidateQueries({ queryKey: ['usage'] })),
+      window.jiweiEvents.on('providers:changed', () => void qc.invalidateQueries({ queryKey: ['providers'] })),
       window.jiweiEvents.on('settings:changed', () => {
         void qc.invalidateQueries({ queryKey: ['settings'] })
         void qc.invalidateQueries({ queryKey: ['plan', 'forecast'] })
@@ -219,6 +221,7 @@ export function App() {
   useUsageAlerts()
   const theme = useThemeSync()
   useMainEvents()
+  useReadinessEvents()
   useCaptureEvents()
   const recording = useRecording((s) => s.current)
   useEffect(

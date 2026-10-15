@@ -1,4 +1,5 @@
-import { CODE_EXTS } from './parsers/code'
+import { canUpgradeSource } from './sourceUpgrade'
+import { FORMATS, CURRENT_PARSE_VERSION } from '@shared/formats'
 import { externalFetch } from './externalFetch'
 import { registerIcsJobs } from './plan/ics'
 import { and, eq, isNull, sql } from 'drizzle-orm'
@@ -11,32 +12,21 @@ import { requestIndex } from './ai/indexer'
 import { deviceId } from './device'
 import type { TextSegment } from '../lib/segment'
 import { applyRecognized, IMAGE_EXTS, maybeAutoRecognize, recordPages } from './recognize'
+import { getSettings } from './settings'
 
 // 后台任务类型注册：资料解析、网页抓取。解析完成后触发知识库索引更新。
 
-const PARSERS: Record<string, string> = {
-  txt: 'segmentTextFile',
-  md: 'segmentTextFile',
-  markdown: 'segmentTextFile',
-  pdf: 'parsePdf',
-  docx: 'parseDocx',
-  epub: 'parseEpub',
-  html: 'parseHtml',
-  htm: 'parseHtml',
-  xlsx: 'parseXlsx',
-  csv: 'parseCsv',
-  pptx: 'parsePptx',
-  ...Object.fromEntries(CODE_EXTS.map((ext) => [ext, 'parseCode']))
-}
+export const PARSERS: Record<string, string> = Object.fromEntries(
+  Object.entries(FORMATS).flatMap(([ext, info]) => (info.parser ? [[ext, info.parser]] : []))
+)
 
 /** 资料是否支持当前版本的解析（图片资料由文档识别生成文字） */
 export function canSegment(ext: string): boolean {
   return ext in PARSERS || IMAGE_EXTS.has(ext)
 }
 
-export function enqueueSegment(sourceId: string): void {
-  enqueue('source.segment', { sourceId }, { dedupeKey: `segment:${sourceId}` })
-}
+export { enqueueSegment } from './segmentJobs'
+import { enqueueSegment } from './segmentJobs'
 
 export function enqueueFetch(sourceId: string): void {
   enqueue('source.fetch', { sourceId }, { dedupeKey: `fetch:${sourceId}` })
@@ -67,9 +57,11 @@ const sourceTitle = (id: string): string => {
 
 export function registerJobKinds(): void {
   registerIcsJobs()
-  registerJobKind<{ sourceId: string }>('source.segment', {
+  registerJobKind<{ sourceId: string; upgrade?: boolean }>('source.segment', {
     title: ({ sourceId }) => `解析资料：${sourceTitle(sourceId)}`,
-    async run({ sourceId }, ctx) {
+    async run({ sourceId, upgrade }, ctx) {
+      if (upgrade && !getSettings().retrieval.autoUpgrade) return { skipped: 'upgrade paused' }
+      if (upgrade && !canUpgradeSource(sourceId)) return { skipped: 'ineligible upgrade' }
       const row = getDb()
         .select({ s: sources, a: assets })
         .from(sources)
@@ -81,7 +73,8 @@ export function registerJobKinds(): void {
       if (IMAGE_EXTS.has(row.a.ext)) {
         recordPages(sourceId, [{ page: 1, need: 'scan' }])
         applyRecognized(sourceId)
-        maybeAutoRecognize(sourceId)
+        if (!upgrade) maybeAutoRecognize(sourceId)
+        getDb().update(sources).set({ parseVersion: CURRENT_PARSE_VERSION }).where(eq(sources.id, sourceId)).run()
         return { image: true }
       }
       const task = PARSERS[row.a.ext]
@@ -92,17 +85,22 @@ export function registerJobKinds(): void {
         name: row.s.originalName ?? row.s.title
       })
       if (ctx.isCanceled()) return
+      if (upgrade && !canUpgradeSource(sourceId)) return { skipped: 'ineligible upgrade' }
       const segs = Array.isArray(result) ? result : result.segments
       // 网页解析可能晚于字幕与截图完成；正文刷新只能替换正文，不能清空课程材料。
-      const course = listSegments(sourceId).filter((s) => s.kind === 'transcript' || s.kind === 'slide')
+      // 缓存并入之前先保留旧 OCR 身份，随后重切才能为它建立别名与改写批注。
+      const course = listSegments(sourceId).filter(
+        (s) => s.kind === 'transcript' || (s.kind === 'slide' && row.s.url) || s.kind.startsWith('ocr:')
+      )
       const n = replaceSegments(sourceId, [...(segs as SegmentInput[]), ...course])
       // PDF：登记需要识别的页，并入已有的识别结果（重新解析不必重算），按设置自动识别
       if (!Array.isArray(result) && 'pages' in result) {
         recordPages(sourceId, (result as { pages: { page: number; need: 'scan' | 'table' | 'figure' }[] }).pages)
         applyRecognized(sourceId)
-        maybeAutoRecognize(sourceId)
+        if (!upgrade) maybeAutoRecognize(sourceId)
       }
       requestIndex()
+      getDb().update(sources).set({ parseVersion: CURRENT_PARSE_VERSION }).where(eq(sources.id, sourceId)).run()
       return { segments: n }
     }
   })
@@ -132,6 +130,7 @@ export function registerJobKinds(): void {
       const course = listSegments(sourceId).filter((segment) => segment.kind === 'transcript' || segment.kind === 'slide')
       const n = replaceSegments(sourceId, [...parsed.segments, ...course])
       requestIndex()
+      getDb().update(sources).set({ parseVersion: CURRENT_PARSE_VERSION }).where(eq(sources.id, sourceId)).run()
       return { segments: n }
     }
   })

@@ -7,6 +7,7 @@ import { generateText } from 'ai'
 import log from 'electron-log/main'
 import { getDb } from '../db'
 import { assets, jobs, sourcePages, sources } from '../db/schema'
+import { FORMATS } from '@shared/formats'
 import { download } from './download'
 import { ensureRuntime, freePort, llamaSupported, modelsDir, runtimeDownloadSize } from './ai/localEmbedding'
 import { assetPath } from './assets'
@@ -96,7 +97,12 @@ const IDLE_MS = Number(process.env.JIWEI_OCR_IDLE_MS ?? 120_000)
 /** 官方建议：页面图像长边 2048 像素 */
 const PAGE_SIDE = 2048
 
-export const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'webp', 'heic', 'bmp', 'gif', 'avif'])
+// SVG 保持原来不进入光栅识别的约定。
+export const IMAGE_EXTS = new Set(
+  Object.entries(FORMATS)
+    .filter(([ext, info]) => info.kind === 'image' && ext !== 'svg')
+    .map(([ext]) => ext)
+)
 
 /* ——— 设置 ——— */
 
@@ -425,25 +431,27 @@ export function recordPages(sourceId: string, pages: { page: number; need: Recog
       .from(sourcePages)
       .where(eq(sourcePages.sourceId, sourceId))
       .all()
-      .map((r) => [r.page, r])
+      .map((r) => [`${r.page}:${r.need}`, r])
   )
   const now = Date.now()
   db.transaction((tx) => {
     for (const p of pages) {
-      const old = prev.get(p.page)
-      prev.delete(p.page)
+      const key = `${p.page}:${p.need}`
+      const old = prev.get(key)
+      prev.delete(key)
       if (old && old.need === p.need) continue
       tx.insert(sourcePages)
         .values({ sourceId, page: p.page, need: p.need, status: 'pending', updatedAt: now })
         .onConflictDoUpdate({
-          target: [sourcePages.sourceId, sourcePages.page],
+          target: [sourcePages.sourceId, sourcePages.page, sourcePages.need],
           set: { need: p.need, status: 'pending', text: null, engine: null, error: null, updatedAt: now }
         })
         .run()
     }
-    if (prev.size)
+    // 解析器升级可能不再把该页列为待识别；同一不可变素材的已完成结果仍可复用。
+    for (const old of [...prev.values()].filter((r) => r.status !== 'done'))
       tx.delete(sourcePages)
-        .where(and(eq(sourcePages.sourceId, sourceId), inArray(sourcePages.page, [...prev.keys()])))
+        .where(and(eq(sourcePages.sourceId, sourceId), eq(sourcePages.page, old.page), eq(sourcePages.need, old.need)))
         .run()
   })
   emit('recognition:source', { sourceId })
@@ -608,7 +616,7 @@ async function recognizeSource(
       getDb()
         .update(sourcePages)
         .set({ ...patch, updatedAt: Date.now() })
-        .where(and(eq(sourcePages.sourceId, sourceId), eq(sourcePages.page, p.page)))
+        .where(and(eq(sourcePages.sourceId, sourceId), eq(sourcePages.page, p.page), eq(sourcePages.need, p.need)))
         .run()
     }
     try {

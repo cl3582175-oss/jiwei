@@ -77,6 +77,8 @@ import * as appSvc from './services/app'
 import { getSettings, setSettings } from './services/settings'
 import * as proposals from './services/proposals'
 import * as segments from './services/segments'
+import { readinessMany, retrySource } from './services/readiness'
+import { sourceUpgradeStatus } from './services/sourceUpgrade'
 import * as jobs from './services/jobs'
 import * as vaults from './services/vaults'
 import { getProfile, setProfileName } from './services/device'
@@ -85,6 +87,7 @@ import * as providers from './services/ai/providers'
 import * as chat from './services/ai/chat'
 import * as embedding from './services/ai/embedding'
 import { clearIndex, indexStats, requestIndex, sourceIndexStatus } from './services/ai/indexer'
+import { retrievalQuery } from './services/ai/followUp'
 import { retrieve } from './services/ai/retrieve'
 import * as memory from './services/memory'
 import * as learner from './services/learner'
@@ -394,7 +397,8 @@ const handlers: Handlers = {
     resolve: (_, id, opIndex, decision, blockIds) => proposals.resolveUserOp(id, opIndex, decision, blockIds)
   },
   segments: {
-    get: (_, id) => segments.getSegment(id),
+    resolve: (_, id, conversationId) => segments.getSegment(id, conversationId)?.id ?? null,
+    get: (_, id, conversationId) => segments.getSegment(id, conversationId),
     update: (_, id, text) => reindexAfter(segments.updateSegmentText(id, text)),
     list: (_, sourceId) => segments.listSegments(sourceId),
     search: (_, query, sourceId) => segments.searchSegments(query, sourceId)
@@ -423,9 +427,11 @@ const handlers: Handlers = {
     count: () => attachments.unarchivedCount()
   },
   sources: {
+    readiness: (_, ids, conversationId) => readinessMany(ids, conversationId),
+    retry: (_, id, conversationId) => retrySource(id, conversationId),
     list: (_, q) => sources.listSources(q),
     get: (_, id) => sources.getSource(id),
-    indexStatus: (_, id) => sourceIndexStatus(id),
+    indexStatus: (_, id, conversationId) => sourceIndexStatus(id, conversationId),
     notes: (_, id) => connections.notesForSource(id),
     outline: (_, id) => sourceOutline(id),
     importDialog: ({ win }, categoryId) => sources.importDialog(win, categoryId),
@@ -461,6 +467,7 @@ const handlers: Handlers = {
     test: (_, id) => providers.testProvider(id)
   },
   chat: {
+    get: (_, id) => chat.getConversation(id),
     conversations: () => chat.listConversations(),
     messages: (_, id) => chat.listMessages(id),
     send: (_, input) => chat.send(input),
@@ -758,12 +765,14 @@ const handlers: Handlers = {
       await embedding.installLocal()
       requestIndex()
     },
-    reindex: () => {
+    reindex: async () => {
       clearIndex()
+      await embedding.refreshStatus(true)
       requestIndex()
     }
   },
   knowledge: {
+    queryFor: (_, text, prev) => retrievalQuery(text, prev),
     search: (_, query, scope, limit, filters) => retrieve(query, scope, limit, filters)
   },
   stats: {
@@ -957,6 +966,7 @@ const handlers: Handlers = {
     saveToNote: (_, input) => ui.saveToNote(input)
   },
   retrieval: {
+    upgradeStatus: () => sourceUpgradeStatus(),
     status: () => retrievalGateway.retrievalStatus(),
     saveBackend: (_, input) => retrievalBackends.saveBackend(input),
     testBackend: (_, id) => retrievalGateway.testBackend(id),

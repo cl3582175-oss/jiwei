@@ -1,3 +1,4 @@
+import type { ReadinessItem } from './readiness'
 // 主进程与渲染进程共享的数据类型（输出类型）。
 // 输入类型由 zod 模式推导（schemas.ts），API 由能力注册表推导（capabilities.ts）。
 import type { Anchor } from './context'
@@ -367,6 +368,7 @@ export interface Segment {
   /** W3C 选择器 */
   locator: Record<string, unknown>
   text: string
+  heading?: string
 }
 
 export type ProposalOpStatus = 'pending' | 'accepted' | 'rejected'
@@ -800,6 +802,7 @@ export interface Citation {
 }
 
 export interface ChatMessage {
+  readiness?: ReadinessItem[]
   attachments?: Attachment[]
   id: string
   conversationId: string
@@ -1002,6 +1005,9 @@ export interface SearchHit {
   ownerId: string
   title: string
   text: string
+  heading?: string
+  pageEnd?: number
+  alsoIn?: string[]
   locator: string | null
   score: number
   /** 余弦相似度（0–1）；向量不可用时不设置，检索排序仍使用 score。 */
@@ -1135,6 +1141,7 @@ export interface JiweiEvents {
   'chat:delta': { messageId: string; conversationId: string; text?: string; reasoning?: string }
   /** AI 回答完成 / 出错 / 停止（携带完整消息） */
   'chat:done': { message: ChatMessage }
+  'chat:readiness': { messageId: string; items: ReadinessItem[] }
   /** AI 执行步骤更新 */
   'chat:step': { messageId: string; conversationId: string; step: AgentStep }
   /** 向量模型与索引状态 */
@@ -1155,6 +1162,7 @@ export interface JiweiEvents {
   /** 花费接近上限（v0.7.5）：spent、limit 为美元 */
   /** 主进程改了设置（如后台更新汇率），界面重新读取（v0.7.5） */
   'settings:changed': Record<string, never>
+  'providers:changed': Record<string, never>
   /** 整份资料的导图 / 总结 / 提纲已作为提案放进笔记（v0.7.6） */
   'digest:done': { noteId: string; title: string; task: 'mindmap' | 'summary' | 'outline' }
   'usage:alert': { kind: 'daily' | 'monthly'; spent: number; limit: number }

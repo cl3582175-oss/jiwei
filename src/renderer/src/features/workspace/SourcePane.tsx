@@ -1,4 +1,6 @@
-import { CODE_EXTS } from '@shared/attachments'
+import { useReadinessMany } from '../library/useReadiness'
+import { ReadinessBanner } from '../library/ReadinessNotice'
+import { FORMATS } from '@shared/formats'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -179,7 +181,7 @@ function ImageSource({ source }: { source: Source }) {
 }
 
 /** 解析为文本分段后在应用内阅读的格式 */
-const TEXT_EXTS = ['md', 'markdown', 'txt', 'docx', 'epub', 'html', 'htm', 'xlsx', 'csv', 'pptx', ...CODE_EXTS]
+const TEXT_EXTS = Object.keys(FORMATS).filter((ext) => !!FORMATS[ext].parser && ext !== 'pdf')
 
 function Body({ source }: { source: Source }) {
   const { t } = useTranslation()
@@ -196,19 +198,19 @@ function Body({ source }: { source: Source }) {
 }
 
 /** 检索准备情况（v0.7.6）：让用户看得见资料已进入知识库、语义索引建到哪里 */
-function IndexChip({ sourceId }: { sourceId: string }) {
+function IndexChip({ sourceId, conversationId = null }: { sourceId: string; conversationId?: string | null }) {
   const { t } = useTranslation()
   const { data: s } = useQuery({
-    queryKey: ['source', sourceId, 'index'],
-    queryFn: () => api.sources.indexStatus(sourceId),
-    refetchInterval: (q) => (q.state.data && q.state.data.semantic && q.state.data.embedded < q.state.data.segments ? 4000 : false)
+    queryKey: ['source', sourceId, 'index', conversationId],
+    queryFn: () => api.sources.indexStatus(sourceId, conversationId),
+    refetchInterval: (q) => (q.state.data && q.state.data.semantic && q.state.data.embedded < q.state.data.indexable ? 4000 : false)
   })
   if (!s || !s.segments) return null
-  const pct = Math.floor((s.embedded / s.segments) * 100)
+  const pct = s.indexable ? Math.floor((s.embedded / s.indexable) * 100) : 100
   const label = !s.semantic ? t('workspace.index.off') : pct >= 98 ? t('workspace.index.ready') : t('workspace.index.building', { pct })
   return (
     <Tip
-      label={s.semantic ? t('workspace.index.hint', { done: s.embedded, total: s.segments }) : t('workspace.index.hintOff')}
+      label={s.semantic ? t('workspace.index.hint', { done: s.embedded, total: s.indexable }) : t('workspace.index.hintOff')}
       side="bottom"
     >
       <span className="no-drag" data-testid="source-index">
@@ -222,6 +224,8 @@ function IndexChip({ sourceId }: { sourceId: string }) {
 export function SourcePane({ sourceId }: { sourceId: string }) {
   const { t } = useTranslation()
   const openSource = useApp((s) => s.openSource)
+  const conversationId = useApp((s) => s.sourceConversationId)
+  const { data: readiness } = useReadinessMany([sourceId], conversationId)
   const { data: source } = useQuery({ queryKey: ['source', sourceId], queryFn: () => api.sources.get(sourceId) })
   const annotations = useAnnotations('source', sourceId)
   const [showAnnotations, setShowAnnotations] = useState(false)
@@ -240,7 +244,7 @@ export function SourcePane({ sourceId }: { sourceId: string }) {
             {t(`library.kinds.${source.kind}`)}
             {source.size ? ` · ${formatBytes(source.size)}` : ''}
             {source.author ? ` · ${source.author}` : ''}
-            <IndexChip sourceId={source.id} />
+            <IndexChip sourceId={source.id} conversationId={conversationId} />
           </p>
         </div>
         <div className="no-drag flex items-center gap-0.5">
@@ -289,7 +293,11 @@ export function SourcePane({ sourceId }: { sourceId: string }) {
           </Tip>
         </div>
       </header>
-      {(source.kind === 'pdf' || source.kind === 'image') && <RecognitionBar sourceId={source.id} />}
+      {source.kind === 'pdf' || source.kind === 'image' ? (
+        <RecognitionBar sourceId={source.id} readiness={readiness?.[sourceId]} conversationId={conversationId} />
+      ) : (
+        <ReadinessBanner key={sourceId} sourceId={sourceId} readiness={readiness?.[sourceId]} conversationId={conversationId} />
+      )}
       <div className="relative min-h-0 flex-1">
         <div className={cn('h-full overflow-auto')} data-reading-scroll>
           <Body source={source} />

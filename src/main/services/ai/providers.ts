@@ -3,9 +3,10 @@ import { and, asc, eq, isNull } from 'drizzle-orm'
 import log from 'electron-log/main'
 import { getDb, getSqlite } from '../../db'
 import { providers } from '../../db/schema'
+import { emit } from '../../events'
 import { newId } from '../../lib/ids'
 import { deviceId } from '../device'
-import { PROVIDER_PRESETS, resolveCaps, type ModelCaps, type ModelCapsOverride, type ProviderKind } from '@shared/ai'
+import { PROVIDER_PRESETS, resolveCaps, validContext, type ModelCaps, type ModelCapsOverride, type ProviderKind } from '@shared/ai'
 import type { ProviderInfo, ProviderInput, ProviderTestResult } from '@shared/types'
 
 // 模型服务商管理。
@@ -40,14 +41,17 @@ function parseCaps(r: Row): Record<string, ModelCapsOverride> {
 /** 某服务商下某个模型的实际能力（用户设定优先，否则按名称判断） */
 export function capsFor(providerId: string | null | undefined, model: string): ModelCaps {
   let overrides: Record<string, ModelCapsOverride> = {}
+  let kind: ProviderKind = 'custom'
   if (providerId) {
     try {
-      overrides = parseCaps(getProviderRow(providerId))
+      const row = getProviderRow(providerId)
+      overrides = parseCaps(row)
+      kind = row.kind as ProviderKind
     } catch {
       /* 服务商已删除：按名称判断 */
     }
   }
-  return resolveCaps(model, overrides)
+  return resolveCaps(model, overrides, kind)
 }
 
 function toInfo(r: Row): ProviderInfo {
@@ -100,13 +104,30 @@ export function saveProvider(input: ProviderInput): ProviderInfo {
   if (input.sendEffort !== undefined) patch.sendEffort = input.sendEffort
   if (input.enabled !== undefined) patch.enabled = input.enabled
   if (input.modelCaps) {
-    // 只保留真正设定了的项（空对象等于“自动”）
+    // IPC 只接收手动项；自动报告/学习由主进程维护，恢复自动不能把它们一起清掉。
+    const stored = input.id ? parseCaps(getProviderRow(input.id)) : {}
+    const merged: Record<string, ModelCapsOverride> = {}
+    for (const m of new Set([...Object.keys(stored), ...Object.keys(input.modelCaps)])) {
+      const c = input.modelCaps[m]
+      merged[m] = { ...c, reportedContext: stored[m]?.reportedContext, learnedContext: stored[m]?.learnedContext }
+    }
     const clean = Object.fromEntries(
-      Object.entries(input.modelCaps)
+      Object.entries(merged)
         .map(([m, c]) => [m, Object.fromEntries(Object.entries(c).filter(([, v]) => v !== undefined))] as const)
         .filter(([, c]) => Object.keys(c).length > 0)
     )
     patch.modelCaps = JSON.stringify(clean)
+  }
+  if (input.id) {
+    const previous = getProviderRow(input.id)
+    if (previous.kind !== input.kind || (patch.baseUrl !== undefined && previous.baseUrl !== patch.baseUrl)) {
+      const caps = JSON.parse(patch.modelCaps ?? previous.modelCaps) as Record<string, ModelCapsOverride>
+      for (const c of Object.values(caps)) {
+        delete c.reportedContext
+        delete c.learnedContext
+      }
+      patch.modelCaps = JSON.stringify(caps)
+    }
   }
   if (input.id) {
     db.update(providers).set(patch).where(eq(providers.id, input.id)).run()
@@ -140,16 +161,93 @@ function headers(row: Row): Record<string, string> {
   return { Authorization: `Bearer ${key}` }
 }
 
+type RemoteModel = Record<string, unknown>
+function modelRecords(body: unknown): { id: string; context?: number }[] {
+  if (!body || typeof body !== 'object') return []
+  const b = body as { data?: unknown; models?: unknown }
+  const items = Array.isArray(b.data) ? b.data : Array.isArray(b.models) ? b.models : []
+  return items.flatMap((item: unknown) => {
+    if (!item || typeof item !== 'object') return []
+    const m = item as RemoteModel
+    const rawId = typeof m.id === 'string' ? m.id : typeof m.name === 'string' ? m.name : ''
+    if (!rawId) return []
+    const context = ['context_length', 'context_window', 'max_context_length', 'inputTokenLimit', 'max_input_tokens']
+      .map((key) => m[key])
+      .find(validContext)
+    return [{ id: rawId.replace(/^models\//, ''), ...(context ? { context } : {}) }]
+  })
+}
+
+function storeAutomaticContext(id: string, model: string, field: 'reportedContext' | 'learnedContext', limit: number): boolean {
+  if (!validContext(limit)) return false
+  // 网络等待后重新读取，不能覆盖期间用户修改的能力。
+  const row = getProviderRow(id),
+    caps = parseCaps(row)
+  const next = { ...caps[model], [field]: limit }
+  if (field === 'learnedContext' && (next.reportedContext ?? 0) > limit) delete next.reportedContext
+  if (JSON.stringify(caps[model]) === JSON.stringify(next)) return false
+  caps[model] = next
+  getDb()
+    .update(providers)
+    .set({ modelCaps: JSON.stringify(caps), updatedAt: Date.now(), updatedBy: deviceId() })
+    .where(eq(providers.id, id))
+    .run()
+  return true
+}
+
+export function learnContextLimit(id: string, model: string, limit: number): void {
+  if (storeAutomaticContext(id, model, 'learnedContext', limit)) emit('providers:changed')
+}
+
+async function discoverContexts(row: Row, records: { id: string; context?: number }[]): Promise<void> {
+  const base = row.baseUrl
+  const results = [...records]
+  if (row.kind === 'ollama') {
+    // /v1 是兼容接口，/api/show 是 Ollama 原生配置；num_ctx 才是实际运行窗口。
+    for (let start = 0; start < results.length; start += 4)
+      await Promise.all(
+        results.slice(start, start + 4).map(async (m) => {
+          try {
+            const response = await net.fetch(`${base.replace(/\/v1\/?$/, '')}/api/show`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', ...headers(row) },
+              body: JSON.stringify({ model: m.id }),
+              signal: AbortSignal.timeout(5000)
+            })
+            if (!response.ok) return
+            const body = (await response.json()) as { parameters?: string | { num_ctx?: number }; num_ctx?: number }
+            const n =
+              typeof body.parameters === 'string'
+                ? Number(body.parameters.match(/(?:^|\n)\s*num_ctx\s+([\d]+)/)?.[1])
+                : (body.parameters?.num_ctx ?? body.num_ctx)
+            if (validContext(n)) m.context = n
+          } catch {
+            /* 旧服务可能没有 show，仍可正常使用默认预算 */
+          }
+        })
+      )
+  }
+  const current = getProviderRow(row.id)
+  if (current.baseUrl !== base || current.kind !== row.kind) return
+  let changed = false
+  for (const m of results) if (m.context) changed = storeAutomaticContext(row.id, m.id, 'reportedContext', m.context) || changed
+  if (changed) emit('providers:changed')
+}
+
 /** 拉取服务商的模型列表（OpenAI 兼容 / Anthropic / Gemini 三种格式） */
 export async function fetchModels(id: string): Promise<string[]> {
   const row = getProviderRow(id)
   if (!row.baseUrl) throw new Error('请先填写接口地址')
   const res = await net.fetch(`${row.baseUrl}/models`, { headers: headers(row), signal: AbortSignal.timeout(15_000) })
   if (!res.ok) throw new Error(`HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`)
-  const body = (await res.json()) as { data?: { id: string }[]; models?: { name: string }[] }
-  const list = body.data?.map((m) => m.id) ?? body.models?.map((m) => m.name.replace(/^models\//, '')) ?? []
+  const records = modelRecords(await res.json())
+  const list = records.map((m) => m.id)
   const models = list.filter((m) => !/embed|whisper|tts|dall-e|moderation|audio|image|realtime/i.test(m)).sort()
   saveProvider({ id, kind: row.kind as ProviderKind, models })
+  await discoverContexts(
+    row,
+    records.filter((m) => models.includes(m.id))
+  )
   return models
 }
 
@@ -162,6 +260,8 @@ export async function testProvider(id: string): Promise<ProviderTestResult> {
     const res = await net.fetch(`${row.baseUrl}/models`, { headers: headers(row), signal: AbortSignal.timeout(15_000) })
     if (res.status === 401 || res.status === 403) return { ok: false, latencyMs: Date.now() - t0, message: 'API Key 无效或没有权限' }
     if (!res.ok) return { ok: false, latencyMs: Date.now() - t0, message: `HTTP ${res.status}` }
+    const body = await res.json().catch(() => null)
+    await discoverContexts(row, modelRecords(body))
     return { ok: true, latencyMs: Date.now() - t0, message: null }
   } catch (e) {
     return { ok: false, latencyMs: Date.now() - t0, message: e instanceof Error ? e.message : String(e) }
@@ -189,6 +289,7 @@ export function importProvidersForTest(dbPath: string): number {
           baseUrl: r.base_url as string,
           apiKeyEnc: r.api_key_enc as Buffer | null,
           models: r.models as string,
+          modelCaps: (r.model_caps as string | undefined) ?? '{}',
           sendEffort: !!r.send_effort,
           enabled: !!r.enabled,
           createdAt: r.created_at as number,

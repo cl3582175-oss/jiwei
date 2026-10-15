@@ -3,6 +3,9 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import { describe, expect, it } from 'vitest'
 import { parseHtml } from './parsers'
+import { marked } from 'marked'
+import { readingHtmlText } from '../main/lib/reading'
+import { normalizeQuery } from '../main/lib/textNormalize'
 
 async function parseArticle(body: string): Promise<Awaited<ReturnType<typeof parseHtml>>> {
   const dir = await mkdtemp(join(tmpdir(), 'jiwei-html-parser-'))
@@ -15,7 +18,21 @@ async function parseArticle(body: string): Promise<Awaited<ReturnType<typeof par
   }
 }
 
+const visibleText = (segments: Awaited<ReturnType<typeof parseHtml>>['segments']): string =>
+  normalizeQuery(
+    readingHtmlText(
+      marked.parse(
+        segments.map((s, i) => `${s.heading && s.heading !== segments[i - 1]?.heading ? s.heading + '\n\n' : ''}${s.text}`).join('\n\n'),
+        { async: false }
+      )
+    )
+  )
+
 describe('saved HTML visible text', () => {
+  it('keeps the section path and normalizes extracted text at the registered parser entry', async () => {
+    const result = await parseArticle('<h2>第二章 条件</h2><p>⻛压Ａ１０２必须稳定。</p>')
+    expect(result.segments[0]).toMatchObject({ heading: '第二章 条件', text: '风压A102必须稳定。' })
+  })
   it.each([
     {
       name: 'adjacent headings, paragraphs and lists',
@@ -30,7 +47,7 @@ describe('saved HTML visible text', () => {
     {
       name: 'table captions, rows and cells',
       html: '<p>Results follow.</p><table><caption>Evidence</caption><thead><tr><th>Method</th><th>Result</th></tr></thead><tbody><tr><td>Bayes<em>ian</em></td><td>0.05</td></tr><tr><td>Control</td><td>Not significant</td></tr></tbody></table><p>Qualifications remain.</p>',
-      text: 'Results follow. Evidence Method Result Bayesian 0.05 Control Not significant Qualifications remain.'
+      text: 'Results follow. Evidence Method：Bayesian；Result：0.05 Method：Control；Result：Not significant Qualifications remain.'
     },
     {
       name: 'inline continuity, formulas, numbers and negation',
@@ -45,15 +62,17 @@ describe('saved HTML visible text', () => {
   ])('retains $name in the canonical source text', async ({ html, text }) => {
     const result = await parseArticle(html)
     expect(result.title).toBe('Boundary parsing')
-    expect(result.segments).toHaveLength(1)
-    expect(result.segments[0].text).toBe(text)
+    expect(visibleText(result.segments)).toBe(normalizeQuery(text))
   })
 
-  it('locates an unchanged native quote spanning visible blocks in the same source segment', async () => {
-    const result = await parseArticle('<p>Prior context.</p><p>First visible evidence.</p><ul><li>Conditional material.</li></ul><table><tr><td>Numerical result: 0.05.</td></tr></table><p>Final qualification.</p><p>Following context.</p>')
+  it('retains a native quote spanning visible blocks in source order after normalization', async () => {
+    const result = await parseArticle(
+      '<p>Prior context.</p><p>First visible evidence.</p><ul><li>Conditional material.</li></ul><table><tr><td>Numerical result: 0.05.</td></tr></table><p>Final qualification.</p><p>Following context.</p>'
+    )
     const quote = 'First visible evidence. Conditional material. Numerical result: 0.05. Final qualification.'
-    const start = result.segments[0].text.indexOf(quote)
+    const visible = visibleText(result.segments)
+    const start = visible.indexOf(quote)
     expect(start).toBe(15)
-    expect(result.segments[0].text.slice(start, start + quote.length)).toBe(quote)
+    expect(visible.slice(start, start + quote.length)).toBe(quote)
   })
 })

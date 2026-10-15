@@ -4,7 +4,16 @@ import { BACKEND_IDS } from '../retrieval'
 
 describe('retrieval IPC contracts', () => {
   it('registers the requested UI capabilities without exposing key management to model tools', () => {
-    expect(Object.keys(capabilities.retrieval)).toEqual(['status', 'saveBackend', 'testBackend', 'page', 'savePage', 'clearCache', 'usage'])
+    expect(Object.keys(capabilities.retrieval)).toEqual([
+      'upgradeStatus',
+      'status',
+      'saveBackend',
+      'testBackend',
+      'page',
+      'savePage',
+      'clearCache',
+      'usage'
+    ])
     expect(aiTools().some((tool) => tool.name.startsWith('retrieval_'))).toBe(false)
     expect(parseArgs(capabilities.retrieval.status, [])).toEqual([])
     expect(parseArgs(capabilities.retrieval.clearCache, [])).toEqual([])

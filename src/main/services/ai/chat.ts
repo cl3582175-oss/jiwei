@@ -1,12 +1,14 @@
+import { readinessForSources, readinessDescription, storedReadiness } from '../readiness'
+import { matchSourcesByTitle } from './sourceMentions'
 import { prepareAttachmentTurn, markAttachmentTurnSent, assertAttachmentTurn, type AttachmentTurn } from './chatAttachments'
 import { bindAttachments, bindAttachmentNotes, attachmentStatus, conversationAttachments, noteReference } from '../attachments'
 import { attachmentHistoryReadable, canReadSource, hasPrivateAttachmentHistory, hasAttachmentHistory } from '../attachmentsAccess'
-import { listSegments } from '../segments'
+import { listSegments, resolveSegmentId } from '../segments'
 import { conversationAttachmentIds } from '../attachmentDerived'
 import { tr } from '../../lib/messages'
 import { detachConversationAttachments } from '../attachments'
 import { collectGarbage } from '../assets'
-import { hasToolCall, stepCountIs, streamText, type ModelMessage, type ToolSet } from 'ai'
+import { asSchema, hasToolCall, stepCountIs, streamText, type ModelMessage, type ToolSet } from 'ai'
 import { ASK_USER, buildScopeTools } from './scopeTools'
 import { and, asc, desc, eq, inArray, isNull, ne } from 'drizzle-orm'
 import log from 'electron-log/main'
@@ -31,9 +33,12 @@ import type { AgentStep, ChatMessage, Citation, Conversation, SearchHit } from '
 import type { WebMode } from '@shared/retrieval'
 import { buildModel } from './model'
 import { recognizeRegion, recognizingSources } from '../recognize'
-import { capsFor, getProviderRow } from './providers'
+import { capsFor, getProviderRow, learnContextLimit } from './providers'
 import { retrieve } from './retrieve'
-import { contextSourceEvidence, resolveContext } from './context'
+import { estimateTokens, shortAttachmentBudget, FULL_SOURCE_MAX_TOKENS } from '../../lib/sourceContext'
+import { retrievalQuery } from './followUp'
+import { contextGenerationBudget, contextLimitFromError, withContextWindowRetry } from './modelContext'
+import { contextSourceEvidence, fullSourceEvidence, resolveContext } from './context'
 import { buildTools, numberHits, stepLabel, type AgentSession } from './tools'
 import { attachNoteToolImages } from './noteToolImages'
 import { loadSkill, skillCatalog } from './skills'
@@ -91,6 +96,13 @@ function cardFor(conversationId: string, zh: boolean): string | null {
   return cards.get(conversationId)!
 }
 
+const resolvedAnchor = (raw: string | null): Anchor | null => {
+  if (!raw) return null
+  const anchor = JSON.parse(raw) as Anchor
+  return anchor.parentType === 'source' && anchor.ownerId
+    ? { ...anchor, ownerId: resolveSegmentId(anchor.ownerId) ?? anchor.ownerId }
+    : anchor
+}
 const toConversation = (r: ConvRow): Conversation => ({
   id: r.id,
   title: r.title,
@@ -99,7 +111,7 @@ const toConversation = (r: ConvRow): Conversation => ({
   pinned: r.pinned,
   incognito: r.incognito,
   kind: r.kind,
-  anchor: r.anchor ? (JSON.parse(r.anchor) as Anchor) : null,
+  anchor: resolvedAnchor(r.anchor),
   feynman: r.kind === 'feynman' ? feynmanInfo(parseMeta(r.meta)) : null,
   reflectionId: r.kind === 'reflection' && r.meta ? ((JSON.parse(r.meta) as { reflectionId?: string }).reflectionId ?? null) : null,
   createdAt: r.createdAt,
@@ -122,6 +134,7 @@ const toMessage = (r: MsgRow): ChatMessage => ({
       : [],
   conversationId: r.conversationId,
   role: r.role,
+  readiness: r.role === 'assistant' ? storedReadiness(r.context, r.conversationId) : [],
   content: r.content,
   uiText: r.uiText,
   reasoning: r.reasoning,
@@ -620,11 +633,19 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
   let reasoning = ''
   let citations: Citation[] = []
   const steps: AgentStep[] = []
+  let modelToolStarted = false
   const conv = db.select().from(conversations).where(eq(conversations.id, conversationId)).get()!
   const special = conv.kind === 'feynman' || conv.kind === 'reflection'
   const uiSettings = getSettings().ai.ui ?? UI_DEFAULTS
   const providerKind = getProviderRow(input.providerId).kind as ProviderKind
   const uiMode = uiModeFor(conv.kind, providerKind, uiSettings)
+  const initialCaps = capsFor(input.providerId, input.model)
+  let contextLength = initialCaps.context
+  let contextRetried = false
+  // 仅未打包、显式启用的评测可切换 E5 档位；产品默认始终来自集中常量。
+  const experiment = !app.isPackaged && process.env.JIWEI_RAG_EVAL ? process.env.JIWEI_RAG_FULL_SOURCE_MAX_TOKENS : undefined
+  const fullCeiling =
+    experiment === 'window40' ? Infinity : ['0', '60000', '200000'].includes(experiment ?? '') ? Number(experiment) : FULL_SOURCE_MAX_TOKENS
   const fullLocal = !app.isPackaged && process.env.JIWEI_TEST_NETWORK === '1' && process.env.JIWEI_TEST_UI_FULL === '1'
   const localUi = providerKind === 'ollama' && !fullLocal
   const effectiveMode = (conv.web as WebMode | null) ?? getSettings().retrieval.mode
@@ -655,7 +676,7 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
     .filter((a) => !a.sourceId.startsWith('note:') && !a.deleted && canReadSource(a.sourceId, conversationId))
     .map((a) => a.sourceId)
   session.suppressAttachmentMemory = hasAttachmentHistory(conversationId)
-  session.retrieveAttachments = async (query, filters, limit) => {
+  session.retrieveAttachments = async (query, filters, limit, opts) => {
     const ids = conversationAttachments(conversationId)
       .filter((a) => !a.sourceId.startsWith('note:') && !a.deleted && canReadSource(a.sourceId, conversationId))
       .map((a) => a.sourceId)
@@ -665,9 +686,15 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
         : {
             type: 'items',
             notes: input.scope.type === 'items' ? input.scope.notes : [],
-            sources: [...new Set([...(input.scope.type === 'items' ? input.scope.sources : []), ...ids])]
+            sources: [
+              ...new Set([
+                ...(input.scope.type === 'items' ? input.scope.sources : []),
+                ...ids,
+                ...(opts?.includeNotes ? (opts.sourceIds ?? []) : [])
+              ])
+            ]
           }
-    return retrieve(query, scope, limit, filters, session.preferSource, { sourceIds: ids })
+    return retrieve(query, scope, limit, filters, session.preferSource, { sourceIds: ids }, opts)
   }
   const stopAttachmentGuard = onMainEvent('attachments:changed', () => {
     if (attachmentTurn.sourceIds.some((id) => !canReadSource(id, conversationId))) ctrl.abort()
@@ -753,17 +780,53 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
     if (feynman) feynman = await ensureReference(conversationId, feynman)
     if (coach) coach = ensureCoachMaterial(conversationId, coach)
     let ctx = special ? { text: '', query: '' } : resolveContext(input.context, zh, conversationId)
-    // 检索：问题本身 + 用户指着的文字
-    const query = [input.text, ctx.query].filter(Boolean).join('\n').slice(0, 2000)
+    const previousUserText = db
+      .select({ content: messages.content })
+      .from(messages)
+      .where(and(eq(messages.conversationId, conversationId), eq(messages.role, 'user')))
+      .orderBy(desc(messages.createdAt))
+      .limit(2)
+      .all()[1]?.content
+    // 与评测共用追问组合；用户选中的文字继续补充检索。
+    const query = [retrievalQuery(input.text, previousUserText ?? null), ctx.query].filter(Boolean).join('\n').slice(0, 2000)
     session.preferSource = 'sourceId' in ctx ? ctx.sourceId : null
     attachmentTurn = special ? attachmentTurn : await prepareAttachmentTurn(conversationId, input.text, zh, uiMode, session.vision ?? false)
+    let sourcePlan = fullSourceEvidence(input.context, input.scope, session.attachmentSourceIds, conversationId, contextLength, fullCeiling)
+    // 全文已包含资料所有片段，检索只补笔记；长资料在明确的集合内检索。
+    // 只因“正在看”而选中的资料不收窄全库检索；与全文重复的片段在下方去重。
+    const retrievalOpts = sourcePlan.implicit
+      ? {}
+      : sourcePlan.full
+        ? { notesOnly: true }
+        : sourcePlan.sourceIds.length
+          ? { sourceIds: sourcePlan.sourceIds, includeNotes: true }
+          : {}
     const retrieved =
-      special || (input.scope.type === 'none' && !session.attachmentSourceIds.length) ? [] : await session.retrieveAttachments(query, {}, 8)
+      special || (input.scope.type === 'none' && !sourcePlan.sourceIds.length)
+        ? []
+        : await session.retrieveAttachments(query, {}, 8, retrievalOpts)
+    const preparedFull = [...attachmentTurn.full]
+    const preparedSent = [...attachmentTurn.sentIds]
+    const budgetShortAttachments = (): void => {
+      let budget = shortAttachmentBudget(contextLength, initialCaps.contextSource === 'manual' || contextRetried, fullCeiling)
+      attachmentTurn.full = preparedFull.filter((f) => {
+        const tokens = estimateTokens(f.text)
+        if (tokens > budget) return false
+        budget -= tokens
+        return true
+      })
+      const prepared = new Set(preparedFull.map((f) => f.sourceId))
+      attachmentTurn.sentIds = preparedSent.filter((id) => !prepared.has(id) || attachmentTurn.full.some((f) => f.sourceId === id))
+    }
     requireRecordingCloudAccess(privacyInput, conversationId)
     ctx = special ? { text: '', query: '' } : resolveContext(input.context, zh, conversationId)
     let kbHits = filterCloudHits(retrieved, conversationId)
     const evidenceIds = [
-      ...new Set([...(session.attachmentSourceIds ?? []), ...kbHits.filter((h) => h.parentType === 'source').map((h) => h.parentId)])
+      ...new Set([
+        ...(session.attachmentSourceIds ?? []),
+        ...sourcePlan.sourceIds,
+        ...kbHits.filter((h) => h.parentType === 'source').map((h) => h.parentId)
+      ])
     ]
     db.update(messages)
       .set({ context: JSON.stringify({ attachmentSourceIds: evidenceIds }) })
@@ -771,7 +834,9 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
       .run()
     session.suppressAttachmentMemory = hasAttachmentHistory(conversationId)
     const initialCoverage = coverage(kbHits)
-    const explicitAtStart = special ? [] : filterCloudHits(contextSourceEvidence(input.context, conversationId), conversationId)
+    const explicitAtStart = special
+      ? []
+      : filterCloudHits(sourcePlan.full ? sourcePlan.hits : contextSourceEvidence(input.context, conversationId), conversationId)
     // 用户正指着的证据在最前，不能先参与主动检索配额再于组装阶段去重。
     kbHits = kbHits.filter((hit) => !explicitAtStart.some((item) => item.parentId === hit.parentId && item.ownerId === hit.ownerId))
     let webHits: SearchHit[] = []
@@ -841,7 +906,6 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
           .limit(1)
           .get()
     const previousCitations = previous?.citations ? (JSON.parse(previous.citations) as Citation[]) : []
-    const previousUserText = history.filter((m) => m.role === 'user').at(-2)?.content
     const doPreSearch = async (): Promise<void> => {
       preSearchAttempted = true
       const result = await runPreSearchForTurn(session, { kbHits, prevUserText: previousUserText, signal: ctrl.signal, pushStep })
@@ -853,6 +917,8 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
     // 最后一条（本轮）用户消息附上上下文、片段与技能
     const last = msgs.at(-1)
     if (last?.role === 'user' && coach) last.content = coachTurn(coach, input.text, zh)
+    let lastReadiness = ''
+    let fullTextInstruction = ''
     let buildTurn = (): void => {}
     if (last?.role === 'user' && !special) {
       const vision = capsFor(input.providerId, input.model).vision
@@ -880,22 +946,83 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
         requireRecordingCloudAccess(privacyInput, conversationId)
         ctx = resolveContext(input.context, zh, conversationId)
         session.hits = []
-        const explicit = filterCloudHits(contextSourceEvidence(input.context, conversationId), conversationId)
+        sourcePlan = fullSourceEvidence(
+          input.context,
+          input.scope,
+          session.attachmentSourceIds ?? [],
+          conversationId,
+          contextLength,
+          fullCeiling
+        )
+        budgetShortAttachments()
+        fullTextInstruction = sourcePlan.full
+          ? zh
+            ? '以下是用户指定资料的全文，请完整阅读后回答，并引用具体片段。'
+            : 'Below is the full text of the sources the user selected. Read it all, then answer citing specific excerpts.'
+          : ''
+        const sourceNote =
+          !sourcePlan.full && sourcePlan.sourceIds.length
+            ? zh
+              ? '资料较长或内容尚不完整，下面是检索到的部分，需要时用 source_read 读前后文。'
+              : 'Sources are long or incomplete. Below are retrieved excerpts; use source_read for surrounding text when needed.'
+            : ''
+        const explicit = filterCloudHits(
+          sourcePlan.full ? sourcePlan.hits : contextSourceEvidence(input.context, conversationId),
+          conversationId
+        )
         const currentHits = filterCloudHits(
           [...explicit, ...kbHits.filter((h) => !explicit.some((e) => e.ownerId === h.ownerId && e.parentId === h.parentId))],
           conversationId
         ).filter((h) => !attachmentTurn.full.some((f) => f.sourceId === h.parentId))
         let kb = currentHits.length ? numberHits(session, currentHits) : null
-        if (kb && currentHits.some((h) => session.attachmentSourceIds?.includes(h.parentId))) kb = asExternalData('attachment-excerpts', kb)
+        if (kb && currentHits.some((h) => session.attachmentSourceIds?.includes(h.parentId)))
+          kb = asExternalData('attachment-excerpts', kb, { maxChars: kb.length, overflow: 'reject' })
         const attachmentFull = attachmentTurn.full
           .map((f) => asExternalData('attachment:' + f.name, numberHits(session, f.hits), { maxChars: 60000, overflow: 'reject' }))
           .join('\n\n')
         const attachmentRecognized = attachmentImageText ? asExternalData('attachment-images', attachmentImageText) : ''
+        const involved = [
+          ...new Set([
+            ...(input.scope.type === 'items' ? input.scope.sources : []),
+            ...sourcePlan.sourceIds,
+            ...matchSourcesByTitle(query, input.scope).map((m) => m.sourceId),
+            ...(session.preferSource ? [session.preferSource] : []),
+            ...(session.attachmentSourceIds ?? [])
+          ])
+        ]
+        const readinessItems = readinessForSources(involved, conversationId)
+        const snapshot = JSON.stringify(readinessItems)
+        if (snapshot !== lastReadiness) {
+          const oldContext = db.select({ context: messages.context }).from(messages).where(eq(messages.id, messageId)).get()?.context
+          const metadata = oldContext ? (JSON.parse(oldContext) as Record<string, unknown>) : {}
+          db.update(messages)
+            .set({ context: JSON.stringify({ ...metadata, readiness: readinessItems }) })
+            .where(eq(messages.id, messageId))
+            .run()
+          if (readinessItems.length || lastReadiness) emit('chat:readiness', { messageId, items: readinessItems })
+          lastReadiness = snapshot
+        }
+        const readinessNote = readinessItems.length
+          ? asExternalData(
+              'source-readiness',
+              [
+                zh
+                  ? '资料处理情况（回答时如实说明你没有读到的部分）：'
+                  : 'Source processing status (be explicit about what you could not read):',
+                ...readinessItems.map((item) =>
+                  zh
+                    ? `- 《${item.title}》：${readinessDescription(item.readiness, zh)}`
+                    : `- "${item.title}": ${readinessDescription(item.readiness, zh)}`
+                )
+              ].join('\n')
+            )
+          : ''
+
         assertAttachmentTurn(conversationId, attachmentTurn.sourceIds)
         // 资料还在识别（扫描页、表格、图片）：回答可能不完整，要如实告诉用户（v0.7.6）
         const pending = recognizingSources(
           [...currentHits.filter((h) => h.parentType === 'source').map((h) => h.parentId), 'sourceId' in ctx ? ctx.sourceId : null].filter(
-            (x): x is string => !!x
+            (x): x is string => !!x && !readinessItems.some((item) => item.sourceId === x)
           )
         )
         const pendingNote = pending.length
@@ -917,7 +1044,7 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
             turnMessage(
               zh,
               input.text || (zh ? '请帮助我处理本对话附件。' : 'Help me with these attachments.'),
-              [ctx.text, learner, imageNote, pendingNote].filter(Boolean).join('\n\n'),
+              [ctx.text, sourceNote, readinessNote, learner, imageNote, pendingNote].filter(Boolean).join('\n\n'),
               kb,
               skillBody,
               {
@@ -946,6 +1073,7 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
     const toolset = special
       ? null
       : await agentTools(session, { providerId: input.providerId, model: input.model }, ctrl.signal, (id, patch, call) => {
+          modelToolStarted = true
           // 确认可能早于流里的 tool-call 片段到达：没有这一步时先建出来
           const prev = steps.find((x) => x.id === id) ?? {
             id,
@@ -955,16 +1083,33 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
           }
           pushStep({ ...prev, ...patch })
         })
-    const run = (withTools: boolean) =>
-      streamText({
+    const toolSchemas = toolset
+      ? await Promise.all(
+          Object.entries(toolset).map(async ([name, tool]) => ({
+            name,
+            description: tool.description,
+            parameters: await asSchema(tool.inputSchema).jsonSchema
+          }))
+        )
+      : []
+    const run = (withTools: boolean) => {
+      const system = feynman
+        ? feynmanSystem(feynman, zh)
+        : coach
+          ? coachSystem(coach, zh)
+          : [
+              systemPrompt(zh, session.tier, session.incognito, conversationId, uiMode, localUi),
+              attachmentTurn.section,
+              fullTextInstruction
+            ]
+              .filter(Boolean)
+              .join('\n\n')
+      const inputTokens =
+        estimateTokens(system) + estimateTokens(JSON.stringify(msgs)) + estimateTokens(JSON.stringify(withTools ? toolSchemas : []))
+      const budget = contextGenerationBudget(contextLength, inputTokens, built)
+      return streamText({
         model: built.model,
-        system: feynman
-          ? feynmanSystem(feynman, zh)
-          : coach
-            ? coachSystem(coach, zh)
-            : [systemPrompt(zh, session.tier, session.incognito, conversationId, uiMode, localUi), attachmentTurn.section]
-                .filter(Boolean)
-                .join('\n\n'),
+        system,
         messages: msgs,
         prepareStep: ({ messages }) => {
           assertAttachmentTurn(conversationId, attachmentTurn.sourceIds)
@@ -980,71 +1125,104 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
         },
         // 向用户提了选择题：本轮到此结束，等用户选
         ...(withTools && toolset ? { tools: toolset, stopWhen: [stepCountIs(MAX_STEPS), hasToolCall(ASK_USER)] } : {}),
-        providerOptions: built.providerOptions as never,
-        maxOutputTokens: built.maxOutputTokens,
+        providerOptions: budget.providerOptions as never,
+        maxOutputTokens: budget.maxOutputTokens,
         abortSignal: ctrl.signal
       })
+    }
     buildTurn()
     let result = run(true)
     let retried = false
     const usage: Usage = { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, cachedInputTokens: 0 }
-    for (;;) {
-      try {
-        for await (const part of result.fullStream) {
-          if (part.type === 'text-delta') {
-            content += part.text
-            emit('chat:delta', { messageId, conversationId, text: part.text })
-          } else if (part.type === 'reasoning-delta') {
-            reasoning += part.text
-            emit('chat:delta', { messageId, conversationId, reasoning: part.text })
-          } else if (part.type === 'tool-call') {
-            if (!steps.some((x) => x.id === part.toolCallId))
-              pushStep({
-                id: part.toolCallId,
-                tool: part.toolName,
-                status: 'running',
-                ...stepLabel(part.toolName, part.input, zh),
-                ...(part.toolName === ASK_USER ? { choices: choicesOf(part.input) } : {})
-              })
-          } else if (part.type === 'tool-result') {
-            const prev = steps.find((x) => x.id === part.toolCallId)
-            if (prev && prev.status !== 'denied') pushStep({ ...prev, status: 'done', ...createdLink(part.toolName, part.output) })
-          } else if (part.type === 'tool-error') {
-            const prev = steps.find((x) => x.id === part.toolCallId)
-            const err = part.error instanceof Error ? part.error.message : String(part.error)
-            if (prev) pushStep({ ...prev, status: 'error', detail: err.slice(0, 300) })
-          } else if (part.type === 'finish-step') {
-            // 多步之间补一个段落分隔，避免两步的文字粘在一起
-            if (content && !content.endsWith('\n')) content += '\n\n'
-          } else if (part.type === 'error') {
-            throw part.error
-          }
-          flush()
-        }
-        break
-      } catch (e) {
-        // 少数模型 / 接口不支持工具调用：去掉工具重试一次
-        const msg = e instanceof Error ? e.message : String(e)
-        if (!retried && !content && !ctrl.signal.aborted && /tool|function/i.test(msg)) {
-          log.warn('[chat] tools unsupported, retrying without tools:', msg)
-          retried = true
-          const gate = session.web.gate
-          if (
-            gate.status === 'available' &&
-            !preSearchAttempted &&
-            !getSettings().retrieval.cautious &&
-            (gate.explicitAsk || gate.timeSensitive || gate.coverage === 'none')
-          ) {
-            await doPreSearch()
-          }
-          // 每次重试都重查当前隐私，包含已做过主动搜索和上一轮网页引用的情况。
+    await withContextWindowRetry(
+      async (limit, retry) => {
+        if (retry) {
+          contextLength = limit
+          contextRetried = true
+          // 首次全文计划只检索了笔记；窗口变小时必须补取同一范围的资料片段。
+          const plan = fullSourceEvidence(
+            input.context,
+            input.scope,
+            session.attachmentSourceIds ?? [],
+            conversationId,
+            contextLength,
+            fullCeiling
+          )
+          if (!special && !plan.full && plan.sourceIds.length)
+            kbHits = filterCloudHits(
+              await session.retrieveAttachments!(query, {}, 8, { sourceIds: plan.sourceIds, includeNotes: true }),
+              conversationId
+            )
+          reasoning = ''
           buildTurn()
-          result = run(false)
-          continue
+          result = run(!retried)
         }
-        throw e
+        for (;;) {
+          try {
+            for await (const part of result.fullStream) {
+              if (part.type === 'text-delta') {
+                content += part.text
+                emit('chat:delta', { messageId, conversationId, text: part.text })
+              } else if (part.type === 'reasoning-delta') {
+                reasoning += part.text
+                emit('chat:delta', { messageId, conversationId, reasoning: part.text })
+              } else if (part.type === 'tool-call') {
+                modelToolStarted = true
+                if (!steps.some((x) => x.id === part.toolCallId))
+                  pushStep({
+                    id: part.toolCallId,
+                    tool: part.toolName,
+                    status: 'running',
+                    ...stepLabel(part.toolName, part.input, zh),
+                    ...(part.toolName === ASK_USER ? { choices: choicesOf(part.input) } : {})
+                  })
+              } else if (part.type === 'tool-result') {
+                modelToolStarted = true
+                const prev = steps.find((x) => x.id === part.toolCallId)
+                if (prev && prev.status !== 'denied') pushStep({ ...prev, status: 'done', ...createdLink(part.toolName, part.output) })
+              } else if (part.type === 'tool-error') {
+                const prev = steps.find((x) => x.id === part.toolCallId)
+                const err = part.error instanceof Error ? part.error.message : String(part.error)
+                if (prev) pushStep({ ...prev, status: 'error', detail: err.slice(0, 300) })
+              } else if (part.type === 'finish-step') {
+                // 多步之间补一个段落分隔，避免两步的文字粘在一起
+                if (content && !content.endsWith('\n')) content += '\n\n'
+              } else if (part.type === 'error') {
+                throw part.error
+              }
+              flush()
+            }
+            break
+          } catch (e) {
+            // 少数模型 / 接口不支持工具调用：去掉工具重试一次
+            const msg = e instanceof Error ? e.message : String(e)
+            if (!retried && !content && !steps.length && !ctrl.signal.aborted && !contextLimitFromError(e) && /tool|function/i.test(msg)) {
+              log.warn('[chat] tools unsupported, retrying without tools:', msg)
+              retried = true
+              const gate = session.web.gate
+              if (
+                gate.status === 'available' &&
+                !preSearchAttempted &&
+                !getSettings().retrieval.cautious &&
+                (gate.explicitAsk || gate.timeSensitive || gate.coverage === 'none')
+              ) {
+                await doPreSearch()
+              }
+              // 每次重试都重查当前隐私，包含已做过主动搜索和上一轮网页引用的情况。
+              buildTurn()
+              result = run(false)
+              continue
+            }
+            throw e
+          }
+        }
+      },
+      {
+        context: initialCaps.context,
+        learn: (limit) => learnContextLimit(input.providerId, input.model, limit),
+        canRetry: () => !content && !modelToolStarted && !ctrl.signal.aborted
       }
-    }
+    )
     content = cleanContent(content)
     // 只保留回答中实际引用到的片段（保持原编号）
     const used = new Set([...content.matchAll(/\[(\d+)\]/g)].map((m) => Number(m[1])))
@@ -1078,10 +1256,11 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
     usage.outputTokens = u.outputTokens ?? 0
     usage.reasoningTokens = u.outputTokenDetails?.reasoningTokens ?? 0
     usage.cachedInputTokens = u.inputTokenDetails?.cacheReadTokens ?? 0
-    finish('done', null, { ...usage, cost: costOf(input.providerId, input.model, usage).cost, durationMs: Date.now() - t0 })
+    const finalContext = db.select({ context: messages.context }).from(messages).where(eq(messages.id, messageId)).get()?.context
     db.update(messages)
       .set({
         context: JSON.stringify({
+          ...(finalContext ? (JSON.parse(finalContext) as Record<string, unknown>) : {}),
           attachmentSourceIds: [
             ...new Set([...evidenceIds, ...session.hits.filter((h) => h.parentType === 'source').map((h) => h.parentId)])
           ]
@@ -1089,6 +1268,7 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
       })
       .where(eq(messages.id, messageId))
       .run()
+    finish('done', null, { ...usage, cost: costOf(input.providerId, input.model, usage).cost, durationMs: Date.now() - t0 })
     markAttachmentTurnSent(conversationId, attachmentTurn.sentIds)
     if (!session.incognito && !session.suppressAttachmentMemory) scheduleExtract(conversationId)
     if (Date.now() - t0 > 20_000) notifyDone(conversationId, conv.title, zh)

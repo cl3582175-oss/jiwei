@@ -6,6 +6,9 @@ import { annotations, assetTexts, noteAssetBlocks, blocks, chunks, notes, source
 import { hashText } from '../../lib/derive'
 import { enqueue, registerJobKind } from '../jobs'
 import { currentModelId, embed, isReady, setStatus } from './embedding'
+import { embeddingText } from '../../lib/chunker'
+import { isIndexableText } from '../../lib/indexableText'
+import { EmbeddingDimensionError } from '../../lib/embeddingDimension'
 
 // 知识库索引：笔记（康奈尔行 + 总结段落）与原始资料（分段）两类来源。
 // - “不发送给 AI”的笔记与资料不进入索引（使用云端向量服务时也不会外发）
@@ -21,8 +24,6 @@ interface DesiredChunk {
   text: string
   hash: string
 }
-
-const MIN_TEXT = 6
 
 /** 当前应当被索引的全部分片 */
 export function desiredChunks(): DesiredChunk[] {
@@ -41,7 +42,13 @@ export function desiredChunks(): DesiredChunk[] {
     )
     .all()
   const segRows = db
-    .select({ id: sourceSegments.id, sourceId: sourceSegments.sourceId, text: sourceSegments.text, title: sources.title })
+    .select({
+      id: sourceSegments.id,
+      sourceId: sourceSegments.sourceId,
+      text: sourceSegments.text,
+      heading: sourceSegments.heading,
+      title: sources.title
+    })
     .from(sourceSegments)
     .innerJoin(sources, eq(sourceSegments.sourceId, sources.id))
     .where(
@@ -79,7 +86,7 @@ export function desiredChunks(): DesiredChunk[] {
         hash: hashText(r.title, r.text)
       })),
     ...noteRows
-      .filter((r) => r.text.trim().length >= MIN_TEXT)
+      .filter((r) => isIndexableText(r.text))
       .map((r) => ({
         ownerType: 'block' as const,
         ownerId: r.id,
@@ -90,15 +97,15 @@ export function desiredChunks(): DesiredChunk[] {
         hash: hashText(r.title, r.text)
       })),
     ...segRows
-      .filter((r) => r.text.trim().length >= MIN_TEXT)
+      .filter((r) => isIndexableText(r.text))
       .map((r) => ({
         ownerType: 'segment' as const,
         ownerId: r.id,
         parentType: 'source' as const,
         parentId: r.sourceId,
         title: r.title,
-        text: r.text,
-        hash: hashText(r.title, r.text)
+        text: r.heading ? `${r.heading}\n${r.text}` : r.text,
+        hash: r.heading ? hashText(r.title, r.heading, r.text) : hashText(r.title, r.text)
       }))
   ]
 }
@@ -190,41 +197,60 @@ export async function syncIndex(progress: (p: number) => void, canceled: () => b
   const sqlite = getSqlite()
   const insVec = sqlite.prepare('INSERT INTO vec_chunks(rowid, embedding) VALUES (?, ?)')
   let done = 0
-  for (let i = 0; i < todo.length; i += BATCH) {
-    if (canceled()) break
-    // 队列与云端向量调用之间可能发生删除/隐私切换，发送前重新核对当前派生状态。
-    const current = new Map(desiredChunks().map((c) => [`${c.ownerType}:${c.ownerId}`, c.hash]))
-    const batch = todo.slice(i, i + BATCH).filter((c) => current.get(`${c.ownerType}:${c.ownerId}`) === c.hash)
-    if (!batch.length) continue
-    const vecs = await embed(
-      batch.map((c) => c.text),
-      'doc',
-      batch.map((c) => c.title)
-    )
-    sqlite.transaction(() => {
-      batch.forEach((c, j) => {
-        const row = getDb()
-          .insert(chunks)
-          .values({
-            ownerType: c.ownerType,
-            ownerId: c.ownerId,
-            parentType: c.parentType,
-            parentId: c.parentId,
-            hash: c.hash,
-            model,
-            createdAt: Date.now()
-          })
-          .onConflictDoUpdate({ target: [chunks.ownerType, chunks.ownerId], set: { hash: c.hash, model, createdAt: Date.now() } })
-          .returning({ rowid: chunks.rowid })
-          .get()
-        sqlite.prepare('DELETE FROM vec_chunks WHERE rowid = ?').run(BigInt(row.rowid))
-        insVec.run(BigInt(row.rowid), vecBuffer(vecs[j]))
-      })
-    })()
-    done += batch.length
-    progress(done / todo.length)
-    setStatus({ indexed: want.length - todo.length + done, total: want.length })
+  const written: number[] = []
+  try {
+    for (let i = 0; i < todo.length; i += BATCH) {
+      if (canceled()) break
+      // 队列与云端向量调用之间可能发生删除/隐私切换，发送前重新核对当前派生状态。
+      const current = new Map(desiredChunks().map((c) => [`${c.ownerType}:${c.ownerId}`, c.hash]))
+      const batch = todo.slice(i, i + BATCH).filter((c) => current.get(`${c.ownerType}:${c.ownerId}`) === c.hash)
+      if (!batch.length) continue
+      const guard = (): void => {
+        const live = new Map(desiredChunks().map((c) => [`${c.ownerType}:${c.ownerId}`, c.hash]))
+        if (canceled() || currentModelId() !== model || batch.some((c) => live.get(`${c.ownerType}:${c.ownerId}`) !== c.hash))
+          throw new Error('Index content permission changed')
+      }
+      const vecs = await embed(
+        batch.map((c) => embeddingText(c.text)),
+        'doc',
+        batch.map((c) => c.title),
+        guard
+      )
+      guard()
+      sqlite.transaction(() => {
+        batch.forEach((c, j) => {
+          const row = getDb()
+            .insert(chunks)
+            .values({
+              ownerType: c.ownerType,
+              ownerId: c.ownerId,
+              parentType: c.parentType,
+              parentId: c.parentId,
+              hash: c.hash,
+              model,
+              createdAt: Date.now()
+            })
+            .onConflictDoUpdate({ target: [chunks.ownerType, chunks.ownerId], set: { hash: c.hash, model, createdAt: Date.now() } })
+            .returning({ rowid: chunks.rowid })
+            .get()
+          sqlite.prepare('DELETE FROM vec_chunks WHERE rowid = ?').run(BigInt(row.rowid))
+          insVec.run(BigInt(row.rowid), vecBuffer(vecs[j]))
+          written.push(row.rowid)
+        })
+      })()
+      done += batch.length
+      progress(done / todo.length)
+      setStatus({ indexed: want.length - todo.length + done, total: want.length })
+    }
+  } catch (error) {
+    if (error instanceof EmbeddingDimensionError) {
+      // 后续批次才暴露不兼容时，也回收本轮已写入的向量，避免报告半轮成功。
+      deleteChunks(written)
+      setStatus({ state: 'error', message: error.message, indexed: want.length - todo.length, total: want.length }, model)
+    }
+    throw error
   }
+  if (done > 0) setStatus({ state: 'ready', message: null })
   return { added: done, removed: stale.length }
 }
 
@@ -259,15 +285,4 @@ export function clearIndex(): void {
 }
 
 /** 一份资料的检索准备情况（v0.7.6）：文字分段立即可按关键词检索；语义索引由本地向量模型在后台建立 */
-export async function sourceIndexStatus(sourceId: string): Promise<{ segments: number; embedded: number; semantic: boolean }> {
-  const sqlite = getSqlite()
-  const segments = (
-    sqlite.prepare("SELECT count(*) AS n FROM source_segments WHERE source_id = ? AND trim(text) <> ''").get(sourceId) as { n: number }
-  ).n
-  const embedded = (
-    sqlite.prepare("SELECT count(DISTINCT owner_id) AS n FROM chunks WHERE parent_type = 'source' AND parent_id = ?").get(sourceId) as {
-      n: number
-    }
-  ).n
-  return { segments, embedded: Math.min(embedded, segments), semantic: await isReady().catch(() => false) }
-}
+export { sourceIndexStatus } from './sourceIndexStatus'

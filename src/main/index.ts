@@ -23,7 +23,8 @@ import { autoBackup } from './services/backup'
 import { flushAll, pruneRevisions, rebuildNoteImageReferences } from './services/docs'
 import { requestRendererFlush } from './lifecycle'
 import { ensureIdentity } from './services/device'
-import { registerJobKinds, resegmentEmptyPdfs } from './services/jobKinds'
+import { registerJobKinds } from './services/jobKinds'
+import { startSourceUpgrade, stopSourceUpgrade } from './services/sourceUpgrade'
 import { registerRecognizeJob, visionModel } from './services/recognize'
 import { registerBrowser } from './services/browser'
 import { registerAsrJob } from './services/asr'
@@ -226,6 +227,7 @@ app
     registerMistakeJobs()
     reconcilePeopleReferences()
     startJobs()
+    startSourceUpgrade()
     void rebuildNoteImageReferences().catch((e) => log.warn('[note images] backfill failed', e))
     startMemoryLearning()
     startReminders()
@@ -237,12 +239,6 @@ app
         syncAllCards()
       } catch (e) {
         log.warn('[review] sync failed', e)
-      }
-      try {
-        const n = resegmentEmptyPdfs()
-        if (n) log.info('[sources] re-parse PDFs without segments', n)
-      } catch (e) {
-        log.warn('[sources] re-parse failed', e)
       }
     }, 3000)
     // 向量模型已安装则补齐索引（例如上次退出时未完成的部分）
@@ -310,6 +306,7 @@ app.on('before-quit', (e) => {
       stopMemoryLearning()
       stopReminders()
       shutdownEmbedding()
+      stopSourceUpgrade()
       // Import checkpoints must settle before closing the database. Other legacy
       // handlers may await noncancelable network work; they retain stopJobs semantics.
       await stopJobsAndWait(['import.scan', 'import.run'])

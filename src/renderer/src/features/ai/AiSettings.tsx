@@ -1,3 +1,4 @@
+import { SourceUpgradeSettings } from '../library/SourceUpgradeSettings'
 import { VoiceSettings } from '../recording/VoiceSettings'
 import { UiSettingsControls } from '../ui/UiSettings'
 import { useEffect, useState } from 'react'
@@ -36,6 +37,7 @@ import { confirm } from '@/components/ui/confirm'
 import { EffortPicker } from './EffortPicker'
 import { PriceChip } from './PriceEditor'
 import { ModelPicker } from './ModelPicker'
+import { ContextChip } from './ContextChip'
 import { Switch } from '@/components/ui/switch'
 import { useRecognitionEvents } from '../workspace/RecognitionBar'
 
@@ -59,7 +61,7 @@ function ModelRow({
   onRemove: () => void
 }) {
   const { t } = useTranslation()
-  const caps = resolveCaps(model, p.modelCaps)
+  const caps = resolveCaps(model, p.modelCaps, p.kind)
   const set = (patch: ModelCapsOverride): void => {
     const next: ModelCapsOverride = { ...p.modelCaps[model], ...patch }
     if (next.vision === caps.auto.vision) delete next.vision
@@ -79,8 +81,12 @@ function ModelRow({
     )
   const how = (k: 'vision' | 'tools' | 'tier'): string => (custom(k) ? t('ai.caps.custom') : t('ai.caps.auto'))
   return (
-    <li className="group flex h-9 items-center gap-2 rounded-lg px-2.5 hover:bg-surface-hover" data-model={model}>
-      <span className="min-w-0 flex-1 truncate font-mono text-xs text-fg">{model}</span>
+    <li
+      className="group flex min-h-9 flex-wrap items-center gap-x-2 gap-y-1 rounded-lg px-2.5 py-1 hover:bg-surface-hover"
+      data-model={model}
+    >
+      <span className="min-w-32 flex-1 truncate font-mono text-xs text-fg">{model}</span>
+      <ContextChip model={model} caps={caps} onSave={(context) => set({ context })} />
       <PriceChip
         model={model}
         custom={p.modelCaps[model]?.price}
@@ -319,6 +325,8 @@ function EmbeddingSection() {
   const { data: st } = useEmbeddingStatus()
   const { data: providers = [] } = useProviders()
   if (!s || !st) return null
+  const dimension = /returned (\d+) dimensions/.exec(st.message ?? '')?.[1]
+  const embeddingError = dimension ? t('readyEmbeddingDimension', { dim: Number(dimension) }) : st.message
   const mode = s.ai.embedding.mode
   const install = async (): Promise<void> => {
     try {
@@ -388,7 +396,7 @@ function EmbeddingSection() {
             </div>
           ) : (
             <div className="mt-3 flex items-center justify-between gap-3">
-              {st.state === 'error' && <span className="text-2xs text-danger">{st.message}</span>}
+              {st.state === 'error' && <span className="text-2xs text-danger">{embeddingError}</span>}
               <Button size="sm" variant="primary" className="ml-auto" onClick={() => void install()}>
                 <Download />
                 {t('ai.emb.install')}
@@ -426,9 +434,17 @@ function EmbeddingSection() {
               placeholder={t('ai.emb.model')}
             />
           </div>
-          {st.total > 0 && <p className="text-2xs text-subtle">{t('ai.emb.ready', { indexed: st.indexed, total: st.total })}</p>}
+          {st.state === 'error' && (
+            <p role="alert" className="text-2xs text-danger">
+              {embeddingError}
+            </p>
+          )}
+          {st.state === 'ready' && st.total > 0 && (
+            <p className="text-2xs text-subtle">{t('ai.emb.ready', { indexed: st.indexed, total: st.total })}</p>
+          )}
         </div>
       )}
+      <SourceUpgradeSettings />
     </section>
   )
 }

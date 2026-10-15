@@ -3,6 +3,8 @@ import { XMLParser } from 'fast-xml-parser'
 import { readFile } from 'node:fs/promises'
 import { posix } from 'node:path'
 import type { SegmentInput } from '../segments'
+import { normalizeExtracted } from '../../lib/textNormalize'
+import { chunkBlocks, EMBED_MAX_CHARS } from '../../lib/chunker'
 
 export type Xml = Record<string, unknown>
 export const elements = (v: unknown): Xml[] =>
@@ -54,29 +56,52 @@ export interface TableRow {
   row: number
   cells: string[]
 }
-const mdCell = (value: string): string => value.replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/\r?\n/g, '<br>')
+const mdCell = (value: string): string => normalizeExtracted(value).replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/\r?\n/g, '<br>')
 export function tableSegments(sheet: string, rows: TableRow[]): SegmentInput[] {
   const nonempty = rows.filter((r) => r.cells.some((c) => c.trim()))
   if (!nonempty.length) return []
   const width = Math.max(...nonempty.map((r) => r.cells.length)),
     [header, ...data] = nonempty
   const line = (cells: string[]) => `| ${Array.from({ length: width }, (_, i) => mdCell(cells[i] ?? '')).join(' | ')} |`
-  const prefix = `## ${sheet}\n${line(header.cells)}\n${line(Array(width).fill('---'))}`
+  const prefix = `## ${normalizeExtracted(sheet)}\n${line(header.cells)}\n${line(Array(width).fill('---'))}`
+  const footer = `\n（共 ${data.length} 行数据）`
   const parts: SegmentInput[] = []
-  for (let i = 0; i < Math.max(1, data.length); i += 50) {
-    const batch = data.slice(i, i + 50)
-    parts.push({
-      kind: 'table',
-      locator: {
-        sheet,
-        dataStart: i,
-        rowStart: batch[0]?.row ?? header.row,
-        rowEnd: batch.at(-1)?.row ?? header.row,
-        totalRows: data.length,
-        value: `sheet=${sheet},rows=${batch[0]?.row ?? header.row}-${batch.at(-1)?.row ?? header.row}`
-      },
-      text: `${prefix}${batch.length ? '\n' + batch.map((r) => line(r.cells)).join('\n') : ''}\n（共 ${data.length} 行数据）`
-    })
+  let start = 0,
+    batch: TableRow[] = []
+  const render = (group: TableRow[]): string => `${prefix}${group.length ? '\n' + group.map((r) => line(r.cells)).join('\n') : ''}${footer}`
+  const flush = (): void => {
+    const locator = {
+      sheet,
+      dataStart: start,
+      rowStart: batch[0]?.row ?? header.row,
+      rowEnd: batch.at(-1)?.row ?? header.row,
+      totalRows: data.length,
+      value: `sheet=${sheet},rows=${batch[0]?.row ?? header.row}-${batch.at(-1)?.row ?? header.row}`
+    }
+    const text = render(batch)
+    if (text.length > EMBED_MAX_CHARS.zh) {
+      parts.push(
+        ...chunkBlocks(
+          [
+            { type: 'heading', level: 1, text: sheet },
+            { type: 'table', caption: `## ${sheet}`, header: header.cells, rows: batch.map((r) => r.cells) }
+          ],
+          { locatorOf: () => locator }
+        )
+      )
+    } else parts.push({ kind: 'table', heading: normalizeExtracted(sheet).slice(0, 120), locator, text })
+    start += batch.length
+    batch = []
   }
+  // 表格资料即使只有一行也保留表头与列关系；它不是 Word 中的签字版式表。
+  for (const row of data) {
+    if (
+      batch.length &&
+      ((batch.length >= 3 && render([...batch, row]).length > 700) || render([...batch, row]).length > EMBED_MAX_CHARS.zh)
+    )
+      flush()
+    batch.push(row)
+  }
+  if (batch.length || !data.length) flush()
   return parts
 }

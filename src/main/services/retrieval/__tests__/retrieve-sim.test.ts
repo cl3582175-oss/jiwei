@@ -19,7 +19,7 @@ vi.mock('../../../db', () => ({
     prepare: (sql: string) => (sql.includes('vec_chunks WHERE embedding MATCH') ? { all: () => state.rows } : state.sqlite!.prepare(sql))
   })
 }))
-vi.mock('../../ai/embedding', () => ({ isReady: state.ready, embed: state.embed }))
+vi.mock('../../ai/embedding', () => ({ isReady: state.ready, embed: state.embed, currentModelId: () => 'fixture' }))
 vi.mock('../../ai/indexer', () => ({ annotationText: () => '', vecBuffer: (v: number[]) => Buffer.from(new Float32Array(v).buffer) }))
 import { retrieve } from '../../ai/retrieve'
 
@@ -100,7 +100,7 @@ describe('retrieval similarity metadata', () => {
     expect(hits[0]).toMatchObject({ via: 'keyword', sim: 0.6 })
     expect(state.embed.mock.calls).toEqual([
       [['topic'], 'query'],
-      [[hits[0].text], 'doc', [hits[0].title]]
+      [[hits[0].text], 'doc', [hits[0].title], expect.any(Function)]
     ])
   })
   it('batches all final keyword hits even when no indexed vectors exist', async () => {

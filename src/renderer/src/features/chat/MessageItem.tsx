@@ -1,3 +1,4 @@
+import { MessageReadiness } from './MessageReadiness'
 import { MessageAttachments } from '../attachments/ConversationAttachments'
 import { useMemo, useState, type ReactNode } from 'react'
 import { useMoney } from '@/lib/money'
@@ -34,7 +35,7 @@ import type { UiEvent } from '@shared/ui/events'
 const uiPlugins = { renderers: [{ language: 'jiwei-ui', component: UiFence }] }
 
 /** 打开引用：知识库定位到段落 / 页码，网页打开快照或原网页。 */
-export function openCitation(c: Citation): void {
+export function openCitation(c: Citation, conversationId?: string): void {
   const s = useApp.getState()
   if (c.parentType === 'web') {
     if (c.snippetOnly || !c.parentId || c.parentId.startsWith('tmp-')) {
@@ -42,9 +43,9 @@ export function openCitation(c: Citation): void {
     } else useWebSnapshot.getState().open(c.parentId, c.locator, c.url)
     return
   }
-  s.setHighlight({ type: c.parentType === 'note' ? 'block' : 'segment', id: c.ownerId, locator: c.locator })
+  s.setHighlight({ type: c.parentType === 'note' ? 'block' : 'segment', id: c.ownerId, locator: c.locator, conversationId })
   if (c.parentType === 'note') s.openNote(c.parentId)
-  else s.openSource(c.parentId)
+  else s.openSource(c.parentId, conversationId)
 }
 
 function citationSite(c: Citation): string {
@@ -56,7 +57,7 @@ function citationSite(c: Citation): string {
   }
 }
 
-function CiteChip({ n, citation }: { n: number; citation?: Citation }) {
+function CiteChip({ n, citation, conversationId }: { n: number; citation?: Citation; conversationId: string }) {
   if (!citation) return <sup className="text-subtle">[{n}]</sup>
   const web = citation.parentType === 'web'
   const site = web ? citationSite(citation) : ''
@@ -66,7 +67,7 @@ function CiteChip({ n, citation }: { n: number; citation?: Citation }) {
       side="top"
     >
       <button
-        onClick={() => openCitation(citation)}
+        onClick={() => openCitation(citation, conversationId)}
         className={cn('cite-chip', web && 'cite-chip-web')}
         aria-label={`[${n}] ${citation.title}`}
         data-testid={web ? 'web-cite-chip' : undefined}
@@ -184,7 +185,7 @@ function Steps({ steps, streaming }: { steps: AgentStep[]; streaming: boolean })
   )
 }
 
-function CitationCard({ c }: { c: Citation }) {
+function CitationCard({ c, conversationId }: { c: Citation; conversationId: string }) {
   const { t, i18n } = useTranslation()
   const web = c.parentType === 'web'
   const date = c.parentType === 'note' ? c.updatedAt : (c.learnedAt ?? c.updatedAt)
@@ -196,7 +197,7 @@ function CitationCard({ c }: { c: Citation }) {
         : formatDate(date, i18n.language)
   return (
     <button
-      onClick={() => openCitation(c)}
+      onClick={() => openCitation(c, conversationId)}
       className="group flex w-full gap-3 rounded-lg px-3 py-2 text-left transition-colors hover:bg-surface-hover"
       data-testid={web ? 'web-citation-card' : undefined}
     >
@@ -289,7 +290,7 @@ function Choices({ step, conversationId, active }: { step: AgentStep; conversati
 }
 
 /** 依据（v0.7.6）：默认折叠成一行，不抢回答正文的视觉；展开后列出引用的笔记与资料片段 */
-function Basis({ citations }: { citations: Citation[] }) {
+function Basis({ citations, conversationId }: { citations: Citation[]; conversationId: string }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const counts = new Map<string, number>()
@@ -320,7 +321,7 @@ function Basis({ citations }: { citations: Citation[] }) {
       {open && (
         <div className="mt-1.5 rounded-xl border border-border bg-surface/60 py-1">
           {citations.map((c) => (
-            <CitationCard key={c.n} c={c} />
+            <CitationCard key={c.n} c={c} conversationId={conversationId} />
           ))}
         </div>
       )}
@@ -360,7 +361,7 @@ export function MessageItem({
       <div className="flex justify-end">
         <div className="paper max-w-[78%] rounded-2xl rounded-br-md px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap text-fg shadow-[var(--shadow-1)]">
           {m.content}
-          {!!m.attachments?.length && <MessageAttachments items={m.attachments} />}
+          {!!m.attachments?.length && <MessageAttachments items={m.attachments} conversationId={m.conversationId} />}
         </div>
       </div>
     )
@@ -370,7 +371,7 @@ export function MessageItem({
   const components = {
     a: ({ href, children }: { href?: string; children?: ReactNode }) => {
       const cite = href?.match(/^#cite-(\d+)$/)
-      if (cite) return <CiteChip n={Number(cite[1])} citation={byN.get(Number(cite[1]))} />
+      if (cite) return <CiteChip n={Number(cite[1])} citation={byN.get(Number(cite[1]))} conversationId={m.conversationId} />
       return (
         <a href={href} target="_blank" rel="noreferrer">
           {children}
@@ -421,10 +422,15 @@ export function MessageItem({
       )}
       {m.status === 'stopped' && <p className="mt-2 text-2xs text-subtle">{t('chat.stopped')}</p>}
 
-      {m.citations.length > 0 && <Basis citations={m.citations} />}
-      {!plain && !grounded && m.status === 'done' && m.citations.length === 0 && m.steps.length === 0 && m.content && (
-        <p className="mt-2 text-2xs text-subtle">{t('chat.generalOnly')}</p>
-      )}
+      <MessageReadiness message={m} />
+      {m.citations.length > 0 && <Basis conversationId={m.conversationId} citations={m.citations} />}
+      {!plain &&
+        !grounded &&
+        m.status === 'done' &&
+        !m.readiness?.length &&
+        m.citations.length === 0 &&
+        m.steps.length === 0 &&
+        m.content && <p className="mt-2 text-2xs text-subtle">{t('chat.generalOnly')}</p>}
 
       {!streaming && m.content && !compact && (
         <div className="mt-2 flex items-center gap-2 text-2xs text-subtle opacity-0 transition-opacity group-hover/msg:opacity-100">

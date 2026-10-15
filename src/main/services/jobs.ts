@@ -147,7 +147,7 @@ function toJob(r: Row): Job {
   }
 }
 
-export function enqueue(kind: string, payload: unknown, opts?: { dedupeKey?: string; runAfter?: number }): string {
+export function enqueue(kind: string, payload: unknown, opts?: { dedupeKey?: string; runAfter?: number; offPeak?: boolean }): string {
   const db = getDb()
   // 去重只合并“排队中”的任务：正在运行的任务不会包含它开始之后的变化
   if (opts?.dedupeKey) {
@@ -161,7 +161,7 @@ export function enqueue(kind: string, payload: unknown, opts?: { dedupeKey?: str
   const now = Date.now()
   const id = newId()
   let runAfter = opts?.runAfter ?? now
-  if (kinds.get(kind)?.offPeak && offPeakPolicy) runAfter = Math.max(runAfter, offPeakPolicy(now))
+  if ((opts?.offPeak || kinds.get(kind)?.offPeak) && offPeakPolicy) runAfter = Math.max(runAfter, offPeakPolicy(now))
   db.insert(jobs)
     .values({
       id,

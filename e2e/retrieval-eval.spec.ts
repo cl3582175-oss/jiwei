@@ -1,9 +1,9 @@
-import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
+import { test, expect, type ElectronApplication, type Page } from '@playwright/test'
 import { mkdtempSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { NOTES, QUERIES } from './fixtures/retrievalEval'
-import { isolateEmbeddingCache } from './fixtures/embeddingCache'
+import { launchRagApp } from './fixtures/ragApp'
 
 // 检索评估（v0.4.3，决定是否引入重排序模型）：14 篇笔记 + 40 个换了说法的问题，
 // 统计正确段落在混合检索结果中的排名：Recall@1/3/5/8/30 与 MRR。
@@ -16,13 +16,9 @@ let app: ElectronApplication
 let page: Page
 
 test.beforeAll(async () => {
-  app = await electron.launch({
-    args: ['.', `--user-data-dir=${mkdtempSync(join(tmpdir(), 'jiwei-e2e-eval-'))}`],
-    env: { ...process.env, JIWEI_LANG: 'zh-CN', JIWEI_SKIP_ONBOARDING: '1', JIWEI_IMPORT_PROVIDERS_FROM: '' }
-  })
+  app = await launchRagApp(mkdtempSync(join(tmpdir(), 'jiwei-e2e-eval-')))
   page = await app.firstWindow()
   await page.waitForSelector('nav')
-  await isolateEmbeddingCache(app)
 })
 test.afterAll(async () => {
   await app?.close()

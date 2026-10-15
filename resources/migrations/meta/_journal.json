@@ -253,6 +253,20 @@
       "when": 1791983270173,
       "tag": "0035_chat_attachments",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "6",
+      "when": 1792022455672,
+      "tag": "0036_knowledge_retrieval",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "6",
+      "when": 1792022463461,
+      "tag": "0037_segments_fts_heading",
+      "breakpoints": true
     }
   ]
 }

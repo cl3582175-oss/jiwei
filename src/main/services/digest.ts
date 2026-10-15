@@ -56,6 +56,8 @@ const HEADING = /^(第[一二三四五六七八九十百零〇\d]+[章节部篇�
 /** 章节目录：分段时识别出的标题，没有时按“第 X 章 / 1.2 标题”之类的短行猜测 */
 export function sourceOutline(sourceId: string): { title: string; page: number | null; ordinal: number }[] {
   const segs = listSegments(sourceId)
+  const structured = segs.filter((s, i) => s.heading && s.heading !== segs[i - 1]?.heading).slice(0, 120)
+  if (structured.length) return structured.map((s) => ({ title: s.heading!, page: pageOf(s), ordinal: s.ordinal }))
   const marked = segs.filter((s) => s.kind === 'heading')
   const pick = (marked.length >= 3 ? marked : segs.filter((s) => s.text.length <= 60 && HEADING.test(s.text.trim()))).slice(0, 120)
   return pick.map((s) => ({

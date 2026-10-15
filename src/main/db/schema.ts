@@ -225,6 +225,7 @@ export const sources = sqliteTable(
     space: text('space', { enum: ['library', 'attachment'] })
       .notNull()
       .default('library'),
+    parseVersion: integer('parse_version').notNull().default(0),
     url: text('url'),
     author: text('author'),
     /** 资料本身的发布日期（书籍出版、文章发布） */
@@ -364,11 +365,23 @@ export const sourceSegments = sqliteTable(
     kind: text('kind').notNull(), // paragraph | page | transcript | heading | caption …
     locator: text('locator').notNull(),
     text: text('text').notNull(),
+    heading: text('heading').notNull().default(''),
     hash: text('hash').notNull(),
     createdAt: integer('created_at').notNull(),
     updatedAt: integer('updated_at').notNull()
   },
   (t) => [index('segments_source_idx').on(t.sourceId, t.ordinal)]
+)
+
+export const segmentAliases = sqliteTable(
+  'segment_aliases',
+  {
+    oldId: text('old_id').primaryKey(),
+    newId: text('new_id').notNull(),
+    sourceId: text('source_id').notNull(),
+    createdAt: integer('created_at').notNull()
+  },
+  (t) => [index('segment_aliases_source_idx').on(t.sourceId)]
 )
 
 /**
@@ -392,7 +405,7 @@ export const sourcePages = sqliteTable(
     error: text('error'),
     updatedAt: integer('updated_at').notNull()
   },
-  (t) => [primaryKey({ columns: [t.sourceId, t.page] })]
+  (t) => [primaryKey({ columns: [t.sourceId, t.page, t.need] })]
 )
 
 /* ————————————————— 学习闭环 ————————————————— */

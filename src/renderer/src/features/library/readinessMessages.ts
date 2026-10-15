@@ -1,0 +1,51 @@
+export const readyZh = {
+  readyParsing: '正在读取内容',
+  readyIndexing: '正在建立检索索引 {{p}}%',
+  readyScanPartial: '还有 {{n}}/{{total}} 页扫描页没有识别，这些页搜不到',
+  readyScanAll: '这是扫描件，还没有识别，内容暂时搜不到',
+  readyUnsupported: '暂时读不了这种格式的内容',
+  readyNeedsTranscript: '还没有转写，说的内容暂时搜不到',
+  readyEmpty: '没有读到文字内容',
+  readyFailed: '读取失败，可以重新读取',
+  readyActRecognize: '开始识别',
+  readyActInstall: '安装识别模型',
+  readyActTranscribe: '开始转写',
+  readyActRetry: '重新读取',
+  readyChatNote: '《{{title}}》{{status}}，这次回答没有用到这部分',
+  readyChatMore: '等 {{n}} 份资料',
+  readyChatDone: '已识别完成，可以重新提问',
+  readyChatAskAgain: '重新提问',
+  readyUpgradeTitle: '资料检索升级',
+  readyUpgradeDesc: '用新的方式重新整理已导入资料的段落，找得更准；不会重新识别或下载，引用和批注保持有效',
+  readyUpgradeProgress: '已完成 {{done}}/{{total}} 份',
+  readyUpgradeToggle: '空闲时自动升级',
+  readyUpgradeDone: '已完成',
+  readyEmbeddingDimension:
+    '这个向量模型返回的是 {{dim}} 维，不支持积微需要的 512 维。请换用支持 dimensions 参数的模型，或改用本地向量模型。'
+}
+export const readyEn: Record<keyof typeof readyZh, string> = {
+  readyParsing: 'Reading content',
+  readyIndexing: 'Building search index {{p}}%',
+  readyScanPartial: "{{n}} of {{total}} scanned pages not recognized yet; they can't be searched",
+  readyScanAll: "Scanned document not recognized yet; its content can't be searched",
+  readyUnsupported: "This format can't be read yet",
+  readyNeedsTranscript: "Not transcribed yet; speech can't be searched",
+  readyEmpty: 'No text found',
+  readyFailed: "Couldn't read this file; try again",
+  readyActRecognize: 'Recognize',
+  readyActInstall: 'Install recognizer',
+  readyActTranscribe: 'Transcribe',
+  readyActRetry: 'Retry',
+  readyChatNote: '"{{title}}": {{status}}; this answer didn\'t use that part',
+  readyChatMore: 'and {{n}} more',
+  readyChatDone: 'Recognition finished; you can ask again',
+  readyChatAskAgain: 'Ask again',
+  readyUpgradeTitle: 'Search upgrade for sources',
+  readyUpgradeDesc:
+    'Re-organizes imported sources with the new method for better search. No re-recognition or downloads; citations and annotations stay valid',
+  readyUpgradeProgress: '{{done}} of {{total}} done',
+  readyUpgradeToggle: 'Upgrade automatically when idle',
+  readyUpgradeDone: 'Completed',
+  readyEmbeddingDimension:
+    "This embedding model returns {{dim}} dimensions and can't produce the 512 that Jiwei needs. Choose a model that supports the dimensions parameter, or use the local model."
+}

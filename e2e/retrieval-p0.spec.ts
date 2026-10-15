@@ -13,7 +13,7 @@ test('P0 local extraction, rendering, PDF and 60-paragraph embedding', async () 
   const info = test.info()
   test.setTimeout(900_000)
   const data = mkdtempSync(join(tmpdir(), 'jiwei-p0-'))
-  const output = resolve('.superpowers/sdd/v0.13-web-retrieval')
+  const output = join(data, 'evidence')
   mkdirSync(output, { recursive: true })
   const bundle = join(output, 'p0-probe.cjs')
   await build({
@@ -23,6 +23,8 @@ test('P0 local extraction, rendering, PDF and 60-paragraph embedding', async () 
     platform: 'node',
     format: 'cjs',
     packages: 'external',
+    // 探针位于临时证据目录，第三方依赖仍从工作树解析。
+    banner: { js: `require = require('node:module').createRequire(${JSON.stringify(resolve('package.json'))})` },
     alias: { '@shared': resolve('src/shared') }
   })
   const pdf = join(data, 'controlled.pdf')

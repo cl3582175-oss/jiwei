@@ -28,16 +28,18 @@ it('xlsx 关系按工作表名取两表，保留共享/内联/数字/布尔/公�
   expect(result[1].text).toContain('现场生成')
 })
 
-it('xlsx 120数据行按50行切段并重复表头，定位含工作表和实际行号', async () => {
+it('xlsx 数据行按文字预算切段，保留所有行、表头、路径与实际行号', async () => {
   const { parseXlsx } = await import('../xlsx')
   const result = await parseXlsx(await file('rows.xlsx', await xlsxFixture(120)))
   const parts = result.filter((s) => s.locator.sheet === '销售')
-  expect(parts).toHaveLength(3)
-  expect(parts.map((s) => [s.locator.rowStart, s.locator.rowEnd])).toEqual([
-    [2, 51],
-    [52, 101],
-    [102, 121]
-  ])
+  expect(parts.length).toBeGreaterThan(3)
+  expect(parts[0].locator.rowStart).toBe(2)
+  expect(parts.at(-1)!.locator.rowEnd).toBe(121)
+  for (let i = 1; i < parts.length; i++) expect(parts[i].locator.rowStart).toBe(Number(parts[i - 1].locator.rowEnd) + 1)
+  expect(parts.every((s) => s.text.length <= 700 && s.heading === '销售')).toBe(true)
+  const rows = parts.flatMap((s) => s.text.split('\n').filter((l) => l.startsWith('| 甲产品 |')))
+  expect(rows).toHaveLength(120)
+  expect(rows[119]).toContain('| 甲产品 | 120 | TRUE | 240 |')
   expect(parts.every((s) => s.text.includes('| 项目 | 数量 | 有效 | 合计 |'))).toBe(true)
 })
 
@@ -65,11 +67,13 @@ it.each([
   if (raw.includes('第一行')) expect(result[0].text).toContain('第一行<br>第二行')
 })
 
-it('csv 按50行分段；未闭合引号如实失败', async () => {
+it('csv 按文字预算分段重复表头；未闭合引号如实失败', async () => {
   const { parseCsv } = await import('../csv')
   const raw = 'name,value\n' + Array.from({ length: 120 }, (_, i) => `item${i},${i}`).join('\n')
   const result = await parseCsv(await file('large.csv', raw))
-  expect(result).toHaveLength(3)
+  expect(result.length).toBeGreaterThan(3)
+  expect(result.every((s) => s.text.length <= 700)).toBe(true)
+  expect(result.map((s) => s.text).join('')).toContain('| item119 | 119 |')
   expect(result.every((s) => s.text.includes('| name | value |'))).toBe(true)
   await expect(parseCsv(await file('broken.csv', 'a,b\n"unclosed,b'))).rejects.toThrow()
 })
@@ -100,6 +104,7 @@ it('pptx 3页正文及备注按关系对应，定位可跳页', async () => {
   expect(result[1].text).toContain('正文 2')
   expect(result[1].text).toContain('讲者备注：备注 2')
   expect(result[1].locator.value).toBe('page=2')
+  expect(result[1].heading).toBe('标题 2')
 })
 
 it('pptx 数字排序让 slide10 位于 slide9 后，不能词典序', async () => {

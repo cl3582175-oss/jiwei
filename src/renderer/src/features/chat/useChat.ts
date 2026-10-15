@@ -41,6 +41,10 @@ export function useChatThread(conversationId: string | null) {
         })
       )
     })
+    const offReadiness = window.jiweiEvents.on('chat:readiness', ({ messageId, items }) => {
+      setMsgs((list) => list.map((m) => (m.id === messageId ? { ...m, readiness: items } : m)))
+      void qc.invalidateQueries({ queryKey: ['messages'] })
+    })
     const offDone = window.jiweiEvents.on('chat:done', ({ message }) => {
       setMsgs((list) => list.map((m) => (m.id === message.id ? message : m)))
       void qc.invalidateQueries({ queryKey: ['conversations'] })
@@ -50,6 +54,7 @@ export function useChatThread(conversationId: string | null) {
       offDelta()
       offStep()
       offDone()
+      offReadiness()
     }
   }, [qc])
 

@@ -1,3 +1,4 @@
+import type { Readiness } from './readiness'
 import { RELATIONS } from './graphRelations'
 import { AnimationSchema } from './manim'
 import { BACKEND_IDS, BackendSaveSchema, WebModeSchema, type RetrievalStatus, type RetrievalUsage, type WebPageView } from './retrieval'
@@ -603,6 +604,17 @@ export const capabilities = {
     count: cap<number>()({ description: '未归档附件数量', params: none })
   },
   sources: {
+    readiness: cap<Record<string, Readiness>>()({
+      description: '批量读取允许AI访问的资料处理状态；附件仅所属对话有效',
+      params: [
+        ['ids', z.array(z.string().min(1).max(64)).max(500)],
+        ['conversationId', z.string().max(64).nullable().optional()]
+      ]
+    }),
+    retry: cap<void>()({
+      description: '重新读取允许访问的资料，复用现有解析作业',
+      params: [id(), ['conversationId', z.string().max(64).nullable().optional()]]
+    }),
     list: cap<Source[]>()({ description: '按条件列出 / 检索资料', params: [['query', S.SourceQuerySchema]], ai: { effect: 'read' } }),
     get: cap<Source | null>()({ description: '读取资料信息', params: [id()], ai: { effect: 'read' } }),
     notes: cap<{ id: string; title: string; updatedAt: number }[]>()({ description: '与这份资料关联的笔记', params: [id()] }),
@@ -610,9 +622,9 @@ export const capabilities = {
       description: '资料的章节目录（识别出的标题）',
       params: [id()]
     }),
-    indexStatus: cap<{ segments: number; embedded: number; semantic: boolean }>()({
-      description: '资料的检索准备情况：可检索的分段数、已建语义索引的分段数',
-      params: [id()]
+    indexStatus: cap<{ segments: number; indexable: number; embedded: number; semantic: boolean }>()({
+      description: '资料的检索准备情况：正文数、可索引数和当前模型完成数；附件限所属对话',
+      params: [id(), ['conversationId', S.Id.nullable().optional()]]
     }),
     importDialog: cap<ImportResult>()({ description: '通过对话框导入文件', params: [['categoryId', S.Id.nullable().optional()]] }),
     importPaths: cap<ImportResult>()({
@@ -636,7 +648,14 @@ export const capabilities = {
     trash: cap<void>()({ description: '删除资料（进入最近删除）', params: [id()] })
   },
   segments: {
-    get: cap<Segment | null>()({ description: '按片段身份读取允许用于智能界面的资料原文', params: [id()] }),
+    resolve: cap<string | null>()({
+      description: '解析仍可读取的资料片段永久身份，附件仅所属对话有效',
+      params: [id(), ['conversationId', z.string().max(64).nullable().optional()]]
+    }),
+    get: cap<Segment | null>()({
+      description: '按片段身份读取允许用于智能界面的资料原文',
+      params: [id(), ['conversationId', z.string().max(64).nullable().optional()]]
+    }),
     update: cap<Segment | null>()({
       description: '修改片段文字（如纠正转写错误）',
       params: [id(), ['text', z.string().min(1).max(20000)]]
@@ -671,6 +690,7 @@ export const capabilities = {
     test: cap<ProviderTestResult>()({ description: '测试服务商连接', params: [id()] })
   },
   chat: {
+    get: cap<Conversation | null>()({ description: '读取指定对话，包括就地提问，用于重发原问题', params: [id('conversationId')] }),
     conversations: cap<Conversation[]>()({ description: '列出 AI 对话', params: none }),
     messages: cap<ChatMessage[]>()({ description: '读取对话消息', params: [id('conversationId')] }),
     send: cap<{ conversation: Conversation; userMessage: ChatMessage; assistantMessageId: string }>()({
@@ -1174,6 +1194,13 @@ export const capabilities = {
     reindex: cap<void>()({ description: '重建知识库索引', params: none })
   },
   knowledge: {
+    queryFor: cap<string>()({
+      description: '仅供评测：构造与线上相同的追问检索文字',
+      params: [
+        ['text', z.string().max(2000)],
+        ['prev', z.string().max(20000).nullable()]
+      ]
+    }),
     search: cap<SearchHit[]>()({
       description: '在知识库（笔记与资料）中检索与问题相关的片段，结果带时间与状态',
       params: [
@@ -1479,6 +1506,10 @@ export const capabilities = {
     undo: cap<import('./importer').ImportRun>()({ description: '把本次导入移入回收站', params: [['id', z.string().max(64)]] })
   },
   retrieval: {
+    upgradeStatus: cap<{ total: number; done: number; running: boolean; paused: boolean }>()({
+      description: '读取资料检索升级的进度',
+      params: none
+    }),
     status: cap<RetrievalStatus>()({ description: '联网服务状态与今日用量', params: none }),
     saveBackend: cap<void>()({ description: '保存联网搜索服务配置', params: [['input', BackendSaveSchema]] }),
     testBackend: cap<{ ok: boolean; message: string }>()({ description: '测试联网搜索服务', params: [['id', z.enum(BACKEND_IDS)]] }),
