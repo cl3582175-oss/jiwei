@@ -33,7 +33,6 @@ import { Tip } from './ui/primitives'
 import { Logo } from './Logo'
 import { JobsIndicator } from './JobsIndicator'
 import { useReviewStats } from '@/features/review/ReviewView'
-import { useAssist } from '@/features/assist/store'
 
 // 左侧导航（v0.6.7，v0.7.4 改为浮卡）：顶部是积微助手，其下按学习闭环分组——今日 · 收集 · 学习 · 计划。
 // 点组图标展开二级入口，不改变当前页面；停在组图标上，组图标的底色向右延伸成玻璃浮卡，按行列出二级入口（NavRing）。
@@ -293,7 +292,6 @@ export function NavRail() {
         active={view === 'chat'}
         label={`${t('nav.assistant')}  ${modKey}3 · ${t('nav.assistantPanel')} ${modKey}J`}
         onClick={() => {
-          useAssist.getState().setPanel({ panelOpen: false })
           useApp.getState().setView('chat')
         }}
       >

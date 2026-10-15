@@ -8,7 +8,7 @@ export interface ModelRequest {
 }
 export const textOf = (value: unknown): string =>
   typeof value === 'string' ? value : Array.isArray(value) ? value.map((part) => part.text ?? '').join('') : ''
-export async function attachmentModel(options: { embeddingDimensions?: number } = {}): Promise<{
+export async function attachmentModel(options: { embeddingDimensions?: number; chunkDelayMs?: number } = {}): Promise<{
   server: Server
   url: string
   requests: ModelRequest[]
@@ -33,7 +33,7 @@ export async function attachmentModel(options: { embeddingDimensions?: number } 
     req.on('data', (chunk) => {
       body += chunk
     })
-    req.on('end', () => {
+    req.on('end', async () => {
       const input = JSON.parse(body || '{}') as ModelRequest
       requests.push(input)
       if (req.url?.endsWith('/embeddings')) {
@@ -156,7 +156,10 @@ export async function attachmentModel(options: { embeddingDimensions?: number } 
       } else {
         const system = textOf(input.messages.find((m) => m.role === 'system')?.content)
         const response = /第一行.*#|first line.*#/i.test(system) ? `# 受控主题\n- 摘要稳定事实 {${segmentId}}` : answer
-        for (let i = 0; i < response.length; i += 12) send({ content: response.slice(i, i + 12) }, null)
+        for (let i = 0; i < response.length; i += 12) {
+          if (options.chunkDelayMs) await new Promise((resolve) => setTimeout(resolve, options.chunkDelayMs))
+          send({ content: response.slice(i, i + 12) }, null)
+        }
         send({}, 'stop')
       }
       res.write(

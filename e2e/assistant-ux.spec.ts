@@ -1,3 +1,4 @@
+import { navTo } from './fixtures/nav'
 import { attachmentModel, textOf } from './fixtures/attachment-model'
 import { test, expect, _electron as electron } from '@playwright/test'
 import { mkdtempSync } from 'node:fs'
@@ -97,6 +98,59 @@ test('P1 profile edits invalidate the ongoing conversation card', async () => {
       .join('')
     expect(system).toContain('PROFILE_NEW_MARKER')
     expect(system).not.toContain('PROFILE_OLD_MARKER')
+  } finally {
+    await app.close()
+    await new Promise<void>((resolve) => model.server.close(() => resolve()))
+  }
+})
+
+test('P2 panel follows its page and restores the conversation and draft', async () => {
+  const model = await attachmentModel({ chunkDelayMs: 200 })
+  const answer = '离开页面后仍继续生成的完整回复。'.repeat(10)
+  model.setAnswer(answer)
+  const app = await electron.launch({
+    args: ['.', '--use-mock-keychain', `--user-data-dir=${mkdtempSync(join(tmpdir(), 'jiwei-assistant-panel-'))}`],
+    env: { ...process.env, JIWEI_LANG: 'zh-CN', JIWEI_SKIP_ONBOARDING: '1', JIWEI_MEMORY_DELAY_MS: '3600000' }
+  })
+  try {
+    const page = await app.firstWindow()
+    await page.waitForSelector('nav')
+    await page.evaluate(async (baseUrl) => {
+      const p = await window.jiwei.providers.save({
+        kind: 'openai',
+        name: 'Controlled',
+        baseUrl,
+        apiKey: 'test-key',
+        models: ['controlled']
+      })
+      const s = await window.jiwei.settings.get()
+      await window.jiwei.settings.set({ ai: { ...s.ai, chat: { providerId: p.id, model: 'controlled' }, effort: 'off' } })
+    }, model.url)
+    await page.reload()
+    await page.waitForSelector('nav')
+    await navTo(page, /笔记/)
+    await page.keyboard.press('Meta+j')
+    const panel = page.getByRole('complementary', { name: '积微助手' })
+    await expect(panel).toBeVisible()
+    const input = panel.getByRole('textbox').last()
+    await input.fill('笔记页的面板对话')
+    await input.press('Enter')
+    await expect(panel.getByText('笔记页的面板对话', { exact: true })).toBeVisible()
+    const conversationId = (await page.evaluate(() => window.jiwei.chat.conversations()))[0].id
+    expect((await page.evaluate((id) => window.jiwei.chat.messages(id), conversationId)).at(-1)?.status).toBe('streaming')
+    await input.fill('保留笔记页草稿')
+    await navTo(page, /今日/)
+    await expect(panel).toHaveCount(0)
+    await page.keyboard.press('Meta+j')
+    await expect(panel).toBeVisible()
+    await expect(panel.getByText('笔记页的面板对话', { exact: true })).toHaveCount(0)
+    await page.keyboard.press('Meta+j')
+    await expect.poll(async () => (await page.evaluate((id) => window.jiwei.chat.messages(id), conversationId)).at(-1)?.status).toBe('done')
+    await navTo(page, /笔记/)
+    await expect(panel).toBeVisible()
+    await expect(panel.getByText(answer, { exact: true })).toBeVisible()
+    await expect(panel.getByText('笔记页的面板对话', { exact: true })).toBeVisible()
+    await expect(panel.getByRole('textbox').last()).toHaveValue('保留笔记页草稿')
   } finally {
     await app.close()
     await new Promise<void>((resolve) => model.server.close(() => resolve()))

@@ -5,7 +5,7 @@ import { useApp } from '@/store/app'
 import { api } from './utils'
 import { invalidate } from './queries'
 import { toggleActiveSidebar } from '@/components/PageSidebar'
-import { useAssist } from '@/features/assist/store'
+import { useAssist, getPanel } from '@/features/assist/store'
 import { requestTimestamp } from '@/features/browser/courseNotes'
 
 /** 新建笔记并打开（继承当前分类筛选） */
@@ -89,7 +89,7 @@ export function useGlobalShortcuts(): void {
         e.preventDefault()
         if (s.view === 'chat') return
         const a = useAssist.getState()
-        a.setPanel({ panelOpen: !a.panelOpen })
+        a.setPanel({ panelOpen: !getPanel().open })
       } else if (k === '9') {
         e.preventDefault()
         s.setView('today')
