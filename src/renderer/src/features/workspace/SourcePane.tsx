@@ -1,4 +1,4 @@
-import { CODE_EXTS } from '@shared/attachments'
+import { FORMATS } from '@shared/formats'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -179,7 +179,7 @@ function ImageSource({ source }: { source: Source }) {
 }
 
 /** 解析为文本分段后在应用内阅读的格式 */
-const TEXT_EXTS = ['md', 'markdown', 'txt', 'docx', 'epub', 'html', 'htm', 'xlsx', 'csv', 'pptx', ...CODE_EXTS]
+const TEXT_EXTS = Object.keys(FORMATS).filter((ext) => !!FORMATS[ext].parser && ext !== 'pdf')
 
 function Body({ source }: { source: Source }) {
   const { t } = useTranslation()

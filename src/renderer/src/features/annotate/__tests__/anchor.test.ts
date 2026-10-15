@@ -22,4 +22,10 @@ describe('annotation re-anchoring (TextQuote)', () => {
     expect(locateQuote(text, { quote: '交错练习', start: 0 })).toBeNull()
     expect(locateQuote(text, {})).toBeNull()
   })
+  it('matches extraction-normalized native quotes while preserving original UTF16 offsets', () => {
+    expect(locateQuote('前言 风压A102。', { quote: '⻛压Ａ１０２' })).toEqual({ start: 3, end: 9 })
+    expect(locateQuote('前言 风\u200b压Ａ１０２。', { quote: '风压A102' })).toEqual({ start: 3, end: 10 })
+    expect(locateQuote('😀⻛压Ａ１０２', { quote: '风压A102' })).toEqual({ start: 2, end: 8 })
+    expect(locateQuote('前言\u{2F800}风压', { quote: '丽风压' })).toEqual({ start: 2, end: 6 })
+  })
 })

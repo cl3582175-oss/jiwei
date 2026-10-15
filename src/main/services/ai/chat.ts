@@ -1,7 +1,7 @@
 import { prepareAttachmentTurn, markAttachmentTurnSent, assertAttachmentTurn, type AttachmentTurn } from './chatAttachments'
 import { bindAttachments, bindAttachmentNotes, attachmentStatus, conversationAttachments, noteReference } from '../attachments'
 import { attachmentHistoryReadable, canReadSource, hasPrivateAttachmentHistory, hasAttachmentHistory } from '../attachmentsAccess'
-import { listSegments } from '../segments'
+import { listSegments, resolveSegmentId } from '../segments'
 import { conversationAttachmentIds } from '../attachmentDerived'
 import { tr } from '../../lib/messages'
 import { detachConversationAttachments } from '../attachments'
@@ -91,6 +91,13 @@ function cardFor(conversationId: string, zh: boolean): string | null {
   return cards.get(conversationId)!
 }
 
+const resolvedAnchor = (raw: string | null): Anchor | null => {
+  if (!raw) return null
+  const anchor = JSON.parse(raw) as Anchor
+  return anchor.parentType === 'source' && anchor.ownerId
+    ? { ...anchor, ownerId: resolveSegmentId(anchor.ownerId) ?? anchor.ownerId }
+    : anchor
+}
 const toConversation = (r: ConvRow): Conversation => ({
   id: r.id,
   title: r.title,
@@ -99,7 +106,7 @@ const toConversation = (r: ConvRow): Conversation => ({
   pinned: r.pinned,
   incognito: r.incognito,
   kind: r.kind,
-  anchor: r.anchor ? (JSON.parse(r.anchor) as Anchor) : null,
+  anchor: resolvedAnchor(r.anchor),
   feynman: r.kind === 'feynman' ? feynmanInfo(parseMeta(r.meta)) : null,
   reflectionId: r.kind === 'reflection' && r.meta ? ((JSON.parse(r.meta) as { reflectionId?: string }).reflectionId ?? null) : null,
   createdAt: r.createdAt,

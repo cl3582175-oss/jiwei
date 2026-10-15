@@ -4,6 +4,8 @@ import { join } from 'path'
 import JSZip from 'jszip'
 import { describe, expect, it } from 'vitest'
 import { parseEpubStructured, parseHtmlStructured, parsePdfStructured } from './parsers'
+import { readingHtmlText } from '../main/lib/reading'
+import { normalizeQuery } from '../main/lib/textNormalize'
 
 async function withDir(fn: (dir: string) => Promise<void>): Promise<void> {
   const dir = await mkdtemp(join(tmpdir(), 'rag-structure-'))
@@ -14,6 +16,18 @@ async function withDir(fn: (dir: string) => Promise<void>): Promise<void> {
   }
 }
 describe('structured parser entry points', () => {
+  it('saved HTML and native quote retain the same visible text across extraction normalization', async () =>
+    withDir(async (dir) => {
+      const html =
+        '<html><body><article><p>前言 <span>⻛压Ａ１０２</span><br>稳定条件（合成）😀。<span hidden>隐藏干扰</span></p></article></body></html>'
+      const path = join(dir, 'native-quote.html')
+      await writeFile(path, html)
+      const raw = readingHtmlText(html),
+        result = await parseHtmlStructured(path)
+      expect(raw).toContain('⻛压Ａ１０２')
+      expect(result.segments[0].text).toContain('风压A102')
+      expect(normalizeQuery(result.segments.map((s) => s.text).join('\n'))).toBe(normalizeQuery(raw))
+    }))
   it('extracts saved article structure, titles and tables', async () =>
     withDir(async (dir) => {
       const path = join(dir, 'article.html')

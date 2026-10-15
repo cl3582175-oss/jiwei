@@ -1,5 +1,6 @@
 import { elements, openOffice, readXml, relationshipPath, xmlText, type Xml } from './ooxml'
 import type { SegmentInput } from '../segments'
+import { normalizeExtracted } from '../../lib/textNormalize'
 
 function shapes(root: unknown): Xml[] {
   return elements(root).flatMap((value) => [
@@ -45,7 +46,12 @@ export async function parsePptx(path: string): Promise<SegmentInput[]> {
       ...body.filter(Boolean),
       ...(noteText ? [`讲者备注：${noteText}`] : [])
     ].join('\n')
-    output.push({ kind: 'slide', text, locator: { page: i + 1, value: `page=${i + 1}` } })
+    output.push({
+      kind: 'slide',
+      heading: normalizeExtracted(titles.filter(Boolean).join(' › ')).slice(0, 120),
+      text: normalizeExtracted(text),
+      locator: { page: i + 1, value: `page=${i + 1}` }
+    })
   }
   return output
 }

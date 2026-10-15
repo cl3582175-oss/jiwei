@@ -66,6 +66,7 @@ export const BackendSaveSchema = z.object({
 export type BackendSave = z.infer<typeof BackendSaveSchema>
 
 export const RetrievalSettingsSchema = z.object({
+  autoUpgrade: z.boolean(),
   mode: WebModeSchema,
   preferZh: z.enum(WEB_BACKENDS).nullable(),
   preferEn: z.enum(WEB_BACKENDS).nullable(),
@@ -78,6 +79,7 @@ export const RetrievalSettingsSchema = z.object({
 export type RetrievalSettings = z.infer<typeof RetrievalSettingsSchema>
 
 export const RETRIEVAL_DEFAULTS: RetrievalSettings = {
+  autoUpgrade: true,
   mode: 'auto',
   preferZh: null,
   preferEn: null,

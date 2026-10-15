@@ -4,8 +4,15 @@ import { parsePptx } from '../main/services/parsers/pptx'
 import { parseCode } from '../main/services/parsers/code'
 import { readFile } from 'fs/promises'
 import { expandICS } from '../main/lib/ics'
-import { segmentText, type TextSegment } from '../main/lib/segment'
-import { parseDocx, parseEpub, parseHtml, parsePdf, renderPdfPage } from './parsers'
+import { segmentTextStructured } from '../main/lib/segment'
+import {
+  parseEpubStructured as parseEpub,
+  parseHtmlStructured as parseHtml,
+  parsePdfStructured as parsePdf,
+  renderPdfPage
+} from './parsers'
+import { parseDocx } from './docx'
+import { parseDoc } from './doc'
 import { transcribe } from './transcribe'
 import { extractVoiceprints, type VoiceprintInput } from './voiceprint'
 import { synthesizeLocal, type SpeechInput } from './speech'
@@ -48,7 +55,7 @@ const tasks: Record<string, Task> = {
   async segmentTextFile(payload) {
     const { path, ext } = payload as { path: string; ext: string }
     const raw = await readFile(path, 'utf8')
-    return segmentText(raw, ext === 'md' || ext === 'markdown' ? 'markdown' : 'plain') satisfies TextSegment[]
+    return segmentTextStructured(raw, ext === 'md' || ext === 'markdown' ? 'markdown' : 'plain')
   },
   async parsePdf(payload, progress) {
     return parsePdf((payload as { path: string }).path, progress)
@@ -60,6 +67,9 @@ const tasks: Record<string, Task> = {
   },
   async parseDocx(payload) {
     return parseDocx((payload as { path: string }).path)
+  },
+  async parseDoc(payload) {
+    return parseDoc((payload as { path: string }).path)
   },
   async parseEpub(payload, progress) {
     return parseEpub((payload as { path: string }).path, progress)

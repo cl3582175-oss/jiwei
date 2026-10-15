@@ -1,4 +1,4 @@
-import { CODE_EXTS } from './parsers/code'
+import { FORMATS } from '@shared/formats'
 import log from 'electron-log/main'
 import { recordingAudio, recordingForSource, purgeRecording } from './recording'
 import { recordings } from '../db/schema'
@@ -22,46 +22,7 @@ import { applySubtitleFile, canAutoTranscribe, enqueueTranscribe, findSidecarSub
 import { deleteSegments, listSegments } from './segments'
 import type { ImportResult, Source, SourceKind, SourceQuery, SourceUpdate } from '@shared/types'
 
-export const EXT_KIND: Record<string, SourceKind> = {
-  pdf: 'pdf',
-  epub: 'book',
-  mobi: 'book',
-  azw3: 'book',
-  mp4: 'video',
-  mov: 'video',
-  mkv: 'video',
-  webm: 'video',
-  avi: 'video',
-  m4v: 'video',
-  mp3: 'audio',
-  wav: 'audio',
-  m4a: 'audio',
-  flac: 'audio',
-  ogg: 'audio',
-  aac: 'audio',
-  png: 'image',
-  jpg: 'image',
-  jpeg: 'image',
-  gif: 'image',
-  webp: 'image',
-  svg: 'image',
-  bmp: 'image',
-  heic: 'image',
-  avif: 'image',
-  doc: 'document',
-  docx: 'document',
-  txt: 'document',
-  md: 'document',
-  ppt: 'document',
-  pptx: 'document',
-  xls: 'document',
-  xlsx: 'document',
-  csv: 'document',
-  html: 'document',
-  htm: 'document',
-  markdown: 'document',
-  ...Object.fromEntries(CODE_EXTS.map((ext) => [ext, 'document' as const]))
-}
+export const EXT_KIND: Record<string, SourceKind> = Object.fromEntries(Object.entries(FORMATS).map(([ext, info]) => [ext, info.kind]))
 
 function query(conds: SQL[]): Source[] {
   const rows = getDb()

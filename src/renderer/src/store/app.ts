@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { canonicalUrl } from '@shared/browserUrl'
 import type { NoteSort, WorkspaceContext } from '@shared/types'
 import { toast } from 'sonner'
+import { resolveSourceHighlight } from '../lib/sourceHighlight'
 
 export type StarterIntent =
   | { kind: 'chat'; text: string; skill?: string }
@@ -208,6 +209,7 @@ const same = (a: Location, b: Location): boolean =>
   (a.browserOpen ?? false) === (b.browserOpen ?? false)
 
 export const useApp = create<AppState>((set, get) => {
+  let highlightRequest = 0
   const apply = (loc: Location): void =>
     set((s) => ({
       ...loc,
@@ -400,7 +402,16 @@ export const useApp = create<AppState>((set, get) => {
       s.navigate({ view: item })
     },
     highlight: null,
-    setHighlight: (highlight) => set({ highlight }),
+    setHighlight: (highlight) => {
+      const request = ++highlightRequest
+      if (highlight?.type === 'segment' && highlight.id) {
+        set({ highlight: null })
+        void resolveSourceHighlight(highlight, (id) => window.jiwei.segments.resolve(id)).then((resolved) => {
+          // 等待 IPC 时用户可能跳到另一处；迟到的别名结果不能覆盖新的定位。
+          if (highlightRequest === request) set({ highlight: resolved })
+        })
+      } else set({ highlight })
+    },
 
     noteFilter: { type: 'all' },
     setNoteFilter: (noteFilter) => set({ noteFilter, noteSelection: [] }),

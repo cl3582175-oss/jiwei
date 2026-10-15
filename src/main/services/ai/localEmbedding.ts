@@ -187,7 +187,8 @@ export async function start(): Promise<void> {
       '--port',
       String(port),
       '-c',
-      '8192',
+      // -c 是四个槽的总预算；HTML 表格在1800字内仍可能超过原来每槽2048词元。
+      '32768',
       '-b',
       '8192',
       '-ub',

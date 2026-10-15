@@ -25,6 +25,7 @@ export {
   users,
   devices,
   sourceSegments,
+  segmentAliases,
   sourcePages,
   goals,
   planEvents,

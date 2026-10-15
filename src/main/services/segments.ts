@@ -1,9 +1,10 @@
 import { correctionPair, speakerBody } from '@shared/recording'
 import { and, asc, eq, inArray, isNull, like } from 'drizzle-orm'
 import { getDb, getSqlite } from '../db'
-import { sourceSegments, sources, recordings, hotwordCorrections } from '../db/schema'
+import { sourceSegments, segmentAliases, annotations, sources, recordings, hotwordCorrections } from '../db/schema'
 import { newId } from '../lib/ids'
 import { hashText } from '../lib/derive'
+import { normalizeQuery } from '../lib/textNormalize'
 import { emit } from '../events'
 import type { Segment } from '@shared/types'
 
@@ -15,7 +16,8 @@ const toSegment = (r: Row): Segment => ({
   ordinal: r.ordinal,
   kind: r.kind,
   locator: JSON.parse(r.locator) as Record<string, unknown>,
-  text: r.text
+  text: r.text,
+  heading: r.heading
 })
 
 export function listSegments(sourceId: string): Segment[] {
@@ -30,11 +32,13 @@ export function listSegments(sourceId: string): Segment[] {
 
 /** 按永久片段身份定位；智能界面不能借此读取已排除或删除的资料。 */
 export function getSegment(id: string): Segment | null {
+  const resolved = resolveSegmentId(id)
+  if (!resolved) return null
   const row = getDb()
     .select({ segment: sourceSegments })
     .from(sourceSegments)
     .innerJoin(sources, eq(sourceSegments.sourceId, sources.id))
-    .where(and(eq(sourceSegments.id, id), isNull(sources.deletedAt), eq(sources.aiExcluded, false)))
+    .where(and(eq(sourceSegments.id, resolved), isNull(sources.deletedAt), eq(sources.aiExcluded, false), eq(sources.space, 'library')))
     .get()
   if (
     !row ||
@@ -84,6 +88,35 @@ export interface SegmentInput {
   kind: string
   locator: Record<string, unknown>
   text: string
+  heading?: string
+}
+
+/** 永久身份只解析到仍然存在的片段；内容权限由 getSegment 等读取入口再次检查。 */
+export function resolveSegmentId(id: string): string | null {
+  const db = getDb()
+  if (db.select({ id: sourceSegments.id }).from(sourceSegments).where(eq(sourceSegments.id, id)).get()) return id
+  return (
+    db
+      .select({ id: sourceSegments.id })
+      .from(segmentAliases)
+      .innerJoin(sourceSegments, eq(segmentAliases.newId, sourceSegments.id))
+      .where(eq(segmentAliases.oldId, id))
+      .get()?.id ?? null
+  )
+}
+
+const segmentHash = (kind: string, heading: string, text: string): string =>
+  heading ? hashText(kind, heading, text) : hashText(kind, text)
+const bigrams = (text: string): Set<string> => {
+  const chars = [...normalizeQuery(text)],
+    out = new Set<string>()
+  for (let i = 1; i < chars.length; i++) out.add(chars[i - 1] + chars[i])
+  return out
+}
+function pageRange(locator: Record<string, unknown>): [number, number] | null {
+  const page = Number(locator.page ?? (typeof locator.value === 'string' ? /(?:^|[,\s])page=(\d+)/.exec(locator.value)?.[1] : 0))
+  if (!Number.isFinite(page) || page <= 0) return null
+  return [page, Math.max(page, Number(locator.pageEnd) || page)]
 }
 
 /**
@@ -98,9 +131,13 @@ export function replaceSegments(sourceId: string, input: SegmentInput[]): number
   for (const r of prev) byHash.set(r.hash, [...(byHash.get(r.hash) ?? []), r])
   db.transaction((tx) => {
     const kept = new Set<string>()
+    const next: { id: string; locator: Record<string, unknown>; grams: Set<string> }[] = []
     input.forEach((seg, ordinal) => {
-      const hash = hashText(seg.kind, seg.text)
+      const heading = seg.heading ?? ''
+      const hash = segmentHash(seg.kind, heading, seg.text)
       const reuse = byHash.get(hash)?.shift()
+      const id = reuse?.id ?? newId()
+      next.push({ id, locator: seg.locator, grams: bigrams(seg.text) })
       if (reuse) {
         kept.add(reuse.id)
         tx.update(sourceSegments)
@@ -110,12 +147,13 @@ export function replaceSegments(sourceId: string, input: SegmentInput[]): number
       } else {
         tx.insert(sourceSegments)
           .values({
-            id: newId(),
+            id,
             sourceId,
             ordinal,
             kind: seg.kind,
             locator: JSON.stringify(seg.locator),
             text: seg.text,
+            heading,
             hash,
             createdAt: now,
             updatedAt: now
@@ -123,18 +161,70 @@ export function replaceSegments(sourceId: string, input: SegmentInput[]): number
           .run()
       }
     })
-    const drop = prev.filter((r) => !kept.has(r.id)).map((r) => r.id)
+    const dropped = prev.filter((r) => !kept.has(r.id))
+    const remap = new Map<string, string>()
+    for (const old of dropped) {
+      const range = pageRange(JSON.parse(old.locator)),
+        grams = bigrams(old.text)
+      let best: (typeof next)[number] | null = null,
+        score = 0
+      for (const candidate of next) {
+        const candidateRange = pageRange(candidate.locator)
+        if (range && (!candidateRange || candidateRange[1] < range[0] || candidateRange[0] > range[1])) continue
+        const similarity = grams.size ? [...grams].filter((g) => candidate.grams.has(g)).length / grams.size : 0
+        if (similarity > score) {
+          best = candidate
+          score = similarity
+        }
+      }
+      if (!best || score < 0.3) continue
+      for (const prior of tx
+        .select()
+        .from(segmentAliases)
+        .where(and(eq(segmentAliases.sourceId, sourceId), eq(segmentAliases.newId, old.id)))
+        .all())
+        remap.set(prior.oldId, best.id)
+      tx.update(segmentAliases)
+        .set({ newId: best.id })
+        .where(and(eq(segmentAliases.sourceId, sourceId), eq(segmentAliases.newId, old.id)))
+        .run()
+      tx.insert(segmentAliases)
+        .values({ oldId: old.id, newId: best.id, sourceId, createdAt: now })
+        .onConflictDoUpdate({ target: segmentAliases.oldId, set: { newId: best.id, sourceId, createdAt: now } })
+        .run()
+      remap.set(old.id, best.id)
+    }
+    // 批注是真实持久数据，与分段及别名一起提交；历史引用和导图在打开时解析。
+    if (remap.size)
+      for (const annotation of tx
+        .select()
+        .from(annotations)
+        .where(and(eq(annotations.targetType, 'source'), eq(annotations.targetId, sourceId)))
+        .all()) {
+        const selector = JSON.parse(annotation.selector) as { ownerId?: string }
+        const id = selector.ownerId && remap.get(selector.ownerId)
+        if (id)
+          tx.update(annotations)
+            .set({ selector: JSON.stringify({ ...selector, ownerId: id }), updatedAt: now })
+            .where(eq(annotations.id, annotation.id))
+            .run()
+      }
+    const drop = dropped.map((r) => r.id)
     for (let i = 0; i < drop.length; i += 500)
       tx.delete(sourceSegments)
         .where(inArray(sourceSegments.id, drop.slice(i, i + 500)))
         .run()
   })
   emit('segments:changed', { sourceId })
+  emit('annotations:changed', { targetType: 'source', targetId: sourceId })
   return input.length
 }
 
 export function deleteSegments(sourceId: string): void {
-  getDb().delete(sourceSegments).where(eq(sourceSegments.sourceId, sourceId)).run()
+  getDb().transaction((tx) => {
+    tx.delete(segmentAliases).where(eq(segmentAliases.sourceId, sourceId)).run()
+    tx.delete(sourceSegments).where(eq(sourceSegments.sourceId, sourceId)).run()
+  })
 }
 
 /** 修改单个片段的文字（如纠正转写错误）；位置不变，ID 不变（引用与就地提问不受影响） */
@@ -169,7 +259,7 @@ export function updateSegmentText(id: string, text: string): Segment | null {
       }
     }
     db.update(sourceSegments)
-      .set({ text: clean, hash: hashText(row.kind, clean), locator: JSON.stringify(locator), updatedAt: Date.now() })
+      .set({ text: clean, hash: segmentHash(row.kind, row.heading, clean), locator: JSON.stringify(locator), updatedAt: Date.now() })
       .where(eq(sourceSegments.id, id))
       .run()
   })

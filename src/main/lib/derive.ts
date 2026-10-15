@@ -65,8 +65,10 @@ export interface Derived {
 const ASSET_RE = /^jiwei:\/\/asset\/([0-9a-f]{64})(?:\.[a-z0-9]+)?$/i
 const LINK_RE = /^jiwei:\/\/(note|source)\/([0-9a-f-]{36})/i
 
-export function hashText(kind: string, text: string): string {
-  return createHash('sha1').update(kind).update('\0').update(text).digest('hex')
+export function hashText(kind: string, text: string, ...rest: string[]): string {
+  const hash = createHash('sha1').update(kind)
+  for (const part of [text, ...rest]) hash.update('\0').update(part)
+  return hash.digest('hex')
 }
 
 /** 节点纯文本；块级子节点之间以换行分隔 */

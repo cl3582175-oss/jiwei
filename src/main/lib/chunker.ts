@@ -17,6 +17,8 @@ const prefix = (s: string, length: number): string => {
   const end = Math.min(length, s.length)
   return s.slice(0, end > 0 && /[\uD800-\uDBFF]/.test(s[end - 1]) ? end - 1 : end)
 }
+/** 索引保留全文身份，只限制模型输入；不能让长标题或代码越过向量输入上限。 */
+export const embeddingText = (text: string): string => prefix(text, EMBED_MAX_CHARS[chinese(text) ? 'zh' : 'en'])
 const mdCell = (s: string): string => normalizeExtracted(s).replace(/\r?\n/g, ' ').replace(/\|/g, '\\|')
 const mdLine = (cells: string[], width: number): string =>
   `| ${Array.from({ length: width }, (_, i) => mdCell(cells[i] ?? '')).join(' | ')} |`

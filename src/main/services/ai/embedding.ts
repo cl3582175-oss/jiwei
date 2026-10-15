@@ -6,6 +6,8 @@ import { getSettings } from '../settings'
 import { emit } from '../../events'
 import { decryptKey, getProviderRow } from './providers'
 import * as local from './localEmbedding'
+import { EmbeddingDimensionError } from '../../lib/embeddingDimension'
+export { EmbeddingDimensionError } from '../../lib/embeddingDimension'
 
 // 向量服务门面：本地 EmbeddingGemma 2 或云端 OpenAI 兼容 /embeddings 接口。
 // 输出统一为 512 维单位向量（本地模型 MRL 截断后再归一化；云端请求 dimensions=512）。
@@ -92,6 +94,7 @@ async function embedCloud(inputs: string[]): Promise<number[][]> {
   })
   if (!res.ok) throw new Error(`向量服务出错：HTTP ${res.status} ${(await res.text()).slice(0, 200)}`)
   const body = (await res.json()) as { data: { index: number; embedding: number[] }[] }
+  for (const item of body.data) if (item.embedding.length !== EMBEDDING_DIM) throw new EmbeddingDimensionError(item.embedding.length)
   return body.data.sort((a, b) => a.index - b.index).map((d) => d.embedding)
 }
 

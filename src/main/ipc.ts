@@ -77,6 +77,7 @@ import * as appSvc from './services/app'
 import { getSettings, setSettings } from './services/settings'
 import * as proposals from './services/proposals'
 import * as segments from './services/segments'
+import { sourceUpgradeStatus } from './services/sourceUpgrade'
 import * as jobs from './services/jobs'
 import * as vaults from './services/vaults'
 import { getProfile, setProfileName } from './services/device'
@@ -394,6 +395,7 @@ const handlers: Handlers = {
     resolve: (_, id, opIndex, decision, blockIds) => proposals.resolveUserOp(id, opIndex, decision, blockIds)
   },
   segments: {
+    resolve: (_, id) => segments.getSegment(id)?.id ?? null,
     get: (_, id) => segments.getSegment(id),
     update: (_, id, text) => reindexAfter(segments.updateSegmentText(id, text)),
     list: (_, sourceId) => segments.listSegments(sourceId),
@@ -957,6 +959,7 @@ const handlers: Handlers = {
     saveToNote: (_, input) => ui.saveToNote(input)
   },
   retrieval: {
+    upgradeStatus: () => sourceUpgradeStatus(),
     status: () => retrievalGateway.retrievalStatus(),
     saveBackend: (_, input) => retrievalBackends.saveBackend(input),
     testBackend: (_, id) => retrievalGateway.testBackend(id),

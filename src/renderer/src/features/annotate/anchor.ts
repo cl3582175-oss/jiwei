@@ -1,9 +1,58 @@
 import type { AnnotationSelector } from '@shared/types'
+import { normalizeExtracted } from '@shared/textNormalize'
 
 // 文字批注的定位（W3C TextQuote）：资料重新解析或笔记修改后，凭原文与前后文重新找到位置。
 
 /** 在 text 中找到选择器指向的位置；找不到返回 null（批注“失去定位”） */
 export function locateQuote(
+  text: string,
+  sel: Pick<AnnotationSelector, 'quote' | 'prefix' | 'suffix' | 'start' | 'end'>
+): { start: number; end: number } | null {
+  const exact = locateExactQuote(text, sel)
+  if (exact || !sel.quote) return exact
+  const mapped = normalizedOffsets(text),
+    quote = normalizedOffsets(sel.quote).text
+  if (!quote || (mapped.text === text && quote === sel.quote)) return null
+  const found = locateExactQuote(mapped.text, {
+    quote,
+    prefix: sel.prefix ? normalizedOffsets(sel.prefix).text : undefined,
+    suffix: sel.suffix ? normalizedOffsets(sel.suffix).text : undefined,
+    start: sel.start === undefined ? undefined : mapped.starts.findIndex((i) => i >= sel.start!)
+  })
+  return found ? { start: mapped.starts[found.start], end: mapped.ends[found.end - 1] } : null
+}
+
+function normalizedOffsets(source: string): { text: string; starts: number[]; ends: number[] } {
+  let text = '',
+    offset = 0
+  const starts: number[] = [],
+    ends: number[] = []
+  for (const ch of source) {
+    const start = offset
+    offset += ch.length
+    const value = normalizeExtracted(ch)
+    for (const unit of value.split('')) {
+      if (/\s/.test(unit)) {
+        if (!text) continue
+        if (text.endsWith(' ')) {
+          ends[ends.length - 1] = offset
+          continue
+        }
+        text += ' '
+      } else text += unit
+      starts.push(start)
+      ends.push(offset)
+    }
+  }
+  if (text.endsWith(' ')) {
+    text = text.slice(0, -1)
+    starts.pop()
+    ends.pop()
+  }
+  return { text, starts, ends }
+}
+
+function locateExactQuote(
   text: string,
   sel: Pick<AnnotationSelector, 'quote' | 'prefix' | 'suffix' | 'start' | 'end'>
 ): { start: number; end: number } | null {

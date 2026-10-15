@@ -3,7 +3,7 @@ import { asExternalData } from '../agent/wrap'
 import { eq } from 'drizzle-orm'
 import { getDb, getSqlite } from '../../db'
 import { notes, sources } from '../../db/schema'
-import { listSegments } from '../segments'
+import { listSegments, resolveSegmentId } from '../segments'
 import { loadDoc, stateToContent } from '../docs'
 import { nodeText } from '../../lib/derive'
 import { nodesToMarkdown } from '../../lib/markdown'
@@ -129,7 +129,7 @@ function sourceAnchor(anchor: Anchor, zh: boolean, conversationId: string | null
         : `${segs.length} segments; numbered excerpts below contain the opening text within the context budget. Use source_read for more.`
     )
   const idx = a.ownerId
-    ? segs.findIndex((s) => s.id === a.ownerId)
+    ? segs.findIndex((s) => s.id === resolveSegmentId(a.ownerId!))
     : a.page
       ? segs.findIndex((s) => segLabel(s).includes(`第 ${a.page} 页`))
       : -1

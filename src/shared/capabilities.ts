@@ -636,6 +636,7 @@ export const capabilities = {
     trash: cap<void>()({ description: '删除资料（进入最近删除）', params: [id()] })
   },
   segments: {
+    resolve: cap<string | null>()({ description: '解析仍可读取的资料片段永久身份', params: [id()] }),
     get: cap<Segment | null>()({ description: '按片段身份读取允许用于智能界面的资料原文', params: [id()] }),
     update: cap<Segment | null>()({
       description: '修改片段文字（如纠正转写错误）',
@@ -1479,6 +1480,10 @@ export const capabilities = {
     undo: cap<import('./importer').ImportRun>()({ description: '把本次导入移入回收站', params: [['id', z.string().max(64)]] })
   },
   retrieval: {
+    upgradeStatus: cap<{ total: number; done: number; running: boolean; paused: boolean }>()({
+      description: '读取资料检索升级的进度',
+      params: none
+    }),
     status: cap<RetrievalStatus>()({ description: '联网服务状态与今日用量', params: none }),
     saveBackend: cap<void>()({ description: '保存联网搜索服务配置', params: [['input', BackendSaveSchema]] }),
     testBackend: cap<{ ok: boolean; message: string }>()({ description: '测试联网搜索服务', params: [['id', z.enum(BACKEND_IDS)]] }),

@@ -367,6 +367,7 @@ export interface Segment {
   /** W3C 选择器 */
   locator: Record<string, unknown>
   text: string
+  heading?: string
 }
 
 export type ProposalOpStatus = 'pending' | 'accepted' | 'rejected'

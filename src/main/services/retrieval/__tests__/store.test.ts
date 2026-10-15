@@ -138,6 +138,7 @@ describe('search backend state and upgrade', () => {
     setSettings({ retrieval: { cautious: true, trustedSites: ['example.org'] } })
     setSettings({ retrieval: { dailyLimit: 25 } })
     expect(getSettings().retrieval).toEqual({
+      autoUpgrade: true,
       mode: 'auto',
       preferZh: null,
       preferEn: null,

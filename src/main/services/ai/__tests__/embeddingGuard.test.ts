@@ -19,12 +19,16 @@ beforeEach(() => {
   fixture.mode = 'cloud'
   fixture.fetch.mockReset().mockImplementation(async (_url, init) => {
     const inputs = JSON.parse(init.body).input as string[]
-    return Response.json({ data: inputs.map((_, index) => ({ index, embedding: [1, 0] })) })
+    return Response.json({ data: inputs.map((_, index) => ({ index, embedding: [1, ...Array(511).fill(0)] })) })
   })
   fixture.local.mockReset().mockImplementation(async (inputs: string[]) => inputs.map(() => [1, 0]))
 })
 
 describe('web embedding send guard', () => {
+  it('rejects cloud dimensions before MRL truncation can disguise an incompatible model', async () => {
+    fixture.fetch.mockResolvedValue(Response.json({ data: [{ index: 0, embedding: Array(768).fill(0) }] }))
+    await expect(embed(['合成资料'], 'doc')).rejects.toThrow(/768/)
+  })
   it('rejects before any cloud request when current privacy denies the candidate', async () => {
     const denied = new Error('Controlled privacy denial')
     await expect(
@@ -45,7 +49,7 @@ describe('web embedding send guard', () => {
       fixture.fetch.mockImplementation(async (_url, init) => {
         allowed = false
         const inputs = JSON.parse(init.body).input as string[]
-        return Response.json({ data: inputs.map((_, index) => ({ index, embedding: [1, 0] })) })
+        return Response.json({ data: inputs.map((_, index) => ({ index, embedding: [1, ...Array(511).fill(0)] })) })
       })
     } else
       fixture.local.mockImplementation(async (inputs: string[]) => {
@@ -69,6 +73,6 @@ describe('web embedding send guard', () => {
       'doc'
     )
     expect(fixture.fetch).toHaveBeenCalledTimes(3)
-    expect(result).toEqual(Array.from({ length: 33 }, () => [1, 0]))
+    expect(result).toEqual(Array.from({ length: 33 }, () => [1, ...Array(511).fill(0)]))
   })
 })
