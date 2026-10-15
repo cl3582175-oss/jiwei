@@ -84,3 +84,40 @@ it('never retries a second overflow, an aborted/started turn, or an unrelated fa
     expect(attempts).toBe(expected)
   }
 })
+
+it('still learns after output or a model tool has begun, without replaying it', async () => {
+  const learned: number[] = []
+  let sideEffects = 0
+  await expect(
+    withContextWindowRetry(
+      async () => {
+        sideEffects++
+        throw new Error('maximum context length is 16384 tokens')
+      },
+      {
+        context: 1000000,
+        learn: (n) => {
+          learned.push(n)
+        },
+        canRetry: () => false
+      }
+    )
+  ).rejects.toThrow('16384')
+  expect(learned).toEqual([16384])
+  expect(sideEffects).toBe(1)
+})
+
+it('fits output and existing thinking budgets into the learned total window', async () => {
+  const { contextGenerationBudget } = await import('../modelContext')
+  const normal = contextGenerationBudget(32768, 12000, { maxOutputTokens: 32768 })
+  expect(normal.maxOutputTokens).toBeLessThanOrEqual(19744)
+  expect(normal.maxOutputTokens).toBeGreaterThan(0)
+  const anthropic = contextGenerationBudget(16384, 8000, {
+    maxOutputTokens: 32768,
+    providerOptions: { anthropic: { thinking: { type: 'enabled', budgetTokens: 24576 } } }
+  })
+  expect(anthropic.maxOutputTokens).toBeLessThanOrEqual(7360)
+  expect((anthropic.providerOptions!.anthropic.thinking as { budgetTokens: number }).budgetTokens).toBeLessThan(anthropic.maxOutputTokens!)
+  const gemini = contextGenerationBudget(16384, 8000, { providerOptions: { google: { thinkingConfig: { thinkingBudget: 24576 } } } })
+  expect((gemini.providerOptions!.google.thinkingConfig as { thinkingBudget: number }).thinkingBudget).toBeLessThan(gemini.maxOutputTokens!)
+})

@@ -4,6 +4,7 @@ export interface ModelRequest {
   messages: { role: string; content: unknown }[]
   tools?: { function: { name: string; parameters?: Record<string, unknown> } }[]
   stream?: boolean
+  max_tokens?: number
 }
 export const textOf = (value: unknown): string =>
   typeof value === 'string' ? value : Array.isArray(value) ? value.map((part) => part.text ?? '').join('') : ''

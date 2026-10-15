@@ -1,4 +1,5 @@
 import { validContext } from '@shared/ai'
+import type { BuiltModel } from './model'
 
 /** 只采信明确标注的输入/上下文上限，绝不把请求长度、输出限额或限流数字学成窗口。 */
 export function contextLimitFromError(error: unknown): number | null {
@@ -25,8 +26,34 @@ export async function withContextWindowRetry<T>(
     return await request(options.context, false)
   } catch (error) {
     const limit = contextLimitFromError(error)
-    if (!limit || options.canRetry?.() === false) throw error
+    if (!limit) throw error
     options.learn(limit)
-    return request(Math.min(options.context, limit), true)
+    if (options.canRetry?.() === false) throw error
+    try {
+      return await request(Math.min(options.context, limit), true)
+    } catch (second) {
+      const next = contextLimitFromError(second)
+      if (next && next !== limit) options.learn(next)
+      throw second
+    }
   }
+}
+
+/** 输入含系统/工具估算，额外保留协议开销；缩窗口时输出和思考预算必须同步收缩。 */
+export function contextGenerationBudget(
+  context: number,
+  inputTokens: number,
+  built: Pick<BuiltModel, 'maxOutputTokens' | 'providerOptions'>
+): Pick<BuiltModel, 'maxOutputTokens' | 'providerOptions'> {
+  const maxOutputTokens = Math.min(built.maxOutputTokens ?? 8192, Math.max(1, Math.floor(context - Math.ceil(inputTokens) - 1024)))
+  const providerOptions = built.providerOptions ? structuredClone(built.providerOptions) : undefined
+  const anthropic = providerOptions?.anthropic?.thinking as { type?: string; budgetTokens?: number } | undefined
+  if (anthropic?.type === 'enabled' && typeof anthropic.budgetTokens === 'number') {
+    if (maxOutputTokens <= 1024) providerOptions!.anthropic.thinking = { type: 'disabled' }
+    else anthropic.budgetTokens = Math.min(anthropic.budgetTokens, Math.max(1024, maxOutputTokens - 1024))
+  }
+  const google = providerOptions?.google?.thinkingConfig as { thinkingBudget?: number } | undefined
+  if (typeof google?.thinkingBudget === 'number' && google.thinkingBudget > 0)
+    google.thinkingBudget = Math.min(google.thinkingBudget, Math.max(0, maxOutputTokens - 1024))
+  return { maxOutputTokens, providerOptions }
 }

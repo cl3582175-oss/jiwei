@@ -8,7 +8,7 @@ import { conversationAttachmentIds } from '../attachmentDerived'
 import { tr } from '../../lib/messages'
 import { detachConversationAttachments } from '../attachments'
 import { collectGarbage } from '../assets'
-import { hasToolCall, stepCountIs, streamText, type ModelMessage, type ToolSet } from 'ai'
+import { asSchema, hasToolCall, stepCountIs, streamText, type ModelMessage, type ToolSet } from 'ai'
 import { ASK_USER, buildScopeTools } from './scopeTools'
 import { and, asc, desc, eq, inArray, isNull, ne } from 'drizzle-orm'
 import log from 'electron-log/main'
@@ -37,7 +37,7 @@ import { capsFor, getProviderRow, learnContextLimit } from './providers'
 import { retrieve } from './retrieve'
 import { estimateTokens, shortAttachmentBudget, FULL_SOURCE_MAX_TOKENS } from '../../lib/sourceContext'
 import { retrievalQuery } from './followUp'
-import { contextLimitFromError, withContextWindowRetry } from './modelContext'
+import { contextGenerationBudget, contextLimitFromError, withContextWindowRetry } from './modelContext'
 import { contextSourceEvidence, fullSourceEvidence, resolveContext } from './context'
 import { buildTools, numberHits, stepLabel, type AgentSession } from './tools'
 import { attachNoteToolImages } from './noteToolImages'
@@ -633,6 +633,7 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
   let reasoning = ''
   let citations: Citation[] = []
   const steps: AgentStep[] = []
+  let modelToolStarted = false
   const conv = db.select().from(conversations).where(eq(conversations.id, conversationId)).get()!
   const special = conv.kind === 'feynman' || conv.kind === 'reflection'
   const uiSettings = getSettings().ai.ui ?? UI_DEFAULTS
@@ -1069,6 +1070,7 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
     const toolset = special
       ? null
       : await agentTools(session, { providerId: input.providerId, model: input.model }, ctrl.signal, (id, patch, call) => {
+          modelToolStarted = true
           // 确认可能早于流里的 tool-call 片段到达：没有这一步时先建出来
           const prev = steps.find((x) => x.id === id) ?? {
             id,
@@ -1078,20 +1080,33 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
           }
           pushStep({ ...prev, ...patch })
         })
-    const run = (withTools: boolean) =>
-      streamText({
+    const toolSchemas = toolset
+      ? await Promise.all(
+          Object.entries(toolset).map(async ([name, tool]) => ({
+            name,
+            description: tool.description,
+            parameters: await asSchema(tool.inputSchema).jsonSchema
+          }))
+        )
+      : []
+    const run = (withTools: boolean) => {
+      const system = feynman
+        ? feynmanSystem(feynman, zh)
+        : coach
+          ? coachSystem(coach, zh)
+          : [
+              systemPrompt(zh, session.tier, session.incognito, conversationId, uiMode, localUi),
+              attachmentTurn.section,
+              fullTextInstruction
+            ]
+              .filter(Boolean)
+              .join('\n\n')
+      const inputTokens =
+        estimateTokens(system) + estimateTokens(JSON.stringify(msgs)) + estimateTokens(JSON.stringify(withTools ? toolSchemas : []))
+      const budget = contextGenerationBudget(contextLength, inputTokens, built)
+      return streamText({
         model: built.model,
-        system: feynman
-          ? feynmanSystem(feynman, zh)
-          : coach
-            ? coachSystem(coach, zh)
-            : [
-                systemPrompt(zh, session.tier, session.incognito, conversationId, uiMode, localUi),
-                attachmentTurn.section,
-                fullTextInstruction
-              ]
-                .filter(Boolean)
-                .join('\n\n'),
+        system,
         messages: msgs,
         prepareStep: ({ messages }) => {
           assertAttachmentTurn(conversationId, attachmentTurn.sourceIds)
@@ -1107,10 +1122,11 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
         },
         // 向用户提了选择题：本轮到此结束，等用户选
         ...(withTools && toolset ? { tools: toolset, stopWhen: [stepCountIs(MAX_STEPS), hasToolCall(ASK_USER)] } : {}),
-        providerOptions: built.providerOptions as never,
-        maxOutputTokens: built.maxOutputTokens,
+        providerOptions: budget.providerOptions as never,
+        maxOutputTokens: budget.maxOutputTokens,
         abortSignal: ctrl.signal
       })
+    }
     buildTurn()
     let result = run(true)
     let retried = false
@@ -1148,6 +1164,7 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
                 reasoning += part.text
                 emit('chat:delta', { messageId, conversationId, reasoning: part.text })
               } else if (part.type === 'tool-call') {
+                modelToolStarted = true
                 if (!steps.some((x) => x.id === part.toolCallId))
                   pushStep({
                     id: part.toolCallId,
@@ -1157,6 +1174,7 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
                     ...(part.toolName === ASK_USER ? { choices: choicesOf(part.input) } : {})
                   })
               } else if (part.type === 'tool-result') {
+                modelToolStarted = true
                 const prev = steps.find((x) => x.id === part.toolCallId)
                 if (prev && prev.status !== 'denied') pushStep({ ...prev, status: 'done', ...createdLink(part.toolName, part.output) })
               } else if (part.type === 'tool-error') {
@@ -1199,7 +1217,7 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
       {
         context: initialCaps.context,
         learn: (limit) => learnContextLimit(input.providerId, input.model, limit),
-        canRetry: () => !content && !steps.length && !ctrl.signal.aborted
+        canRetry: () => !content && !modelToolStarted && !ctrl.signal.aborted
       }
     )
     content = cleanContent(content)

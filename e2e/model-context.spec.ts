@@ -14,7 +14,8 @@ let app: ElectronApplication,
   providerId = '',
   sourceId = ''
 const requests: ModelRequest[] = []
-let reject = 0
+let reject = 0,
+  toolOverflow = 0
 test.describe.configure({ mode: 'serial' })
 test.beforeAll(async () => {
   server = createServer((req, res) => {
@@ -31,8 +32,51 @@ test.beforeAll(async () => {
     req.on('end', () => {
       const body = JSON.parse(raw) as ModelRequest
       if (body.stream) requests.push(body)
-      if (body.stream && reject > 0) {
-        reject--
+      const input = Math.ceil(JSON.stringify(body.messages).length / 4) + Math.ceil(JSON.stringify(body.tools ?? []).length / 4)
+      if (body.stream && toolOverflow === 1) {
+        toolOverflow = 2
+        res.writeHead(200, { 'content-type': 'text/event-stream' })
+        res.write(
+          'data: ' +
+            JSON.stringify({
+              id: 'controlled-tool',
+              model: 'context-controlled',
+              choices: [
+                {
+                  index: 0,
+                  delta: {
+                    role: 'assistant',
+                    tool_calls: [
+                      {
+                        index: 0,
+                        id: 'read-before-overflow',
+                        type: 'function',
+                        function: { name: 'knowledge_search', arguments: JSON.stringify({ query: '窗口证据', sourceIds: [sourceId] }) }
+                      }
+                    ]
+                  },
+                  finish_reason: null
+                }
+              ]
+            }) +
+            '\n\n'
+        )
+        res.end(
+          'data: ' +
+            JSON.stringify({ id: 'controlled-tool', choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }] }) +
+            '\n\ndata: [DONE]\n\n'
+        )
+        return
+      }
+      if (body.stream && toolOverflow === 2) {
+        toolOverflow = 0
+        res
+          .writeHead(400, { 'content-type': 'application/json' })
+          .end(JSON.stringify({ error: { message: 'maximum context length is 16384 tokens' } }))
+        return
+      }
+      if (body.stream && (reject > 0 || input + (body.max_tokens ?? 0) > 32768)) {
+        if (reject > 0) reject--
         res
           .writeHead(400, { 'content-type': 'application/json' })
           .end(JSON.stringify({ error: { message: 'maximum context length is 32768 tokens' } }))
@@ -103,6 +147,7 @@ const ask = () =>
     providerId,
     model: 'context-controlled',
     text: '窗口证据包含什么？',
+    effort: 'high',
     scope: { type: 'items', notes: [], sources: [sourceId] },
     incognito: true
   })
@@ -117,6 +162,7 @@ test('an explicit overflow persists the learned limit and automatically retries 
   expect(text(sent[0])).toContain('终止标记99')
   expect(text(sent[0])).toContain('以下是用户指定资料的全文')
   expect(text(sent[1])).not.toContain('以下是用户指定资料的全文')
+  expect(sent[1].max_tokens).toBeLessThan(32768)
   expect(text(sent[1]).length).toBeLessThan(text(sent[0]).length / 2)
   const p = (await page.evaluate(() => window.jiwei.providers.list())).find((p) => p.id === providerId)!
   expect(p.modelCaps['context-controlled'].learnedContext).toBe(32768)
@@ -157,4 +203,15 @@ test('context presets, custom value and return-to-auto survive settings reload',
   expect(
     (await page.evaluate(() => window.jiwei.providers.list())).find((p) => p.id === providerId)!.modelCaps['context-controlled'].context
   ).toBeUndefined()
+})
+
+test('a model tool step followed by overflow learns without replaying the tool', async () => {
+  toolOverflow = 1
+  const before = requests.length
+  const response = await ask()
+  expect(response.message.status).toBe('error')
+  expect(response.message.steps.filter((s) => s.tool === 'knowledge_search')).toHaveLength(1)
+  expect(requests.length - before).toBe(2)
+  const p = (await page.evaluate(() => window.jiwei.providers.list())).find((p) => p.id === providerId)!
+  expect(p.modelCaps['context-controlled'].learnedContext).toBe(16384)
 })
