@@ -23,6 +23,17 @@ vi.mock('electron', () => ({
 vi.mock('electron-log/main', () => ({ default: { error: vi.fn() } }))
 vi.mock('../../device', () => ({ deviceId: () => 'fixture' }))
 import { capsFor, fetchModels, testProvider, learnContextLimit, getProviderRow, listProviders, saveProvider } from '../providers'
+import { learnOutputLimit } from '../providers'
+
+it('学习的输出上限持久化，手动能力更新保留它，更换接口时清理', () => {
+  const p = saveProvider({ kind: 'custom', baseUrl: 'http://127.0.0.1:9000/v1', models: ['sample'] })
+  learnOutputLimit(p.id, 'sample', 6000)
+  expect(listProviders().find((r) => r.id === p.id)?.modelCaps.sample.learnedMaxOutput).toBe(6000)
+  saveProvider({ id: p.id, kind: 'custom', modelCaps: { sample: { vision: true } } })
+  expect(JSON.parse(getProviderRow(p.id).modelCaps).sample).toMatchObject({ learnedMaxOutput: 6000, vision: true })
+  saveProvider({ id: p.id, kind: 'custom', baseUrl: 'http://127.0.0.1:9001/v1' })
+  expect(JSON.parse(getProviderRow(p.id).modelCaps).sample.learnedMaxOutput).toBeUndefined()
+})
 
 beforeEach(() => {
   state.fetch.mockReset()

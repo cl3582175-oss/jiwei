@@ -11,6 +11,116 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
+it('首个模型片段允许120秒，空等到120秒才中断', async () => {
+  vi.useFakeTimers()
+  const { generateWithIdle } = await import('../request')
+  let signal: AbortSignal | undefined
+  f.model = new MockLanguageModelV4({
+    doStream: async (opts) => {
+      signal = opts.abortSignal
+      return { stream: new ReadableStream<LanguageModelV4StreamPart>() }
+    }
+  })
+  let settled = false
+  const result = generateWithIdle({ model: f.model, prompt: 'Controlled' }).then(
+    () => {
+      settled = true
+      return null
+    },
+    (e: unknown) => {
+      settled = true
+      return e
+    }
+  )
+  await vi.advanceTimersByTimeAsync(119_999)
+  expect(settled).toBe(false)
+  expect(signal?.aborted).toBe(false)
+  await vi.advanceTimersByTimeAsync(1)
+  expect(await result).toMatchObject({ name: 'ModelIdleTimeout' })
+  expect(signal?.aborted).toBe(true)
+  expect(vi.getTimerCount()).toBe(0)
+})
+
+it('空闲中断同时取消底层流，不能只结束等待者', async () => {
+  vi.useFakeTimers()
+  const { generateWithIdle } = await import('../request')
+  let canceled = false
+  f.model = new MockLanguageModelV4({
+    doStream: async () => ({
+      stream: new ReadableStream<LanguageModelV4StreamPart>({
+        cancel() {
+          canceled = true
+        }
+      })
+    })
+  })
+  const outcome = generateWithIdle({ model: f.model, prompt: 'Controlled' }).catch((e: unknown) => e)
+  await vi.advanceTimersByTimeAsync(120_001)
+  expect(await outcome).toMatchObject({ name: 'ModelIdleTimeout' })
+  expect(canceled).toBe(true)
+})
+
+it('工具参数增量可持续超过90秒，完成后清理全部计时器', async () => {
+  vi.useFakeTimers()
+  const { generateWithIdle } = await import('../request')
+  f.model = new MockLanguageModelV4({
+    doStream: async () => ({
+      stream: new ReadableStream<LanguageModelV4StreamPart>({
+        async start(c) {
+          c.enqueue({ type: 'tool-input-start', id: 'call', toolName: 'submit' })
+          for (const delta of ['{', '"ok"', ':', 'true}']) {
+            await delayed(45_000)
+            c.enqueue({ type: 'tool-input-delta', id: 'call', delta })
+          }
+          c.enqueue({ type: 'tool-input-end', id: 'call' })
+          for (const part of success) c.enqueue(part)
+          c.close()
+        }
+      })
+    })
+  })
+  const result = generateWithIdle({
+    model: f.model,
+    prompt: 'Controlled',
+    tools: { submit: { inputSchema: z.object({ ok: z.boolean() }) } }
+  })
+  const outcome = result.then(
+    (value) => ({ value }),
+    (error: unknown) => ({ error })
+  )
+  await vi.advanceTimersByTimeAsync(181_000)
+  expect(await outcome).toMatchObject({ value: { toolCalls: [{ toolName: 'submit', input: { ok: true } }] } })
+  expect(vi.getTimerCount()).toBe(0)
+})
+
+it('外部取消立即终止且不回退；持续输出仍受硬上限约束', async () => {
+  vi.useFakeTimers()
+  const { generateWithIdle } = await import('../request')
+  f.model = new MockLanguageModelV4({ doStream: async () => ({ stream: new ReadableStream<LanguageModelV4StreamPart>() }) })
+  const abort = new AbortController()
+  const request = structured({ ...args(), signal: abort.signal, schema: z.object({ ok: z.boolean() }) })
+  const outcome = request.catch((e: unknown) => e)
+  await vi.advanceTimersByTimeAsync(1)
+  abort.abort(new Error('Controlled cancellation'))
+  expect(await outcome).toMatchObject({ message: 'Controlled cancellation' })
+  expect(f.model.doStreamCalls).toHaveLength(1)
+  expect(vi.getTimerCount()).toBe(0)
+  f.model = new MockLanguageModelV4({
+    doStream: async () => ({
+      stream: new ReadableStream<LanguageModelV4StreamPart>({
+        start(c) {
+          c.enqueue({ type: 'reasoning-start', id: 'r' })
+          const timer = setInterval(() => c.enqueue({ type: 'reasoning-delta', id: 'r', delta: 'thinking' }), 20_000)
+          setTimeout(() => clearInterval(timer), 100_000)
+        }
+      })
+    })
+  })
+  const hard = generateWithIdle({ model: f.model, prompt: 'Controlled', hardMs: 90_000 }).catch((e: unknown) => e)
+  await vi.advanceTimersByTimeAsync(90_001)
+  expect(await hard).toMatchObject({ name: 'ModelIdleTimeout', hard: true })
+})
+
 function fakeTimeoutSignal() {
   vi.spyOn(AbortSignal, 'timeout').mockImplementation((ms) => {
     const c = new AbortController()

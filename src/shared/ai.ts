@@ -336,6 +336,7 @@ export interface ModelCapsOverride {
   learnedContext?: number
   /** 用户填写的价格（v0.7.5），优先于内置价格 */
   price?: ModelPrice
+  learnedMaxOutput?: number
 }
 export interface ModelCaps {
   vision: boolean

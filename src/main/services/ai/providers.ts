@@ -109,7 +109,12 @@ export function saveProvider(input: ProviderInput): ProviderInfo {
     const merged: Record<string, ModelCapsOverride> = {}
     for (const m of new Set([...Object.keys(stored), ...Object.keys(input.modelCaps)])) {
       const c = input.modelCaps[m]
-      merged[m] = { ...c, reportedContext: stored[m]?.reportedContext, learnedContext: stored[m]?.learnedContext }
+      merged[m] = {
+        ...c,
+        reportedContext: stored[m]?.reportedContext,
+        learnedContext: stored[m]?.learnedContext,
+        learnedMaxOutput: stored[m]?.learnedMaxOutput
+      }
     }
     const clean = Object.fromEntries(
       Object.entries(merged)
@@ -125,6 +130,7 @@ export function saveProvider(input: ProviderInput): ProviderInfo {
       for (const c of Object.values(caps)) {
         delete c.reportedContext
         delete c.learnedContext
+        delete c.learnedMaxOutput
       }
       patch.modelCaps = JSON.stringify(caps)
     }
@@ -178,8 +184,13 @@ function modelRecords(body: unknown): { id: string; context?: number }[] {
   })
 }
 
-function storeAutomaticContext(id: string, model: string, field: 'reportedContext' | 'learnedContext', limit: number): boolean {
-  if (!validContext(limit)) return false
+function storeAutomaticContext(
+  id: string,
+  model: string,
+  field: 'reportedContext' | 'learnedContext' | 'learnedMaxOutput',
+  limit: number
+): boolean {
+  if (field === 'learnedMaxOutput' ? !Number.isSafeInteger(limit) || limit <= 0 : !validContext(limit)) return false
   // 网络等待后重新读取，不能覆盖期间用户修改的能力。
   const row = getProviderRow(id),
     caps = parseCaps(row)
@@ -197,6 +208,10 @@ function storeAutomaticContext(id: string, model: string, field: 'reportedContex
 
 export function learnContextLimit(id: string, model: string, limit: number): void {
   if (storeAutomaticContext(id, model, 'learnedContext', limit)) emit('providers:changed')
+}
+
+export function learnOutputLimit(id: string, model: string, limit: number): void {
+  if (storeAutomaticContext(id, model, 'learnedMaxOutput', limit)) emit('providers:changed')
 }
 
 async function discoverContexts(row: Row, records: { id: string; context?: number }[]): Promise<void> {
