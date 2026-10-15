@@ -29,7 +29,13 @@ export function conversationAttachmentIds(conversationId: string): string[] {
     SELECT ? UNION SELECT m.conversation_id FROM family f JOIN conversations c ON c.id=f.id
     JOIN messages m ON m.id=c.anchor_parent_id
     WHERE json_valid(c.anchor) AND json_extract(c.anchor,'$.parentType')='message'
-  ) SELECT DISTINCT ca.source_id AS id FROM conversation_attachments ca JOIN family f ON ca.conversation_id=f.id`
+  ), provenance(id) AS (
+    SELECT ca.source_id FROM conversation_attachments ca JOIN family f ON ca.conversation_id=f.id
+    UNION SELECT ps.item_id FROM family f JOIN conversations c ON c.id=f.id
+      JOIN project_sources ps ON ps.project_id=c.project_id WHERE ps.item_type='source' AND ps.origin<>'library'
+    UNION SELECT j.value FROM family f JOIN messages m ON m.conversation_id=f.id
+      JOIN json_each(CASE WHEN json_valid(m.context) THEN json_extract(m.context,'$.projectPrivateSourceIds') END) j
+  ) SELECT DISTINCT id FROM provenance`
       )
       .all(conversationId) as { id: string }[]
   ).map((r) => r.id)

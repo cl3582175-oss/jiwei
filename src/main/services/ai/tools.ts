@@ -1,6 +1,6 @@
 import { memoryProjectId, conversationProject } from './memoryScope'
 import { tablePreview } from '../../lib/attachmentText'
-import { canReadSource, hasAttachmentHistory } from '../attachmentsAccess'
+import { canReadSource, hasAttachmentHistory, conversationProjectSources } from '../attachmentsAccess'
 import { manimAvailable } from '../plugins/manim'
 import { visual as embedVisual } from './embedProposal'
 import { neutralizeUiFences } from '@shared/ui/sanitize'
@@ -73,6 +73,7 @@ export interface AgentSession {
   projectId?: string | null
   memoryProjectId?: string | null
   attachmentSourceIds?: string[]
+  projectSourceIds?: { notes: string[]; sources: string[] }
   suppressAttachmentMemory?: boolean
   retrieveAttachments?: (
     query: string,
@@ -156,6 +157,8 @@ export function numberHits(session: AgentSession, hits: SearchHit[]): string {
   return neutralizeUiFences(
     hits
       .map((h) => {
+        if (h.parentType !== 'web' && session.projectSourceIds?.[h.parentType === 'note' ? 'notes' : 'sources'].includes(h.parentId))
+          h = { ...h, projectSource: true }
         let n = session.hits.findIndex((x) => x.ownerId === h.ownerId) + 1
         if (!n) {
           session.hits.push(h)
@@ -202,7 +205,7 @@ export function numberHits(session: AgentSession, hits: SearchHit[]): string {
             ? `\n另见：${h.alsoIn.map((t) => `《${t}》`).join('、')}`
             : `\nAlso in: ${h.alsoIn.map((t) => `"${t}"`).join(', ')}`
           : ''
-        return `[${n}] ${meta}\n${h.text}${also}`
+        return `[${n}] ${h.projectSource ? (zh ? '项目来源 · ' : 'Project source · ') : ''}${meta}\n${h.text}${also}`
       })
       .join('\n\n')
   )
@@ -372,7 +375,25 @@ export function buildTools(s: AgentSession): ToolSet {
     })
   }
 
-  if (s.scope.type !== 'none' || s.attachmentSourceIds?.length) {
+  const projectItems = (): { notes: string[]; sources: string[] } => {
+    const items = conversationProjectSources(s.conversationId)
+    return {
+      notes: items.filter((i) => i.itemType === 'note').map((i) => i.itemId),
+      sources: items.filter((i) => i.itemType === 'source').map((i) => i.itemId)
+    }
+  }
+  const projectSource = (id: string): boolean => projectItems().sources.includes(id)
+  const noteScope = (): ChatScope => {
+    const ids = projectItems().notes
+    return s.scope.type === 'all'
+      ? s.scope
+      : {
+          type: 'items',
+          notes: [...new Set([...(s.scope.type === 'items' ? s.scope.notes : []), ...ids])],
+          sources: s.scope.type === 'items' ? s.scope.sources : []
+        }
+  }
+  if (s.scope.type !== 'none' || s.attachmentSourceIds?.length || s.projectSourceIds?.notes.length || s.projectSourceIds?.sources.length) {
     Object.assign(tools, {
       today_overview: tool({
         description: zh
@@ -399,8 +420,8 @@ export function buildTools(s: AgentSession): ToolSet {
         execute: async ({ query, sourceIds, importedRange, limit, offset, ...filters }) => {
           for (const id of sourceIds ?? []) {
             if (
-              (s.scope.type === 'none' && !s.attachmentSourceIds?.includes(id)) ||
-              (s.scope.type === 'items' && !s.scope.sources.includes(id) && !s.attachmentSourceIds?.includes(id))
+              (s.scope.type === 'none' && !s.attachmentSourceIds?.includes(id) && !projectSource(id)) ||
+              (s.scope.type === 'items' && !s.scope.sources.includes(id) && !s.attachmentSourceIds?.includes(id) && !projectSource(id))
             )
               throw new Error('Source is outside the selected scope')
             readableSource(id, zh, s.conversationId)
@@ -428,7 +449,7 @@ export function buildTools(s: AgentSession): ToolSet {
           : 'Find notes by keyword or dateRange (epoch ms, endAt exclusive); dateField createdAt/editedAt. Optional includeMetadata/includeExcerpt (3000 chars), limit/offset. Default IDs and titles.',
         inputSchema: NoteFindInput,
         execute: async (input) => {
-          const result = findNotes(input, s.scope)
+          const result = findNotes(input, noteScope())
           if (input.includeMetadata || input.includeExcerpt || input.dateRange) return JSON.stringify(result)
           return result.items.length ? result.items.map((n) => `${n.id} · ${n.title || '—'}`).join('\n') : zh ? '没有找到。' : 'None.'
         }
@@ -439,9 +460,10 @@ export function buildTools(s: AgentSession): ToolSet {
           : 'Read a note: rows (IDs), cue/note blocks with IDs, summary. Read before editing. includeMetadata:true adds actual creation/edit dates and allowed source references.',
         inputSchema: z.object({ noteId: z.string().max(64), includeMetadata: z.boolean().optional() }),
         execute: async ({ noteId, includeMetadata }) => {
-          if (s.scope.type === 'items' && !s.scope.notes.includes(noteId)) throw new Error('Note is outside the selected scope')
+          const scope = noteScope()
+          if (scope.type === 'items' && !scope.notes.includes(noteId)) throw new Error('Note is outside the selected scope')
           const title = mustNote(noteId, zh)
-          return `《${title}》\n${includeMetadata ? JSON.stringify(noteMetadata(noteId, s.scope)) + '\n' : ''}${await describeNote(noteId, zh, s.vision)}`
+          return `《${title}》\n${includeMetadata ? JSON.stringify(noteMetadata(noteId, scope)) + '\n' : ''}${await describeNote(noteId, zh, s.vision)}`
         }
       }),
       source_read: tool({
@@ -455,8 +477,14 @@ export function buildTools(s: AgentSession): ToolSet {
           includeMetadata: z.boolean().optional()
         }),
         execute: async ({ sourceId, from = 0, count = 12, includeMetadata }) => {
-          if (s.scope.type === 'none' && !s.attachmentSourceIds?.includes(sourceId)) throw new Error('Source is outside the selected scope')
-          if (s.scope.type === 'items' && !s.scope.sources.includes(sourceId) && !s.attachmentSourceIds?.includes(sourceId))
+          if (s.scope.type === 'none' && !s.attachmentSourceIds?.includes(sourceId) && !projectSource(sourceId))
+            throw new Error('Source is outside the selected scope')
+          if (
+            s.scope.type === 'items' &&
+            !s.scope.sources.includes(sourceId) &&
+            !s.attachmentSourceIds?.includes(sourceId) &&
+            !projectSource(sourceId)
+          )
             throw new Error('Source is outside the selected scope')
           const src = readableSource(sourceId, zh, s.conversationId)
           const segs = listSegments(sourceId)
@@ -479,7 +507,7 @@ export function buildTools(s: AgentSession): ToolSet {
                 .where(eq(sources.id, sourceId))
                 .get()
             : null
-          if (s.attachmentSourceIds?.includes(sourceId)) {
+          if (s.attachmentSourceIds?.includes(sourceId) || projectSource(sourceId)) {
             return numberHits(
               s,
               part.map((g) => ({
@@ -514,7 +542,8 @@ export function buildTools(s: AgentSession): ToolSet {
           : 'View an image in a note using its imageId when note_read has no recognized text.',
         inputSchema: z.object({ noteId: z.string().max(64), imageId: z.string().max(64) }),
         execute: async ({ noteId, imageId }) => {
-          if (s.scope.type === 'items' && !s.scope.notes.includes(noteId)) throw new Error('Note is outside the selected scope')
+          const scope = noteScope()
+          if (scope.type === 'items' && !scope.notes.includes(noteId)) throw new Error('Note is outside the selected scope')
           mustNote(noteId, zh)
           const output = await noteImageData(noteId, imageId)
           mustNote(noteId, zh)
@@ -527,7 +556,10 @@ export function buildTools(s: AgentSession): ToolSet {
       })
   }
 
-  if (s.scope.type === 'none') for (const name of ['today_overview', 'note_find', 'note_read', 'note_image_view']) delete tools[name]
+  if (s.scope.type === 'none') {
+    delete tools.today_overview
+    if (!s.projectSourceIds?.notes.length) for (const name of ['note_find', 'note_read', 'note_image_view']) delete tools[name]
+  }
 
   Object.assign(tools, {
     note_add_rows: tool({

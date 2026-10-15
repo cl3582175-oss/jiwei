@@ -13,7 +13,7 @@ vi.mock('../../../db', () => ({ getDb: () => f.db, getSqlite: () => f.sql }))
 vi.mock('../../../db/profile', () => ({ profileDb: () => f.profile }))
 vi.mock('../../../events', () => ({ emit: () => {} }))
 vi.mock('../../device', () => ({ deviceId: () => 'test-device' }))
-vi.mock('electron', () => ({ dialog: {}, app: {}, BrowserWindow: {} }))
+vi.mock('electron', () => ({ dialog: {}, app: {}, BrowserWindow: {}, ipcMain: { on: () => {} } }))
 vi.mock('../../memory', () => ({
   promoteProjectMemories: (id: string) => f.profile!.prepare('UPDATE memories SET project_id=NULL WHERE project_id=?').run(id).changes,
   deleteProjectMemories: (id: string) => f.profile!.prepare('DELETE FROM memories WHERE project_id=?').run(id).changes

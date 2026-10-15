@@ -59,7 +59,7 @@ export function desiredChunks(): DesiredChunk[] {
           and(
             eq(sources.space, 'attachment'),
             sql`${getSettings().ai.embedding?.mode === 'local' ? 1 : 0}`,
-            sql`EXISTS (SELECT 1 FROM conversation_attachments ca WHERE ca.source_id=${sources.id} AND (EXISTS (SELECT 1 FROM conversations c WHERE c.id=ca.conversation_id AND c.incognito=0 AND c.deleted_at IS NULL) OR EXISTS (SELECT 1 FROM decisions d WHERE d.id=ca.conversation_id AND d.deleted_at IS NULL) OR ca.conversation_id LIKE 'orphan:%'))`,
+            sql`(EXISTS (SELECT 1 FROM project_sources ps JOIN chat_projects p ON p.id=ps.project_id AND p.deleted_at IS NULL WHERE ps.item_type='source' AND ps.item_id=${sources.id} AND ps.origin<>'library') OR EXISTS (SELECT 1 FROM conversation_attachments ca WHERE ca.source_id=${sources.id} AND (EXISTS (SELECT 1 FROM conversations c WHERE c.id=ca.conversation_id AND c.incognito=0 AND c.deleted_at IS NULL) OR EXISTS (SELECT 1 FROM decisions d WHERE d.id=ca.conversation_id AND d.deleted_at IS NULL) OR ca.conversation_id LIKE 'orphan:%')))`,
             sql`NOT EXISTS (SELECT 1 FROM conversation_attachments ca LEFT JOIN conversations c ON c.id=ca.conversation_id WHERE ca.source_id=${sources.id} AND (c.incognito=1 OR ca.conversation_id LIKE 'incognito-draft:%'))`
           )
         )

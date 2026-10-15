@@ -248,7 +248,11 @@ function CitationCard({ c, conversationId }: { c: Citation; conversationId: stri
             </span>
           )}
           {c.origin === 'ai' && <Sparkles className="size-3 shrink-0 text-subtle" />}
-          {c.via && <span className="shrink-0 rounded bg-sunken px-1 text-2xs text-subtle">{t(`chat.via.${c.via}`)}</span>}
+          {(c.projectSource || c.via) && (
+            <span className="shrink-0 rounded bg-sunken px-1 text-2xs text-subtle">
+              {t(c.projectSource ? 'projects.sourceBasis' : `chat.via.${c.via}`)}
+            </span>
+          )}
           <span className="ml-auto shrink-0 text-2xs text-subtle">{dateLabel}</span>
         </span>
         <span className="mt-0.5 line-clamp-2 block text-2xs leading-relaxed text-muted">{c.snippet.replace(/^#{1,6}\s+/gm, '')}</span>
@@ -304,8 +308,14 @@ function Basis({ citations, conversationId }: { citations: Citation[]; conversat
     .map((k) => `${t(`chat.via.${k}`)} ${counts.get(k)}`)
     .join(' · ')
   const web = citations.filter((c) => c.parentType === 'web').length,
-    kb = citations.length - web
-  const title = t(`retrieval.basis.${kb && web ? 'both' : web ? 'web' : 'kb'}`, { kb, web })
+    project = citations.filter((c) => c.projectSource).length,
+    kb = citations.length - web - project
+  const title = [
+    kb || web ? t(`retrieval.basis.${kb && web ? 'both' : web ? 'web' : 'kb'}`, { kb, web }) : '',
+    project ? `${t('projects.sourceBasis')} ${project}` : ''
+  ]
+    .filter(Boolean)
+    .join(' · ')
   return (
     <div className="mt-3" data-testid="answer-basis">
       <Tip label={t('chat.basisHint')} side="top">

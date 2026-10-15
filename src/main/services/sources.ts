@@ -10,7 +10,19 @@ import { BrowserWindow, dialog, shell } from 'electron'
 import { and, desc, eq, inArray, isNull, like, or, type SQL } from 'drizzle-orm'
 import { getDb, getSqlite } from '../db'
 import { emit } from '../events'
-import { assets, sources, taggings, sourcePages, conversationAttachments, chunks, jobs, links, annotations } from '../db/schema'
+import {
+  assets,
+  sources,
+  taggings,
+  sourcePages,
+  conversationAttachments,
+  chunks,
+  jobs,
+  links,
+  annotations,
+  chatProjects,
+  projectSources
+} from '../db/schema'
 import { newId } from '../lib/ids'
 import { deviceId } from './device'
 import { recordActivity } from './stats'
@@ -22,6 +34,7 @@ import { canSegment, enqueueFetch, enqueueSegment } from './jobKinds'
 import { applySubtitleFile, canAutoTranscribe, enqueueTranscribe, findSidecarSubtitles, isMedia } from './asr'
 import { deleteSegments, listSegments } from './segments'
 import type { ImportResult, Source, SourceKind, SourceQuery, SourceUpdate } from '@shared/types'
+import { tr } from '../lib/messages'
 
 export const EXT_KIND: Record<string, SourceKind> = Object.fromEntries(Object.entries(FORMATS).map(([ext, info]) => [ext, info.kind]))
 
@@ -180,7 +193,7 @@ export async function saveWebPage(input: { url: string; title: string; html: str
   const existing = db
     .select()
     .from(sources)
-    .where(and(eq(sources.url, input.url), eq(sources.kind, 'web'), isNull(sources.deletedAt)))
+    .where(and(eq(sources.url, input.url), eq(sources.kind, 'web'), eq(sources.space, 'library'), isNull(sources.deletedAt)))
     .get()
   if (existing) {
     const set: Partial<typeof sources.$inferInsert> = { accessedAt: now }
@@ -214,25 +227,38 @@ export async function saveWebPage(input: { url: string; title: string; html: str
   return getSource(id)!
 }
 
-export function addUrl(url: string, title?: string, categoryId?: string | null): Source {
+export function addUrl(url: string, title?: string, categoryId?: string | null, opts: { projectId?: string } = {}): Source {
   const parsed = new URL(url)
-  if (!/^https?:$/.test(parsed.protocol)) throw new Error('Only http(s) links are supported')
+  if (!/^https?:$/.test(parsed.protocol)) throw new Error(tr('只支持 http(s) 网址', 'Only http(s) links are supported'))
   const id = newId()
   const now = Date.now()
-  getDb()
-    .insert(sources)
-    .values({
-      id,
-      title: title?.trim() || parsed.hostname + parsed.pathname.replace(/\/$/, ''),
-      kind: 'web',
-      url: parsed.toString(),
-      accessedAt: now,
-      categoryId: categoryId ?? null,
-      createdAt: now,
-      updatedAt: now,
-      updatedBy: deviceId()
-    })
-    .run()
+  getDb().transaction((tx) => {
+    if (
+      opts.projectId &&
+      !tx
+        .select({ id: chatProjects.id })
+        .from(chatProjects)
+        .where(and(eq(chatProjects.id, opts.projectId), isNull(chatProjects.deletedAt)))
+        .get()
+    )
+      throw new Error(tr('项目不存在或已删除', 'Project not found'))
+    tx.insert(sources)
+      .values({
+        id,
+        title: title?.trim() || parsed.hostname + parsed.pathname.replace(/\/$/, ''),
+        kind: 'web',
+        url: parsed.toString(),
+        accessedAt: now,
+        categoryId: opts.projectId ? null : (categoryId ?? null),
+        ...(opts.projectId ? { space: 'attachment' as const, aiExcluded: true } : {}),
+        createdAt: now,
+        updatedAt: now,
+        updatedBy: deviceId()
+      })
+      .run()
+    if (opts.projectId)
+      tx.insert(projectSources).values({ projectId: opts.projectId, itemType: 'source', itemId: id, origin: 'url', createdAt: now }).run()
+  })
   recordActivity('source_add')
   enqueueFetch(id)
   emit('sources:changed', { id })
@@ -370,6 +396,9 @@ export function purgeSourceData(id: string): void {
       .where(and(eq(chunks.parentType, 'source'), eq(chunks.parentId, id)))
       .run()
     db.delete(conversationAttachments).where(eq(conversationAttachments.sourceId, id)).run()
+    db.delete(projectSources)
+      .where(and(eq(projectSources.itemType, 'source'), eq(projectSources.itemId, id)))
+      .run()
     db.delete(sourcePages).where(eq(sourcePages.sourceId, id)).run()
     db.delete(annotations)
       .where(and(eq(annotations.targetType, 'source'), eq(annotations.targetId, id)))

@@ -118,6 +118,48 @@ export function useProjectConversations(id: string) {
   return useQuery({ queryKey: ['projectConversations', id], queryFn: () => api.chatProjects.conversations(id) })
 }
 
+/** Project source processing has no persistent polling once it reaches a terminal state. */
+export function useProjectSources(id: string) {
+  const qc = useQueryClient()
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const changed = (): void => {
+      if (timer) return
+      timer = setTimeout(() => {
+        timer = undefined
+        void qc.invalidateQueries({ queryKey: ['projectSources', id] })
+      }, 100)
+    }
+    const offs = (
+      [
+        'chatProjects:changed',
+        'sources:changed',
+        'notes:changed',
+        'segments:changed',
+        'attachments:changed',
+        'jobs:changed',
+        'recognition:source',
+        'recognition:status',
+        'embedding:status'
+      ] as const
+    ).map((event) => window.jiweiEvents.on(event, changed))
+    return () => {
+      offs.forEach((off) => off())
+      clearTimeout(timer)
+    }
+  }, [qc, id])
+  return useQuery({
+    queryKey: ['projectSources', id],
+    queryFn: () => api.chatProjects.sources(id),
+    refetchInterval: (query) =>
+      query.state.data?.some(
+        (item) => item.readiness?.state === 'preparing' || (item.readiness && 'recognizing' in item.readiness && item.readiness.recognizing)
+      )
+        ? 1000
+        : false
+  })
+}
+
 export function useMemories(projectId?: string) {
   return useQuery({
     queryKey: projectId ? ['memories', 'project', projectId] : ['memories'],

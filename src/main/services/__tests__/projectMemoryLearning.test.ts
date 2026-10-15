@@ -5,7 +5,7 @@ import { eq, getTableColumns, getTableName } from 'drizzle-orm'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { chatProjects, conversationAttachments, conversations, messages } from '../../db/schema'
+import { blocks, chatProjects, conversationAttachments, conversations, messages, notes, projectSources, sources } from '../../db/schema'
 import type { Proposal } from '@shared/types'
 
 type ExtractOutput = {
@@ -35,7 +35,7 @@ vi.mock('../settings', () => ({
   getSettings: () => ({ language: 'zh-CN', ai: { chat: { providerId: 'controlled', model: 'test-model' } } }),
   setSettings: () => {}
 }))
-vi.mock('../docs', () => ({ listBlocks: () => [] }))
+vi.mock('../docs', () => ({ listBlocks: (noteId: string) => fixture.db!.select().from(blocks).where(eq(blocks.noteId, noteId)).all() }))
 vi.mock('../plugins/registry', () => ({ pluginRegistryRevision: () => 0, enabledPlugins: () => [] }))
 vi.mock('../ai/providers', () => ({ getProviderRow: () => ({ modelCaps: '{}', models: '["test-model"]' }) }))
 // Keep the extractor, structured schema validation, memory/learner services, Drizzle and SQLite real.
@@ -57,7 +57,7 @@ vi.mock('../ai/request', () => ({
 }))
 
 import { closeProfileDb, profileDb } from '../../db/profile'
-import { induceSkillPreferences, learnFromConversation, recordProposalDecision } from '../memoryLearn'
+import { induceSkillPreferences, learnFromConversation, recordProposalDecision, reviewFeedback } from '../memoryLearn'
 import {
   deleteProjectMemories,
   getMemory,
@@ -111,7 +111,7 @@ function proposal(projectId: string | null, text: string): Proposal {
 beforeEach(() => {
   fixture.directory = mkdtempSync(join(tmpdir(), 'jiwei-project-learning-'))
   fixture.sql = new Database(':memory:')
-  for (const table of [chatProjects, conversations, messages, conversationAttachments]) {
+  for (const table of [blocks, chatProjects, conversations, messages, conversationAttachments, notes, projectSources, sources]) {
     fixture.sql.exec(
       `CREATE TABLE "${getTableName(table)}" (${Object.values(getTableColumns(table))
         .map((column) => `"${column.name}" ${column.getSQLType()}${column.primary ? ' PRIMARY KEY' : ''}`)
@@ -119,6 +119,7 @@ beforeEach(() => {
     )
   }
   fixture.db = drizzle(fixture.sql)
+  fixture.db.insert(notes).values({ id: 'note', title: 'Public note', learnedAt: 1, editedAt: 1, createdAt: 1, updatedAt: 1 }).run()
   for (const [id, memory] of [
     [PROJECT_A, 'project'],
     [PROJECT_B, 'project'],
@@ -308,5 +309,75 @@ describe('project-scoped learning', () => {
     }
     expect(await induceSkillPreferences()).toEqual([])
     expect(profileDb().prepare('SELECT content FROM memories').all()).toEqual([])
+  })
+
+  it('does not record proposal feedback from a currently private derived note', () => {
+    fixture.db!.update(notes).set({ aiExcluded: true }).where(eq(notes.id, 'note')).run()
+    recordProposalDecision(proposal(null, 'PROJECT-PRIVATE-OUTPUT'), 0, 'rejected')
+    expect(profileDb().prepare('SELECT * FROM skill_feedback').all()).toEqual([])
+  })
+
+  it('discards pending feedback before reading a later private rewrite of the accepted block', () => {
+    recordProposalDecision(proposal(null, 'PUBLIC-OUTPUT'), 0, 'accepted', ['block'])
+    fixture
+      .db!.insert(blocks)
+      .values({
+        id: 'block',
+        noteId: 'note',
+        kind: 'paragraph',
+        section: 'body',
+        rowId: null,
+        position: 0,
+        text: 'PROJECT-PRIVATE-REWRITE',
+        hash: 'controlled',
+        createdAt: 1,
+        updatedAt: 2
+      })
+      .run()
+    fixture.db!.update(notes).set({ aiExcluded: true }).where(eq(notes.id, 'note')).run()
+
+    expect(reviewFeedback(Date.now(), true)).toBe(0)
+    const sample = profileDb().prepare('SELECT kind,before,after,consumed_at FROM skill_feedback').get()
+    expect(sample).toMatchObject({ kind: 'lost', before: '', after: null, consumed_at: expect.any(Number) })
+    expect(JSON.stringify(sample)).not.toContain('PROJECT-PRIVATE')
+  })
+
+  it.each([null, PROJECT_A])('discards already edited feedback after its note becomes private in memory scope %s', async (projectId) => {
+    for (let index = 0; index < 3; index++) recordProposalDecision(proposal(projectId, 'PUBLIC-OUTPUT'), 0, 'rejected')
+    profileDb().prepare("UPDATE skill_feedback SET kind='edited',after='PROJECT-PRIVATE-REWRITE'").run()
+    fixture.db!.update(notes).set({ aiExcluded: true }).where(eq(notes.id, 'note')).run()
+    fixture.output = { preferences: [{ content: 'MUST-NOT-BE-LEARNED' }] }
+
+    expect(await induceSkillPreferences()).toEqual([])
+    expect(fixture.requests).toEqual([])
+    expect(profileDb().prepare('SELECT COUNT(*) AS n FROM skill_feedback WHERE consumed_at IS NULL').get()).toEqual({ n: 0 })
+    expect(JSON.stringify(profileDb().prepare('SELECT before,after FROM skill_feedback').all())).not.toContain('PROJECT-PRIVATE')
+    expect(profileDb().prepare('SELECT content FROM memories').all()).toEqual([])
+  })
+
+  it('induces from remaining public samples without sending samples of a private note', async () => {
+    fixture.db!.insert(notes).values({ id: 'public', title: 'Public control', learnedAt: 1, editedAt: 1, createdAt: 1, updatedAt: 1 }).run()
+    for (let index = 0; index < 3; index++) {
+      recordProposalDecision(proposal(null, 'PROJECT-PRIVATE-SAMPLE'), 0, 'rejected')
+      recordProposalDecision({ ...proposal(null, 'PUBLIC-SAMPLE'), noteId: 'public' }, 0, 'rejected')
+    }
+    fixture.db!.update(notes).set({ aiExcluded: true }).where(eq(notes.id, 'note')).run()
+    fixture.output = { preferences: [{ content: 'PUBLIC-LEARNED-PREFERENCE' }] }
+
+    expect(await induceSkillPreferences()).toHaveLength(1)
+    expect(fixture.requests).toHaveLength(1)
+    expect(fixture.requests[0].prompt).toContain('PUBLIC-SAMPLE')
+    expect(fixture.requests[0].prompt).not.toContain('PROJECT-PRIVATE')
+    expect(skillPreferences('test-skill')).toEqual(['PUBLIC-LEARNED-PREFERENCE'])
+  })
+
+  it('discards the induced result if its source note becomes private while the request is pending', async () => {
+    for (let index = 0; index < 3; index++) recordProposalDecision(proposal(null, 'PUBLIC-SAMPLE'), 0, 'rejected')
+    fixture.output = { preferences: [{ content: 'STALE-PRIVATE-PREFERENCE' }] }
+    fixture.duringRequest = () => fixture.db!.update(notes).set({ aiExcluded: true }).where(eq(notes.id, 'note')).run()
+
+    expect(await induceSkillPreferences()).toEqual([])
+    expect(profileDb().prepare('SELECT content FROM memories').all()).toEqual([])
+    expect(profileDb().prepare('SELECT COUNT(*) AS n FROM skill_feedback WHERE consumed_at IS NULL').get()).toEqual({ n: 0 })
   })
 })

@@ -1,8 +1,10 @@
 import {
   ProjectCreateSchema,
   ProjectUpdateSchema,
+  ProjectSourcesInputSchema,
   type ChatProject,
   type ChatProjectConversation,
+  type ChatProjectSource,
   type ChatSearchHit
 } from './chatProjects'
 import type { Readiness } from './readiness'
@@ -704,6 +706,13 @@ export const capabilities = {
     update: cap<ChatProject>()({ description: '修改对话项目', params: [id(), ['patch', ProjectUpdateSchema]] }),
     remove: cap<void>()({ description: '删除项目，保留或同时删除对话', params: [id(), ['mode', z.enum(['recent', 'delete'])]] }),
     conversations: cap<ChatProjectConversation[]>()({ description: '列出项目对话', params: [id()] }),
+    sources: cap<ChatProjectSource[]>()({ description: '列出项目来源及处理状态', params: [id()] }),
+    addSources: cap<ChatProjectSource[]>()({ description: '添加项目来源', params: [id(), ['input', ProjectSourcesInputSchema]] }),
+    removeSource: cap<void>()({ description: '从项目移除来源', params: [id(), ['itemType', z.enum(['note', 'source'])], id('itemId')] }),
+    archiveSource: cap<void>()({
+      description: '将项目私有来源归档到资料库',
+      params: [id(), id('itemId'), ['categoryId', S.Id.nullable()]]
+    }),
     exportMarkdown: cap<string | null>()({ description: '导出项目对话为 Markdown 文件夹', params: [id()] })
   },
   chat: {

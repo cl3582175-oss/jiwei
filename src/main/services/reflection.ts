@@ -13,7 +13,8 @@ import {
   links,
   notes,
   reviewLogs,
-  reviews
+  reviews,
+  sources
 } from '../db/schema'
 import { profileDb } from '../db/profile'
 import { newId } from '../lib/ids'
@@ -375,6 +376,7 @@ export function reflectionMaterial(id: string): ReflectionMaterial {
       and(
         isNull(notes.deletedAt),
         eq(notes.kind, 'cornell'),
+        eq(notes.aiExcluded, false),
         scoped
           ? inArray(notes.id, scoped.length ? scoped : ['-'])
           : or(and(gte(notes.editedAt, start), lt(notes.editedAt, end)), and(gte(notes.createdAt, start), lt(notes.createdAt, end)))
@@ -409,7 +411,12 @@ export function reflectionMaterial(id: string): ReflectionMaterial {
   const hardIds = [...forgotBy.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5)
   const hardest = hardIds
     .map(([cardId, n]) => {
-      const c = db.select({ noteId: cards.noteId, rowId: cards.blockId }).from(cards).where(eq(cards.id, cardId)).get()
+      const c = db
+        .select({ noteId: cards.noteId, rowId: cards.blockId })
+        .from(cards)
+        .innerJoin(notes, eq(notes.id, cards.noteId))
+        .where(and(eq(cards.id, cardId), isNull(cards.deletedAt), isNull(notes.deletedAt), eq(notes.aiExcluded, false)))
+        .get()
       if (!c) return null
       const cue = db
         .select({ text: blocks.text })
@@ -511,7 +518,20 @@ export function reflectionMaterial(id: string): ReflectionMaterial {
     })
 
   // 期间新增的批注：评论、存疑（存疑即未解决的问题）、高亮数量
-  const anns = recentAnnotations(start, end - 1)
+  // 素材包会进入复盘助手的系统提示；通用批注列表仍保留用户自己的所有内容。
+  const anns = recentAnnotations(start, end - 1).filter((a) =>
+    a.targetType === 'note'
+      ? !!db
+          .select({ id: notes.id })
+          .from(notes)
+          .where(and(eq(notes.id, a.targetId), isNull(notes.deletedAt), eq(notes.aiExcluded, false)))
+          .get()
+      : !!db
+          .select({ id: sources.id })
+          .from(sources)
+          .where(and(eq(sources.id, a.targetId), isNull(sources.deletedAt), eq(sources.space, 'library'), eq(sources.aiExcluded, false)))
+          .get()
+  )
   const annotationsOut: ReflectionMaterial['annotations'] = {
     highlights: anns.length,
     items: anns

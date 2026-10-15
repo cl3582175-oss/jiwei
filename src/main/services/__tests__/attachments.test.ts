@@ -31,6 +31,7 @@ vi.mock('electron-log/main', () => ({ default: { info: () => {}, warn: () => {},
 vi.mock('electron', () => ({
   app: { getLocale: () => 'zh-CN', isPackaged: false },
   nativeImage: {},
+  nativeTheme: {},
   net: {},
   protocol: {},
   BrowserWindow: {},
@@ -62,6 +63,7 @@ vi.mock('../asr', () => ({
 vi.mock('../moss', () => ({ mossStatus: () => ({ state: 'missing' }), enqueueMoss: () => {} }))
 vi.mock('../ai/embedding', () => ({
   isReady: async () => f.ready,
+  getStatus: () => ({ state: f.ready ? 'ready' : 'missing' }),
   currentModelId: () => 'controlled',
   embed: async (texts: string[]) => texts.map(() => [1, 0]),
   setStatus: () => {}
@@ -101,7 +103,8 @@ beforeEach(() => {
       .run(id, id, id === 'private' ? 1 : 0)
   f.sql.exec("INSERT INTO decisions(id,question,created_at,updated_at) VALUES('decision','choice',1,1)")
 })
-afterEach(() => {
+afterEach(async () => {
+  await (await import('../jobs')).stopJobsAndWait()
   f.sql?.close()
   rmSync(f.dir, { recursive: true, force: true })
 })
@@ -565,4 +568,120 @@ it('回复子对话继承禁止记忆标记，但不能读取父对话私有附�
     JSON.stringify({ parentType: 'message', parentId: 'parent-reply', ownerId: 'c1', kind: 'text' })
   )
   expect((await import('../attachmentDerived')).conversationAttachmentIds('reply-child')).toEqual([a.sourceId])
+})
+
+function projectSource(id: string, origin = 'text'): void {
+  f.sql!.exec(
+    "INSERT OR IGNORE INTO chat_projects(id,name,memory,created_at,updated_at) VALUES('project-a','A','project',1,1),('project-b','B','project',1,1)"
+  )
+  f.sql!.prepare('INSERT INTO project_sources(project_id,item_type,item_id,origin,created_at) VALUES(?,?,?,?,1)').run(
+    'project-a',
+    'source',
+    id,
+    origin
+  )
+  f.sql!.exec(
+    "UPDATE conversations SET project_id='project-a' WHERE id='c1'; UPDATE conversations SET project_id='project-b' WHERE id='c2'"
+  )
+}
+
+it('项目私有来源仅同一有效项目内可读，移动后旧回答与来源权限均撤销', async () => {
+  const a = await attachment()
+  projectSource(a.sourceId)
+  const access = await import('../attachmentsAccess')
+  expect(access.canReadSource(a.sourceId, 'c1')).toBe(true)
+  expect(access.canReadSource(a.sourceId, 'c2')).toBe(false)
+  expect(access.canReadSource(a.sourceId, null)).toBe(false)
+  expect(access.hasAttachmentHistory('c1')).toBe(true)
+  expect(access.hasPrivateAttachmentHistory('c1')).toBe(true)
+  const context = JSON.stringify({ attachmentSourceIds: [a.sourceId], projectPrivateSourceIds: [a.sourceId] })
+  f.sql!.prepare(
+    "INSERT INTO messages(id,conversation_id,role,content,context,created_at,updated_at) VALUES('project-answer','c1','assistant','derived',?,1,1)"
+  ).run(context)
+  expect(access.attachmentHistoryReadable(context, 'c1')).toBe(true)
+  f.sql!.exec("UPDATE conversations SET project_id=NULL WHERE id='c1'")
+  expect(access.canReadSource(a.sourceId, 'c1')).toBe(false)
+  expect(access.attachmentHistoryReadable(context, 'c1')).toBe(false)
+  expect(access.hasAttachmentHistory('c1')).toBe(true)
+  f.sql!.exec("UPDATE conversations SET project_id='project-a' WHERE id='c1'; UPDATE chat_projects SET deleted_at=2 WHERE id='project-a'")
+  expect(access.canReadSource(a.sourceId, 'c1')).toBe(false)
+})
+
+it('项目优先检索绕过 none 范围但保留资料权限，在截断前优先于库内候选', async () => {
+  const a = await attachment()
+  projectSource(a.sourceId)
+  replaceSegments(a.sourceId, [{ kind: 'paragraph', text: 'PROJECT-RETRIEVAL-KEY private detail', locator: {} }])
+  const lib = (await importPaths([file('public.txt', 'PROJECT-RETRIEVAL-KEY public detail')])).imported[0]
+  replaceSegments(lib.id, [{ kind: 'paragraph', text: 'PROJECT-RETRIEVAL-KEY public detail', locator: {} }])
+  const options = { priorityIds: { notes: [], sources: [a.sourceId] } }
+  const allow = { sourceIds: [a.sourceId] }
+  const hits = await retrieve('PROJECT-RETRIEVAL-KEY', { type: 'none' }, 8, {}, null, allow, options)
+  expect(hits.map((h) => h.parentId)).toEqual([a.sourceId])
+  expect(hits[0].projectSource).toBe(true)
+  expect(await retrieve('PROJECT-RETRIEVAL-KEY', { type: 'none' }, 8, {}, null, undefined, options)).toEqual([])
+  const one = await retrieve('PROJECT-RETRIEVAL-KEY', { type: 'all' }, 1, {}, null, allow, options)
+  expect(one[0].parentId).toBe(a.sourceId)
+  ;(await svc()).archiveAttachments([a.sourceId], null)
+  updateSource(a.sourceId, { aiExcluded: true })
+  expect(await retrieve('PROJECT-RETRIEVAL-KEY', { type: 'none' }, 8, {}, null, allow, options)).toEqual([])
+})
+
+it('项目来源预算内整篇进入上下文，超预算降为检索，清单最多30项', async () => {
+  const a = await attachment()
+  projectSource(a.sourceId)
+  replaceSegments(a.sourceId, [{ kind: 'paragraph', text: 'PROJECT-FULL-MARKER whole document', locator: {} }])
+  f.sql!.exec("UPDATE jobs SET status='done'")
+  const { prepareProjectTurn } = await import('../ai/projectContext')
+  const turn = prepareProjectTurn('c1', true, 32000)
+  expect(turn.full.map((h) => h.text).join('\n')).toBe('PROJECT-FULL-MARKER whole document')
+  expect(turn.full[0].projectSource).toBe(true)
+  expect(turn.section).toContain('项目来源')
+  expect(prepareProjectTurn('c1', true, 4).full).toEqual([])
+  for (let i = 0; i < 32; i++) {
+    f.sql!.prepare(
+      "INSERT INTO sources(id,title,kind,space,ai_excluded,accessed_at,created_at,updated_at) VALUES(?,?,'text','attachment',1,1,1,1)"
+    ).run('roster-' + i, 'Roster-' + i)
+    f.sql!.prepare("INSERT INTO project_sources VALUES('project-a','source',?,'text',?)").run('roster-' + i, i + 2)
+  }
+  const roster = prepareProjectTurn('c1', false, 32000)
+  expect(roster.section.match(/sourceId=/g)).toHaveLength(30)
+  expect(roster.full).toEqual([])
+  expect(prepareProjectTurn('c2', false, 32000).section).toBe('')
+})
+
+it('项目私有来源的派生笔记保持隔离，同项目可用，移出后撤销且历史来源不丢', async () => {
+  const a = await attachment()
+  projectSource(a.sourceId)
+  f.sql!.exec("INSERT INTO notes(id,doc_version,learned_at,created_at,edited_at,updated_at) VALUES('project-derived',1,1,1,1,1)")
+  const derived = await import('../attachmentDerived')
+  const { canUseNote } = await import('../notePrivacy')
+  expect(derived.conversationAttachmentIds('c1')).toContain(a.sourceId)
+  derived.protectNoteAttachments('project-derived', derived.conversationAttachmentIds('c1'))
+  expect(canUseNote('project-derived', 'c1')).toBe(true)
+  expect(canUseNote('project-derived', 'c2')).toBe(false)
+  f.sql!.prepare(
+    "INSERT INTO messages(id,conversation_id,role,content,context,created_at,updated_at) VALUES('project-derived-answer','c1','assistant','private',?,1,1)"
+  ).run(JSON.stringify({ projectPrivateSourceIds: [a.sourceId] }))
+  f.sql!.exec("UPDATE conversations SET project_id=NULL WHERE id='c1'; DELETE FROM project_sources")
+  expect(canUseNote('project-derived', 'c1')).toBe(false)
+  expect(derived.conversationAttachmentIds('c1')).toContain(a.sourceId)
+})
+
+it('项目来源本地向量可索引，云端模式和删除项目后均排除', async () => {
+  const a = await attachment()
+  projectSource(a.sourceId)
+  replaceSegments(a.sourceId, [{ kind: 'paragraph', text: 'PROJECT-INDEX local-only material', locator: {} }])
+  const { getSettings, setSettings } = await import('../settings')
+  const original = getSettings().ai.embedding
+  try {
+    setSettings({ ai: { ...getSettings().ai, embedding: { ...original, mode: 'local' } } })
+    expect(desiredChunks().some((c) => c.parentId === a.sourceId)).toBe(true)
+    setSettings({ ai: { ...getSettings().ai, embedding: { ...original, mode: 'cloud' } } })
+    expect(desiredChunks().some((c) => c.parentId === a.sourceId)).toBe(false)
+    setSettings({ ai: { ...getSettings().ai, embedding: { ...original, mode: 'local' } } })
+    f.sql!.exec("UPDATE chat_projects SET deleted_at=2 WHERE id='project-a'")
+    expect(desiredChunks().some((c) => c.parentId === a.sourceId)).toBe(false)
+  } finally {
+    setSettings({ ai: { ...getSettings().ai, embedding: original } })
+  }
 })

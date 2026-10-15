@@ -4,7 +4,14 @@ import { readinessForSources, readinessDescription, storedReadiness } from '../r
 import { matchSourcesByTitle } from './sourceMentions'
 import { prepareAttachmentTurn, markAttachmentTurnSent, assertAttachmentTurn, type AttachmentTurn } from './chatAttachments'
 import { bindAttachments, bindAttachmentNotes, attachmentStatus, conversationAttachments, noteReference } from '../attachments'
-import { attachmentHistoryReadable, canReadSource, hasPrivateAttachmentHistory, hasAttachmentHistory } from '../attachmentsAccess'
+import {
+  attachmentHistoryReadable,
+  canReadSource,
+  conversationProjectSources,
+  hasPrivateAttachmentHistory,
+  hasAttachmentHistory
+} from '../attachmentsAccess'
+import { prepareProjectTurn, type ProjectTurn } from './projectContext'
 import { listSegments, resolveSegmentId } from '../segments'
 import { conversationAttachmentIds } from '../attachmentDerived'
 import { tr } from '../../lib/messages'
@@ -38,7 +45,7 @@ import { buildModel } from './model'
 import { recognizeRegion, recognizingSources } from '../recognize'
 import { capsFor, getProviderRow, learnContextLimit } from './providers'
 import { retrieve } from './retrieve'
-import { estimateTokens, shortAttachmentBudget, FULL_SOURCE_MAX_TOKENS } from '../../lib/sourceContext'
+import { estimateTokens, shortAttachmentBudget, sourceTextBudget, FULL_SOURCE_MAX_TOKENS } from '../../lib/sourceContext'
 import { retrievalQuery } from './followUp'
 import { contextGenerationBudget, contextLimitFromError, withContextWindowRetry } from './modelContext'
 import { contextSourceEvidence, fullSourceEvidence, resolveContext } from './context'
@@ -708,7 +715,12 @@ async function agentTools(
   Object.assign(tools, web.tools)
   Object.assign(meta, web.meta)
   for (const name of Object.keys(tools)) if (isProposalTool(name)) meta[name] = { level: 'write', proposal: true }
-  if (session.scope.type !== 'none' || session.attachmentSourceIds?.length) {
+  if (
+    session.scope.type !== 'none' ||
+    session.attachmentSourceIds?.length ||
+    session.projectSourceIds?.notes.length ||
+    session.projectSourceIds?.sources.length
+  ) {
     {
       const doing = buildDoTools(zh, {
         sourceIds: conversationAttachmentIds(session.conversationId),
@@ -722,7 +734,17 @@ async function agentTools(
     const scope = buildScopeTools(zh, {
       ...chat,
       conversationId: session.conversationId,
-      ...(session.scope.type === 'none' ? { sourceIds: session.attachmentSourceIds ?? [] } : {})
+      ...(session.scope.type !== 'all'
+        ? {
+            sourceIds: [
+              ...new Set([
+                ...(session.scope.type === 'items' ? session.scope.sources : []),
+                ...(session.attachmentSourceIds ?? []),
+                ...(session.projectSourceIds?.sources ?? [])
+              ])
+            ]
+          }
+        : {})
     })
     Object.assign(tools, scope.tools)
     Object.assign(meta, scope.meta)
@@ -794,11 +816,29 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
     }
   }
   let attachmentTurn: AttachmentTurn = { section: '', full: [], images: [], sentIds: [], sourceIds: [] }
+  let projectTurn: ProjectTurn = { section: '', full: [], items: [] }
+  const initialProjectItems = conversationProjectSources(conversationId)
+  session.projectSourceIds = {
+    notes: initialProjectItems.filter((s) => s.itemType === 'note').map((s) => s.itemId),
+    sources: initialProjectItems.filter((s) => s.itemType === 'source').map((s) => s.itemId)
+  }
+  const projectPrivateIds = initialProjectItems.filter((s) => s.private).map((s) => s.itemId)
+  const assertProjectSources = (): void => {
+    const current = conversationProjectSources(conversationId)
+    if (initialProjectItems.some((s) => !current.some((c) => c.itemId === s.itemId && c.itemType === s.itemType)))
+      throw new Error(zh ? '项目来源权限已改变，已停止后续请求' : 'Project source access changed; further requests stopped')
+  }
   session.attachmentSourceIds = conversationAttachments(conversationId)
     .filter((a) => !a.sourceId.startsWith('note:') && !a.deleted && canReadSource(a.sourceId, conversationId))
     .map((a) => a.sourceId)
   session.suppressAttachmentMemory = hasAttachmentHistory(conversationId)
   session.retrieveAttachments = async (query, filters, limit, opts) => {
+    assertProjectSources()
+    const projectItems = conversationProjectSources(conversationId)
+    const priorityIds = {
+      notes: projectItems.filter((s) => s.itemType === 'note').map((s) => s.itemId),
+      sources: projectItems.filter((s) => s.itemType === 'source').map((s) => s.itemId)
+    }
     const ids = conversationAttachments(conversationId)
       .filter((a) => !a.sourceId.startsWith('note:') && !a.deleted && canReadSource(a.sourceId, conversationId))
       .map((a) => a.sourceId)
@@ -816,7 +856,15 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
               ])
             ]
           }
-    return retrieve(query, scope, limit, filters, session.preferSource, { sourceIds: ids }, opts)
+    return retrieve(
+      query,
+      scope,
+      limit,
+      filters,
+      session.preferSource,
+      { sourceIds: [...new Set([...ids, ...projectItems.filter((s) => s.private).map((s) => s.itemId)])] },
+      { ...opts, priorityIds }
+    )
   }
   const initialMemoryProject = memoryProjectId(conversationId)
   const stopProjectGuard = onMainEvent('chatProjects:changed', () => {
@@ -831,6 +879,11 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
   })
   const stopAttachmentGuard = onMainEvent('attachments:changed', () => {
     if (attachmentTurn.sourceIds.some((id) => !canReadSource(id, conversationId))) ctrl.abort()
+    try {
+      assertProjectSources()
+    } catch {
+      ctrl.abort()
+    }
   })
   let lastFlush = 0
   const flush = (force = false): void => {
@@ -936,7 +989,7 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
           ? { sourceIds: sourcePlan.sourceIds, includeNotes: true }
           : {}
     const retrieved =
-      special || (input.scope.type === 'none' && !sourcePlan.sourceIds.length)
+      special || (input.scope.type === 'none' && !sourcePlan.sourceIds.length && !initialProjectItems.length)
         ? []
         : await session.retrieveAttachments(query, {}, 8, retrievalOpts)
     const preparedFull = [...attachmentTurn.full]
@@ -958,12 +1011,13 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
     const evidenceIds = [
       ...new Set([
         ...(session.attachmentSourceIds ?? []),
+        ...(session.projectSourceIds?.sources ?? []),
         ...sourcePlan.sourceIds,
         ...kbHits.filter((h) => h.parentType === 'source').map((h) => h.parentId)
       ])
     ]
     db.update(messages)
-      .set({ context: JSON.stringify({ attachmentSourceIds: evidenceIds }) })
+      .set({ context: JSON.stringify({ attachmentSourceIds: evidenceIds, projectPrivateSourceIds: projectPrivateIds }) })
       .where(eq(messages.id, messageId))
       .run()
     session.suppressAttachmentMemory = hasAttachmentHistory(conversationId)
@@ -1089,6 +1143,13 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
           fullCeiling
         )
         budgetShortAttachments()
+        const projectBudget = Math.max(
+          0,
+          sourceTextBudget(contextLength, fullCeiling) -
+            attachmentTurn.full.reduce((n, f) => n + estimateTokens(f.text), 0) -
+            (sourcePlan.full ? sourcePlan.hits.reduce((n, h) => n + estimateTokens(h.text), 0) : 0)
+        )
+        projectTurn = special ? { section: '', full: [], items: [] } : prepareProjectTurn(conversationId, zh, contextLength, projectBudget)
         fullTextInstruction = sourcePlan.full
           ? zh
             ? '以下是用户指定资料的全文，请完整阅读后回答，并引用具体片段。'
@@ -1105,11 +1166,15 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
           conversationId
         )
         const currentHits = filterCloudHits(
-          [...explicit, ...kbHits.filter((h) => !explicit.some((e) => e.ownerId === h.ownerId && e.parentId === h.parentId))],
+          [
+            ...explicit,
+            ...projectTurn.full.filter((h) => !explicit.some((e) => e.ownerId === h.ownerId && e.parentId === h.parentId)),
+            ...kbHits.filter((h) => ![...explicit, ...projectTurn.full].some((e) => e.ownerId === h.ownerId && e.parentId === h.parentId))
+          ],
           conversationId
         ).filter((h) => !attachmentTurn.full.some((f) => f.sourceId === h.parentId))
         let kb = currentHits.length ? numberHits(session, currentHits) : null
-        if (kb && currentHits.some((h) => session.attachmentSourceIds?.includes(h.parentId)))
+        if (kb && currentHits.some((h) => session.attachmentSourceIds?.includes(h.parentId) || projectPrivateIds.includes(h.parentId)))
           kb = asExternalData('attachment-excerpts', kb, { maxChars: kb.length, overflow: 'reject' })
         const attachmentFull = attachmentTurn.full
           .map((f) => asExternalData('attachment:' + f.name, numberHits(session, f.hits), { maxChars: 60000, overflow: 'reject' }))
@@ -1121,7 +1186,8 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
             ...sourcePlan.sourceIds,
             ...matchSourcesByTitle(query, input.scope).map((m) => m.sourceId),
             ...(session.preferSource ? [session.preferSource] : []),
-            ...(session.attachmentSourceIds ?? [])
+            ...(session.attachmentSourceIds ?? []),
+            ...(session.projectSourceIds?.sources ?? [])
           ])
         ]
         const readinessItems = readinessForSources(involved, conversationId)
@@ -1153,6 +1219,7 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
           : ''
 
         assertAttachmentTurn(conversationId, attachmentTurn.sourceIds)
+        assertProjectSources()
         // 资料还在识别（扫描页、表格、图片）：回答可能不完整，要如实告诉用户（v0.7.6）
         const pending = recognizingSources(
           [...currentHits.filter((h) => h.parentType === 'source').map((h) => h.parentId), 'sourceId' in ctx ? ctx.sourceId : null].filter(
@@ -1233,6 +1300,7 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
           ? coachSystem(coach, zh)
           : [
               systemPrompt(zh, session.tier, session.incognito, conversationId, uiMode, localUi),
+              projectTurn.section,
               attachmentTurn.section,
               fullTextInstruction
             ]
@@ -1247,6 +1315,7 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
         messages: msgs,
         prepareStep: ({ messages }) => {
           assertAttachmentTurn(conversationId, attachmentTurn.sourceIds)
+          assertProjectSources()
           requireRecordingCloudAccess(privacyInput, conversationId)
           // 连续工具轮次会复用已经发送过的证据；确认或工具等待期间撤销权限后，不能再次发送旧正文。
           if (filterCurrentWebHits(session.hits).length !== session.hits.length)
@@ -1364,6 +1433,7 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
     citations = session.hits
       .map((h, i) => ({
         n: i + 1,
+        projectSource: h.projectSource,
         parentType: h.parentType,
         parentId: h.parentId,
         ownerId: h.ownerId,

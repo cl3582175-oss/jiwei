@@ -2,7 +2,7 @@ import { getSqlite } from '../db'
 import { emit } from '../events'
 import { attachmentOrigins } from '../lib/attachmentOrigins'
 import { readNoteState } from './noteState'
-import { canReadSource, isConversationAttachment } from './attachmentsAccess'
+import { canReadSource, isConversationAttachment, isProjectSource } from './attachmentsAccess'
 
 /** 文档与提案的来源记录都保留；删除来源不意味着派生内容变成公开。 */
 function attachmentSourcesOf(noteId: string): string[] {
@@ -50,7 +50,9 @@ export function canUseNote(noteId: string, conversationId: string | null): boole
   const row = getSqlite().prepare('SELECT user_ai_excluded,deleted_at FROM notes WHERE id=?').get(noteId) as
     { user_ai_excluded: number; deleted_at: number | null } | undefined
   if (!row || row.deleted_at !== null || row.user_ai_excluded) return false
-  return privateAttachmentsOf(noteId).every((id) => isConversationAttachment(id, conversationId) && canReadSource(id, conversationId))
+  return privateAttachmentsOf(noteId).every(
+    (id) => (isConversationAttachment(id, conversationId) || isProjectSource(id, conversationId)) && canReadSource(id, conversationId)
+  )
 }
 
 /** 归档即公开：记下来源，彻底删除资料后派生笔记也不会被重新锁住。 */

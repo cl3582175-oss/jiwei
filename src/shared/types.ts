@@ -789,6 +789,8 @@ export interface AgentStep {
 
 /** 回答引用的知识库片段 */
 export interface Citation {
+  /** 本轮属于项目来源的依据，独立于关键词/语义的检索方式。 */
+  projectSource?: boolean
   /** 回答中的引用编号 [n] */
   n: number
   parentType: 'note' | 'source' | 'web'
@@ -1013,6 +1015,7 @@ export interface EmbeddingStatus {
 }
 
 export interface SearchHit {
+  projectSource?: boolean
   parentType: 'note' | 'source' | 'web'
   parentId: string
   ownerId: string
@@ -1216,6 +1219,7 @@ export interface ScanPageText {
 
 export type AttachmentStatus = 'adding' | 'parsing' | 'recognizing' | 'transcribing' | 'ready' | 'failed' | 'unsupported'
 export interface Attachment {
+  projects?: { id: string; name: string }[]
   sourceId: string
   name: string
   kind: SourceKind

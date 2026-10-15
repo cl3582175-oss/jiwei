@@ -1,13 +1,15 @@
 import { useState } from 'react'
+import { toast } from 'sonner'
+import { errText } from './useChat'
 import { useTranslation } from 'react-i18next'
 import { Command } from 'cmdk'
 import { Dialog as D } from 'radix-ui'
-import { Library, Check, ChevronDown, Search, NotebookText, CircleSlash, ListChecks } from 'lucide-react'
+import { Library, Check, ChevronDown, Search, NotebookText, CircleSlash, ListChecks, X } from 'lucide-react'
 import type { ChatScope } from '@shared/schemas'
 import { useNotes, useSources } from '@/lib/queries'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-import { Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui/primitives'
+import { Menu, MenuContent, MenuItem, MenuTrigger, Tip } from '@/components/ui/primitives'
 import { KIND_ICON } from '../library/LibraryView'
 
 /** 检索范围：全部知识库 / 指定笔记与资料 / 不使用知识库 */
@@ -58,55 +60,111 @@ export function ScopePicker({ value, onChange }: { value: ChatScope; onChange: (
   )
 }
 
-function ItemsDialog({
-  open,
-  onOpenChange,
-  initial,
-  onDone
-}: {
+export interface ItemsSelection {
+  notes: string[]
+  sources: string[]
+}
+interface ItemsDialogProps {
   open: boolean
-  onOpenChange: (o: boolean) => void
-  initial: { notes: string[]; sources: string[] }
-  onDone: (v: { notes: string[]; sources: string[] }) => void
-}) {
+  onOpenChange: (open: boolean) => void
+  initial: ItemsSelection
+  onDone: (value: ItemsSelection) => void | boolean | Promise<void | boolean>
+  title?: string
+  description?: string
+  confirmText?: string
+  maxPerType?: number
+}
+
+/** Shared library multi-select; reopening mounts a fresh draft from the latest selection. */
+export function ItemsDialog(props: ItemsDialogProps) {
+  return props.open ? <ItemsDialogBody {...props} /> : null
+}
+
+function ItemsDialogBody({ onOpenChange, initial, onDone, title, description, confirmText, maxPerType }: ItemsDialogProps) {
   const { t } = useTranslation()
   const [q, setQ] = useState('')
+  const [saving, setSaving] = useState(false)
   const [notesSel, setNotes] = useState<Set<string>>(new Set(initial.notes))
   const [srcSel, setSrcs] = useState<Set<string>>(new Set(initial.sources))
-  const { data: notes = [] } = useNotes({ search: q, limit: 50 })
-  const { data: sources = [] } = useSources({ search: q })
+  const { data: notes = [], isPending: loadingNotes, isError: notesError, refetch: reloadNotes } = useNotes({ search: q, limit: 50 })
+  const { data: sources = [], isPending: loadingSources, isError: sourcesError, refetch: reloadSources } = useSources({ search: q })
   const toggle = (set: Set<string>, setter: (s: Set<string>) => void, id: string): void => {
     const n = new Set(set)
     if (n.has(id)) n.delete(id)
-    else n.add(id)
+    else {
+      if (maxPerType && n.size >= maxPerType) {
+        toast.error(t('projects.tooManySources', { count: maxPerType }))
+        return
+      }
+      n.add(id)
+    }
     setter(n)
   }
   const item =
     'flex h-9 cursor-default items-center gap-2.5 rounded-lg px-3 text-sm text-fg data-[selected=true]:bg-surface-hover [&_svg]:size-4 [&_svg]:shrink-0'
   return (
-    <D.Root open={open} onOpenChange={onOpenChange}>
+    <D.Root open onOpenChange={(open) => !saving && onOpenChange(open)}>
       <D.Portal>
         <D.Overlay className="fixed inset-0 z-40 bg-black/20 backdrop-blur-[2px]" />
         <D.Content className="fixed top-[14%] left-1/2 z-50 w-[min(92vw,560px)] -translate-x-1/2 overflow-hidden rounded-2xl border border-border bg-surface shadow-float outline-none">
-          <D.Title className="px-5 pt-4 text-sm font-medium text-fg">{t('chat.scope.pickTitle')}</D.Title>
-          <D.Description className="px-5 pt-1 text-xs text-muted">{t('chat.scope.pickDesc')}</D.Description>
+          <D.Title className="px-5 pt-4 text-sm font-medium text-fg">{title ?? t('chat.scope.pickTitle')}</D.Title>
+          <D.Description className="px-5 pt-1 text-xs text-muted">{description ?? t('chat.scope.pickDesc')}</D.Description>
+          <Tip label={t('common.close')}>
+            <button
+              type="button"
+              disabled={saving}
+              aria-label={t('common.close')}
+              className="absolute top-3 right-3 rounded p-1 text-subtle hover:text-fg"
+              onClick={() => onOpenChange(false)}
+            >
+              <X className="size-4" />
+            </button>
+          </Tip>
           <Command shouldFilter={false} loop>
             <div className="mt-2 flex items-center gap-3 border-b border-border px-5">
               <Search className="size-4 text-subtle" />
               <Command.Input
+                disabled={saving}
                 value={q}
+                aria-label={t('projects.librarySearch')}
                 onValueChange={setQ}
                 placeholder={t('palette.placeholder')}
                 className="h-11 flex-1 bg-transparent text-sm text-fg outline-none placeholder:text-subtle"
               />
             </div>
+            {(notesError || sourcesError) && (
+              <div role="status" className="flex items-center justify-between gap-2 px-5 py-2 text-xs text-danger">
+                <span>{t('projects.loadFailed')}</span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    void reloadNotes()
+                    void reloadSources()
+                  }}
+                >
+                  {t('projects.retry')}
+                </Button>
+              </div>
+            )}
             <Command.List className="max-h-[380px] overflow-y-auto p-2">
+              {!notes.length && !sources.length && (
+                <p role="status" className="px-3 py-8 text-center text-xs text-subtle">
+                  {t(loadingNotes || loadingSources ? 'projects.loading' : 'projects.noMatchingSources')}
+                </p>
+              )}
               <Command.Group
                 heading={t('nav.notes')}
                 className="[&_[cmdk-group-heading]]:px-3 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-2xs [&_[cmdk-group-heading]]:text-subtle"
               >
                 {notes.map((n) => (
-                  <Command.Item key={n.id} value={`n:${n.id}`} onSelect={() => toggle(notesSel, setNotes, n.id)} className={item}>
+                  <Command.Item
+                    disabled={saving}
+                    key={n.id}
+                    value={`n:${n.id}`}
+                    onSelect={() => toggle(notesSel, setNotes, n.id)}
+                    className={item}
+                  >
                     <NotebookText className="text-subtle" />
                     <span className="flex-1 truncate">{n.title || t('common.untitled')}</span>
                     <Check className={cn('text-accent', !notesSel.has(n.id) && 'invisible')} />
@@ -118,7 +176,13 @@ function ItemsDialog({
                 className="[&_[cmdk-group-heading]]:px-3 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-2xs [&_[cmdk-group-heading]]:text-subtle"
               >
                 {sources.map((s) => (
-                  <Command.Item key={s.id} value={`s:${s.id}`} onSelect={() => toggle(srcSel, setSrcs, s.id)} className={item}>
+                  <Command.Item
+                    disabled={saving}
+                    key={s.id}
+                    value={`s:${s.id}`}
+                    onSelect={() => toggle(srcSel, setSrcs, s.id)}
+                    className={item}
+                  >
                     <span className="text-subtle [&_svg]:size-4">{KIND_ICON[s.kind]}</span>
                     <span className="flex-1 truncate">{s.title}</span>
                     <Check className={cn('text-accent', !srcSel.has(s.id) && 'invisible')} />
@@ -132,13 +196,19 @@ function ItemsDialog({
             <Button
               variant="primary"
               size="sm"
-              disabled={notesSel.size + srcSel.size === 0}
+              disabled={saving || notesSel.size + srcSel.size === 0}
               onClick={() => {
-                onDone({ notes: [...notesSel], sources: [...srcSel] })
-                onOpenChange(false)
+                setSaving(true)
+                void Promise.resolve()
+                  .then(() => onDone({ notes: [...notesSel], sources: [...srcSel] }))
+                  .then((result) => {
+                    if (result !== false) onOpenChange(false)
+                  })
+                  .catch((error) => toast.error(errText(error)))
+                  .finally(() => setSaving(false))
               }}
             >
-              {t('common.confirm')}
+              {confirmText ?? t('common.confirm')}
             </Button>
           </div>
         </D.Content>

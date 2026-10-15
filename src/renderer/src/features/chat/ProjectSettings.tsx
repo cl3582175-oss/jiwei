@@ -121,7 +121,18 @@ function Modal({ title, close, busy, children }: { title: string; close: () => v
     <D.Root open onOpenChange={(open) => !open && !busy && close()}>
       <D.Portal>
         <D.Overlay className="fixed inset-0 z-40 bg-black/25 backdrop-blur-[2px]" />
-        <D.Content className={dialogClass} data-testid="project-settings">
+        <D.Content
+          className={dialogClass}
+          data-testid="project-settings"
+          onKeyDownCapture={(event) => {
+            // A just-opened menu dialog can receive Escape before Radix registers its dismiss layer.
+            if (event.key === 'Escape' && !busy) {
+              event.preventDefault()
+              event.stopPropagation()
+              close()
+            }
+          }}
+        >
           <D.Title className="pr-8 font-serif text-lg font-semibold text-fg">{title}</D.Title>
           <D.Description className="sr-only">{title}</D.Description>
           <Tip label={t('projects.close')} side="left">

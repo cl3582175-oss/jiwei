@@ -402,6 +402,8 @@ function opText(op: Proposal['ops'][number], embeds: Proposal['embeds']): string
 /** 提案中的一处修改被接受或拒绝：留下样本（接受的过一段时间再看有没有被改） */
 export function recordProposalDecision(p: Proposal, opIndex: number, decision: 'accepted' | 'rejected', blockIds?: string[]): void {
   if (!p.skill || p.auto || !getMemorySettings().learnSkills || p.attachmentSourceIds?.length) return
+  const note = feedbackNote(p.noteId)
+  if (!note || note.deletedAt || note.aiExcluded) return
   let projectId = p.memoryProjectId ?? null
   if (projectId) {
     const project = getDb()
@@ -444,6 +446,30 @@ type Feedback = {
   created_at: number
 }
 
+function feedbackNote(noteId: string | null) {
+  return noteId
+    ? getDb()
+        .select({ updatedAt: notes.updatedAt, deletedAt: notes.deletedAt, aiExcluded: notes.aiExcluded })
+        .from(notes)
+        .where(eq(notes.id, noteId))
+        .get()
+    : null
+}
+
+/** 公开提案的块后来可能被私有来源改写；丢弃并清空样本，不能把改写再送去归纳。 */
+function discardFeedback(id: string, now: number): void {
+  profileDb()
+    .prepare("UPDATE skill_feedback SET kind = 'lost', before = '', after = NULL, checked_at = ?, consumed_at = ? WHERE id = ?")
+    .run(now, now, id)
+}
+
+function feedbackReadable(sample: Feedback, now = Date.now()): boolean {
+  const note = feedbackNote(sample.note_id)
+  if (note && !note.deletedAt && !note.aiExcluded) return true
+  discardFeedback(sample.id, now)
+  return false
+}
+
 /** 被接受的 AI 内容稳定后，看用户有没有改它、删它 */
 export function reviewFeedback(now = Date.now(), force = false): number {
   const pdb = profileDb()
@@ -451,12 +477,10 @@ export function reviewFeedback(now = Date.now(), force = false): number {
   let n = 0
   for (const f of rows) {
     if (!force && now - f.created_at < SETTLE_MS) continue
-    const note = f.note_id
-      ? getDb().select({ updatedAt: notes.updatedAt, deletedAt: notes.deletedAt }).from(notes).where(eq(notes.id, f.note_id)).get()
-      : null
-    // 笔记不在当前知识库 / 已删除：无法判断，丢弃样本
-    if (!note || note.deletedAt) {
-      pdb.prepare("UPDATE skill_feedback SET kind = 'lost', checked_at = ?, consumed_at = ? WHERE id = ?").run(now, now, f.id)
+    const note = feedbackNote(f.note_id)
+    // 发送权限先于正文读取：包括用户排除和附件派生的系统隐私锁。
+    if (!note || note.deletedAt || note.aiExcluded) {
+      discardFeedback(f.id, now)
       continue
     }
     // 用户可能还在改：等笔记安静 5 分钟（最多等 3 天）
@@ -520,12 +544,20 @@ export function induceSkillPreferences(): Promise<Memory[]> {
           .where(and(eq(chatProjects.id, projectId), isNull(chatProjects.deletedAt), eq(chatProjects.memory, 'project')))
           .get()
       if (!scopeActive()) continue
-      const samples = pdb
-        .prepare(
-          `SELECT * FROM skill_feedback WHERE skill = ? AND project_id IS ? AND consumed_at IS NULL AND kind IN ('rejected', 'edited', 'deleted')
+      const samples = (
+        pdb
+          .prepare(
+            `SELECT * FROM skill_feedback WHERE skill = ? AND project_id IS ? AND consumed_at IS NULL AND kind IN ('rejected', 'edited', 'deleted')
            ORDER BY created_at DESC LIMIT 8`
-        )
-        .all(skill, projectId) as Feedback[]
+          )
+          .all(skill, projectId) as Feedback[]
+      ).filter((sample) => feedbackReadable(sample))
+      if (samples.length < INDUCE_MIN) continue
+      const guard = (): void => {
+        if (!scopeActive()) throw new Error('Skill feedback scope changed')
+        if (samples.filter((sample) => feedbackReadable(sample)).length !== samples.length)
+          throw new Error('Skill feedback note permission changed')
+      }
       const kept = (
         pdb
           .prepare("SELECT COUNT(*) AS n FROM skill_feedback WHERE skill = ? AND project_id IS ? AND kind = 'kept'")
@@ -564,8 +596,10 @@ export function induceSkillPreferences(): Promise<Memory[]> {
             ? '你在帮学习助手了解用户对某个技能输出的稳定偏好。下面的记录都是用户不满意的输出：被拒绝、被删掉，或被改写（同时给出改后的样子）。对比 AI 输出与用户想要的样子，找出反复出现、可执行的格式或风格要求（如“表格不超过 4 列”“思维导图每个节点不超过 12 个字”“总结只写一句话”）。偏好描述用户想要什么，不要描述被否定的输出本身的特点。只是修正事实错误、或者证据只有一两次且不一致时，返回空数组。每条偏好一句话，不带主语，写成以后生成时要遵守的要求。'
             : 'You help a learning assistant learn the user\'s stable preferences for one skill\'s output. Every record below is output the user was unhappy with: rejected, deleted, or rewritten (with the rewrite shown). Compare the AI output with what the user wanted and find repeated, actionable format or style requirements (e.g. "tables have at most 4 columns", "summaries are one sentence"). Describe what the user wants, never the traits of the rejected output. Return an empty array if edits only fix facts or evidence is thin. One sentence each, no subject, phrased as a rule for future output.',
           prompt,
+          guard,
           schema: PrefSchema
         })
+        guard()
         const unchanged = pdb.prepare('SELECT 1 FROM skill_feedback WHERE id = ? AND project_id IS ? AND consumed_at IS NULL')
         if (!scopeActive() || samples.some((sample) => !unchanged.get(sample.id, projectId))) continue
         for (const p of out.preferences) {
