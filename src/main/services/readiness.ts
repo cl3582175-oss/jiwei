@@ -37,11 +37,17 @@ function calculate(row: SourceRow): Readiness {
   const pending = pages.filter((p) => p.status === 'pending' || p.status === 'failed').length
   const counts = sourceIndexCounts(row.id)
   if (pending) {
-    const engine = sourceRecognition(row.id).engine
-    const action = engine === 'ready' ? 'recognize' : engine === 'needs-install' ? 'install-recognizer' : null
-    return counts.segments
-      ? { state: 'partial', reason: 'scan-pending', pending, total: pages.length, action }
-      : { state: 'unreadable', reason: 'scan-pending', pending, total: pages.length, action }
+    const { engine, running } = sourceRecognition(row.id)
+    const recognizing = engine === 'ready' && running
+    const action: 'recognize' | 'install-recognizer' | null = recognizing
+      ? null
+      : engine === 'ready'
+        ? 'recognize'
+        : engine === 'needs-install'
+          ? 'install-recognizer'
+          : null
+    const scan = { reason: 'scan-pending' as const, pending, total: pages.length, action, ...(recognizing ? { recognizing } : {}) }
+    return counts.segments ? { state: 'partial', ...scan } : { state: 'unreadable', ...scan }
   }
   if (!counts.segments) return { state: 'unreadable', reason: 'empty', action: null }
   if (getStatus().state === 'ready' && counts.embedded < counts.indexable)
@@ -81,9 +87,15 @@ export function readinessDescription(r: Readiness, zh: boolean): string {
         ? `正在建立检索索引 ${Math.floor((r.progress ?? 0) * 100)}%`
         : `Building search index ${Math.floor((r.progress ?? 0) * 100)}%`
   if (r.state === 'partial')
-    return zh
-      ? `还有 ${r.pending}/${r.total} 页扫描页没有识别，这些页搜不到`
-      : `${r.pending} of ${r.total} scanned pages not recognized yet; they can't be searched`
+    return r.recognizing
+      ? zh
+        ? `正在识别扫描页，还剩 ${r.pending} 页，识别完成前这些页搜不到`
+        : `Recognizing scanned pages, ${r.pending} left; they can't be searched until done`
+      : zh
+        ? `${r.total} 页扫描页中还有 ${r.pending} 页没识别，这些页搜不到`
+        : `${r.pending} of ${r.total} scanned pages not recognized yet; they can't be searched`
+  if (r.reason === 'scan-pending' && r.recognizing)
+    return zh ? '正在识别扫描件，识别完成前内容搜不到' : "Recognizing the scanned document; its content can't be searched until done"
   const messages = {
     'scan-pending': ['这是扫描件，还没有识别，内容暂时搜不到', "Scanned document not recognized yet; its content can't be searched"],
     unsupported: ['暂时读不了这种格式的内容', "This format can't be read yet"],

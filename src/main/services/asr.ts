@@ -1,4 +1,3 @@
-import { tr } from '../lib/messages'
 import { recordingAudio, withRecordingFile } from './recording'
 import { enqueueMoss, mossStatus } from './moss'
 import { mossTranscriptRevision } from '../lib/moss'
@@ -20,6 +19,7 @@ import { assetPath } from './assets'
 import { emit } from '../events'
 import { enqueue, registerJobKind } from './jobs'
 import { listSegments, replaceSegments } from './segments'
+import { sourceJobTitle } from './sourceJobTitle'
 import { requestIndex } from './ai/indexer'
 import { cuesToSegments, parseSubtitles, type Cue } from '../lib/subtitles'
 import { decryptKey, getProviderRow } from './ai/providers'
@@ -387,14 +387,10 @@ export function enqueueTranscribe(sourceId: string, overwrite = false): void {
   )
 }
 
-const sourceTitle = (id: string): string => {
-  const s = getDb().select({ title: sources.title, space: sources.space }).from(sources).where(eq(sources.id, id)).get()
-  return s?.space === 'attachment' ? tr('对话附件', 'Chat attachment') : (s?.title ?? id)
-}
 
 export function registerAsrJob(): void {
   registerJobKind<{ sourceId: string; transcriptRevision?: string }>('source.transcribe', {
-    title: ({ sourceId }) => `转写：${sourceTitle(sourceId)}`,
+    title: ({ sourceId }) => `转写：${sourceJobTitle(sourceId)}`,
     async run({ sourceId, transcriptRevision }, ctx) {
       const row = getDb()
         .select({ a: assets, s: sources })

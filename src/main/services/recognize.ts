@@ -14,6 +14,7 @@ import { assetPath } from './assets'
 import { emit } from '../events'
 import { enqueue, registerJobKind, type JobContext } from './jobs'
 import { listSegments, replaceSegments } from './segments'
+import { sourceJobTitle } from './sourceJobTitle'
 import { requestIndex } from './ai/indexer'
 import { getSettings } from './settings'
 import { capsFor, getProviderRow } from './ai/providers'
@@ -566,8 +567,7 @@ export function registerRecognizeJob(): void {
   registerNoteImageJob()
   registerJobKind<{ sourceId: string }>('source.recognize', {
     offPeak: true,
-    title: ({ sourceId }) =>
-      `识别资料：${getDb().select({ title: sources.title }).from(sources).where(eq(sources.id, sourceId)).get()?.title ?? sourceId}`,
+    title: ({ sourceId }) => `识别资料：${sourceJobTitle(sourceId)}`,
     async run({ sourceId }, ctx) {
       const row = getDb()
         .select({ s: sources, a: assets })

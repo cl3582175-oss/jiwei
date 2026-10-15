@@ -8,13 +8,14 @@ const f = vi.hoisted(() => ({
   sql: null as Database.Database | null,
   db: null as ReturnType<typeof drizzle> | null,
   engine: 'ready',
+  running: false,
   vector: false,
   transcript: false,
   mode: 'local'
 }))
 vi.mock('../../db', () => ({ getDb: () => f.db, getSqlite: () => f.sql }))
 vi.mock('../recognize', () => ({
-  sourceRecognition: () => ({ needs: { scan: 1, table: 0, figure: 0 }, total: 1, done: 0, failed: 0, running: false, engine: f.engine })
+  sourceRecognition: () => ({ needs: { scan: 1, table: 0, figure: 0 }, total: 1, done: 0, failed: 0, running: f.running, engine: f.engine })
 }))
 vi.mock('../ai/embedding', () => ({
   getStatus: () => ({ state: f.vector ? 'ready' : 'missing' }),
@@ -26,9 +27,13 @@ vi.mock('../settings', () => ({ getSettings: () => ({ language: 'en', ai: { embe
 vi.mock('../segmentJobs', () => ({ enqueueSegment: () => {} }))
 import * as ready from '../readiness'
 import { sourceIndexStatus } from '../ai/sourceIndexStatus'
+import { sourceJobTitle } from '../sourceJobTitle'
+import { setMessageLanguage } from '../../lib/messages'
+import { readinessMessage } from '@shared/readiness'
 
 beforeEach(() => {
   f.engine = 'ready'
+  f.running = false
   f.vector = false
   f.transcript = false
   f.mode = 'local'
@@ -185,4 +190,34 @@ it('index progress follows the same library and owning-conversation visibility a
   )
   expect(await sourceIndexStatus('attachment')).toEqual({ segments: 0, indexable: 0, embedded: 0, semantic: false })
   expect(await sourceIndexStatus('attachment', 'owner')).toMatchObject({ segments: 1, indexable: 1 })
+})
+
+it('while recognition is running, scan readiness says so and offers no start button', () => {
+  source('r')
+  segment('r')
+  scan('r', 1)
+  scan('r', 2, 'done')
+  f.running = true
+  const r = ready.sourceReadiness('r')
+  expect(r).toEqual({ state: 'partial', reason: 'scan-pending', pending: 1, total: 2, action: null, recognizing: true })
+  expect(readinessMessage(r)).toEqual({ key: 'readyScanPartialRunning', values: { n: 1 } })
+  expect(ready.readinessDescription(r, true)).toBe('正在识别扫描页，还剩 1 页，识别完成前这些页搜不到')
+  f.running = false
+  expect(ready.readinessDescription(ready.sourceReadiness('r'), true)).toBe('2 页扫描页中还有 1 页没识别，这些页搜不到')
+  f.sql!.exec("DELETE FROM source_segments WHERE source_id='r'")
+  f.running = true
+  const all = ready.sourceReadiness('r')
+  expect(readinessMessage(all)).toEqual({ key: 'readyScanAllRunning' })
+  expect(ready.readinessDescription(all, true)).toBe('正在识别扫描件，识别完成前内容搜不到')
+})
+
+it('background job titles never reveal a chat attachment file name', () => {
+  source('lib')
+  source('att', 'pdf', 'pdf', 'attachment')
+  setMessageLanguage('zh-CN')
+  expect(sourceJobTitle('lib')).toBe('lib')
+  expect(sourceJobTitle('att')).toBe('对话附件')
+  setMessageLanguage('en')
+  expect(sourceJobTitle('att')).toBe('Chat attachment')
+  setMessageLanguage('zh-CN')
 })

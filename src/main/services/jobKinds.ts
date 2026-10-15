@@ -13,6 +13,7 @@ import { deviceId } from './device'
 import type { TextSegment } from '../lib/segment'
 import { applyRecognized, IMAGE_EXTS, maybeAutoRecognize, recordPages } from './recognize'
 import { getSettings } from './settings'
+import { sourceJobTitle } from './sourceJobTitle'
 
 // 后台任务类型注册：资料解析、网页抓取。解析完成后触发知识库索引更新。
 
@@ -50,15 +51,11 @@ export function resegmentEmptyPdfs(): number {
   return rows.length
 }
 
-const sourceTitle = (id: string): string => {
-  const s = getDb().select({ title: sources.title, space: sources.space }).from(sources).where(eq(sources.id, id)).get()
-  return s?.space === 'attachment' ? '对话附件' : (s?.title ?? id)
-}
 
 export function registerJobKinds(): void {
   registerIcsJobs()
   registerJobKind<{ sourceId: string; upgrade?: boolean }>('source.segment', {
-    title: ({ sourceId }) => `解析资料：${sourceTitle(sourceId)}`,
+    title: ({ sourceId }) => `解析资料：${sourceJobTitle(sourceId)}`,
     async run({ sourceId, upgrade }, ctx) {
       if (upgrade && !getSettings().retrieval.autoUpgrade) return { skipped: 'upgrade paused' }
       if (upgrade && !canUpgradeSource(sourceId)) return { skipped: 'ineligible upgrade' }
@@ -107,7 +104,7 @@ export function registerJobKinds(): void {
 
   // 网页：抓取并保存快照（防止原网页失效），再提取正文
   registerJobKind<{ sourceId: string }>('source.fetch', {
-    title: ({ sourceId }) => `抓取网页：${sourceTitle(sourceId)}`,
+    title: ({ sourceId }) => `抓取网页：${sourceJobTitle(sourceId)}`,
     async run({ sourceId }, ctx) {
       const s = getDb().select().from(sources).where(eq(sources.id, sourceId)).get()
       if (!s?.url) return { skipped: 'no url' }
