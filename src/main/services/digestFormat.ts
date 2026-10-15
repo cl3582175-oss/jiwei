@@ -24,7 +24,10 @@ export function parsePointLines(text: string, validIds: Set<string>): Points {
           segmentId ??= id
           return ''
         }
-        return /^[\w-]+$/.test(id) ? '' : ref
+        // 花括号和【】是引用标记；普通括号里的缩写、年份和参数属于正文。
+        const explicitReference = /^[{｛【]/.test(ref) && /^[\w-]+$/.test(id)
+        const unknownSegmentId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)
+        return explicitReference || unknownSegmentId ? '' : ref
       })
       .trim()
     if (!body) continue

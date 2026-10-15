@@ -15,6 +15,31 @@ it('逐行要点容忍编号和中英文括号，未知ID只移除引用', async
   })
 })
 
+it('普通括号里的缩写、年份和函数参数属于正文，不能作为未知引用删除', async () => {
+  const { parsePointLines } = await import('../digestFormat')
+  const segmentId = '18b3f657-b4dc-4da8-9022-18bef7154988'
+  const points = ['采用近端策略优化（PPO）', '使用算法 (PPO)（2026） [vector_id]', '调用 normalize(x) 与 [PPO]', '（PPO）']
+  expect(parsePointLines(points.map((point) => `- ${point} {${segmentId}}`).join('\n'), new Set([segmentId]))).toEqual({
+    topic: '',
+    points: points.map((text) => ({ text, segmentId }))
+  })
+})
+
+it('普通括号正文与未知引用并存时只移除引用，保留要点与有效来源', async () => {
+  const { parsePointLines } = await import('../digestFormat')
+  const segmentId = '18b3f657-b4dc-4da8-9022-18bef7154988'
+  const unknownId = 'f2619e32-729b-46f7-b81c-1312a00a448d'
+  for (const [open, close] of [['{', '}'], ['｛', '｝'], ['(', ')'], ['（', '）'], ['[', ']'], ['【', '】']]) {
+    expect(
+      parsePointLines(`- 采用（PPO） ${open}${unknownId}${close} ${open}${segmentId}${close}`, new Set([segmentId]))
+    ).toEqual({ topic: '', points: [{ text: '采用（PPO）', segmentId }] })
+  }
+  expect(parsePointLines('- 采用（PPO） {missing} 【missing】', new Set())).toEqual({
+    topic: '',
+    points: [{ text: '采用（PPO）' }]
+  })
+})
+
 it('要点保留前12条，按字符截到60字，空结果不伪造要点', async () => {
   const { parsePointLines } = await import('../digestFormat')
   const result = parsePointLines('# Topic\n' + Array.from({ length: 20 }, () => '- ' + '字'.repeat(70) + ' {s}').join('\n'), new Set(['s']))
