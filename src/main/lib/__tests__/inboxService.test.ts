@@ -239,7 +239,7 @@ describe('inbox service boundaries', () => {
     })
     await state.jobs
       .get('inbox.triage')!
-      .run({}, { step: directStep, isCanceled: () => canceled, progress: () => undefined, worker: async <T>() => undefined as T })
+      .run({}, { step: directStep, isCanceled: () => canceled, progress: () => undefined, yieldPoint: () => {}, worker: async <T>() => undefined as T })
     expect(state.rows[0].status).toBe('new')
     expect(state.notification).not.toHaveBeenCalled()
   })
@@ -275,6 +275,7 @@ const context = (isCanceled = () => false) => ({
   step: directStep,
   isCanceled,
   progress: () => undefined,
+  yieldPoint: () => {},
   worker: async <T>() => undefined as T
 })
 const output = (id = 'item') => ({ suggestions: [{ id, suggestion: { type: 'idea', action: 'keep', reason: 'reason' } }] })

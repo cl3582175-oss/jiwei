@@ -126,7 +126,7 @@ function correctionQuestions(): string[] {
   return data.corrections.map((correction) => correction.question)
 }
 async function run(): Promise<unknown> {
-  return state.jobs.get('mistake-split')!.run({ id: TARGET, text: '求 2+2。我的答案 2+2=5。' }, { step: <T>(_key: string, _sourceId: string | null, fn: () => Promise<T>) => fn(), isCanceled: () => false, progress: () => undefined, worker: async <T>() => undefined as T })
+  return state.jobs.get('mistake-split')!.run({ id: TARGET, text: '求 2+2。我的答案 2+2=5。' }, { step: <T>(_key: string, _sourceId: string | null, fn: () => Promise<T>) => fn(), isCanceled: () => false, progress: () => undefined, yieldPoint: () => {}, worker: async <T>() => undefined as T })
 }
 function notAdmitted(): void {
   expect(target()).toMatchObject({ question: 'target original', cause: 'unknown', causeReason: '', flags: '["failed"]' })

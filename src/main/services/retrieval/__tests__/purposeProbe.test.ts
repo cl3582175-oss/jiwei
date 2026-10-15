@@ -360,6 +360,7 @@ describe('P0 production search caller purposes', () => {
       step: <T>(_key: string, _sourceId: string | null, fn: () => Promise<T>) => fn(),
       isCanceled: () => false,
       progress: () => undefined,
+      yieldPoint: () => {},
       worker: async () => {
         throw new Error('Purpose probe does not run workers')
       }

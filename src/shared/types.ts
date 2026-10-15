@@ -393,6 +393,9 @@ export interface Proposal {
   createdAt: number
 }
 
+export type Lane = 'user' | 'background'
+export type JobWaiting = { reason: 'parsing' } | { reason: 'recognition'; done: number; total: number }
+
 export interface Job {
   id: string
   kind: string
@@ -401,6 +404,9 @@ export interface Job {
   attempts: number
   error: string | null
   title: string
+  lane: Lane
+  waiting: JobWaiting | null
+  yielded: boolean
   /** 去重键（如 transcribe:<资料 ID>），界面据此找到某份资料的任务 */
   key: string | null
   /** 最早开始时间：排到低谷时段的任务在此之前不运行（v0.7.5） */

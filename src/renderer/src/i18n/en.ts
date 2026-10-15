@@ -781,7 +781,14 @@ const en: Messages = {
     title: 'Background tasks',
     running: '{{count}} task(s) running',
     failed: '{{count}} task(s) failed',
-    retry: 'Retry'
+    retry: 'Retry',
+    user: 'Started by you',
+    background: 'Background source work',
+    waitingRecognition: 'Waiting for recognition · {{done}}/{{total}} pages',
+    waitingParsing: 'Waiting for the source to finish parsing',
+    digestNow: 'Digest now',
+    ahead: '{{count}} of your tasks ahead',
+    yielded: 'Waiting for a turn'
   },
   vaults: {
     title: 'Knowledge bases',

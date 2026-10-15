@@ -454,6 +454,7 @@ async function derive(id: string, ctx: JobContext): Promise<void> {
 }
 export function registerLensJobs(): void {
   registerJobKind<{ id: string }>('lens.derive', {
+    lane: 'user',
     title: ({ id }) => getDerivation(id).lensTitle,
     run: ({ id }, ctx) => derive(id, ctx),
     onCancel: ({ id }) => patch(id, { status: 'canceled' }),

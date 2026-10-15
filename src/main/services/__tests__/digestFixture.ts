@@ -13,12 +13,47 @@ const f = vi.hoisted(() => ({
   model: null as MockLanguageModelV4 | null,
   calls: [] as string[],
   events: [] as { name: string; payload: Record<string, unknown> }[],
+  language: 'zh-CN',
+  recognition: { mode: 'off' as 'off' | 'cloud' | 'local', auto: false, figures: true, providerId: 'controlled', model: 'controlled' },
+  vision: true,
+  recognized: [] as number[],
+  beforePage: async (_page: number): Promise<void> => {},
+  parseResult: {
+    segments: [] as { kind: string; text: string; locator: Record<string, string> }[],
+    pages: [] as { page: number; need: 'scan' }[]
+  },
   beforeOutput: (_prompt: string, _map: boolean): void => {}
 }))
 export { f }
 vi.mock('../../db', () => ({ getDb: () => f.db, getSqlite: () => f.sql }))
 vi.mock('../../events', () => ({ emit: (name: string, payload: Record<string, unknown>) => f.events.push({ name, payload }) }))
-vi.mock('electron', () => ({ utilityProcess: { fork: vi.fn() } }))
+vi.mock('electron', () => ({
+  utilityProcess: {
+    fork: () => {
+      const listeners = new Map<string, (message: unknown) => void>()
+      return {
+        on: (name: string, listener: (message: unknown) => void) => listeners.set(name, listener),
+        postMessage: (message: { id: string; cancel?: string; task: string; payload: { page?: number } }) => {
+          if (message.cancel) {
+            listeners.get('message')?.({ id: message.cancel, ok: false, error: 'canceled' })
+            return
+          }
+          const page = message.payload.page ?? 0
+          void f.beforePage(page).then(
+            () =>
+              listeners.get('message')?.({
+                id: message.id,
+                ok: true,
+                result: message.task === 'renderPdfPage' ? new Uint8Array([page]) : f.parseResult
+              }),
+            (error: Error) => listeners.get('message')?.({ id: message.id, ok: false, error: error.message })
+          )
+        },
+        kill: () => listeners.get('exit')?.(0)
+      }
+    }
+  }
+}))
 vi.mock('electron-log/main', () => ({ default: { warn: vi.fn(), error: vi.fn(), info: vi.fn() } }))
 vi.mock('../device', () => ({ deviceId: () => 'controlled' }))
 vi.mock('../stats', () => ({ recordActivity: () => {} }))
@@ -27,9 +62,37 @@ vi.mock('../review', () => ({ syncCards: () => {} }))
 vi.mock('../memoryLearn', () => ({ recordProposalDecision: () => {} }))
 vi.mock('../recordingContext', () => ({ lensMessage: (s: string) => s }))
 vi.mock('../connections', () => ({ relate: () => {} }))
-vi.mock('../settings', () => ({ getSettings: () => ({ language: 'zh-CN', money: {} }) }))
+vi.mock('../settings', () => ({
+  getSettings: () => ({
+    language: f.language,
+    money: {},
+    retrieval: { autoUpgrade: true },
+    ai: {
+      recognition: f.recognition,
+      chat: { providerId: 'controlled', model: 'controlled' },
+      embedding: { mode: 'local' }
+    }
+  })
+}))
 vi.mock('../ai/model', () => ({ buildModel: () => ({ model: f.model!, maxOutputTokens: 8192 }) }))
-vi.mock('../ai/providers', () => ({ getProviderRow: () => ({ modelCaps: '{}', models: '["controlled"]' }) }))
+vi.mock('../ai/providers', () => ({
+  getProviderRow: () => ({ enabled: true, modelCaps: '{}', models: '["controlled"]' }),
+  capsFor: () => ({ vision: f.vision })
+}))
+vi.mock('../assets', () => ({ assetPath: (id: string, ext: string) => `${id}.${ext}` }))
+vi.mock('../ai/localEmbedding', () => ({
+  modelsDir: () => '.controlled-empty-model-cache',
+  isInstalled: async () => false,
+  ensureRuntime: () => {
+    throw new Error('Local runtime is not used by controlled digest tests')
+  },
+  freePort: () => {
+    throw new Error('Local ports are not used by controlled digest tests')
+  },
+  llamaSupported: () => false,
+  runtimeDownloadSize: async () => 0
+}))
+vi.mock('../noteImages', () => ({ queueNoteImages: () => {}, registerNoteImageJob: () => {} }))
 vi.mock('../ai/tools', () => ({ buildMindmap: vi.fn(), NestedSchema: {} }))
 vi.mock('../agent/pricing', () => ({ costOf: () => ({ cost: null }) }))
 
@@ -38,6 +101,15 @@ export const usage = {
   outputTokens: { total: 40, text: 40, reasoning: 0 }
 }
 function output(opts: LanguageModelV4CallOptions) {
+  const image = opts.prompt
+    .flatMap((p) => (p.role === 'user' ? p.content : []))
+    .find((p) => p.type === 'file' && p.mediaType.startsWith('image/'))
+  if (image?.type === 'file' && image.data.type === 'data') {
+    const bytes = image.data.data
+    const page = typeof bytes === 'string' ? Buffer.from(bytes, 'base64')[0] : bytes[0]
+    f.recognized.push(page)
+    return { type: 'text' as const, text: `扫描第${page}页识别后的核心文字。` }
+  }
   const prompt = opts.prompt
     .filter((p) => p.role === 'user')
     .map((p) => JSON.stringify(p.content))
@@ -65,6 +137,12 @@ beforeEach(() => {
   f.calls = []
   f.events = []
   f.beforeOutput = () => {}
+  f.beforePage = async () => {}
+  f.language = 'zh-CN'
+  f.recognition = { mode: 'off', auto: false, figures: true, providerId: 'controlled', model: 'controlled' }
+  f.vision = true
+  f.recognized = []
+  f.parseResult = { segments: [], pages: [] }
   f.model = new MockLanguageModelV4({
     doGenerate: async (opts) => ({ content: [output(opts)], finishReason: { unified: 'stop', raw: 'stop' }, usage, warnings: [] }),
     doStream: async (opts) => {

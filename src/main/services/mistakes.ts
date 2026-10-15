@@ -333,6 +333,7 @@ export function removeComplete(id: string, proposalId: string, update: Uint8Arra
 }
 export function registerMistakeJobs(): void {
   registerJobKind<{ id: string; text: string }>('mistake-split', {
+    lane: 'user',
     title: () => mistakeText('processing'),
     run: async (payload, ctx) => {
       const input = z.object({ id: z.string().uuid(), text: z.string().max(12_000) }).parse(payload)

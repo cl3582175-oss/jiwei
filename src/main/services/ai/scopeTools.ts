@@ -6,6 +6,7 @@ import { getDb } from '../../db'
 import { sources } from '../../db/schema'
 import type { ToolMeta } from '../agent/wrap'
 import { describeDigest, sourceOutline, sourceSize, startDigest, type DigestInput } from '../digest'
+import { digestWaiting } from '../recognize'
 
 // 范围（v0.7.6）：用户没说清楚要整理哪部分时先问；整份资料交给后台分批整理，而不是读开头几页就当作全书。
 
@@ -88,7 +89,22 @@ export function buildScopeTools(
       }),
       execute: async (input) => {
         permitted(input.sourceId)
-        const { noteId } = startDigest(digestInput(input))
+        const request = digestInput(input)
+        const { noteId } = startDigest(request)
+        const waiting = digestWaiting(request)
+        if (waiting) {
+          const status =
+            waiting.reason === 'parsing'
+              ? zh
+                ? '等待资料解析完成'
+                : 'Waiting for the source to finish parsing'
+              : zh
+                ? `等待识别完成 · ${waiting.done}/${waiting.total} 页`
+                : `Waiting for recognition · ${waiting.done}/${waiting.total} pages`
+          return zh
+            ? `${status}（笔记 ID：${noteId}）。准备好后会自动整理，完成后作为提案放进笔记。用一句话告诉用户当前的等待状态，可以在“后台任务”里看进度。`
+            : `${status} (note ${noteId}). The digest will start automatically when ready and arrive as a proposal. Tell the user the waiting status in one sentence.`
+        }
         return zh
           ? `已在后台开始整理（笔记 ID：${noteId}）。完成后会作为提案出现在这篇笔记里，界面会提示用户。用一句话告诉用户：已开始，可以在“后台任务”里看进度。`
           : `Started in the background (note ${noteId}). It will arrive as a proposal; tell the user in one sentence.`

@@ -9,12 +9,31 @@ import { canReadSource, isConversationAttachment } from './attachmentsAccess'
 import { eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { getDb, getSqlite } from '../db'
-import { sources } from '../db/schema'
+import { jobs, sources } from '../db/schema'
 import { emit } from '../events'
 import { markdownToNodes } from '../lib/markdown'
 import type { ProposalOp, Segment } from '@shared/types'
 import { formatMoney } from '@shared/money'
-import { enqueue, registerJobKind, PermanentJobError, TemporaryJobError, type JobContext } from './jobs'
+import {
+  enqueue,
+  JobDeferred,
+  patchQueuedPayload,
+  registerJobKind,
+  runJobNow,
+  PermanentJobError,
+  TemporaryJobError,
+  type JobContext
+} from './jobs'
+import {
+  applyRecognized,
+  digestWaiting,
+  ensureRecognition,
+  pendingRecognition,
+  recognitionEndedSince,
+  sourceParsing,
+  sourceRecognition,
+  unrecognizedPages
+} from './recognize'
 import { listSegments } from './segments'
 import { createNote, getNote } from './notes'
 import { createProposal } from './proposals'
@@ -47,6 +66,7 @@ const PROMPT_VERSION = 'digest-v2'
 interface DigestJobInput extends DigestInput {
   noteId: string
   redirectedFrom?: string
+  noWait?: true
 }
 const stepKey = (model: string, data: unknown): string =>
   createHash('sha256')
@@ -154,25 +174,34 @@ const TASK_EN: Record<DigestTask, string> = { mindmap: 'mind map', summary: 'sum
 export function describeDigest(input: DigestInput, zh: boolean): { title: string; detail: string } {
   const title = getDb().select({ title: sources.title }).from(sources).where(eq(sources.id, input.sourceId)).get()?.title ?? ''
   const e = estimateDigest(input)
-  const range = e.pages
-    ? zh
-      ? `第 ${e.pages[0]}–${e.pages[1]} 页`
-      : `pages ${e.pages[0]}–${e.pages[1]}`
-    : zh
-      ? '整份资料'
-      : 'the whole source'
+  const pages =
+    input.fromPage !== undefined || input.toPage !== undefined ? [input.fromPage ?? 1, input.toPage ?? (zh ? '末' : 'end')] : e.pages
+  const range = pages ? (zh ? `第 ${pages[0]}–${pages[1]} 页` : `pages ${pages[0]}–${pages[1]}`) : zh ? '整份资料' : 'the whole source'
   const s = getSettings()
   const cost = e.cost === null ? (zh ? '价格未知' : 'unknown') : `≈ ${formatMoney(e.cost, s.money, s.language)}`
   const redirect =
     input.noteId && !canUseNote(input.noteId, input.conversationId ?? null) ? (zh ? notePrivacyZh : notePrivacyEn).digestTargetRedirect : ''
+  const unavailable = sourceRecognition(input.sourceId).engine !== 'ready'
+  const pending = unavailable
+    ? unrecognizedPages(input.sourceId, input.fromPage, input.toPage, 'pending').length
+    : pendingRecognition(input.sourceId, input.fromPage, input.toPage).pending.length
+  const recognition = !pending
+    ? ''
+    : unavailable
+      ? zh
+        ? `其中 ${pending} 页是图片或扫描页，当前没有可用的识别，整理会缺这些页。`
+        : `${pending} pages are images or scans; recognition is currently unavailable, so these pages will be missing from the digest.`
+      : zh
+        ? `其中 ${pending} 页是图片或扫描页，会先识别再整理；识别后内容会变多，费用以实际为准。`
+        : `${pending} pages are images or scans and will be recognized first; the cost may be higher once their text is added.`
   return zh
     ? {
         title: `把《${title}》${range}整理成${TASK_ZH[input.task]}`,
-        detail: `共 ${e.segments} 段，分 ${e.batches} 批读取；预计费用 ${cost}（以实际为准）。在后台进行，完成后作为提案放进笔记，由你确认。${redirect ? ` ${redirect}` : ''}`
+        detail: `共 ${e.segments} 段，分 ${e.batches} 批读取；预计费用 ${cost}（以实际为准）。在后台进行，完成后作为提案放进笔记，由你确认。${redirect ? ` ${redirect}` : ''}${recognition ? ` ${recognition}` : ''}`
       }
     : {
         title: `Turn ${range} of "${title}" into a ${TASK_EN[input.task]}`,
-        detail: `${e.segments} segments in ${e.batches} batches; estimated cost ${cost}. Runs in the background and arrives as a proposal in a note for you to confirm.${redirect ? ` ${redirect}` : ''}`
+        detail: `${e.segments} segments in ${e.batches} batches; estimated cost ${cost}. Runs in the background and arrives as a proposal in a note for you to confirm.${redirect ? ` ${redirect}` : ''}${recognition ? ` ${recognition}` : ''}`
       }
 }
 
@@ -201,7 +230,7 @@ export function startDigest(input: DigestInput): { jobId: string; noteId: string
   const src = getDb().select().from(sources).where(eq(sources.id, input.sourceId)).get()
   if (!src || src.deletedAt) throw new PermanentJobError('Source not found')
   if (!canReadSource(input.sourceId, input.conversationId ?? null)) throw new PermanentJobError('This source is excluded from AI')
-  if (!rangeOf(input).length)
+  if (!rangeOf(input).length && !digestWaiting(input))
     throw new PermanentJobError(getSettings().language.startsWith('zh') ? '这个范围里没有文字内容' : 'No text in this range')
   const noteId = getDb().transaction(() => {
     const id = input.noteId && canUseNote(input.noteId, input.conversationId ?? null) ? input.noteId : newDigestNote(input, src)
@@ -210,20 +239,48 @@ export function startDigest(input: DigestInput): { jobId: string; noteId: string
   })
   const redirectedFrom = input.noteId && input.noteId !== noteId ? input.noteId : undefined
   const jobId = enqueue(JOB, { ...input, noteId, ...(redirectedFrom ? { redirectedFrom } : {}) })
+  if (digestWaiting(input)) ensureRecognition(input.sourceId)
   return { jobId, noteId }
 }
 
-async function run(input: DigestJobInput, ctx: JobContext): Promise<{ noteId: string }> {
+export function digestNow(jobId: string): void {
+  const row = getDb().select().from(jobs).where(eq(jobs.id, jobId)).get()
+  if (row?.kind !== JOB || !patchQueuedPayload(jobId, { noWait: true })) return
+  runJobNow(jobId)
+}
+
+/** 确认整理后识别被取消或失败结束：用已有内容整理（缺页写进提案），不再替用户重新排识别。 */
+function recognitionAbandoned(input: DigestJobInput, ctx: JobContext): boolean {
+  if (!ctx.jobId) return false
+  const createdAt = getDb().select({ createdAt: jobs.createdAt }).from(jobs).where(eq(jobs.id, ctx.jobId)).get()?.createdAt
+  return createdAt !== undefined && !sourceParsing(input.sourceId) && recognitionEndedSince(input.sourceId, createdAt)
+}
+
+function guardDigest(input: DigestJobInput, ctx: JobContext): void {
+  if (ctx.isCanceled() || ctx.signal?.aborted) throw ctx.signal?.reason ?? new Error('canceled')
+  if (!canReadSource(input.sourceId, input.conversationId ?? null)) throw new PermanentJobError('Source access revoked')
+}
+
+function run(input: DigestJobInput, ctx: JobContext): Promise<{ noteId: string }> {
   validate(input)
-  const guard = (): void => {
-    if (ctx.isCanceled() || ctx.signal?.aborted) throw ctx.signal?.reason ?? new Error('canceled')
-    if (!canReadSource(input.sourceId, input.conversationId ?? null)) throw new PermanentJobError('Source access revoked')
+  guardDigest(input, ctx)
+  // 同步退回 queued：同一次 tick 启动的识别也必须能看到这份整理的等待范围。
+  if (digestWaiting(input) && !recognitionAbandoned(input, ctx)) {
+    ensureRecognition(input.sourceId)
+    throw new JobDeferred(60_000, 'waiting')
   }
+  return digestSource(input, ctx)
+}
+
+async function digestSource(input: DigestJobInput, ctx: JobContext): Promise<{ noteId: string }> {
+  const guard = (): void => guardDigest(input, ctx)
   guard()
   const zh = getSettings().language.startsWith('zh')
   const src = getDb().select().from(sources).where(eq(sources.id, input.sourceId)).get()!
   if (src.space === 'attachment') protectNoteAttachments(input.noteId, [src.id])
+  applyRecognized(input.sourceId)
   const parts = chunks(rangeOf(input))
+  const missing = unrecognizedPages(input.sourceId, input.fromPage, input.toPage)
   if (!parts.length) throw new PermanentJobError('No text in this range')
   const quick = quickModel(input.providerId, input.model)
   const keys = parts.map((part) => stepKey(quick, ['map', zh, part.ids, part.text]))
@@ -372,7 +429,16 @@ async function run(input: DigestJobInput, ctx: JobContext): Promise<{ noteId: st
       noteId,
       conversationId: input.conversationId,
       title: zh ? `${TASK_ZH[input.task]}：《${src.title}》${range}` : `${TASK_EN[input.task]}: ${src.title}`,
-      ops: result.ops,
+      ops: (() => {
+        if (!missing.length) return result.ops
+        const pages = missing.slice(0, 10).join(zh ? '、' : ', ')
+        const warning = zh
+          ? `第 ${pages}${missing.length > 10 ? ` 等 ${missing.length}` : ''} 页未能识别，未纳入整理。`
+          : `Pages ${pages}${missing.length > 10 ? ` and others (${missing.length} pages total)` : ''} could not be recognized and were not included in the digest.`
+        return result.ops.map((op, i) =>
+          op.op === 'insert_row' && i === result.ops.length - 1 ? { ...op, body: [...op.body, ...markdownToNodes(`- ${warning}`)] } : op
+        )
+      })(),
       model: input.model,
       embeds: result.embeds,
       sources: result.cited.length ? result.cited.map((id) => ({ type: 'segment' as const, id })) : undefined
@@ -399,6 +465,8 @@ async function run(input: DigestJobInput, ctx: JobContext): Promise<{ noteId: st
 
 export function registerDigestJob(): void {
   registerJobKind<DigestJobInput>(JOB, {
+    lane: 'user',
+    waiting: digestWaiting,
     title: (p) => {
       const src = getDb().select({ title: sources.title, space: sources.space }).from(sources).where(eq(sources.id, p.sourceId)).get()
       const title =

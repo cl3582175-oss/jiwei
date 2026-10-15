@@ -759,7 +759,14 @@ const zhCN = {
     title: '后台任务',
     running: '{{count}} 个任务进行中',
     failed: '{{count}} 个任务失败',
-    retry: '重试'
+    retry: '重试',
+    user: '你发起的',
+    background: '后台整理资料',
+    waitingRecognition: '等待识别完成 · {{done}}/{{total}} 页',
+    waitingParsing: '等待资料解析完成',
+    digestNow: '现在就整理',
+    ahead: '前面还有 {{count}} 个你发起的任务',
+    yielded: '轮候中'
   },
   vaults: {
     title: '知识库',

@@ -179,7 +179,11 @@ export function vecBuffer(v: number[]): Buffer {
 }
 
 /** 同步索引：删除过期分片、补齐新分片 */
-export async function syncIndex(progress: (p: number) => void, canceled: () => boolean): Promise<{ added: number; removed: number }> {
+export async function syncIndex(
+  progress: (p: number) => void,
+  canceled: () => boolean,
+  yieldPoint: () => void = () => {}
+): Promise<{ added: number; removed: number }> {
   const model = currentModelId()
   const want = desiredChunks()
   const wantMap = new Map(want.map((c) => [`${c.ownerType}:${c.ownerId}`, c]))
@@ -241,6 +245,7 @@ export async function syncIndex(progress: (p: number) => void, canceled: () => b
       done += batch.length
       progress(done / todo.length)
       setStatus({ indexed: want.length - todo.length + done, total: want.length })
+      yieldPoint()
     }
   } catch (error) {
     if (error instanceof EmbeddingDimensionError) {
@@ -265,7 +270,7 @@ export function registerIndexJob(): void {
   registerJobKind('index.sync', {
     title: () => '更新知识库索引',
     async run(_p, ctx) {
-      const r = await syncIndex(ctx.progress, ctx.isCanceled)
+      const r = await syncIndex(ctx.progress, ctx.isCanceled, ctx.yieldPoint)
       log.info('[index] sync', r)
       return r
     }
