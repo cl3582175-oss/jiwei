@@ -12,7 +12,7 @@ import { emit } from '../events'
 import { getSettings } from './settings'
 import { getProviderRow } from './ai/providers'
 import { structured } from './ai/structured'
-import { enqueue, registerJobKind, type JobContext } from './jobs'
+import { enqueue, patchQueuedPayload, registerJobKind, runJobNow, type JobContext } from './jobs'
 import { requireMistake, requireMistakeCloud } from './mistakesPrivacy'
 import { mistakeText } from './mistakesMessages'
 
@@ -79,12 +79,12 @@ export function replenish(id: string, immediate = false): string | null {
   if (cannotGenerate(id) || poolDeficit(variants(id)) === 0) return null
   const active = getDb().select().from(jobs).where(eq(jobs.dedupeKey, `mistake-variants:${id}`)).orderBy(desc(jobs.createdAt)).all().find((j) => j.status === 'queued' || j.status === 'running')
   if (active) {
-    if (immediate && active.status === 'queued') getDb().update(jobs).set({ runAfter: Date.now(), updatedAt: Date.now() }).where(eq(jobs.id, active.id)).run()
+    if (immediate && patchQueuedPayload(active.id, { immediate: true })) runJobNow(active.id)
     return active.id
   }
   const chosen = model()!
   const runAfter = !immediate && /deepseek/i.test(chosen.model) ? nextOffPeak(Date.now()) : Date.now()
-  return enqueue('mistake-variants', { id, revision: row.updatedAt }, { dedupeKey: `mistake-variants:${id}`, runAfter })
+  return enqueue('mistake-variants', { id, revision: row.updatedAt, ...(immediate ? { immediate: true } : {}) }, { dedupeKey: `mistake-variants:${id}`, runAfter })
 }
 export function useVariant(id: string): void {
   const v = getDb().select().from(mistakeVariants).where(eq(mistakeVariants.id, id)).get()
@@ -209,5 +209,5 @@ export function variantStats(): MistakeVariantStats {
   return { ...totals, ratio: totals.generated ? totals.discarded / totals.generated : 0 }
 }
 export function registerVariantJobs(): void {
-  registerJobKind<{ id: string }>('mistake-variants', { title: () => mistakeText('variants'), run: (input, ctx) => generate(z.object({ id: z.string().uuid() }).parse(input).id, ctx) })
+  registerJobKind<{ id: string; immediate?: true }>('mistake-variants', { lane: ({ immediate }) => immediate === true ? 'user' : 'background', title: () => mistakeText('variants'), run: (input, ctx) => generate(z.object({ id: z.string().uuid() }).parse(input).id, ctx) })
 }

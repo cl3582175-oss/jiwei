@@ -27,6 +27,13 @@ vi.mock('../notes', () => ({
 }))
 vi.mock('../proposals', () => ({ createProposal: () => {} }))
 vi.mock('../settings', () => ({ getSettings: () => ({ language: 'zh-CN', money: {} }) }))
+vi.mock('../recognize', () => ({
+  digestWaiting: () => null,
+  ensureRecognition: () => null,
+  pendingRecognition: () => ({ pending: [], total: 0, done: 0 }),
+  sourceRecognition: () => ({ engine: 'off' }),
+  unrecognizedPages: () => []
+}))
 vi.mock('../jobs', () => ({
   PermanentJobError: class extends Error {},
   TemporaryJobError: class extends Error {},
@@ -89,7 +96,7 @@ it('整理新建笔记在首次模型请求前就隔离；失败和取消不能�
   }
   await expect(f.run!({ ...input, noteId: result.noteId }, ctx)).rejects.toThrow('Controlled model failure')
   expect(noteHasPrivateAttachments(result.noteId)).toBe(true)
-  await expect(f.run!({ ...input, noteId: result.noteId }, { ...ctx, isCanceled: () => true })).rejects.toThrow('canceled')
+  expect(() => f.run!({ ...input, noteId: result.noteId }, { ...ctx, isCanceled: () => true })).toThrow('canceled')
   expect(noteHasPrivateAttachments(result.noteId)).toBe(true)
 })
 

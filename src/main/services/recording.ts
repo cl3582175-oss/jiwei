@@ -145,6 +145,7 @@ export function registerRecording(): void {
     }
   })
   registerJobKind<{ id: string; track: Track; sequence: number }>('recording.preview', {
+    lane: 'user',
     title: () => 'recording.jobs.preview',
     async run({ id, track, sequence }, ctx) {
       const db = getDb(),

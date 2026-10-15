@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from 'child_process'
 import { existsSync, rmSync } from 'fs'
 import { join } from 'path'
 import { nativeImage } from 'electron'
-import { and, eq, inArray } from 'drizzle-orm'
+import { and, eq, gte, inArray, lte } from 'drizzle-orm'
 import { generateText } from 'ai'
 import log from 'electron-log/main'
 import { getDb } from '../db'
@@ -12,7 +12,7 @@ import { download } from './download'
 import { ensureRuntime, freePort, llamaSupported, modelsDir, runtimeDownloadSize } from './ai/localEmbedding'
 import { assetPath } from './assets'
 import { emit } from '../events'
-import { enqueue, registerJobKind, type JobContext } from './jobs'
+import { enqueue, JobDeferred, patchQueuedPayload, registerJobKind, runJobNow, type JobContext } from './jobs'
 import { listSegments, replaceSegments } from './segments'
 import { requestIndex } from './ai/indexer'
 import { getSettings } from './settings'
@@ -31,7 +31,7 @@ import {
 } from '../lib/recognized'
 import { queueNoteImages, registerNoteImageJob } from './noteImages'
 import { z } from 'zod'
-import type { RegionRecognition, ScanPageText, RecognizerStatus, SourceRecognition } from '@shared/types'
+import type { JobWaiting, RegionRecognition, ScanPageText, RecognizerStatus, SourceRecognition } from '@shared/types'
 
 // 文档识别（v0.5.2 起，设计见 docs/design/v0.5.2-document-recognition.md）：
 //   - 解析时按页分流（扫描页 / 表格页 / 图页），只识别文字层不够用的页
@@ -495,6 +495,107 @@ function engineState(sourceId: string): SourceRecognition['engine'] {
   return 'ready'
 }
 
+interface DigestRange {
+  sourceId: string
+  fromPage?: number
+  toPage?: number
+  noWait?: boolean
+}
+
+/** 只认排队且仍需等待的整理，不把运行中的整理反向变成识别依赖。 */
+function waitingDigests(sourceId: string): { id: string; payload: DigestRange }[] {
+  return getDb()
+    .select({ id: jobs.id, payload: jobs.payload })
+    .from(jobs)
+    .where(and(eq(jobs.kind, 'source.digest'), eq(jobs.status, 'queued')))
+    .all()
+    .flatMap((row) => {
+      try {
+        const payload = JSON.parse(row.payload) as DigestRange | null
+        return payload?.sourceId === sourceId && payload.noWait !== true ? [{ id: row.id, payload }] : []
+      } catch {
+        return []
+      }
+    })
+}
+
+export function sourceParsing(sourceId: string): boolean {
+  return !!getDb()
+    .select({ id: jobs.id })
+    .from(jobs)
+    .where(and(eq(jobs.dedupeKey, `segment:${sourceId}`), inArray(jobs.status, ['queued', 'running'])))
+    .get()
+}
+
+function pagesInRange(sourceId: string, from?: number, to?: number) {
+  return getDb()
+    .select()
+    .from(sourcePages)
+    .where(
+      and(
+        eq(sourcePages.sourceId, sourceId),
+        from === undefined ? undefined : gte(sourcePages.page, from),
+        to === undefined ? undefined : lte(sourcePages.page, to)
+      )
+    )
+    .all()
+}
+
+/** 同一页可能同时有表格和插图，等待进度按页去重；失败视为已尝试。 */
+export function pendingRecognition(sourceId: string, from?: number, to?: number): { pending: number[]; total: number; done: number } {
+  const wanted = new Set(wantedNeeds(sourceId))
+  const rows = pagesInRange(sourceId, from, to).filter((row) => wanted.has(row.need))
+  const all = new Set(rows.map((row) => row.page))
+  const pending = new Set(rows.filter((row) => row.status === 'pending').map((row) => row.page))
+  return {
+    pending: engineState(sourceId) === 'ready' ? [...pending].sort((a, b) => a - b) : [],
+    total: all.size,
+    done: all.size - pending.size
+  }
+}
+
+/** 引擎关闭时仍保留原始缺页信息，供确认提示和提案说明使用。 */
+export function unrecognizedPages(sourceId: string, from?: number, to?: number, status?: 'pending'): number[] {
+  return [
+    ...new Set(
+      pagesInRange(sourceId, from, to)
+        .filter((row) => row.status === 'pending' || (!status && row.status === 'failed'))
+        .map((row) => row.page)
+    )
+  ].sort((a, b) => a - b)
+}
+
+export function digestWaiting(input: DigestRange): JobWaiting | null {
+  if (input.noWait === true) return null
+  if (sourceParsing(input.sourceId)) return { reason: 'parsing' }
+  const { pending, done, total } = pendingRecognition(input.sourceId, input.fromPage, input.toPage)
+  return pending.length ? { reason: 'recognition', done, total } : null
+}
+
+/** 用户确认整理后，即使关闭自动识别，也必须有一个任务能处理其范围。 */
+export function ensureRecognition(sourceId: string): string | null {
+  const active = getDb()
+    .select({ id: jobs.id })
+    .from(jobs)
+    .where(and(eq(jobs.kind, 'source.recognize'), eq(jobs.dedupeKey, `recognize:${sourceId}`), inArray(jobs.status, ['queued', 'running'])))
+    .get()
+  if (active) return active.id
+  if (!pendingRecognition(sourceId).pending.length) return null
+  return enqueue('source.recognize', { sourceId }, { dedupeKey: `recognize:${sourceId}` })
+}
+
+export function wakeWaitingDigests(sourceId: string): void {
+  const waiting = waitingDigests(sourceId)
+  if (!waiting.length || sourceParsing(sourceId)) return
+  const ready = waiting.filter(({ payload }) => !digestWaiting(payload))
+  if (ready.length) {
+    // 最后一页通常还没到每十页的并入点；必须先发布分段，再允许整理读取。
+    applyRecognized(sourceId)
+    for (const { id } of ready) runJobNow(id)
+  }
+  if (ready.length !== waiting.length) ensureRecognition(sourceId)
+}
+
 export function sourceRecognition(sourceId: string): SourceRecognition {
   const rows = getDb().select().from(sourcePages).where(eq(sourcePages.sourceId, sourceId)).all()
   const wanted = new Set(wantedNeeds(sourceId))
@@ -525,20 +626,15 @@ export function startRecognition(sourceId: string): void {
     .set({ status: 'pending', error: null, updatedAt: Date.now() })
     .where(and(eq(sourcePages.sourceId, sourceId), eq(sourcePages.status, 'failed')))
     .run()
-  enqueue('source.recognize', { sourceId }, { dedupeKey: `recognize:${sourceId}` })
+  const id = enqueue('source.recognize', { sourceId, full: true }, { dedupeKey: `recognize:${sourceId}` })
+  patchQueuedPayload(id, { full: true })
   emit('recognition:source', { sourceId })
 }
 
 /** 解析完成后：开启了自动识别且引擎就绪时排队 */
 export function maybeAutoRecognize(sourceId: string): void {
   if (!recognitionSettings().auto || engineState(sourceId) !== 'ready') return
-  const wanted = wantedNeeds(sourceId)
-  const pending = getDb()
-    .select({ page: sourcePages.page })
-    .from(sourcePages)
-    .where(and(eq(sourcePages.sourceId, sourceId), eq(sourcePages.status, 'pending'), inArray(sourcePages.need, wanted)))
-    .get()
-  if (pending) enqueue('source.recognize', { sourceId }, { dedupeKey: `recognize:${sourceId}` })
+  ensureRecognition(sourceId)
 }
 
 /** 模型下载完成或设置变化后：为所有有待识别页的资料排队（仅自动识别开启时） */
@@ -564,11 +660,12 @@ const activeSources = new Set<string>()
 
 export function registerRecognizeJob(): void {
   registerNoteImageJob()
-  registerJobKind<{ sourceId: string }>('source.recognize', {
+  registerJobKind<{ sourceId: string; full?: true }>('source.recognize', {
+    lane: ({ sourceId }) => (waitingDigests(sourceId).length ? 'user' : 'background'),
     offPeak: true,
     title: ({ sourceId }) =>
       `识别资料：${getDb().select({ title: sources.title }).from(sources).where(eq(sources.id, sourceId)).get()?.title ?? sourceId}`,
-    async run({ sourceId }, ctx) {
+    async run({ sourceId, full }, ctx) {
       const row = getDb()
         .select({ s: sources, a: assets })
         .from(sources)
@@ -578,10 +675,10 @@ export function registerRecognizeJob(): void {
       if (!row?.a || row.s.deletedAt) return { skipped: 'no file' }
       const state = engineState(sourceId)
       if (state !== 'ready') return { skipped: state }
-      if (activeSources.has(sourceId)) return { skipped: 'already running' }
+      if (activeSources.has(sourceId)) throw new JobDeferred(1000, 'waiting')
       activeSources.add(sourceId)
       try {
-        return await recognizeSource(sourceId, row.a, ctx)
+        return await recognizeSource(sourceId, row.a, ctx, full === true)
       } finally {
         activeSources.delete(sourceId)
       }
@@ -592,72 +689,85 @@ export function registerRecognizeJob(): void {
 async function recognizeSource(
   sourceId: string,
   a: { id: string; ext: string },
-  ctx: JobContext
+  ctx: JobContext,
+  full: boolean
 ): Promise<{ done: number; failed: number }> {
   const mode = recognitionSettings().mode
-  const wanted = wantedNeeds(sourceId)
-  const todo = getDb()
-    .select()
-    .from(sourcePages)
-    .where(and(eq(sourcePages.sourceId, sourceId), inArray(sourcePages.status, ['pending', 'failed']), inArray(sourcePages.need, wanted)))
-    .all()
-    .sort((x, y) => x.page - y.page)
   const path = assetPath(a.id, a.ext)
   const abort = new AbortController()
   let done = 0
   let failed = 0
   let sinceApply = 0
-  for (const p of todo) {
-    if (ctx.isCanceled()) {
-      abort.abort()
-      break
-    }
-    const set = (patch: Partial<typeof sourcePages.$inferInsert>): void => {
-      getDb()
-        .update(sourcePages)
-        .set({ ...patch, updatedAt: Date.now() })
-        .where(and(eq(sourcePages.sourceId, sourceId), eq(sourcePages.page, p.page), eq(sourcePages.need, p.need)))
-        .run()
-    }
-    try {
-      const jpeg = await pageImage(path, a.ext, p.page, ctx)
-      let text: string
-      let engine: string
-      let blocks: GroundBlock[] | null = null
-      if (mode === 'cloud') {
-        const r = await recognizeCloud(jpeg, p.need, abort.signal)
-        if (isDegenerate(r.text)) throw new Error('识别结果异常（大量重复字符）')
-        engine = r.engine
-        text = normalizeRecognized(r.text)
-        if (p.need === 'table') text = extractTables(text)
-      } else {
-        // 本地 LightOnOCR-3：grounding 输出按页面类型整理（插图为简短描述，图表为数据表）
-        const raw = await recognizeLocalRobust(jpeg, abort.signal)
-        engine = `local:${localModel().name}`
-        blocks = parseGrounding(raw)
-        text = blocks.length ? groundedText(blocks, p.need) : normalizeRecognized(raw)
+  try {
+    while (engineState(sourceId) === 'ready') {
+      if (ctx.isCanceled()) {
+        abort.abort()
+        break
       }
-      if (p.need === 'table') text = withCaptions(text, pageText(sourceId, p.page))
-      set({ status: text ? 'done' : 'skipped', text: text || null, engine, blocks: blocks ? JSON.stringify(blocks) : null, error: null })
-      done++
-      sinceApply++
-    } catch (e) {
-      if (ctx.isCanceled()) break
-      const msg = e instanceof Error ? e.message : String(e)
-      log.warn('[ocr] page failed', sourceId, p.page, msg)
-      set({ status: 'failed', error: msg.slice(0, 500) })
-      failed++
+      // 每页重新计算：新确认的范围及时提到前面，取消后不再继续范围外工作。
+      const ranges = waitingDigests(sourceId).map(({ payload }) => payload)
+      const urgent = (page: number): boolean => ranges.some((range) => page >= (range.fromPage ?? 1) && page <= (range.toPage ?? Infinity))
+      const all = full || recognitionSettings().auto
+      const wanted = wantedNeeds(sourceId)
+      const todo = getDb()
+        .select()
+        .from(sourcePages)
+        .where(and(eq(sourcePages.sourceId, sourceId), eq(sourcePages.status, 'pending'), inArray(sourcePages.need, wanted)))
+        .all()
+        .filter((page) => all || urgent(page.page))
+        .sort((a, b) => Number(urgent(b.page)) - Number(urgent(a.page)) || a.page - b.page)
+      if (!todo.length) break
+      const p = todo[0]
+      const set = (patch: Partial<typeof sourcePages.$inferInsert>): void => {
+        getDb()
+          .update(sourcePages)
+          .set({ ...patch, updatedAt: Date.now() })
+          .where(and(eq(sourcePages.sourceId, sourceId), eq(sourcePages.page, p.page), eq(sourcePages.need, p.need)))
+          .run()
+      }
+      try {
+        const jpeg = await pageImage(path, a.ext, p.page, ctx)
+        let text: string
+        let engine: string
+        let blocks: GroundBlock[] | null = null
+        if (mode === 'cloud') {
+          const r = await recognizeCloud(jpeg, p.need, abort.signal)
+          if (isDegenerate(r.text)) throw new Error('识别结果异常（大量重复字符）')
+          engine = r.engine
+          text = normalizeRecognized(r.text)
+          if (p.need === 'table') text = extractTables(text)
+        } else {
+          // 本地 LightOnOCR-3：grounding 输出按页面类型整理（插图为简短描述，图表为数据表）
+          const raw = await recognizeLocalRobust(jpeg, abort.signal)
+          engine = `local:${localModel().name}`
+          blocks = parseGrounding(raw)
+          text = blocks.length ? groundedText(blocks, p.need) : normalizeRecognized(raw)
+        }
+        if (p.need === 'table') text = withCaptions(text, pageText(sourceId, p.page))
+        set({ status: text ? 'done' : 'skipped', text: text || null, engine, blocks: blocks ? JSON.stringify(blocks) : null, error: null })
+        done++
+        sinceApply++
+      } catch (e) {
+        if (ctx.isCanceled()) break
+        const msg = e instanceof Error ? e.message : String(e)
+        log.warn('[ocr] page failed', sourceId, p.page, msg)
+        set({ status: 'failed', error: msg.slice(0, 500) })
+        failed++
+      }
+      ctx.progress((done + failed) / (done + failed + todo.length - 1))
+      emit('recognition:source', { sourceId })
+      // 边识别边进入知识库：每 10 页并入一次
+      if (sinceApply >= 10) {
+        applyRecognized(sourceId)
+        sinceApply = 0
+      }
+      wakeWaitingDigests(sourceId)
+      ctx.yieldPoint()
     }
-    ctx.progress((done + failed) / todo.length)
+  } finally {
+    applyRecognized(sourceId)
     emit('recognition:source', { sourceId })
-    // 边识别边进入知识库：每 10 页并入一次
-    if (sinceApply >= 10) {
-      applyRecognized(sourceId)
-      sinceApply = 0
-    }
   }
-  applyRecognized(sourceId)
-  emit('recognition:source', { sourceId })
   if (failed && !done) throw new Error(`识别失败（${failed} 页）`)
   return { done, failed }
 }
