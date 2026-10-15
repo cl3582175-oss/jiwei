@@ -1,4 +1,4 @@
-import { refreshAttachmentNotePrivacy } from './notePrivacy'
+import { refreshAttachmentNotePrivacy, releaseAttachments, unreleaseAttachments } from './notePrivacy'
 import { CODE_EXTS } from './parsers/code'
 export { canReadSource } from './attachmentsAccess'
 import { attachmentOwner as owner } from './attachmentsAccess'
@@ -431,6 +431,7 @@ export function archiveAttachments(sourceIds: string[], categoryId: string | nul
     .set({ space: 'library', aiExcluded: false, categoryId, updatedAt: Date.now(), updatedBy: deviceId() })
     .where(and(inArray(sources.id, sourceIds), isNull(sources.deletedAt)))
     .run()
+  releaseAttachments(sourceIds)
   refreshAttachmentNotePrivacy(sourceIds)
   for (const id of sourceIds) emit('sources:changed', { id })
   requestIndex()
@@ -441,9 +442,9 @@ export function deleteAttachments(sourceIds: string[]): void {
   getDb().transaction(() => {
     for (const id of sourceIds) {
       getDb().update(sources).set({ space: 'attachment', aiExcluded: true, categoryId: null }).where(eq(sources.id, id)).run()
+      unreleaseAttachments([id])
       trashSource(id)
     }
-    refreshAttachmentNotePrivacy(sourceIds, true)
   })
   requestIndex()
   changed(sourceIds)

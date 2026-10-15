@@ -315,11 +315,11 @@ function EditorBody({ note: initial }: { note: NoteSummary }) {
               <SaveSeal saving={saving} />
             </span>
           </Tip>
-          {note.aiExcluded && (
-            <Tip label={t('notes.notePrivacyLockUser')} side="bottom">
+          {(note.aiExcluded || note.attachmentOnly) && (
+            <Tip label={t(note.aiExcluded ? 'notes.notePrivacyLockUser' : 'notes.notePrivacyAttachmentOnly')} side="bottom">
               <span className="mr-1 inline-flex h-6 items-center gap-1 rounded-full bg-sunken px-2 text-2xs text-muted">
                 <ShieldOff className="size-3" />
-                {t('notes.aiExcluded')}
+                {t(note.aiExcluded ? 'notes.aiExcluded' : 'notes.notePrivacyAttachmentBadge')}
               </span>
             </Tip>
           )}
@@ -466,8 +466,6 @@ function EditorBody({ note: initial }: { note: NoteSummary }) {
           </Menu>
         </div>
       </header>
-
-      {note.attachmentOnly && <p className="px-10 pt-2 text-xs leading-relaxed text-muted">{t('notes.notePrivacyAttachmentOnly')}</p>}
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto max-w-[1120px] animate-[rise-in_320ms_cubic-bezier(0.2,0.9,0.3,1)] px-10 pt-9 pb-24">

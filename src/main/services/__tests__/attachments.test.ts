@@ -135,7 +135,7 @@ it('附件删除、彻底清除与无痕对话结束都会清理来源的步骤�
   expect(rowCount('job_steps')).toBe(0)
 })
 
-it('派生笔记归档后解锁，删除或彻底清除已归档附件时重新隔离', async () => {
+it('派生笔记归档后解锁；在附件管理里删除时重新隔离，归档后从资料库彻底清除不再上锁', async () => {
   const s = await svc(),
     a = await attachment('c1')
   f.sql!.exec(
@@ -152,9 +152,10 @@ it('派生笔记归档后解锁，删除或彻底清除已归档附件时重新�
   expect(effective()).toBe(1)
   s.archiveAttachments([a.sourceId], null)
   expect(effective()).toBe(0)
+  // 归档即公开：内容已经可被 AI 使用，彻底删除资料不再给派生笔记加一把用户解释不了的锁。
   const { purgeSourceData } = await import('../sources')
   purgeSourceData(a.sourceId)
-  expect(effective()).toBe(1)
+  expect(effective()).toBe(0)
 })
 
 it('默认隐藏附件，只有主动添加的所属会话可读，普通资料隐私开关优先', async () => {

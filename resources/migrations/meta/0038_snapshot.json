@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "8feece19-7ac8-4fc7-b82d-d94b397c4918",
+  "id": "a5bd042e-715d-4b78-970c-2e9d72a9efff",
   "prevId": "00af6787-86a6-468d-aa98-884dcfeb51b3",
   "tables": {
     "actions": {
@@ -5624,6 +5624,30 @@
           "isUnique": false
         }
       },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "released_attachments": {
+      "name": "released_attachments",
+      "columns": {
+        "source_id": {
+          "name": "source_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "released_at": {
+          "name": "released_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},

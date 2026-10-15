@@ -1445,3 +1445,9 @@ export const jobSteps = sqliteTable(
   },
   (t) => [primaryKey({ columns: [t.jobId, t.stepKey] })]
 )
+
+/** 归档过的附件：来源记录被彻底删除后，派生笔记仍按“已公开”处理，不重新上锁。 */
+export const releasedAttachments = sqliteTable('released_attachments', {
+  sourceId: text('source_id').primaryKey(),
+  releasedAt: integer('released_at').notNull()
+})

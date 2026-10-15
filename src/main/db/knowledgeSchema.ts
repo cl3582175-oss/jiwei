@@ -78,5 +78,6 @@ export {
   importRuns,
   importItems,
   mcpClients,
-  jobSteps
+  jobSteps,
+  releasedAttachments
 } from './schema'

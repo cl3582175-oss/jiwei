@@ -19,9 +19,10 @@ function attachmentSourcesOf(noteId: string): string[] {
 /** 笔记现在因哪些未归档附件而受限（空数组 = 没有附件限制）。 */
 export function privateAttachmentsOf(noteId: string): string[] {
   const lookup = getSqlite().prepare('SELECT space FROM sources WHERE id=?')
+  const released = getSqlite().prepare('SELECT 1 FROM released_attachments WHERE source_id=?')
   return attachmentSourcesOf(noteId).filter((id) => {
     const source = lookup.get(id) as { space: string } | undefined
-    return !source || source.space === 'attachment'
+    return source ? source.space === 'attachment' : !released.get(id)
   })
 }
 
@@ -52,7 +53,18 @@ export function canUseNote(noteId: string, conversationId: string | null): boole
   return privateAttachmentsOf(noteId).every((id) => isConversationAttachment(id, conversationId) && canReadSource(id, conversationId))
 }
 
-/** 通常只检查生效的系统锁；删除归档来源时也检查已解锁派生笔记，防止漏锁。 */
+/** 归档即公开：记下来源，彻底删除资料后派生笔记也不会被重新锁住。 */
+export function releaseAttachments(sourceIds: string[]): void {
+  const insert = getSqlite().prepare('INSERT OR IGNORE INTO released_attachments(source_id,released_at) VALUES(?,?)')
+  for (const id of sourceIds) insert.run(id, Date.now())
+}
+/** 附件重新变为私有（如在附件管理里删除已归档附件）时撤销公开记录。 */
+export function unreleaseAttachments(sourceIds: string[]): void {
+  const remove = getSqlite().prepare('DELETE FROM released_attachments WHERE source_id=?')
+  for (const id of sourceIds) remove.run(id)
+}
+
+/** 通常只检查生效的系统锁；附件重新变为私有时也检查已解锁派生笔记，防止漏锁。 */
 export function refreshAttachmentNotePrivacy(sourceIds: string[], includeUnlocked = false): void {
   if (!sourceIds.length) return
   const wanted = new Set(sourceIds)

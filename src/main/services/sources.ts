@@ -310,10 +310,14 @@ export function revealSource(id: string): void {
   if (a) shell.showItemInFolder(assetPath(a.id, a.ext))
 }
 
+const spaceOf = (id: string): string | undefined =>
+  getDb().select({ space: sources.space }).from(sources).where(eq(sources.id, id)).get()?.space
+
 export function trashSource(id: string): void {
   getSqlite().prepare('DELETE FROM job_steps WHERE source_id=?').run(id)
   getDb().update(sources).set({ deletedAt: Date.now(), updatedAt: Date.now(), updatedBy: deviceId() }).where(eq(sources.id, id)).run()
-  refreshAttachmentNotePrivacy([id], true)
+  // 资料库里的资料删除不改变任何笔记的附件限制，只有附件空间的来源才需要逐篇重算。
+  if (spaceOf(id) === 'attachment') refreshAttachmentNotePrivacy([id], true)
   emit('sources:changed', { id })
 }
 
@@ -341,6 +345,7 @@ export async function importSubtitlesDialog(win: BrowserWindow | null, sourceId:
 export function purgeSourceData(id: string): void {
   const db = getDb(),
     sqlite = getSqlite()
+  const wasAttachment = spaceOf(id) === 'attachment'
   db.transaction(() => {
     sqlite.prepare('DELETE FROM job_steps WHERE source_id=?').run(id)
     const pending = db
@@ -374,6 +379,7 @@ export function purgeSourceData(id: string): void {
       .run()
     db.delete(sources).where(eq(sources.id, id)).run()
     deleteSegments(id)
-    refreshAttachmentNotePrivacy([id], true)
+    // 归档过的资料已记为公开（released_attachments），彻底删除也不重新上锁。
+    if (wasAttachment) refreshAttachmentNotePrivacy([id], true)
   })
 }

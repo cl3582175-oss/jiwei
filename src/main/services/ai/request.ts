@@ -161,7 +161,8 @@ async function generate(args: RequestArgs): Promise<RequestResult> {
     const result = streamText({
       ...request,
       model,
-      maxRetries: request.maxRetries ?? 0,
+      // 与 generateText 默认一致：429/5xx 在开始输出前由 SDK 重试，不能让其他 30 多个调用方失去重试。
+      maxRetries: request.maxRetries ?? 2,
       includeRawChunks: true,
       abortSignal: signal,
       onError: request.onError ?? (() => {})
@@ -214,7 +215,8 @@ export function rejectedOutputLimit(error: unknown, requested: number): number |
   const e = error as { statusCode?: number; status?: number; message?: string; responseBody?: string }
   if ((e?.statusCode ?? e?.status) !== 400) return null
   const message = `${e.message ?? ''} ${e.responseBody ?? ''}`
-  if (!/max_tokens|max_output|maximum/i.test(message)) return null
+  // 只认明确指向输出额度的拒绝；“maximum” 单独出现太宽（工具数、消息数等也会这么写）。
+  if (!/max_tokens|max_output|max_completion_tokens|output tokens?|maximum.{0,40}tokens?\b/i.test(message)) return null
   if (/context(?:[_ ]length|[_ ]window|.{0,12}(?:length|limit))|input tokens.*exceed/i.test(message)) return null
   const patterns = [
     /between\s+\d+\s+and\s+([\d,]+)/i,
@@ -267,6 +269,7 @@ export function createModelRequest(opts: ModelRequestOptions) {
     ): Promise<RequestResult> {
       state.last = undefined
       let pendingLimit: number | null = null
+      let rejections = 0
       while (true) {
         opts.guard?.()
         try {
@@ -295,7 +298,8 @@ export function createModelRequest(opts: ModelRequestOptions) {
         } catch (error) {
           if (opts.signal?.aborted) throw error
           const limit = rejectedOutputLimit(error, budget)
-          if (limit === null) throw error
+          // 最多降三次：服务商错误文本不规范时，宁可报错也不连发十几次请求。
+          if (limit === null || ++rejections > 3) throw error
           budget = limit
           pendingLimit = limit
         }

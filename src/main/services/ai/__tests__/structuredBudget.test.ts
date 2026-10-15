@@ -188,3 +188,12 @@ it('推理耗尽输出额度时翻倍重试，off档不再使用4096', async () 
   expect(calls[0].maxOutputTokens).toBe(8192)
   expect(calls[1].maxOutputTokens).toBe(16384)
 })
+
+it('只把明确指向输出额度的400当作额度反馈', async () => {
+  const { rejectedOutputLimit } = await import('../request')
+  const bad = (message: string) => Object.assign(new Error(message), { statusCode: 400 })
+  expect(rejectedOutputLimit(bad('maximum number of tools is 128'), 8192)).toBeNull()
+  expect(rejectedOutputLimit(bad('messages exceed the maximum allowed'), 8192)).toBeNull()
+  expect(rejectedOutputLimit(bad('max_tokens must be less than or equal to 4096'), 8192)).toBe(4096)
+  expect(rejectedOutputLimit(bad('maximum output tokens is 6000'), 8192)).toBe(6000)
+})

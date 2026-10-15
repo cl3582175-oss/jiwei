@@ -47,7 +47,8 @@ function toSummaries(rows: Row[]): NoteSummary[] {
   return rows.map(({ plainText, userAiExcluded, ...r }) => ({
     ...r,
     aiExcluded: userAiExcluded,
-    attachmentOnly: privateAttachmentsOf(r.id).length > 0,
+    // 生效值由 refreshNotePrivacy 维护：没生效锁就不可能有附件限制，免得列表逐篇解析文档。
+    attachmentOnly: r.aiExcluded && privateAttachmentsOf(r.id).length > 0,
     excerpt: plainText.slice(0, EXCERPT_LEN),
     tagIds: tagMap.get(r.id) ?? []
   }))

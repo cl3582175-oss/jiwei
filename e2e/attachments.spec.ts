@@ -915,7 +915,7 @@ test('长任务：上传附件整理成总结，提案持久化，跨对话隔�
   expect(proposals).toHaveLength(1)
   await navTo(page, /笔记/)
   await page.getByText(note.title, { exact: true }).first().click()
-  await expect(page.getByText('含有未归档的对话附件，只在那个对话里能用。归档附件后自动解除。', { exact: true })).toBeVisible()
+  await expect(page.getByText('仅限所属对话', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: '全部接受', exact: true }).click()
   await expect
     .poll(async () => JSON.stringify(await page.evaluate((id) => window.jiwei.notes.blocks(id), note.id)))
