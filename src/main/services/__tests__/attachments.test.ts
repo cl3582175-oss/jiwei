@@ -117,6 +117,28 @@ async function attachment(owner?: string) {
 }
 const rowCount = (table: string): number => (f.sql!.prepare(`SELECT count(*) AS n FROM ${table}`).get() as { n: number }).n
 
+it('派生笔记归档后解锁，删除或彻底清除已归档附件时重新隔离', async () => {
+  const s = await svc(),
+    a = await attachment('c1')
+  f.sql!.exec(
+    "INSERT INTO notes(id,doc_version,learned_at,created_at,edited_at,updated_at,updated_by) VALUES('derived',1,1,1,1,1,'controlled')"
+  )
+  const { protectNoteAttachments } = await import('../attachmentDerived')
+  protectNoteAttachments('derived', [a.sourceId])
+  const effective = () => (f.sql!.prepare("SELECT ai_excluded FROM notes WHERE id='derived'").get() as { ai_excluded: number }).ai_excluded
+  s.archiveAttachments([a.sourceId], null)
+  expect(effective()).toBe(0)
+  s.deleteAttachments([a.sourceId])
+  expect(effective()).toBe(1)
+  restore('source', a.sourceId)
+  expect(effective()).toBe(1)
+  s.archiveAttachments([a.sourceId], null)
+  expect(effective()).toBe(0)
+  const { purgeSourceData } = await import('../sources')
+  purgeSourceData(a.sourceId)
+  expect(effective()).toBe(1)
+})
+
 it('默认隐藏附件，只有主动添加的所属会话可读，普通资料隐私开关优先', async () => {
   const s = await svc(),
     a = await attachment('c1')

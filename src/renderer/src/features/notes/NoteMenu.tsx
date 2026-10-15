@@ -120,10 +120,15 @@ export function NoteMenuItems({ notes, onDone }: { notes: NoteSummary[]; onDone?
         </MenuSubContent>
       </MenuSub>
       {one && (
-        <MenuItem onSelect={() => done(update(ids, { aiExcluded: !one.aiExcluded }))}>
-          {one.aiExcluded ? <Shield /> : <ShieldOff />}
-          {one.aiExcluded ? t('notes.aiInclude') : t('notes.aiExclude')}
-        </MenuItem>
+        <>
+          <MenuItem onSelect={() => done(update(ids, { aiExcluded: !one.aiExcluded }))}>
+            {one.aiExcluded ? <Shield /> : <ShieldOff />}
+            {one.aiExcluded ? t('notes.aiInclude') : t('notes.aiExclude')}
+          </MenuItem>
+          {one.attachmentOnly && (
+            <p className="max-w-64 px-2 py-1 text-xs leading-relaxed text-muted">{t('notes.notePrivacyAttachmentOnly')}</p>
+          )}
+        </>
       )}
       <MenuSeparator />
       <MenuItem danger onSelect={() => done(remove(ids))}>

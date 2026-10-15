@@ -193,7 +193,7 @@ async function generateMemo(
     for (const id of attachmentIds)
       if (id.startsWith('note:')) {
         const n = getNote(id.slice(5))
-        if (!n || n.deletedAt || n.aiExcluded) throw new Error('Note access revoked')
+        if (!n || n.deletedAt || n.aiExcluded || n.attachmentOnly) throw new Error('Note access revoked')
       }
     for (const id of attachmentIds) if (!id.startsWith('note:') && !canReadSource(id, decisionId)) throw new Error('Source access revoked')
     checkBudget()
@@ -388,7 +388,7 @@ export function reviewDecision(input: z.input<typeof ReviewDecisionSchema>): Dec
 function lessonCard(question: string, lesson: string, attachmentIds: string[] = []): void {
   const zh = getSettings().language.startsWith('zh')
   let noteId = getMeta(LESSON_NOTE_KEY)
-  if (attachmentIds.length || !noteId || !getNote(noteId) || getNote(noteId)?.aiExcluded) {
+  if (attachmentIds.length || !noteId || !getNote(noteId) || getNote(noteId)?.aiExcluded || getNote(noteId)?.attachmentOnly) {
     noteId = createNote({ title: zh ? '决策教训' : 'Decision lessons' }).id
     setMeta(LESSON_NOTE_KEY, noteId)
   }

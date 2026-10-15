@@ -88,7 +88,7 @@ export function saveToNote(input: UiSaveToNote): { noteId: string; created: bool
   }
   return getDb().transaction(() => {
     const existing = value.target.noteId ? getNote(value.target.noteId) : null
-    if (value.target.noteId && (!existing || existing.aiExcluded))
+    if (value.target.noteId && (!existing || existing.aiExcluded || existing.attachmentOnly))
       throw new Error(zh ? '这篇笔记已不可用或设置了不给 AI' : 'Note is unavailable or excluded from AI')
     const target = existing ?? createNote({ title: value.target.newTitle ?? node.title ?? source.title }),
       created = !existing

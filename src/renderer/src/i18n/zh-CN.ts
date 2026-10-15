@@ -1,3 +1,4 @@
+import { notePrivacyZh } from '../features/notes/notePrivacyMessages'
 import { readyZh } from '../features/library/readinessMessages'
 import { attachZh } from '../features/attachments/messages'
 import { uiZh } from '../features/ui/messages'
@@ -474,6 +475,7 @@ const zhCN = {
     clear: '清除'
   },
   notes: {
+    ...notePrivacyZh,
     title: '笔记',
     new: '新建笔记',
     searchPlaceholder: '搜索笔记',

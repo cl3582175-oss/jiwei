@@ -101,6 +101,8 @@ export interface NoteSummary {
   editedAt: number
   updatedAt: number
   deletedAt: number | null
+  /** 未归档附件带来的对话范围限制，与用户的 AI 开关分开。 */
+  attachmentOnly: boolean
 }
 
 export type Note = NoteSummary

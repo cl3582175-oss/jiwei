@@ -60,38 +60,49 @@ export async function attachmentModel(options: { embeddingDimensions?: number } 
         return
       }
       const submit = input.tools?.find((t) => t.function.name === 'submit')
+      const properties = (submit?.function.parameters?.properties ?? {}) as Record<string, unknown>
+      const segmentId =
+        /\[([a-z0-9-]{16,})/.exec(
+          input.messages
+            .filter((m) => m.role === 'user')
+            .map((m) => textOf(m.content))
+            .join('\n')
+        )?.[1] ?? ''
+      const output =
+        'points' in properties
+          ? { topic: '受控主题', points: [{ text: '摘要稳定事实', segmentId }] }
+          : 'markdown' in properties
+            ? { markdown: answer }
+            : 'restated' in properties
+              ? {
+                  restated: answer.slice(0, 250),
+                  options: [
+                    { id: 'O1', title: '方案一', summary: '结合所供资料' },
+                    { id: 'O2', title: '方案二', summary: '继续收集信息' }
+                  ],
+                  criteria: [
+                    { name: '收益', weight: 3, why: '' },
+                    { name: '成本', weight: 3, why: '' }
+                  ],
+                  scores: [],
+                  evidence: [],
+                  assumptions: [],
+                  premortem: [],
+                  secondOrder: [],
+                  counter: '',
+                  risks: [],
+                  recommendation: { option: 'O1', why: '根据所供资料分析' },
+                  confidence: 3,
+                  unknowns: []
+                }
+              : 'memories' in properties
+                ? { memories: [], concepts: [], episode: null }
+                : 'picks' in properties
+                  ? { picks: [] }
+                  : 'items' in properties
+                    ? { items: [] }
+                    : { picks: [], items: [], memories: [], concepts: [], episode: null }
       if (!input.stream) {
-        const properties = (submit?.function.parameters?.properties ?? {}) as Record<string, unknown>
-        const output =
-          'restated' in properties
-            ? {
-                restated: answer.slice(0, 250),
-                options: [
-                  { id: 'O1', title: '方案一', summary: '结合所供资料' },
-                  { id: 'O2', title: '方案二', summary: '继续收集信息' }
-                ],
-                criteria: [
-                  { name: '收益', weight: 3, why: '' },
-                  { name: '成本', weight: 3, why: '' }
-                ],
-                scores: [],
-                evidence: [],
-                assumptions: [],
-                premortem: [],
-                secondOrder: [],
-                counter: '',
-                risks: [],
-                recommendation: { option: 'O1', why: '根据所供资料分析' },
-                confidence: 3,
-                unknowns: []
-              }
-            : 'memories' in properties
-              ? { memories: [], concepts: [], episode: null }
-              : 'picks' in properties
-                ? { picks: [] }
-                : 'items' in properties
-                  ? { items: [] }
-                  : { picks: [], items: [], memories: [], concepts: [], episode: null }
         res.writeHead(200, { 'content-type': 'application/json' }).end(
           JSON.stringify({
             id: 'controlled-structured',
@@ -120,7 +131,16 @@ export async function attachmentModel(options: { embeddingDimensions?: number } 
           `data: ${JSON.stringify({ id: 'controlled-attachments', object: 'chat.completion.chunk', created: 1, model: 'attachments-controlled', choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`
         )
       }
-      if (next) {
+      if (submit) {
+        send(
+          {
+            role: 'assistant',
+            tool_calls: [{ index: 0, id: 'submit', type: 'function', function: { name: 'submit', arguments: JSON.stringify(output) } }]
+          },
+          null
+        )
+        send({}, 'tool_calls')
+      } else if (next) {
         const tool = next
         next = null
         send(
@@ -134,7 +154,9 @@ export async function attachmentModel(options: { embeddingDimensions?: number } 
         )
         send({}, 'tool_calls')
       } else {
-        for (let i = 0; i < answer.length; i += 12) send({ content: answer.slice(i, i + 12) }, null)
+        const system = textOf(input.messages.find((m) => m.role === 'system')?.content)
+        const response = /第一行.*#|first line.*#/i.test(system) ? `# 受控主题\n- 摘要稳定事实 {${segmentId}}` : answer
+        for (let i = 0; i < response.length; i += 12) send({ content: response.slice(i, i + 12) }, null)
         send({}, 'stop')
       }
       res.write(

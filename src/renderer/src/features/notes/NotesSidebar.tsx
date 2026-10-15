@@ -92,7 +92,14 @@ function NoteItem({
         >
           {note.title || t('common.untitled')}
         </span>
-        {note.aiExcluded && <ShieldOff className="ml-auto size-3 shrink-0 text-subtle" />}
+        {(note.aiExcluded || note.attachmentOnly) && (
+          <span
+            className="ml-auto flex shrink-0"
+            title={t(note.aiExcluded ? 'notes.notePrivacyLockUser' : 'notes.notePrivacyAttachmentOnly')}
+          >
+            <ShieldOff className="size-3 text-subtle" />
+          </span>
+        )}
       </div>
       <p className="mt-0.5 line-clamp-2 text-xs leading-[1.6] text-muted">{note.excerpt || ' '}</p>
       <p className="mt-1 text-2xs text-subtle">{time}</p>

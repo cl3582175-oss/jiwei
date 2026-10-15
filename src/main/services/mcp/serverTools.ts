@@ -157,7 +157,7 @@ export function createServeServer(client: ServeClient): McpServer {
       (a) => (a.query ? `${zh() ? '查找笔记' : 'Find notes'}：${cut(a.query)}` : zh() ? '列出最近的笔记' : 'List recent notes'),
       ({ query, limit }) => {
         const list = listNotes({ search: query || undefined, limit: (limit ?? 20) + 10 })
-          .filter((n) => !n.aiExcluded)
+          .filter((n) => !n.aiExcluded && !n.attachmentOnly)
           .slice(0, limit ?? 20)
         return text(
           list.length

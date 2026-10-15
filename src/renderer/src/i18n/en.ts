@@ -1,3 +1,4 @@
+import { notePrivacyEn } from '../features/notes/notePrivacyMessages'
 import { readyEn } from '../features/library/readinessMessages'
 import { attachEn } from '../features/attachments/messages'
 import { uiEn } from '../features/ui/messages'
@@ -487,6 +488,7 @@ const en: Messages = {
     clear: 'Clear'
   },
   notes: {
+    ...notePrivacyEn,
     title: 'Notes',
     new: 'New note',
     searchPlaceholder: 'Search notes',

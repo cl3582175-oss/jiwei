@@ -170,8 +170,7 @@ export function startDigest(input: DigestInput): { jobId: string; noteId: string
     if (!id) {
       const zh = getSettings().language.startsWith('zh')
       id = createNote({
-        title: zh ? `《${src.title}》${TASK_ZH[input.task]}` : `${src.title} — ${TASK_EN[input.task]}`,
-        aiExcluded: src.space === 'attachment'
+        title: zh ? `《${src.title}》${TASK_ZH[input.task]}` : `${src.title} — ${TASK_EN[input.task]}`
       }).id
       relate(id, 'source', input.sourceId)
     }
@@ -321,6 +320,7 @@ async function run(input: DigestInput & { noteId: string }, ctx: JobContext): Pr
   if (ctx.isCanceled()) throw new Error('canceled')
   const proposal = createProposal({
     noteId: input.noteId,
+    conversationId: input.conversationId,
     title: zh ? `${TASK_ZH[input.task]}：《${src.title}》${range}` : `${TASK_EN[input.task]}: ${src.title}`,
     ops,
     model: input.model,

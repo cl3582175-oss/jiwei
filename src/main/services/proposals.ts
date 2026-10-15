@@ -6,10 +6,14 @@ import { getDb, getSqlite } from '../db'
 import { derivationLandings, notes, proposals } from '../db/schema'
 import { newId } from '../lib/ids'
 import { emit } from '../events'
-import type { ProposalInput } from '@shared/schemas'
+import type { ProposalInput as SharedProposalInput } from '@shared/schemas'
 import type { Proposal, ProposalOpStatus } from '@shared/types'
 import { recordProposalDecision } from './memoryLearn'
 import { lensMessage } from './recordingContext'
+import { canUseNote } from './notePrivacy'
+
+/** 主进程可信调用上下文；外部 IPC schema 不接受调用方自报的对话权限。 */
+export type ProposalInput = SharedProposalInput & { conversationId?: string | null }
 
 // AI 修改提案：主进程只负责记录与状态流转；
 // 真正把操作应用到文档由渲染进程的编辑器完成（保证走正常的撤销、协同、ID 与来源标记流程）。
@@ -44,16 +48,18 @@ export function createProposal(input: ProposalInput): Proposal {
     .get()
   if (!note || note.deletedAt) throw new Error('Note not found')
   // 隐私：用户设为“不发送给 AI”的笔记，AI 也不能修改
-  if (note.aiExcluded) throw new Error('This note is excluded from AI')
+  if (!canUseNote(input.noteId, input.conversationId ?? currentRun()?.conversationId ?? null))
+    throw new Error('This note is excluded from AI')
   // 富内容块按种类校验：绕过助手工具（如 MCP、导入）写入的数据同样必须能显示
   for (const [key, embed] of Object.entries(input.embeds ?? {})) {
     const def = EMBED_KINDS[embed.kind]
     if (def && !def.validate(embed.data)) throw new Error(`Invalid ${embed.kind} data in embed "${key}"`)
   }
   const run = currentRun()
-  const attachmentSourceIds = run?.conversationId
+  const conversationId = input.conversationId ?? run?.conversationId
+  const attachmentSourceIds = conversationId
     ? (
-        getSqlite().prepare('SELECT DISTINCT source_id FROM conversation_attachments WHERE conversation_id=?').all(run.conversationId) as {
+        getSqlite().prepare('SELECT DISTINCT source_id FROM conversation_attachments WHERE conversation_id=?').all(conversationId) as {
           source_id: string
         }[]
       ).map((r) => r.source_id)

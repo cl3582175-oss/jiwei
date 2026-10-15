@@ -1,3 +1,4 @@
+import { refreshAttachmentNotePrivacy } from './notePrivacy'
 import { FORMATS } from '@shared/formats'
 import log from 'electron-log/main'
 import { recordingAudio, recordingForSource, purgeRecording } from './recording'
@@ -311,6 +312,7 @@ export function revealSource(id: string): void {
 
 export function trashSource(id: string): void {
   getDb().update(sources).set({ deletedAt: Date.now(), updatedAt: Date.now(), updatedBy: deviceId() }).where(eq(sources.id, id)).run()
+  refreshAttachmentNotePrivacy([id], true)
   emit('sources:changed', { id })
 }
 
@@ -370,5 +372,6 @@ export function purgeSourceData(id: string): void {
       .run()
     db.delete(sources).where(eq(sources.id, id)).run()
     deleteSegments(id)
+    refreshAttachmentNotePrivacy([id], true)
   })
 }

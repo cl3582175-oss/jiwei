@@ -1,4 +1,4 @@
-import { noteHasPrivateAttachments } from './attachmentDerived'
+import { privateAttachmentsOf, refreshNotePrivacy } from './notePrivacy'
 import { and, asc, desc, eq, inArray, isNull, like, or, type SQL } from 'drizzle-orm'
 import { getDb, getSqlite } from '../db'
 import { emit } from '../events'
@@ -33,7 +33,8 @@ const summaryCols = {
   createdAt: notes.createdAt,
   editedAt: notes.editedAt,
   updatedAt: notes.updatedAt,
-  deletedAt: notes.deletedAt
+  deletedAt: notes.deletedAt,
+  userAiExcluded: notes.userAiExcluded
 }
 
 type Row = { [K in keyof typeof summaryCols]: (typeof notes.$inferSelect)[K] }
@@ -43,8 +44,10 @@ function toSummaries(rows: Row[]): NoteSummary[] {
     'note',
     rows.map((r) => r.id)
   )
-  return rows.map(({ plainText, ...r }) => ({
+  return rows.map(({ plainText, userAiExcluded, ...r }) => ({
     ...r,
+    aiExcluded: userAiExcluded,
+    attachmentOnly: privateAttachmentsOf(r.id).length > 0,
     excerpt: plainText.slice(0, EXCERPT_LEN),
     tagIds: tagMap.get(r.id) ?? []
   }))
@@ -112,7 +115,7 @@ export function createNote(init?: {
   categoryId?: string | null
   title?: string
   kind?: NoteKind
-  aiExcluded?: boolean
+  userAiExcluded?: boolean
   createdAt?: number
 }): Note {
   const kind = init?.kind ?? 'cornell'
@@ -131,12 +134,13 @@ export function createNote(init?: {
       docVersion: DOC_VERSIONS[kind],
       editedAt: now,
       createdAt: init?.createdAt ?? now,
-      aiExcluded: init?.aiExcluded ?? false,
+      userAiExcluded: init?.userAiExcluded ?? false,
       updatedAt: now,
       updatedBy: deviceId()
     })
     .run()
   initDoc(id)
+  refreshNotePrivacy([id])
   recordActivity('note_create')
   return getNote(id)!
 }
@@ -152,17 +156,17 @@ export function createSampleNote(lang: string): Note {
 export function updateNote(id: string, patch: NoteMetaUpdate): NoteSummary {
   const db = getDb()
   const now = Date.now()
-  if (patch.aiExcluded === false && noteHasPrivateAttachments(id))
-    throw new Error('Archive the original attachments before enabling AI for this note')
   const set: Partial<typeof notes.$inferSelect> = { updatedAt: now, updatedBy: deviceId() }
-  for (const k of ['title', 'categoryId', 'pinned', 'learnedAt', 'status', 'supersededBy', 'aiExcluded', 'reviewExcluded'] as const) {
+  for (const k of ['title', 'categoryId', 'pinned', 'learnedAt', 'status', 'supersededBy', 'reviewExcluded'] as const) {
     if (patch[k] !== undefined) (set as Record<string, unknown>)[k] = patch[k]
   }
+  if (patch.aiExcluded !== undefined) set.userAiExcluded = patch.aiExcluded
   if (patch.supersededBy === id) throw new Error('A note cannot supersede itself')
   // 被取代的知识自动标记为已过时
   if (patch.supersededBy) set.status = 'outdated'
   if (patch.title !== undefined) set.editedAt = now
   db.update(notes).set(set).where(eq(notes.id, id)).run()
+  if (patch.aiExcluded !== undefined) refreshNotePrivacy([id])
   if (patch.reviewExcluded !== undefined) syncCards(id)
   // 主进程元数据变化也影响其他页面的隐私素材和缓存，不能只靠当前编辑器刷新。
   emit('notes:changed', { ids: [id] })

@@ -182,7 +182,7 @@ async function acceptOne(id: string, manual?: z.infer<typeof import('@shared/inb
         s.action === 'append_note' && s.noteId
           ? getNote(s.noteId)
           : createNote({ title: s.newNoteTitle || item.text.slice(0, 60) || sourceLine(item) })
-      if (!note || note.deletedAt || note.aiExcluded || note.kind !== 'cornell') throw new Error(captureText('invalidNote'))
+      if (!note || note.deletedAt || note.aiExcluded || note.attachmentOnly || note.kind !== 'cornell') throw new Error(captureText('invalidNote'))
       const ops: ProposalOp[] = []
       for (const member of members) {
         const rows = manual ? undefined : member.suggestion?.rows
@@ -346,7 +346,7 @@ async function runTriage(ids: string[] | undefined, canceled: () => boolean, fol
           .filter((h, n, all) => all.findIndex((x) => x.parentId === h.parentId) === n)
           .filter((h) => {
             const n = getNote(h.parentId)
-            return n && !n.aiExcluded && !n.deletedAt && n.kind === 'cornell'
+            return n && !n.aiExcluded && !n.attachmentOnly && !n.deletedAt && n.kind === 'cornell'
           })
           .slice(0, 3)
           .map((h) => ({ id: h.parentId, title: h.title, excerpt: (h.text ?? '').slice(0, 300), similarity: Number(h.sim.toFixed(2)) }))

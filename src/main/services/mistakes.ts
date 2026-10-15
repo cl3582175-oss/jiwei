@@ -288,7 +288,7 @@ export function complete(id: string, proposalId: string, update: Uint8Array): Mi
   if (p.opStatus.every((s) => s === 'accepted')) return m
   if (!m.noteId || p.noteId !== m.noteId) throw new Error(mistakeText('unapplied'))
   const note = getNote(m.noteId)
-  if (!note || note.deletedAt || note.aiExcluded) throw new Error(mistakeText('localOnly'))
+  if (!note || note.deletedAt || note.aiExcluded || note.attachmentOnly) throw new Error(mistakeText('localOnly'))
   const merged = mergedDoc(m.noteId, update), row = rowForMistake(merged, id)
   if (p.skill === `mistake-move:${id}`) {
     if (row) throw new Error(mistakeText('unapplied'))

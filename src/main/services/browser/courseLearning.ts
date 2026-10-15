@@ -76,7 +76,7 @@ function material(sourceId: string): { title: string; segments: Segment[]; text:
 function checkNote(noteId: string | null): void {
   if (!noteId) return
   const note = getNote(noteId)
-  if (!note || note.deletedAt != null || note.aiExcluded) throw new Error('Note unavailable or excluded from AI')
+  if (!note || note.deletedAt != null || note.aiExcluded || note.attachmentOnly) throw new Error('Note unavailable or excluded from AI')
 }
 
 function quickNotes(noteId: string | null, sourceId: string): CourseQuickNote[] {

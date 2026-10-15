@@ -47,7 +47,7 @@ export function registerImportCueJob(): void {
         ctx.signal?.throwIfAborted()
         const note = getNote(noteId),
           run = readRecord<RunRecord>(`run.${runId}`)
-        if (ctx.isCanceled() || !note || note.deletedAt || note.aiExcluded || !run || run.state.undoneAt)
+        if (ctx.isCanceled() || !note || note.deletedAt || note.aiExcluded || note.attachmentOnly || !run || run.state.undoneAt)
           throw new Error('Import cue access revoked')
       }
       guard()

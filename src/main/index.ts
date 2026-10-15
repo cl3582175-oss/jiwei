@@ -1,3 +1,4 @@
+import { backfillNotePrivacy } from './services/notePrivacy'
 import { cleanupDrafts, observeAttachmentChanges } from './services/attachments'
 import { getMainWindow, setMainWindow } from './mainWindow'
 import { initializePlugins } from './services/plugins/install'
@@ -181,6 +182,7 @@ app
 
     await initializeBackupSafety()
     await openDatabase()
+    backfillNotePrivacy()
     await cleanupDrafts()
     migrateSearchConnections()
     ensureIdentity()
