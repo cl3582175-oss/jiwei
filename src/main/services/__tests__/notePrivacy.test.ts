@@ -122,7 +122,7 @@ it('回填识别未归档文档来源与提案来源，仍保持生效排除', a
   }
 })
 
-it('AI列表与MCP继续使用生效排除，不能把附件开关的false当成公开', async () => {
+it('AI列表继续使用生效排除，不能把附件开关的false当成公开', async () => {
   const id = await derived()
   f.sql!.prepare('UPDATE notes SET title=? WHERE id=?').run('PRIVATE-DERIVED-MARKER', id)
   expect(getNote(id)).toMatchObject({ aiExcluded: false, attachmentOnly: true })

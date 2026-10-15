@@ -890,9 +890,15 @@ test('长任务：上传附件整理成总结，提案持久化，跨对话隔�
   const summary = '# 受控总结\n\n摘要稳定事实 LONGTASK-RESULT-MARKER。' + '受控资料的核心结论已经整理，并保留可编辑的笔记提案。'.repeat(4)
   model.setAnswer(summary)
   const existingJobs = new Set((await page.evaluate(() => window.jiwei.jobs.list())).map((j) => j.id))
-  model.tool('source_digest', { sourceId: attachment.sourceId, task: 'summary' })
+  const lockedTarget = await page.evaluate(async () => {
+    const note = await window.jiwei.notes.create({ title: 'Protected digest target' })
+    await window.jiwei.notes.update(note.id, { aiExcluded: true })
+    return note.id
+  })
+  model.tool('source_digest', { sourceId: attachment.sourceId, task: 'summary', noteId: lockedTarget })
   await page.locator('textarea').last().fill('请把本对话附件完整整理成总结')
   await page.getByRole('button', { name: '发送', exact: true }).last().click()
+  await expect(page.getByTestId('approval-card')).toContainText('目标笔记现在不能由 AI 写入，结果会放进一篇新笔记。')
   await page.getByTestId('approval-card').getByRole('button', { name: '允许', exact: true }).click()
   await expect
     .poll(
@@ -901,6 +907,8 @@ test('长任务：上传附件整理成总结，提案持久化，跨对话隔�
     )
     .toBe('done')
   const note = (await page.evaluate(() => window.jiwei.notes.list({}))).find((n) => n.title.includes('longtask-controlled'))!
+  expect(note.id).not.toBe(lockedTarget)
+  await expect(page.getByText(`原来的笔记不能写入了，结果已放进新笔记《${note.title}》。`, { exact: true })).toBeVisible()
   expect(note).toMatchObject({ aiExcluded: false, attachmentOnly: true })
   const proposals = await page.evaluate((id) => window.jiwei.proposals.list(id), note.id)
   expect(JSON.stringify(proposals)).toContain('LONGTASK-RESULT-MARKER')

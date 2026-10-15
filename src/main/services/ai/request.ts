@@ -1,8 +1,11 @@
-import { streamText, wrapLanguageModel, type LanguageModelUsage } from 'ai'
+import { streamText, wrapLanguageModel, type LanguageModelUsage, type ModelMessage } from 'ai'
 import log from 'electron-log/main'
 import { currentRun, withPurpose } from '../agent/context'
 import { getSettings } from '../settings'
 import { notePrivacyEn, notePrivacyZh } from '../../../renderer/src/features/notes/notePrivacyMessages'
+import type { Effort } from '@shared/ai'
+import { buildModel } from './model'
+import { getProviderRow, learnOutputLimit } from './providers'
 
 export class ModelIdleTimeout extends Error {
   readonly temporary = true
@@ -36,6 +39,20 @@ export interface RequestDiagnostics {
   model?: string
   phase?: 'tool' | 'json' | 'text'
   /** 未知来源按敏感处理；只有调用方能确认公开时才允许输出正文预览。 */
+  sensitive?: boolean
+}
+export interface ModelRequestOptions {
+  providerId: string
+  model: string
+  system: string
+  prompt: string
+  effort?: Effort
+  images?: { data: Uint8Array; mediaType: string }[]
+  onUsage?: (usage: LanguageModelUsage) => void
+  signal?: AbortSignal
+  guard?: () => void
+  purpose?: string
+  maxOutputTokens?: number
   sensitive?: boolean
 }
 type RequestResult = {
@@ -211,4 +228,78 @@ export function rejectedOutputLimit(error: unknown, requested: number): number |
     if (Number.isSafeInteger(n) && n > 0 && n < requested) return n
   }
   return requested > 1 ? Math.max(1, Math.floor(requested / 2)) : null
+}
+
+/** 结构化与纯文本请求共用额度策略；一次流程的工具和 JSON 阶段共享学习结果。 */
+export function createModelRequest(opts: ModelRequestOptions) {
+  const built = buildModel({ providerId: opts.providerId, model: opts.model, effort: opts.effort ?? 'off' })
+  const input = opts.images?.length
+    ? {
+        messages: [
+          {
+            role: 'user',
+            content: [
+              ...opts.images.map((i) => ({ type: 'image' as const, image: i.data, mediaType: i.mediaType })),
+              { type: 'text', text: opts.prompt }
+            ]
+          }
+        ] as ModelMessage[]
+      }
+    : { prompt: opts.prompt }
+  const stored = JSON.parse(getProviderRow(opts.providerId).modelCaps) as Record<string, { learnedMaxOutput?: number }>
+  const limit = stored[opts.model]?.learnedMaxOutput
+  let learned = limit && Number.isSafeInteger(limit) && limit > 0 ? limit : Infinity
+  let budget = Math.min(Math.max(opts.maxOutputTokens ?? 0, built.maxOutputTokens ?? 8192), learned)
+  let lengthRetried = false
+  const state: { last?: RequestResult } = {}
+  const diagnostics = (phase: 'tool' | 'json' | 'text'): RequestDiagnostics => ({
+    purpose: opts.purpose,
+    model: opts.model,
+    phase,
+    sensitive: opts.sensitive ?? true
+  })
+  return {
+    state,
+    diagnostics,
+    async generate(
+      phase: 'tool' | 'json' | 'text',
+      overrides: Pick<RequestArgs, 'system' | 'tools' | 'toolChoice'> = {}
+    ): Promise<RequestResult> {
+      state.last = undefined
+      let pendingLimit: number | null = null
+      while (true) {
+        opts.guard?.()
+        try {
+          const r = await generateWithIdle({
+            model: built.model,
+            providerOptions: built.providerOptions as never,
+            abortSignal: opts.signal,
+            maxOutputTokens: budget,
+            system: opts.system,
+            ...input,
+            ...overrides,
+            diagnostics: diagnostics(phase)
+          })
+          state.last = r
+          opts.onUsage?.(r.usage)
+          opts.guard?.()
+          if (pendingLimit !== null) {
+            learnOutputLimit(opts.providerId, opts.model, pendingLimit)
+            learned = pendingLimit
+            pendingLimit = null
+          }
+          if (r.finishReason !== 'length') return r
+          if (lengthRetried) throw new ModelOutputTruncated(r.usage)
+          lengthRetried = true
+          budget = Math.min(budget * 2, 65536, learned)
+        } catch (error) {
+          if (opts.signal?.aborted) throw error
+          const limit = rejectedOutputLimit(error, budget)
+          if (limit === null) throw error
+          budget = limit
+          pendingLimit = limit
+        }
+      }
+    }
+  }
 }

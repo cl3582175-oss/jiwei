@@ -311,6 +311,7 @@ export function revealSource(id: string): void {
 }
 
 export function trashSource(id: string): void {
+  getSqlite().prepare('DELETE FROM job_steps WHERE source_id=?').run(id)
   getDb().update(sources).set({ deletedAt: Date.now(), updatedAt: Date.now(), updatedBy: deviceId() }).where(eq(sources.id, id)).run()
   refreshAttachmentNotePrivacy([id], true)
   emit('sources:changed', { id })
@@ -341,6 +342,7 @@ export function purgeSourceData(id: string): void {
   const db = getDb(),
     sqlite = getSqlite()
   db.transaction(() => {
+    sqlite.prepare('DELETE FROM job_steps WHERE source_id=?').run(id)
     const pending = db
       .select()
       .from(jobs)

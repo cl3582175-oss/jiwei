@@ -112,6 +112,7 @@ async function fixture(files: Record<string, string>) {
 function context(block?: { at: number; entered: () => void; resume: Promise<void> }): JobContext {
   let count = 0
   return {
+    step: <T>(_key: string, _sourceId: string | null, fn: () => Promise<T>) => fn(),
     progress: vi.fn(),
     isCanceled: () => false,
     worker: async <T>(_task: string, payload: unknown): Promise<T> => {

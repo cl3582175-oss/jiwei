@@ -117,6 +117,24 @@ async function attachment(owner?: string) {
 }
 const rowCount = (table: string): number => (f.sql!.prepare(`SELECT count(*) AS n FROM ${table}`).get() as { n: number }).n
 
+it('附件删除、彻底清除与无痕对话结束都会清理来源的步骤缓存', async () => {
+  const s = await svc(),
+    ordinary = await attachment('c1'),
+    privateFile = await attachment('private')
+  const add = (id: string) =>
+    f.sql!.prepare('INSERT INTO job_steps VALUES(?,?,?,?,?)').run('controlled', id, id, '{"text":"CACHE-MARKER"}', Date.now())
+  add(ordinary.sourceId)
+  add(privateFile.sourceId)
+  s.deleteAttachments([ordinary.sourceId])
+  expect(f.sql!.prepare('SELECT source_id FROM job_steps').all()).toEqual([{ source_id: privateFile.sourceId }])
+  s.detachConversationAttachments('private')
+  expect(rowCount('job_steps')).toBe(0)
+  restore('source', ordinary.sourceId)
+  add(ordinary.sourceId)
+  ;(await import('../sources')).purgeSourceData(ordinary.sourceId)
+  expect(rowCount('job_steps')).toBe(0)
+})
+
 it('派生笔记归档后解锁，删除或彻底清除已归档附件时重新隔离', async () => {
   const s = await svc(),
     a = await attachment('c1')

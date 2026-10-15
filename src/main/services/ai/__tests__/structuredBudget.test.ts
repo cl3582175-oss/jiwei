@@ -9,6 +9,24 @@ function answering() {
   return new MockLanguageModelV4({ doStream: async () => ({ stream: stream(success) }) })
 }
 
+it('纯文本请求复用同一自适应额度策略，length后翻倍而不包JSON', async () => {
+  const { createModelRequest } = await import('../request')
+  let count = 0
+  f.model = new MockLanguageModelV4({
+    doStream: async () => ({
+      stream: stream([
+        { type: 'text-start', id: 't' },
+        { type: 'text-delta', id: 't', delta: ++count === 1 ? '' : '# Markdown' },
+        { type: 'text-end', id: 't' },
+        { type: 'finish', finishReason: { unified: count === 1 ? 'length' : 'stop', raw: 'stop' }, usage: usage(100, 90) }
+      ])
+    })
+  })
+  await expect(createModelRequest(args()).generate('text')).resolves.toMatchObject({ text: '# Markdown' })
+  expect(f.model.doStreamCalls.map((c) => c.maxOutputTokens)).toEqual([8192, 16384])
+  expect(f.model.doStreamCalls.every((c) => !c.tools?.length)).toBe(true)
+})
+
 it('SDK强制工具校验不能吞掉服务商的length和推理用量', async () => {
   const { generateWithIdle } = await import('../request')
   f.model = new MockLanguageModelV4({

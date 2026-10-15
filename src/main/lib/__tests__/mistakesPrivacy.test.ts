@@ -66,6 +66,17 @@ vi.mock('../../db', () => ({ getDb: () => memoryDb }))
 vi.mock('electron', () => ({ nativeImage: {} }))
 vi.mock('electron-log/main', () => ({ default: { warn: vi.fn() } }))
 vi.mock('ai', () => ({
+  streamText: (request: ModelRequest) => {
+    state.requests.push(request)
+    const result = state.generate(request) as Promise<ReturnType<typeof response>>
+    return {
+      fullStream: (async function* () { const r = await result; yield { type: 'finish', finishReason: 'stop', totalUsage: r.usage } })(),
+      get text() { return result.then((r) => r.text) },
+      get toolCalls() { return result.then((r) => r.toolCalls) },
+      get usage() { return result.then((r) => r.usage) },
+      get finishReason() { return Promise.resolve('stop') }
+    }
+  },
   generateText: (request: ModelRequest) => { state.requests.push(request); return state.generate(request) },
   tool: (value: unknown) => value
 }))
@@ -100,7 +111,7 @@ const original = { question: '求 2+2。', myAnswer: '2+2=5', correctAnswer: '4'
 const diagnosis = { cause: 'calculation', evidence: '2+2=5', reason: '“2+2=5”这一步错了，应为 2+2=4。', concepts: ['加法'] }
 function response(request: ModelRequest) {
   const output = request.system.startsWith('你将题目原件') ? { questions: [original] } : diagnosis
-  return { toolCalls: request.tools ? [{ toolName: 'submit', input: output }] : [], text: JSON.stringify(output), usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 } }
+  return { toolCalls: request.tools ? [{ toolName: 'submit', input: output }] : [], text: JSON.stringify(output), usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2, inputTokenDetails: { noCacheTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 }, outputTokenDetails: { textTokens: 1, reasoningTokens: 0 } } }
 }
 function row(id: string, fields: Partial<Row> = {}): Row {
   return { id, noteId: null, rowId: null, sourceKind: 'manual', sourceRef: null, assetId: null, cropAssetId: null,
@@ -115,7 +126,7 @@ function correctionQuestions(): string[] {
   return data.corrections.map((correction) => correction.question)
 }
 async function run(): Promise<unknown> {
-  return state.jobs.get('mistake-split')!.run({ id: TARGET, text: '求 2+2。我的答案 2+2=5。' }, { isCanceled: () => false, progress: () => undefined, worker: async <T>() => undefined as T })
+  return state.jobs.get('mistake-split')!.run({ id: TARGET, text: '求 2+2。我的答案 2+2=5。' }, { step: <T>(_key: string, _sourceId: string | null, fn: () => Promise<T>) => fn(), isCanceled: () => false, progress: () => undefined, worker: async <T>() => undefined as T })
 }
 function notAdmitted(): void {
   expect(target()).toMatchObject({ question: 'target original', cause: 'unknown', causeReason: '', flags: '["failed"]' })

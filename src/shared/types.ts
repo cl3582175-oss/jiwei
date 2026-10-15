@@ -1166,7 +1166,7 @@ export interface JiweiEvents {
   'settings:changed': Record<string, never>
   'providers:changed': Record<string, never>
   /** 整份资料的导图 / 总结 / 提纲已作为提案放进笔记（v0.7.6） */
-  'digest:done': { noteId: string; title: string; task: 'mindmap' | 'summary' | 'outline' }
+  'digest:done': { noteId: string; title: string; task: 'mindmap' | 'summary' | 'outline'; redirectedFrom?: string; noteTitle?: string }
   'usage:alert': { kind: 'daily' | 'monthly'; spent: number; limit: number }
   'agent:approval': import('./agent').ApprovalRequest
   'agent:approval-done': { id: string; messageId: string; allow: boolean }

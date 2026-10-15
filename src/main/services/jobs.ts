@@ -3,8 +3,8 @@ import { withRun } from './agent/context'
 import { join } from 'path'
 import { and, asc, desc, eq, inArray, lte, sql } from 'drizzle-orm'
 import log from 'electron-log/main'
-import { getDb } from '../db'
-import { jobs } from '../db/schema'
+import { getDb, getSqlite } from '../db'
+import { jobs, jobSteps, sources } from '../db/schema'
 import { newId } from '../lib/ids'
 import { emit } from '../events'
 import type { Job } from '@shared/types'
@@ -19,7 +19,52 @@ const MAX_ATTEMPTS = 3
 const CONCURRENCY = 2
 const TICK_MS = 1000
 
+export class PermanentJobError extends Error {
+  readonly permanent = true
+  constructor(message: string) {
+    super(message)
+    this.name = 'PermanentJobError'
+  }
+}
+export class TemporaryJobError extends Error {
+  readonly temporary = true
+  constructor(message: string) {
+    super(message)
+    this.name = 'TemporaryJobError'
+  }
+}
+function temporary(error: unknown): boolean {
+  const e = error as { permanent?: boolean; temporary?: boolean; statusCode?: number; code?: string; message?: string; cause?: unknown }
+  if (e?.permanent) return false
+  return (
+    !!e?.temporary ||
+    e?.statusCode === 429 ||
+    (e?.statusCode !== undefined && e.statusCode >= 500 && e.statusCode < 600) ||
+    /overload|busy|负载|rate limit|network|fetch failed|ECONN|ETIMEDOUT|EAI_AGAIN|ENOTFOUND/i.test(
+      `${e?.message ?? ''} ${e?.code ?? ''}`
+    ) ||
+    (!!e?.cause && e.cause !== error && temporary(e.cause))
+  )
+}
+function waitRetry(ms: number, signal: AbortSignal): Promise<void> {
+  signal.throwIfAborted()
+  return new Promise((resolve, reject) => {
+    const abort = (): void => {
+      clearTimeout(timer)
+      reject(signal.reason)
+    }
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', abort)
+      resolve()
+    }, ms)
+    signal.addEventListener('abort', abort, { once: true })
+  })
+}
+
 export interface JobContext {
+  /** 同一次任务恢复时的交付幂等标识。 */
+  readonly jobId?: string
+  step<T>(key: string, sourceId: string | null, fn: () => Promise<T>): Promise<T>
   signal?: AbortSignal
   progress(p: number): void
   /** 在工作进程中执行任务 */
@@ -178,14 +223,14 @@ export function enqueue(kind: string, payload: unknown, opts?: { dedupeKey?: str
   return id
 }
 
-function setStatus(id: string, set: Partial<Row>): void {
+function setStatus(id: string, set: Partial<Row>, notify = true): void {
   if (stopped) return
   getDb()
     .update(jobs)
     .set({ ...set, updatedAt: Date.now() })
     .where(eq(jobs.id, id))
     .run()
-  emit('jobs:changed', { ids: [id] })
+  if (notify) emit('jobs:changed', { ids: [id] })
 }
 
 async function execute(r: Row): Promise<void> {
@@ -199,13 +244,60 @@ async function execute(r: Row): Promise<void> {
   controllers.set(r.id, abort)
   setStatus(r.id, { status: 'running', attempts: r.attempts + 1, progress: 0 })
   let lastEmit = 0
+  const identity = getDb()
   const ctx: JobContext = {
+    jobId: r.id,
     signal: abort.signal,
+    step: async <T>(key: string, sourceId: string | null, fn: () => Promise<T>): Promise<T> => {
+      const guard = (): void => {
+        abort.signal.throwIfAborted()
+        if (stopped || canceled.has(r.id) || getDb() !== identity) throw new Error('canceled')
+        if (sourceId) {
+          const source = identity.select({ deletedAt: sources.deletedAt }).from(sources).where(eq(sources.id, sourceId)).get()
+          if (!source || source.deletedAt !== null) throw new PermanentJobError('Source unavailable')
+        }
+      }
+      guard()
+      const saved = identity
+        .select()
+        .from(jobSteps)
+        .where(and(eq(jobSteps.jobId, r.id), eq(jobSteps.stepKey, key)))
+        .get()
+      if (saved) return JSON.parse(saved.output) as T
+      const retry = async <V>(work: () => Promise<V>): Promise<V> => {
+        let truncations = 0
+        for (let attempt = 0; ; attempt++) {
+          guard()
+          try {
+            return await work()
+          } catch (error) {
+            guard()
+            if (!temporary(error) || attempt >= 3 || ((error as Error)?.name === 'ModelOutputTruncated' && ++truncations > 1)) throw error
+            await waitRetry([30_000, 60_000, 120_000][attempt], abort.signal)
+          }
+        }
+      }
+      const result = await retry(fn)
+      const output = JSON.stringify(result)
+      if (output === undefined) throw new PermanentJobError('Step output is not JSON serializable')
+      // 生成与落库分开重试：数据库忙时保留本轮已生成的值，不再调用模型。
+      await retry(async () => {
+        identity.transaction(() => {
+          guard()
+          identity
+            .insert(jobSteps)
+            .values({ jobId: r.id, stepKey: key, sourceId, output, createdAt: Date.now() })
+            .onConflictDoNothing()
+            .run()
+        })
+      })
+      return result
+    },
     progress: (p) => {
       // 进度事件限流
-      if (Date.now() - lastEmit < 200 && p < 1) return
-      lastEmit = Date.now()
-      setStatus(r.id, { progress: Math.max(0, Math.min(1, p)) })
+      const notify = Date.now() - lastEmit >= 200 || p >= 1
+      if (notify) lastEmit = Date.now()
+      setStatus(r.id, { progress: Math.max(0, Math.min(1, p)) }, notify)
     },
     worker: (task, payload, signal) =>
       runInWorker(task, payload, ctx.progress, signal ? AbortSignal.any([abort.signal, signal]) : abort.signal),
@@ -215,13 +307,16 @@ async function execute(r: Row): Promise<void> {
   try {
     const result = await withRun({ purpose: r.kind, caller: 'job' }, () => kind.run(JSON.parse(r.payload), ctx))
     if (canceled.has(r.id)) return
-    setStatus(r.id, { status: 'done', progress: 1, error: null, result: result === undefined ? null : JSON.stringify(result) })
+    identity.transaction(() => {
+      setStatus(r.id, { status: 'done', progress: 1, error: null, result: result === undefined ? null : JSON.stringify(result) })
+      identity.delete(jobSteps).where(eq(jobSteps.jobId, r.id)).run()
+    })
   } catch (e) {
     if (canceled.has(r.id)) return
     const attempts = r.attempts + 1
     const msg = voiceErrorText(e)
     log.warn('[jobs]', r.kind, r.id, 'failed', attempts, msg)
-    if (attempts < (kind.maxAttempts ?? MAX_ATTEMPTS))
+    if (!(e as { permanent?: boolean })?.permanent && attempts < (kind.maxAttempts ?? MAX_ATTEMPTS))
       setStatus(r.id, { status: 'queued', error: msg, runAfter: Date.now() + 5000 * 2 ** attempts })
     else setStatus(r.id, { status: 'failed', error: msg })
   } finally {
@@ -263,6 +358,9 @@ function tick(): void {
 
 export function startJobs(): void {
   stopped = false
+  getSqlite()
+    .prepare('DELETE FROM job_steps WHERE created_at < ? OR job_id NOT IN (SELECT id FROM jobs)')
+    .run(Date.now() - 30 * 86_400_000)
   for (const row of getDb().select().from(jobs).where(eq(jobs.status, 'running')).all()) {
     if (kinds.get(row.kind)?.retryOnRestart === false)
       getDb()
@@ -363,4 +461,5 @@ export function pruneJobs(): void {
     .delete(jobs)
     .where(and(inArray(jobs.status, ['done', 'canceled']), lte(jobs.updatedAt, Date.now() - 30 * 86_400_000)))
     .run()
+  getSqlite().prepare('DELETE FROM job_steps WHERE job_id NOT IN (SELECT id FROM jobs)').run()
 }

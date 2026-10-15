@@ -169,12 +169,17 @@ function useMainEvents(): void {
         void qc.invalidateQueries({ queryKey: ['plan', 'forecast'] })
       }),
       // 整份资料的导图 / 总结 / 提纲做好了（v0.7.6）
-      window.jiweiEvents.on('digest:done', ({ noteId, title, task }) => {
+      window.jiweiEvents.on('digest:done', ({ noteId, title, task, redirectedFrom, noteTitle }) => {
         void qc.invalidateQueries({ queryKey: ['notes'] })
-        toast.success(i18n.t('workspace.digest.done', { title, task: i18n.t(`workspace.digest.task.${task}`) }), {
-          duration: 12_000,
-          action: { label: i18n.t('workspace.digest.open'), onClick: () => useApp.getState().openNote(noteId) }
-        })
+        toast.success(
+          redirectedFrom
+            ? i18n.t('notes.digestRedirected').replace('{title}', noteTitle ?? title)
+            : i18n.t('workspace.digest.done', { title, task: i18n.t(`workspace.digest.task.${task}`) }),
+          {
+            duration: 12_000,
+            action: { label: i18n.t('workspace.digest.open'), onClick: () => useApp.getState().openNote(noteId) }
+          }
+        )
       }),
       window.jiweiEvents.on('plugins:changed', () => {
         for (const key of [

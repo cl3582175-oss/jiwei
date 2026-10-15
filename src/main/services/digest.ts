@@ -1,22 +1,27 @@
+import { createHash } from 'node:crypto'
+import { canUseNote } from './notePrivacy'
+import { createModelRequest } from './ai/request'
+import { parsePointLines, normalizeMindmap, normalizeOutline, DigestTreeSchema, DigestOutlineSchema, type Points } from './digestFormat'
+import { notePrivacyEn, notePrivacyZh } from '../../renderer/src/features/notes/notePrivacyMessages'
 import { protectNoteAttachments, protectProposalAttachments } from './attachmentDerived'
 import { tablePreview } from '../lib/attachmentText'
 import { canReadSource, isConversationAttachment } from './attachmentsAccess'
 import { eq } from 'drizzle-orm'
 import { z } from 'zod'
-import { getDb } from '../db'
+import { getDb, getSqlite } from '../db'
 import { sources } from '../db/schema'
 import { emit } from '../events'
 import { markdownToNodes } from '../lib/markdown'
 import type { ProposalOp, Segment } from '@shared/types'
 import { formatMoney } from '@shared/money'
-import { enqueue, registerJobKind, type JobContext } from './jobs'
+import { enqueue, registerJobKind, PermanentJobError, TemporaryJobError, type JobContext } from './jobs'
 import { listSegments } from './segments'
-import { createNote } from './notes'
+import { createNote, getNote } from './notes'
 import { createProposal } from './proposals'
 import { relate } from './connections'
 import { getSettings } from './settings'
 import { quickModel, structured } from './ai/structured'
-import { buildMindmap, NestedSchema } from './ai/tools'
+import { buildMindmap } from './ai/tools'
 import { costOf } from './agent/pricing'
 
 // 整份资料（或一个页码范围）的思维导图 / 总结 / 康奈尔提纲（v0.7.6）。
@@ -38,6 +43,15 @@ export interface DigestInput {
 
 const CHUNK = 9000
 const JOB = 'source.digest'
+const PROMPT_VERSION = 'digest-v2'
+interface DigestJobInput extends DigestInput {
+  noteId: string
+  redirectedFrom?: string
+}
+const stepKey = (model: string, data: unknown): string =>
+  createHash('sha256')
+    .update(JSON.stringify([PROMPT_VERSION, model, data]))
+    .digest('hex')
 
 const pageOf = (s: Segment): number | null => {
   const m = /page=(\d+)/.exec(String((s.locator as { value?: unknown }).value ?? ''))
@@ -149,191 +163,242 @@ export function describeDigest(input: DigestInput, zh: boolean): { title: string
       : 'the whole source'
   const s = getSettings()
   const cost = e.cost === null ? (zh ? '价格未知' : 'unknown') : `≈ ${formatMoney(e.cost, s.money, s.language)}`
+  const redirect =
+    input.noteId && !canUseNote(input.noteId, input.conversationId ?? null) ? (zh ? notePrivacyZh : notePrivacyEn).digestTargetRedirect : ''
   return zh
     ? {
         title: `把《${title}》${range}整理成${TASK_ZH[input.task]}`,
-        detail: `共 ${e.segments} 段，分 ${e.batches} 批读取；预计费用 ${cost}（以实际为准）。在后台进行，完成后作为提案放进笔记，由你确认。`
+        detail: `共 ${e.segments} 段，分 ${e.batches} 批读取；预计费用 ${cost}（以实际为准）。在后台进行，完成后作为提案放进笔记，由你确认。${redirect ? ` ${redirect}` : ''}`
       }
     : {
         title: `Turn ${range} of "${title}" into a ${TASK_EN[input.task]}`,
-        detail: `${e.segments} segments in ${e.batches} batches; estimated cost ${cost}. Runs in the background and arrives as a proposal in a note for you to confirm.`
+        detail: `${e.segments} segments in ${e.batches} batches; estimated cost ${cost}. Runs in the background and arrives as a proposal in a note for you to confirm.${redirect ? ` ${redirect}` : ''}`
       }
 }
 
+function validate(input: DigestInput): void {
+  if (
+    !input.sourceId ||
+    !input.providerId ||
+    !input.model ||
+    !['mindmap', 'summary', 'outline'].includes(input.task) ||
+    (input.fromPage != null && (!Number.isInteger(input.fromPage) || input.fromPage < 1)) ||
+    (input.toPage != null && (!Number.isInteger(input.toPage) || input.toPage < (input.fromPage ?? 1)))
+  )
+    throw new PermanentJobError('Invalid digest parameters')
+}
+
+function newDigestNote(input: DigestInput, src: { id: string; title: string; space: string }): string {
+  const zh = getSettings().language.startsWith('zh')
+  const id = createNote({ title: zh ? `《${src.title}》${TASK_ZH[input.task]}` : `${src.title} — ${TASK_EN[input.task]}` }).id
+  relate(id, 'source', input.sourceId)
+  if (src.space === 'attachment') protectNoteAttachments(id, [src.id])
+  return id
+}
+
 export function startDigest(input: DigestInput): { jobId: string; noteId: string } {
+  validate(input)
   const src = getDb().select().from(sources).where(eq(sources.id, input.sourceId)).get()
-  if (!src || src.deletedAt) throw new Error('Source not found')
-  if (!canReadSource(input.sourceId, input.conversationId ?? null)) throw new Error('This source is excluded from AI')
-  if (!rangeOf(input).length) throw new Error(getSettings().language.startsWith('zh') ? '这个范围里没有文字内容' : 'No text in this range')
+  if (!src || src.deletedAt) throw new PermanentJobError('Source not found')
+  if (!canReadSource(input.sourceId, input.conversationId ?? null)) throw new PermanentJobError('This source is excluded from AI')
+  if (!rangeOf(input).length)
+    throw new PermanentJobError(getSettings().language.startsWith('zh') ? '这个范围里没有文字内容' : 'No text in this range')
   const noteId = getDb().transaction(() => {
-    let id = input.noteId ?? null
-    if (!id) {
-      const zh = getSettings().language.startsWith('zh')
-      id = createNote({
-        title: zh ? `《${src.title}》${TASK_ZH[input.task]}` : `${src.title} — ${TASK_EN[input.task]}`
-      }).id
-      relate(id, 'source', input.sourceId)
-    }
+    const id = input.noteId && canUseNote(input.noteId, input.conversationId ?? null) ? input.noteId : newDigestNote(input, src)
     if (src.space === 'attachment') protectNoteAttachments(id, [src.id])
     return id
   })
-  const jobId = enqueue(JOB, { ...input, noteId })
+  const redirectedFrom = input.noteId && input.noteId !== noteId ? input.noteId : undefined
+  const jobId = enqueue(JOB, { ...input, noteId, ...(redirectedFrom ? { redirectedFrom } : {}) })
   return { jobId, noteId }
 }
 
-const PointsSchema = z.object({
-  topic: z.string().max(60).describe('这一批内容的主题（不超过 20 字）'),
-  points: z
-    .array(z.object({ text: z.string().min(1).max(120), segmentId: z.string().max(64) }))
-    .min(1)
-    .max(14)
-})
-type Points = z.infer<typeof PointsSchema>
-
-async function run(input: DigestInput & { noteId: string }, ctx: JobContext): Promise<{ noteId: string }> {
+async function run(input: DigestJobInput, ctx: JobContext): Promise<{ noteId: string }> {
+  validate(input)
+  const guard = (): void => {
+    if (ctx.isCanceled() || ctx.signal?.aborted) throw ctx.signal?.reason ?? new Error('canceled')
+    if (!canReadSource(input.sourceId, input.conversationId ?? null)) throw new PermanentJobError('Source access revoked')
+  }
+  guard()
   const zh = getSettings().language.startsWith('zh')
-  const src = getDb().select().from(sources).where(eq(sources.id, input.sourceId)).get()
-  if (!src || !canReadSource(input.sourceId, input.conversationId ?? null)) throw new Error('Source unavailable')
+  const src = getDb().select().from(sources).where(eq(sources.id, input.sourceId)).get()!
   if (src.space === 'attachment') protectNoteAttachments(input.noteId, [src.id])
   const parts = chunks(rangeOf(input))
+  if (!parts.length) throw new PermanentJobError('No text in this range')
   const quick = quickModel(input.providerId, input.model)
+  const keys = parts.map((part) => stepKey(quick, ['map', zh, part.ids, part.text]))
   const mapped: Points[] = []
-  // 1. 逐批提炼要点（带片段 ID，结果里的节点可以回到原文）
+  const request = (model: string, system: string, prompt: string) => ({
+    guard,
+    purpose: 'digest',
+    providerId: input.providerId,
+    model,
+    system,
+    prompt,
+    signal: ctx.signal,
+    sensitive: true
+  })
   for (const [i, part] of parts.entries()) {
-    if (!canReadSource(input.sourceId, input.conversationId ?? null)) throw new Error('Source access revoked')
-    if (ctx.isCanceled()) throw new Error('canceled')
+    guard()
     mapped.push(
-      await structured({
-        guard: () => {
-          if (!canReadSource(input.sourceId, input.conversationId ?? null)) throw new Error('Source access revoked')
-        },
-        purpose: 'digest',
-        providerId: input.providerId,
-        model: quick,
-        system: zh
-          ? '你在帮用户通读一份长资料。下面是其中连续的一段，每行开头的方括号是片段 ID 与页码。提炼这一段最重要的要点（5～12 条，每条一句话，不超过 40 字），每条注明出自哪个片段 ID。只写原文里有的内容。'
-          : 'You are reading a long source with the user. Below is one consecutive part; each line starts with [segment ID page]. Extract the 5–12 most important points (one sentence each) and cite the segment ID for each. Only use what the text says.',
-        prompt: part.text,
-        schema: PointsSchema
+      await ctx.step(keys[i], input.sourceId, async () => {
+        const r = await createModelRequest(
+          request(
+            quick,
+            zh
+              ? '你在帮用户通读一份长资料。每行方括号是片段 ID 与页码。只提炼原文中的核心内容。第一行写 # 主题，之后每行写 - 要点 {片段ID}。写 5～12 条，每条一句、不超过 60 字。不要 JSON，不要解释格式。'
+              : 'Read this consecutive part of a long source. Each line starts with [segment ID page]. Use only supplied facts. The first line is # Topic, then one - point {segmentID} per line. Give 5–12 points, at most 60 characters each. No JSON or format commentary.',
+            part.text
+          )
+        ).generate('text')
+        guard()
+        const points = parsePointLines(r.text, new Set(part.ids))
+        if (!points.points.length) throw new TemporaryJobError('Empty digest points')
+        return points
       })
     )
-    ctx.progress(((i + 1) / (parts.length + 1)) * 0.9)
+    ctx.progress(Math.min(0.95, (i + 1) / (parts.length + 1)))
   }
   const digest = mapped
-    .map((m, i) => `## ${i + 1}. ${m.topic}\n${m.points.map((p) => `- ${p.text} {${p.segmentId}}`).join('\n')}`)
+    .map((m, i) => `## ${i + 1}. ${m.topic}\n${m.points.map((p) => `- ${p.text}${p.segmentId ? ` {${p.segmentId}}` : ''}`).join('\n')}`)
     .join('\n\n')
   const valid = new Set(parts.flatMap((p) => p.ids))
-  const segs = (ids: (string | undefined)[]): string[] => ids.filter((id): id is string => !!id && valid.has(id))
-  let ops: ProposalOp[]
-  let embeds: Record<string, { kind: string; data: unknown }> | undefined
-  let cited: string[]
+  const segs = (ids: (string | undefined)[]): string[] => [...new Set(ids.filter((id): id is string => !!id && valid.has(id)))]
   const range =
     input.fromPage != null || input.toPage != null
       ? zh
         ? `第 ${input.fromPage ?? 1}–${input.toPage ?? '末'} 页`
         : `pp. ${input.fromPage ?? 1}–${input.toPage ?? 'end'}`
       : ''
-  // 2. 汇总
-  if (input.task === 'mindmap') {
-    const { tree } = await structured({
-      guard: () => {
-        if (!canReadSource(input.sourceId, input.conversationId ?? null)) throw new Error('Source access revoked')
-      },
-      purpose: 'digest',
-      providerId: input.providerId,
-      model: input.model,
-      system: zh
-        ? '根据各部分要点，为整份资料画一张思维导图：根节点是资料主题（不超过 12 字）；第一层 4～8 个分支，按同一维度划分（通常是章节或主题），互不重叠；2～3 层，总节点 20～45 个；节点是关键词或短语（不超过 15 字）。节点来自某条要点时，把花括号里的片段 ID 填到 segmentId。'
-        : 'From the part summaries, draw a mind map of the whole source: root = topic; 4–8 first-level branches along one dimension; 2–3 levels, 20–45 nodes; short phrases. Put the segment ID from braces into segmentId when a node comes from a point.',
-      prompt: `《${src.title}》${range}\n\n${digest}`,
-      schema: z.object({ tree: NestedSchema })
-    })
-    const { data, segs: used } = buildMindmap(tree)
-    cited = segs(used)
-    embeds = { mm: { kind: 'mindmap', data } }
-    ops = [
-      {
-        op: 'insert_row',
-        afterRowId: null,
-        cue: markdownToNodes(
-          zh ? `《${src.title}》${range}的整体结构是什么？` : `What is the structure of "${src.title}"${range ? ` (${range})` : ''}?`
+  const prompt = `《${src.title}》${range}\n\n${digest}`
+  const reduceKey = stepKey(input.model, ['reduce', input.task, zh, keys, prompt])
+  const result = await ctx.step(reduceKey, input.sourceId, async () => {
+    guard()
+    let ops: ProposalOp[]
+    let embeds: Record<string, { kind: string; data: unknown }> | undefined
+    let cited: string[]
+    if (input.task === 'mindmap') {
+      const r = await structured({
+        ...request(
+          input.model,
+          zh
+            ? '根据各部分要点画整份资料的思维导图。根节点不超过12字，第一层4～8个分支，2～3层、20～45节点，节点不超过15字。引用要点时填写对应 segmentId。'
+            : 'Draw a mind map from the part summaries: root topic, 4–8 branches, 2–3 levels, 20–45 short nodes. Cite segmentId for sourced nodes.',
+          prompt
         ),
-        body: [{ type: 'embed', attrs: { id: 'mm', kind: 'mindmap' } }]
-      }
-    ]
-  } else if (input.task === 'summary') {
-    const r = await structured({
-      guard: () => {
-        if (!canReadSource(input.sourceId, input.conversationId ?? null)) throw new Error('Source access revoked')
-      },
-      purpose: 'digest',
-      providerId: input.providerId,
-      model: input.model,
-      system: zh
-        ? '根据各部分要点，写整份资料的总结：先用 2～3 句话说清主题与核心结论，再按结构分 3～7 个小标题，每个小标题下 2～4 条要点。总长 500～1200 字，Markdown。'
-        : 'From the part summaries, summarize the whole source: 2–3 sentences on the topic and main conclusions, then 3–7 headed sections with 2–4 points each. 400–900 words, Markdown.',
-      prompt: `《${src.title}》${range}\n\n${digest}`,
-      schema: z.object({ markdown: z.string().min(50).max(8000) })
-    })
-    cited = segs(mapped.flatMap((m) => m.points.map((p) => p.segmentId)))
-    ops = [
-      {
-        op: 'insert_row',
-        afterRowId: null,
-        cue: markdownToNodes(zh ? `《${src.title}》${range}讲了什么？` : `What does "${src.title}" cover?`),
-        body: markdownToNodes(r.markdown)
-      }
-    ]
-  } else {
-    const r = await structured({
-      guard: () => {
-        if (!canReadSource(input.sourceId, input.conversationId ?? null)) throw new Error('Source access revoked')
-      },
-      purpose: 'digest',
-      providerId: input.providerId,
-      model: input.model,
-      system: zh
-        ? '根据各部分要点，为整份资料起草康奈尔笔记提纲：6～16 行，每行的线索是一个复习问题（不超过 25 字，优先问为什么 / 怎么做 / 有什么区别），笔记是 2～5 条要点（Markdown 列表），并列出这一行依据的片段 ID。'
-        : 'From the part summaries, draft a Cornell outline: 6–16 rows; cue = a review question; body = 2–5 bullet points (Markdown); list the segment IDs used.',
-      prompt: `《${src.title}》${range}\n\n${digest}`,
-      schema: z.object({
-        rows: z
-          .array(
-            z.object({
-              cue: z.string().min(1).max(200),
-              body: z.string().min(1).max(2000),
-              segmentIds: z.array(z.string().max(64)).max(12)
-            })
-          )
-          .min(1)
-          .max(24)
+        schema: z.object({ tree: DigestTreeSchema })
       })
-    })
-    cited = segs(r.rows.flatMap((row) => row.segmentIds))
-    ops = r.rows.map((row) => ({
-      op: 'insert_row' as const,
-      afterRowId: null,
-      cue: markdownToNodes(row.cue),
-      body: markdownToNodes(row.body)
-    }))
-  }
-  if (ctx.isCanceled()) throw new Error('canceled')
-  const proposal = createProposal({
-    noteId: input.noteId,
-    conversationId: input.conversationId,
-    title: zh ? `${TASK_ZH[input.task]}：《${src.title}》${range}` : `${TASK_EN[input.task]}: ${src.title}`,
-    ops,
-    model: input.model,
-    embeds,
-    sources: cited.length ? [...new Set(cited)].map((id) => ({ type: 'segment' as const, id })) : undefined
+      const { data, segs: used } = buildMindmap(normalizeMindmap(r.tree, valid))
+      cited = segs(used)
+      embeds = { mm: { kind: 'mindmap', data } }
+      ops = [
+        {
+          op: 'insert_row',
+          afterRowId: null,
+          cue: markdownToNodes(zh ? `《${src.title}》${range}的整体结构是什么？` : `What is the structure of "${src.title}"?`),
+          body: [{ type: 'embed', attrs: { id: 'mm', kind: 'mindmap' } }]
+        }
+      ]
+    } else if (input.task === 'summary') {
+      const r = await createModelRequest(
+        request(
+          input.model,
+          zh
+            ? '根据各部分要点写整份资料的总结：先用2～3句话说清主题与核心结论，再按结构分3～7个小标题，每个小标题下2～4条要点。总长500～1200字。直接输出Markdown正文，不要JSON、不要工具调用。'
+            : 'Summarize the whole source from these part summaries: 2–3 sentences for the main conclusions, 3–7 headed sections with 2–4 points each, 400–900 words. Output Markdown directly, no JSON or tool calls.',
+          prompt
+        )
+      ).generate('text')
+      if (!r.text.trim()) throw new TemporaryJobError('Empty digest summary')
+      cited = segs(mapped.flatMap((m) => m.points.map((p) => p.segmentId)))
+      ops = [
+        {
+          op: 'insert_row',
+          afterRowId: null,
+          cue: markdownToNodes(zh ? `《${src.title}》${range}讲了什么？` : `What does "${src.title}" cover?`),
+          body: markdownToNodes(r.text)
+        }
+      ]
+    } else {
+      const r = await structured({
+        ...request(
+          input.model,
+          zh
+            ? '根据各部分要点起草整份资料的康奈尔笔记提纲：6～16行，每行线索是复习问题，笔记是2～5条Markdown要点，并列出依据的片段ID。'
+            : 'Draft a Cornell outline from the summaries: 6–16 rows, review questions as cues, 2–5 Markdown points each, and supporting segment IDs.',
+          prompt
+        ),
+        schema: DigestOutlineSchema
+      })
+      const rows = normalizeOutline(r.rows, valid)
+      if (!rows.length) throw new TemporaryJobError('Empty digest outline')
+      cited = segs(rows.flatMap((row) => row.segmentIds))
+      ops = rows.map((row) => ({
+        op: 'insert_row' as const,
+        afterRowId: null,
+        cue: markdownToNodes(row.cue),
+        body: markdownToNodes(row.body)
+      }))
+    }
+    guard()
+    return { ops, embeds, cited }
   })
-  protectProposalAttachments(proposal.id, [input.sourceId])
-  emit('digest:done', { noteId: input.noteId, title: src.title, task: input.task })
-  return { noteId: input.noteId }
+  ctx.progress(0.95)
+  guard()
+  let noteId = input.noteId
+  const deliveryKey = stepKey(input.model, ['saved', reduceKey])
+  getDb().transaction(() => {
+    guard()
+    const saved = ctx.jobId
+      ? (getSqlite()
+          .prepare(
+            `SELECT s.output FROM job_steps s JOIN proposals p ON p.id=json_extract(s.output,'$.proposalId')
+       JOIN notes n ON n.id=p.note_id WHERE s.job_id=? AND s.step_key=? AND n.deleted_at IS NULL`
+          )
+          .get(ctx.jobId, deliveryKey) as { output: string } | undefined)
+      : undefined
+    if (saved) {
+      noteId = (JSON.parse(saved.output) as { noteId: string }).noteId
+      return
+    }
+    if (!canUseNote(noteId, input.conversationId ?? null)) {
+      try {
+        noteId = newDigestNote(input, src)
+      } catch {
+        throw new PermanentJobError('Cannot create digest result note')
+      }
+    }
+    const proposal = createProposal({
+      noteId,
+      conversationId: input.conversationId,
+      title: zh ? `${TASK_ZH[input.task]}：《${src.title}》${range}` : `${TASK_EN[input.task]}: ${src.title}`,
+      ops: result.ops,
+      model: input.model,
+      embeds: result.embeds,
+      sources: result.cited.length ? result.cited.map((id) => ({ type: 'segment' as const, id })) : undefined
+    })
+    protectProposalAttachments(proposal.id, [input.sourceId])
+    if (ctx.jobId)
+      getSqlite()
+        .prepare(
+          `INSERT INTO job_steps(job_id,step_key,source_id,output,created_at) VALUES(?,?,?,?,?)
+       ON CONFLICT(job_id,step_key) DO UPDATE SET output=excluded.output,created_at=excluded.created_at`
+        )
+        .run(ctx.jobId, deliveryKey, input.sourceId, JSON.stringify({ noteId, proposalId: proposal.id }), Date.now())
+  })
+  const redirectedFrom = noteId !== input.noteId ? input.noteId : input.redirectedFrom
+  emit('digest:done', {
+    noteId,
+    title: src.title,
+    task: input.task,
+    ...(redirectedFrom ? { redirectedFrom, noteTitle: getNote(noteId)?.title ?? '' } : {})
+  })
+  ctx.progress(1)
+  return { noteId }
 }
 
 export function registerDigestJob(): void {
-  registerJobKind<DigestInput & { noteId: string }>(JOB, {
+  registerJobKind<DigestJobInput>(JOB, {
     title: (p) => {
       const src = getDb().select({ title: sources.title, space: sources.space }).from(sources).where(eq(sources.id, p.sourceId)).get()
       const title =
