@@ -1,6 +1,14 @@
 export function parseJudgement(
   text: string
-): { correct: number; complete: number; citations: number; honesty: number; reason: string; total: number } | null {
+): {
+  correct: number
+  complete: number
+  citations: number
+  honesty: number
+  reason: string
+  total: number
+  refused: boolean | null
+} | null {
   const begin = text.indexOf('{'),
     end = text.lastIndexOf('}')
   if (begin < 0 || end <= begin) return null
@@ -15,6 +23,7 @@ export function parseJudgement(
       complete,
       citations,
       honesty,
+      refused: typeof value.refused === 'boolean' ? value.refused : null,
       reason: typeof value.reason === 'string' ? value.reason : '',
       total: correct + complete + citations + honesty
     }

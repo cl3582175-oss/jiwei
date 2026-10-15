@@ -20,6 +20,7 @@ export interface EvalHit {
   text: string
   title: string
   heading?: string
+  locator?: string | null
   parentType: string
   parentId: string
   ownerId: string

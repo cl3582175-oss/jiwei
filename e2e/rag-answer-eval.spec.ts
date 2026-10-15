@@ -1,5 +1,5 @@
 import { test, expect, type ElectronApplication, type Page } from '@playwright/test'
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve, relative, isAbsolute } from 'node:path'
 import { launchRagApp } from './fixtures/ragApp'
@@ -22,14 +22,26 @@ test.beforeAll(async () => {
     userData: string
   }
   if (!resolve(library.userData).startsWith(resolve(tmpdir()) + '/')) throw new Error('只能使用已有的隔离评测库')
-  app = await launchRagApp(library.userData, process.env.JIWEI_IMPORT_PROVIDERS_FROM)
+  app = await launchRagApp(
+    process.env.JIWEI_RAG_PROVIDER_FRESH === '1' ? mkdtempSync(join(tmpdir(), 'rag-provider-probe-')) : library.userData,
+    process.env.JIWEI_IMPORT_PROVIDERS_FROM
+  )
   page = await app.firstWindow()
   await page.waitForSelector('nav')
-  await page.evaluate(async () => {
+  await page.evaluate(async (probe) => {
     const s = await window.jiwei.settings.get()
-    await window.jiwei.settings.set({ ai: { ...s.ai, embedding: { ...s.ai.embedding, mode: 'local' } } })
-    await window.jiwei.embedding.installLocal()
-  })
+    await window.jiwei.settings.set({
+      ai: {
+        ...s.ai,
+        embedding: { ...s.ai.embedding, mode: 'local' },
+        recognition: { mode: 'off', auto: false, figures: false, providerId: null, model: null }
+      },
+      retrieval: { autoUpgrade: false }
+    })
+    for (const job of await window.jiwei.jobs.list())
+      if (job.kind === 'source.recognize' && ['queued', 'running'].includes(job.status)) await window.jiwei.jobs.cancel(job.id)
+    if (!probe) await window.jiwei.embedding.installLocal()
+  }, process.env.JIWEI_RAG_PROVIDER_PROBE === '1')
 })
 test.afterAll(async () => {
   await app?.close()
@@ -37,11 +49,22 @@ test.afterAll(async () => {
 
 test('inspect masked provider metadata for evaluation routing', async () => {
   test.skip(process.env.JIWEI_RAG_PROVIDER_PROBE !== '1', '仅排查已授权的服务商加载')
-  const providers = await page.evaluate(() => window.jiwei.providers.list())
+  let providers = await page.evaluate(() => window.jiwei.providers.list())
+  if (process.env.JIWEI_RAG_FETCH_CUSTOM_MODELS === '1') {
+    for (const p of providers.filter((p) => p.kind === 'custom' && p.enabled && p.hasKey)) {
+      try {
+        await page.evaluate((id) => window.jiwei.providers.fetchModels(id), p.id)
+      } catch {
+        console.log('custom-model-discovery-failed')
+      }
+    }
+    providers = await page.evaluate(() => window.jiwei.providers.list())
+  }
   console.log(
-    JSON.stringify(
-      providers.map((p) => ({ kind: p.kind, enabled: p.enabled, hasKey: p.hasKey, models: p.models.filter((m) => /deepseek/i.test(m)) }))
-    )
+    JSON.stringify({
+      providers: providers.map((p) => ({ kind: p.kind, enabled: p.enabled, hasKey: p.hasKey, models: p.models })),
+      selectedChat: await page.evaluate(() => window.jiwei.settings.get().then((s) => s.ai.chat))
+    })
   )
 })
 
