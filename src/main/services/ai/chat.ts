@@ -33,7 +33,10 @@ import { buildModel } from './model'
 import { recognizeRegion, recognizingSources } from '../recognize'
 import { capsFor, getProviderRow } from './providers'
 import { retrieve } from './retrieve'
-import { contextSourceEvidence, resolveContext } from './context'
+import { estimateTokens } from '../../lib/sourceContext'
+import { retrievalQuery } from './followUp'
+import { modelContextLength } from './modelContext'
+import { contextSourceEvidence, fullSourceEvidence, resolveContext } from './context'
 import { buildTools, numberHits, stepLabel, type AgentSession } from './tools'
 import { attachNoteToolImages } from './noteToolImages'
 import { loadSkill, skillCatalog } from './skills'
@@ -662,7 +665,7 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
     .filter((a) => !a.sourceId.startsWith('note:') && !a.deleted && canReadSource(a.sourceId, conversationId))
     .map((a) => a.sourceId)
   session.suppressAttachmentMemory = hasAttachmentHistory(conversationId)
-  session.retrieveAttachments = async (query, filters, limit) => {
+  session.retrieveAttachments = async (query, filters, limit, opts) => {
     const ids = conversationAttachments(conversationId)
       .filter((a) => !a.sourceId.startsWith('note:') && !a.deleted && canReadSource(a.sourceId, conversationId))
       .map((a) => a.sourceId)
@@ -672,9 +675,15 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
         : {
             type: 'items',
             notes: input.scope.type === 'items' ? input.scope.notes : [],
-            sources: [...new Set([...(input.scope.type === 'items' ? input.scope.sources : []), ...ids])]
+            sources: [
+              ...new Set([
+                ...(input.scope.type === 'items' ? input.scope.sources : []),
+                ...ids,
+                ...(opts?.includeNotes ? (opts.sourceIds ?? []) : [])
+              ])
+            ]
           }
-    return retrieve(query, scope, limit, filters, session.preferSource, { sourceIds: ids })
+    return retrieve(query, scope, limit, filters, session.preferSource, { sourceIds: ids }, opts)
   }
   const stopAttachmentGuard = onMainEvent('attachments:changed', () => {
     if (attachmentTurn.sourceIds.some((id) => !canReadSource(id, conversationId))) ctrl.abort()
@@ -760,17 +769,57 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
     if (feynman) feynman = await ensureReference(conversationId, feynman)
     if (coach) coach = ensureCoachMaterial(conversationId, coach)
     let ctx = special ? { text: '', query: '' } : resolveContext(input.context, zh, conversationId)
-    // 检索：问题本身 + 用户指着的文字
-    const query = [input.text, ctx.query].filter(Boolean).join('\n').slice(0, 2000)
+    const previousUserText = db
+      .select({ content: messages.content })
+      .from(messages)
+      .where(and(eq(messages.conversationId, conversationId), eq(messages.role, 'user')))
+      .orderBy(desc(messages.createdAt))
+      .limit(2)
+      .all()[1]?.content
+    // 与评测共用追问组合；用户选中的文字继续补充检索。
+    const query = [retrievalQuery(input.text, previousUserText ?? null), ctx.query].filter(Boolean).join('\n').slice(0, 2000)
     session.preferSource = 'sourceId' in ctx ? ctx.sourceId : null
     attachmentTurn = special ? attachmentTurn : await prepareAttachmentTurn(conversationId, input.text, zh, uiMode, session.vision ?? false)
+    let sourcePlan = fullSourceEvidence(
+      input.context,
+      input.scope,
+      session.attachmentSourceIds,
+      conversationId,
+      modelContextLength(providerKind, input.model)
+    )
+    // 全文已包含资料所有片段，检索只补笔记；长资料在明确的集合内检索。
+    const retrievalOpts = sourcePlan.full
+      ? { notesOnly: true }
+      : sourcePlan.sourceIds.length
+        ? { sourceIds: sourcePlan.sourceIds, includeNotes: true }
+        : {}
     const retrieved =
-      special || (input.scope.type === 'none' && !session.attachmentSourceIds.length) ? [] : await session.retrieveAttachments(query, {}, 8)
+      special || (input.scope.type === 'none' && !sourcePlan.sourceIds.length)
+        ? []
+        : await session.retrieveAttachments(query, {}, 8, retrievalOpts)
+    if (!special && !sourcePlan.full) {
+      // 保留已有短附件独立全文路径，但几份短附件仍须共用本轮的模型预算。
+      let budget = Math.min(60000, 0.4 * modelContextLength(providerKind, input.model))
+      const prepared = new Set(attachmentTurn.full.map((f) => f.sourceId))
+      attachmentTurn.full = attachmentTurn.full.filter((f) => {
+        const tokens = estimateTokens(f.text)
+        if (tokens > budget) return false
+        budget -= tokens
+        return true
+      })
+      attachmentTurn.sentIds = attachmentTurn.sentIds.filter(
+        (id) => !prepared.has(id) || attachmentTurn.full.some((f) => f.sourceId === id)
+      )
+    }
     requireRecordingCloudAccess(privacyInput, conversationId)
     ctx = special ? { text: '', query: '' } : resolveContext(input.context, zh, conversationId)
     let kbHits = filterCloudHits(retrieved, conversationId)
     const evidenceIds = [
-      ...new Set([...(session.attachmentSourceIds ?? []), ...kbHits.filter((h) => h.parentType === 'source').map((h) => h.parentId)])
+      ...new Set([
+        ...(session.attachmentSourceIds ?? []),
+        ...sourcePlan.sourceIds,
+        ...kbHits.filter((h) => h.parentType === 'source').map((h) => h.parentId)
+      ])
     ]
     db.update(messages)
       .set({ context: JSON.stringify({ attachmentSourceIds: evidenceIds }) })
@@ -778,7 +827,9 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
       .run()
     session.suppressAttachmentMemory = hasAttachmentHistory(conversationId)
     const initialCoverage = coverage(kbHits)
-    const explicitAtStart = special ? [] : filterCloudHits(contextSourceEvidence(input.context, conversationId), conversationId)
+    const explicitAtStart = special
+      ? []
+      : filterCloudHits(sourcePlan.full ? sourcePlan.hits : contextSourceEvidence(input.context, conversationId), conversationId)
     // 用户正指着的证据在最前，不能先参与主动检索配额再于组装阶段去重。
     kbHits = kbHits.filter((hit) => !explicitAtStart.some((item) => item.parentId === hit.parentId && item.ownerId === hit.ownerId))
     let webHits: SearchHit[] = []
@@ -848,7 +899,6 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
           .limit(1)
           .get()
     const previousCitations = previous?.citations ? (JSON.parse(previous.citations) as Citation[]) : []
-    const previousUserText = history.filter((m) => m.role === 'user').at(-2)?.content
     const doPreSearch = async (): Promise<void> => {
       preSearchAttempted = true
       const result = await runPreSearchForTurn(session, { kbHits, prevUserText: previousUserText, signal: ctrl.signal, pushStep })
@@ -860,6 +910,7 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
     // 最后一条（本轮）用户消息附上上下文、片段与技能
     const last = msgs.at(-1)
     if (last?.role === 'user' && coach) last.content = coachTurn(coach, input.text, zh)
+    let fullTextInstruction = ''
     let buildTurn = (): void => {}
     if (last?.role === 'user' && !special) {
       const vision = capsFor(input.providerId, input.model).vision
@@ -887,13 +938,35 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
         requireRecordingCloudAccess(privacyInput, conversationId)
         ctx = resolveContext(input.context, zh, conversationId)
         session.hits = []
-        const explicit = filterCloudHits(contextSourceEvidence(input.context, conversationId), conversationId)
+        sourcePlan = fullSourceEvidence(
+          input.context,
+          input.scope,
+          session.attachmentSourceIds ?? [],
+          conversationId,
+          modelContextLength(providerKind, input.model)
+        )
+        fullTextInstruction = sourcePlan.full
+          ? zh
+            ? '以下是用户指定资料的全文，请完整阅读后回答，并引用具体片段。'
+            : 'Below is the full text of the sources the user selected. Read it all, then answer citing specific excerpts.'
+          : ''
+        const sourceNote =
+          !sourcePlan.full && sourcePlan.sourceIds.length
+            ? zh
+              ? '资料较长或内容尚不完整，下面是检索到的部分，需要时用 source_read 读前后文。'
+              : 'Sources are long or incomplete. Below are retrieved excerpts; use source_read for surrounding text when needed.'
+            : ''
+        const explicit = filterCloudHits(
+          sourcePlan.full ? sourcePlan.hits : contextSourceEvidence(input.context, conversationId),
+          conversationId
+        )
         const currentHits = filterCloudHits(
           [...explicit, ...kbHits.filter((h) => !explicit.some((e) => e.ownerId === h.ownerId && e.parentId === h.parentId))],
           conversationId
         ).filter((h) => !attachmentTurn.full.some((f) => f.sourceId === h.parentId))
         let kb = currentHits.length ? numberHits(session, currentHits) : null
-        if (kb && currentHits.some((h) => session.attachmentSourceIds?.includes(h.parentId))) kb = asExternalData('attachment-excerpts', kb)
+        if (kb && currentHits.some((h) => session.attachmentSourceIds?.includes(h.parentId)))
+          kb = asExternalData('attachment-excerpts', kb, { maxChars: kb.length, overflow: 'reject' })
         const attachmentFull = attachmentTurn.full
           .map((f) => asExternalData('attachment:' + f.name, numberHits(session, f.hits), { maxChars: 60000, overflow: 'reject' }))
           .join('\n\n')
@@ -924,7 +997,7 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
             turnMessage(
               zh,
               input.text || (zh ? '请帮助我处理本对话附件。' : 'Help me with these attachments.'),
-              [ctx.text, learner, imageNote, pendingNote].filter(Boolean).join('\n\n'),
+              [ctx.text, sourceNote, learner, imageNote, pendingNote].filter(Boolean).join('\n\n'),
               kb,
               skillBody,
               {
@@ -969,7 +1042,11 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
           ? feynmanSystem(feynman, zh)
           : coach
             ? coachSystem(coach, zh)
-            : [systemPrompt(zh, session.tier, session.incognito, conversationId, uiMode, localUi), attachmentTurn.section]
+            : [
+                systemPrompt(zh, session.tier, session.incognito, conversationId, uiMode, localUi),
+                attachmentTurn.section,
+                fullTextInstruction
+              ]
                 .filter(Boolean)
                 .join('\n\n'),
         messages: msgs,

@@ -223,7 +223,8 @@ test('P3 短txt全文与60页长PDF：原文封装、处理就绪、附件节和
     font = await pdf.embedFont(StandardFonts.Helvetica)
   for (let i = 1; i <= 60; i++) {
     const p = pdf.addPage([595, 842])
-    p.drawText(`PAGE_${i}_ONLY`, { x: 50, y: 780, size: 12, font })
+    // 定位标记使用正文字号且位于正文区，避免被新版提为标题或删除为重复页眉。
+    p.drawText(`PAGE_${i}_ONLY`, { x: 50, y: 765, size: 10, font })
     for (let line = 0; line < 12; line++)
       p.drawText('Long document evidence with details for source reading and citation.', { x: 50, y: 750 - line * 18, size: 10, font })
     if (i === 60) p.drawText('PDF_FINAL_TAIL_ONLY', { x: 50, y: 480, size: 10, font })

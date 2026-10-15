@@ -86,6 +86,7 @@ import * as providers from './services/ai/providers'
 import * as chat from './services/ai/chat'
 import * as embedding from './services/ai/embedding'
 import { clearIndex, indexStats, requestIndex, sourceIndexStatus } from './services/ai/indexer'
+import { retrievalQuery } from './services/ai/followUp'
 import { retrieve } from './services/ai/retrieve'
 import * as memory from './services/memory'
 import * as learner from './services/learner'
@@ -395,8 +396,8 @@ const handlers: Handlers = {
     resolve: (_, id, opIndex, decision, blockIds) => proposals.resolveUserOp(id, opIndex, decision, blockIds)
   },
   segments: {
-    resolve: (_, id) => segments.getSegment(id)?.id ?? null,
-    get: (_, id) => segments.getSegment(id),
+    resolve: (_, id, conversationId) => segments.getSegment(id, conversationId)?.id ?? null,
+    get: (_, id, conversationId) => segments.getSegment(id, conversationId),
     update: (_, id, text) => reindexAfter(segments.updateSegmentText(id, text)),
     list: (_, sourceId) => segments.listSegments(sourceId),
     search: (_, query, sourceId) => segments.searchSegments(query, sourceId)
@@ -766,6 +767,7 @@ const handlers: Handlers = {
     }
   },
   knowledge: {
+    queryFor: (_, text, prev) => retrievalQuery(text, prev),
     search: (_, query, scope, limit, filters) => retrieve(query, scope, limit, filters)
   },
   stats: {

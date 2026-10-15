@@ -11,10 +11,22 @@ const f = vi.hoisted(() => ({
   sql: null as Database.Database | null,
   dir: '',
   ready: false,
-  events: [] as string[]
+  events: [] as string[],
+  listeners: new Map<string, Set<() => void>>()
 }))
 vi.mock('../../db', () => ({ getDb: () => f.db, getSqlite: () => f.sql, dataDir: () => f.dir, assetsDir: () => join(f.dir, 'assets') }))
-vi.mock('../../events', () => ({ emit: (event: string) => f.events.push(event) }))
+vi.mock('../../events', () => ({
+  emit: (event: string) => {
+    f.events.push(event)
+    f.listeners.get(event)?.forEach((fn) => fn())
+  },
+  onMainEvent: (event: string, fn: () => void) => {
+    const listeners = f.listeners.get(event) ?? new Set<() => void>()
+    listeners.add(fn)
+    f.listeners.set(event, listeners)
+    return () => listeners.delete(fn)
+  }
+}))
 vi.mock('electron-log/main', () => ({ default: { info: () => {}, warn: () => {}, error: () => {} } }))
 vi.mock('electron', () => ({
   app: { getLocale: () => 'zh-CN', isPackaged: false },

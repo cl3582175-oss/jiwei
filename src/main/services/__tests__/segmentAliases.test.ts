@@ -186,3 +186,17 @@ describe('旧库升级与永久片段身份', () => {
     expect(segments.listSegments('s')).toEqual(before)
   })
 })
+
+it('owning conversation resolves attachment aliases; defaults and unrelated conversations remain isolated', () => {
+  apply(sqlFiles())
+  source()
+  f.sql!.exec(
+    "UPDATE sources SET space='attachment',ai_excluded=1 WHERE id='s'; INSERT INTO conversations(id,title,created_at,updated_at) VALUES('owner','Owner',1,1),('other','Other',1,1); INSERT INTO conversation_attachments(conversation_id,source_id,created_at) VALUES('owner','s',1)"
+  )
+  segments.replaceSegments('s', [{ kind: 'paragraph', text: 'Synthetic private attachment', locator: {} }])
+  const old = segments.listSegments('s')[0].id
+  segments.replaceSegments('s', [{ kind: 'paragraph', text: 'Synthetic private attachment', heading: 'Chapter', locator: {} }])
+  expect(segments.getSegment(old)).toBeNull()
+  expect(segments.getSegment(old, 'other')).toBeNull()
+  expect(segments.getSegment(old, 'owner')?.text).toBe('Synthetic private attachment')
+})

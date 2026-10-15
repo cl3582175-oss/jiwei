@@ -1,3 +1,4 @@
+import { listSegments } from '../segments'
 import { tablePreview } from '../../lib/attachmentText'
 import { getSettings } from '../settings'
 import { and, eq, inArray, isNull, or } from 'drizzle-orm'
@@ -7,8 +8,22 @@ import type { ChatScope } from '@shared/schemas'
 import type { KnowledgeStatus, SearchHit } from '@shared/types'
 import { embed, isReady } from './embedding'
 import { annotationText, vecBuffer } from './indexer'
-import { ftsQuery } from '../../lib/fts'
-import { lensKeywordSQL, lensVectorSQL } from '../../lib/lensRetrieval'
+import { normalizeQuery } from '../../lib/textNormalize'
+import { embeddingText } from '../../lib/chunker'
+import { matchSourcesByTitle } from './sourceMentions'
+import {
+  RETRIEVAL,
+  candidateScope,
+  routedScope,
+  keywordCandidates,
+  shortCandidates,
+  exactCandidates,
+  vectorCandidates,
+  noVectors,
+  type RetrievalOptions
+} from './retrievalCandidates'
+export { RETRIEVAL } from './retrievalCandidates'
+export type { RetrievalOptions } from './retrievalCandidates'
 import type { RecordingFilters } from '@shared/lens'
 
 // 混合检索：关键词（FTS5 trigram）+ 向量（sqlite-vec）→ RRF 融合 → 时间与可信度加权。
@@ -24,114 +39,7 @@ type Key = string // `${ownerType}:${ownerId}`
 /** 知识库入口只产生笔记和资料，网页命中由联网工具提供。 */
 export type KnowledgeHit = SearchHit & { parentType: 'note' | 'source' }
 
-function keywordHits(q: string, limit: number, filters: RecordingFilters = {}): Key[] {
-  const fq = ftsQuery(q)
-  const sqlite = getSqlite()
-  if (Object.values(filters).some(Boolean)) {
-    if (!fq) return []
-    const filter = lensKeywordSQL(filters)
-    return (sqlite.prepare(filter.sql).all(fq, ...filter.params, limit * 3) as { segment_id: string }[]).map(
-      (r) => `segment:${r.segment_id}`
-    )
-  }
-  const b = (
-    fq ? sqlite.prepare('SELECT block_id FROM blocks_fts WHERE blocks_fts MATCH ? ORDER BY rank LIMIT ?').all(fq, limit * 3) : []
-  ) as { block_id: string }[]
-  const s = (
-    fq ? sqlite.prepare('SELECT segment_id FROM segments_fts WHERE segments_fts MATCH ? ORDER BY rank LIMIT ?').all(fq, limit * 3) : []
-  ) as { segment_id: string }[]
-  // 段落命中归并到所在的康奈尔行（检索单位），总结段落保持自身
-  const rows = b.length
-    ? getDb()
-        .select({ id: blocks.id, rowId: blocks.rowId, section: blocks.section })
-        .from(blocks)
-        .where(
-          inArray(
-            blocks.id,
-            b.map((x) => x.block_id)
-          )
-        )
-        .all()
-    : []
-  const byId = new Map(rows.map((r) => [r.id, r]))
-  const keys: Key[] = []
-  const seen = new Set<Key>()
-  const push = (k: Key): void => {
-    if (!seen.has(k)) {
-      seen.add(k)
-      keys.push(k)
-    }
-  }
-  // 交替合并笔记与资料命中，避免某一类挤占
-  for (let i = 0; i < Math.max(b.length, s.length); i++) {
-    const r = b[i] && byId.get(b[i].block_id)
-    if (r) push(`block:${r.section === 'row' || r.section === 'summary' ? r.id : (r.rowId ?? r.id)}`)
-    if (s[i]) push(`segment:${s[i].segment_id}`)
-  }
-  // 批注（评论 / 提问）：表很小，直接按原句匹配
-  const q2 = q.trim()
-  if ([...q2].length >= 2 && [...q2].length <= 60) {
-    const like = `%${q2.replace(/[%_]/g, '')}%`
-    for (const a of sqlite
-      .prepare('SELECT id FROM annotations WHERE deleted_at IS NULL AND body IS NOT NULL AND (body LIKE ? OR selector LIKE ?) LIMIT ?')
-      .all(like, like, limit) as { id: string }[])
-      push(`annotation:${a.id}`)
-  }
-  if (q.trim().length >= 2) {
-    const like = `%${q.trim().replace(/[\\%_]/g, (c) => `\\${c}`)}%`
-    for (const r of sqlite
-      .prepare(
-        "SELECT r.id FROM note_asset_blocks r JOIN asset_texts t ON t.asset_id = r.asset_id JOIN notes n ON n.id = r.note_id WHERE n.deleted_at IS NULL AND n.ai_excluded = 0 AND t.text LIKE ? ESCAPE '\\' LIMIT ?"
-      )
-      .all(like, limit) as { id: string }[])
-      push(`asset:${r.id}`)
-  }
-  return keys.slice(0, limit * 2)
-}
-
-interface VectorHits {
-  keys: Key[]
-  dist: Map<Key, number>
-  qv: number[] | null
-}
-const noVectors = (): VectorHits => ({ keys: [], dist: new Map(), qv: null })
 const clampSim = (sim: number): number => Math.max(0, Math.min(1, sim))
-
-async function vectorHits(q: string, limit: number, filters: RecordingFilters = {}): Promise<VectorHits> {
-  if (!(await isReady())) return noVectors()
-  const [v] = await embed([q], 'query')
-  if (!v?.length || v.some((n) => !Number.isFinite(n))) return noVectors()
-  const filter = lensVectorSQL(filters),
-    filtered = Object.values(filters).some(Boolean)
-  const rows = (
-    filtered
-      ? getSqlite()
-          .prepare(filter.sql)
-          .all(vecBuffer(v), ...filter.params, limit * 3)
-      : getSqlite()
-          .prepare('SELECT rowid, distance FROM vec_chunks WHERE embedding MATCH ? AND k = ? ORDER BY distance')
-          .all(vecBuffer(v), limit * 3)
-  ) as { rowid: number; distance: number }[]
-  if (!rows.length) return { keys: [], dist: new Map(), qv: v }
-  const meta = getDb()
-    .select({ rowid: chunks.rowid, ownerType: chunks.ownerType, ownerId: chunks.ownerId })
-    .from(chunks)
-    .where(
-      inArray(
-        chunks.rowid,
-        rows.map((r) => Number(r.rowid))
-      )
-    )
-    .all()
-  const byRow = new Map(meta.map((m) => [m.rowid, `${m.ownerType}:${m.ownerId}`]))
-  const keys = rows.map((r) => byRow.get(Number(r.rowid))).filter((k): k is Key => !!k)
-  const dist = new Map<Key, number>()
-  for (const r of rows) {
-    const key = byRow.get(Number(r.rowid))
-    if (key && Number.isFinite(r.distance)) dist.set(key, Math.min(dist.get(key) ?? Infinity, r.distance))
-  }
-  return { keys, dist, qv: v }
-}
 
 /** 读取候选分片的内容与元数据（同时完成隐私与范围过滤） */
 function hydrate(keys: Key[], scope: ChatScope, allow?: { sourceIds: string[] }): Map<Key, KnowledgeHit> {
@@ -193,6 +101,7 @@ function hydrate(keys: Key[], scope: ChatScope, allow?: { sourceIds: string[] })
     }
   }
   if (segIds.length) {
+    const previews = new Map<string, Map<string, string>>()
     const rows = db
       .select({ g: sourceSegments, s: sources })
       .from(sourceSegments)
@@ -202,7 +111,7 @@ function hydrate(keys: Key[], scope: ChatScope, allow?: { sourceIds: string[] })
           inArray(sourceSegments.id, segIds),
           isNull(sources.deletedAt),
           or(
-            eq(sources.aiExcluded, false),
+            and(eq(sources.space, 'library'), eq(sources.aiExcluded, false)),
             allow?.sourceIds.length ? and(eq(sources.space, 'attachment'), inArray(sources.id, allow.sourceIds)) : undefined
           )
         )
@@ -212,14 +121,18 @@ function hydrate(keys: Key[], scope: ChatScope, allow?: { sourceIds: string[] })
       if (srcScope && !srcScope.has(s.id)) continue
       const loc = JSON.parse(g.locator) as Record<string, unknown>
       const limited = s.space === 'attachment' || !!allow?.sourceIds.includes(s.id)
-      const preview = limited ? tablePreview([{ ...g, locator: loc }])[0] : null
-      if (limited && !preview) continue
+      if (limited && g.kind === 'table' && !previews.has(s.id))
+        previews.set(s.id, new Map(tablePreview(listSegments(s.id)).map((g) => [g.id, g.text])))
+      const text = limited && g.kind === 'table' ? previews.get(s.id)?.get(g.id) : g.text
+      if (text === undefined) continue
       out.set(`segment:${g.id}`, {
         parentType: 'source',
         parentId: s.id,
         ownerId: g.id,
         title: s.title,
-        text: preview?.text ?? g.text,
+        text,
+        heading: g.heading,
+        ...(typeof loc.pageEnd === 'number' ? { pageEnd: loc.pageEnd } : {}),
         locator: typeof loc.value === 'string' ? loc.value : null,
         score: 0,
         learnedAt: s.publishedAt ?? s.accessedAt,
@@ -246,11 +159,11 @@ function hydrate(keys: Key[], scope: ChatScope, allow?: { sourceIds: string[] })
               .where(eq(notes.id, a.targetId))
               .get()
           : db
-              .select({ title: sources.title, d: sources.deletedAt, x: sources.aiExcluded, l: sources.accessedAt })
+              .select({ title: sources.title, d: sources.deletedAt, x: sources.aiExcluded, l: sources.accessedAt, space: sources.space })
               .from(sources)
               .where(eq(sources.id, a.targetId))
               .get()
-      if (!t || t.d || t.x) continue
+      if (!t || t.d !== null || t.x || ('space' in t && t.space !== 'library')) continue
       if (a.targetType === 'note' ? noteScope && !noteScope.has(a.targetId) : srcScope && !srcScope.has(a.targetId)) continue
       out.set(`annotation:${a.id}`, {
         parentType: a.targetType,
@@ -285,15 +198,33 @@ export function weight(h: SearchHit): number {
 /**
  * prefer：用户正在看的资料（v0.7.6）——同等相关时优先它的片段，问“这本书里……”时不被别的资料挤掉
  */
+const trigrams = (text: string): Set<string> => {
+  const chars = [...normalizeQuery(text)],
+    grams = new Set<string>()
+  for (let i = 2; i < chars.length; i++) grams.add(chars.slice(i - 2, i + 1).join(''))
+  return grams
+}
+const jaccard = (a: Set<string>, b: Set<string>): number => {
+  if (!a.size && !b.size) return 1
+  const intersection = [...a].filter((x) => b.has(x)).length
+  return intersection / (a.size + b.size - intersection)
+}
+
 export async function retrieve(
   query: string,
   scope: ChatScope,
   limit = 8,
   filters: RecordingFilters = {},
   prefer?: string | null,
-  allow?: { sourceIds: string[] }
+  allow?: { sourceIds: string[] },
+  opts: RetrievalOptions = {}
 ): Promise<KnowledgeHit[]> {
-  if (scope.type === 'none' || !query.trim()) return []
+  query = normalizeQuery(query)
+  if (scope.type === 'none' || !query || limit <= 0) return []
+  const base = candidateScope(scope, filters, allow, opts)
+  const matches = !base.restricted ? matchSourcesByTitle(query, scope) : []
+  const routedIds = new Set(matches.map((m) => m.sourceId))
+  const routes = [{ ctx: base, boost: 1 }, ...(matches.length ? [{ ctx: routedScope(base, [...routedIds]), boost: 1.5 }] : [])]
   const privateAllowed =
     allow?.sourceIds.length &&
     getDb()
@@ -302,46 +233,122 @@ export async function retrieve(
       .where(and(inArray(sources.id, allow.sourceIds), eq(sources.space, 'attachment')))
       .get()
   const onlyKeywords = !!privateAllowed && getSettings().ai.embedding?.mode === 'cloud'
-  const [kw, vec] = await Promise.all([
-    Promise.resolve(keywordHits(query, limit, filters)),
-    onlyKeywords ? Promise.resolve(noVectors()) : vectorHits(query, limit, filters).catch(noVectors)
-  ])
-  const rrf = new Map<Key, number>()
-  kw.forEach((k, i) => rrf.set(k, (rrf.get(k) ?? 0) + 1 / (RRF_K + i)))
-  // 向量命中权重略高：语义相关比字面重合更可靠
-  vec.keys.forEach((k, i) => rrf.set(k, (rrf.get(k) ?? 0) + 1.2 / (RRF_K + i)))
-  const hits = hydrate([...rrf.keys()], scope, allow)
-  const kwSet = new Set(kw)
-  const vecSet = new Set(vec.keys)
-  const via = (k: Key): SearchHit['via'] => (kwSet.has(k) && vecSet.has(k) ? 'both' : vecSet.has(k) ? 'semantic' : 'keyword')
-  const finalHits = [...hits.entries()]
-    .map(([k, h]) => ({
-      ...h,
-      via: via(k),
-      score: (rrf.get(k) ?? 0) * weight(h) * (prefer && h.parentId === prefer ? 1.6 : 1),
-      ...(vec.dist.has(k) ? { sim: clampSim(1 - vec.dist.get(k)!) } : {})
-    }))
-    .sort((a, b) => b.score - a.score)
-    .slice(0, limit)
-  // 先完成隐私、范围和数量筛选，再批量补算；补算失败不改变原有排名与结果。
-  const missing = finalHits.filter((h) => h.sim === undefined)
-  if (vec.qv && missing.length) {
+  const candidateLists = routes.map((route) => ({
+    ...route,
+    kw: keywordCandidates(query, route.ctx),
+    short: shortCandidates(query, route.ctx),
+    exact: exactCandidates(query, route.ctx)
+  }))
+  let qv: number[] | null = null
+  if (!onlyKeywords)
     try {
-      const qv = vec.qv
-      const vectors = await embed(
-        missing.map((h) => h.text),
-        'doc',
-        missing.map((h) => h.title)
-      )
-      for (let i = 0; i < missing.length; i++) {
-        const v = vectors[i]
-        if (v?.length === qv.length && v.every(Number.isFinite)) missing[i].sim = clampSim(qv.reduce((sum, n, j) => sum + n * v[j], 0))
+      if (await isReady()) {
+        const [v] = await embed([query], 'query')
+        if (v?.length && v.every(Number.isFinite)) qv = v
       }
     } catch {
-      /* 相似度是附加元数据，向量失败时保留关键词结果。 */
+      /* 关键词在向量不可用时照常工作。 */
     }
+  const scores = new Map<Key, number>(),
+    kwSet = new Set<Key>(),
+    vecSet = new Set<Key>(),
+    dist = new Map<Key, number>()
+  for (const route of candidateLists) {
+    const vec = qv ? vectorCandidates(qv, route.ctx) : noVectors()
+    for (const [keys, w] of [
+      [route.kw, 1],
+      [route.short, 1],
+      [route.exact, 1.5],
+      [vec.keys, 1.2]
+    ] as [Key[], number][])
+      keys.forEach((key, i) => scores.set(key, (scores.get(key) ?? 0) + (route.boost * w) / (RRF_K + i)))
+    for (const key of [...route.kw, ...route.short, ...route.exact]) kwSet.add(key)
+    for (const key of vec.keys) vecSet.add(key)
+    for (const [key, d] of vec.dist) dist.set(key, Math.min(dist.get(key) ?? Infinity, d))
   }
-  return finalHits
+  const effective: ChatScope =
+    base.sourceIds !== null && base.noteIds !== null ? { type: 'items', sources: base.sourceIds, notes: base.noteIds } : scope
+  const hydrated = hydrate([...scores.keys()], effective, allow)
+  const ranked = [...hydrated]
+    .map(([key, hit]) => ({
+      key,
+      hit: {
+        ...hit,
+        via: (kwSet.has(key) && vecSet.has(key) ? 'both' : vecSet.has(key) ? 'semantic' : 'keyword') as SearchHit['via'],
+        score: (scores.get(key) ?? 0) * weight(hit) * (prefer && hit.parentId === prefer ? 1.6 : 1),
+        ...(dist.has(key) ? { sim: clampSim(1 - dist.get(key)!) } : {})
+      }
+    }))
+    .sort((a, b) => b.hit.score - a.hit.score || a.key.localeCompare(b.key))
+  const selected: typeof ranked = [],
+    sets: Set<string>[] = [],
+    counts = new Map<string, number>()
+  for (const candidate of ranked) {
+    const grams = trigrams(candidate.hit.text),
+      duplicate = sets.findIndex((s) => jaccard(s, grams) >= RETRIEVAL.DUP_JACCARD)
+    if (duplicate >= 0) {
+      const kept = selected[duplicate].hit
+      if (kept.title !== candidate.hit.title) kept.alsoIn = [...new Set([...(kept.alsoIn ?? []), candidate.hit.title])].slice(0, 3)
+      continue
+    }
+    const parent = candidate.hit.parentType + ':' + candidate.hit.parentId
+    if (
+      !base.restricted &&
+      (counts.get(parent) ?? 0) >= (routedIds.has(candidate.hit.parentId) ? RETRIEVAL.ROUTED_PER_PARENT : RETRIEVAL.PER_PARENT)
+    )
+      continue
+    if (selected.length >= limit) continue
+    selected.push(candidate)
+    sets.push(grams)
+    counts.set(parent, (counts.get(parent) ?? 0) + 1)
+  }
+  // 展开只读前后文；在SQL中再次核对隐私/附件范围，引用身份始终保留首段。
+  for (const { hit, key } of selected)
+    if (key.startsWith('segment:') && hit.text.length < 120) {
+      const grant = allow?.sourceIds ?? []
+      const row = getSqlite()
+        .prepare(
+          `SELECT n.*,s.space FROM source_segments g JOIN source_segments n ON n.source_id=g.source_id AND n.ordinal=g.ordinal+1 JOIN sources s ON s.id=g.source_id WHERE g.id=? AND n.heading=g.heading AND s.deleted_at IS NULL AND ((s.space='library' AND s.ai_excluded=0) OR (s.space='attachment' AND s.id IN (${grant.length ? grant.map(() => '?').join(',') : 'NULL'})))`
+        )
+        .get(hit.ownerId, ...grant) as (typeof sourceSegments.$inferSelect & { space: string }) | undefined
+      if (row) {
+        const neighbor =
+          row.space === 'attachment' || grant.includes(hit.parentId)
+            ? tablePreview(listSegments(hit.parentId)).find((g) => g.id === row.id)?.text
+            : row.text
+        if (neighbor && hit.text.length + neighbor.length + 3 <= 600) hit.text += '\n…\n' + neighbor
+      }
+    }
+  const missing = selected.filter(({ hit }) => hit.sim === undefined)
+  if (qv && missing.length)
+    try {
+      const guard = () => {
+        const current = hydrate(
+          missing.map((r) => r.key),
+          effective,
+          allow
+        )
+        if (missing.some((r) => !current.has(r.key))) throw new Error('Retrieval permission changed')
+      }
+      const vectors = await embed(
+        missing.map(({ hit }) => embeddingText(hit.heading ? hit.heading + '\n' + hit.text : hit.text)),
+        'doc',
+        missing.map(({ hit }) => hit.title),
+        guard
+      )
+      missing.forEach(({ hit }, i) => {
+        const v = vectors[i]
+        if (v?.length === qv!.length && v.every(Number.isFinite)) hit.sim = clampSim(qv!.reduce((sum, n, j) => sum + n * v[j], 0))
+      })
+    } catch {
+      /* 相似度为附加元数据；不能为补算而绕过即时隐私检查。 */
+    }
+  const current = hydrate(
+    selected.map((r) => r.key),
+    effective,
+    allow
+  )
+  return selected.filter((r) => current.has(r.key)).map((r) => r.hit)
 }
 
 /**

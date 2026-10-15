@@ -26,7 +26,7 @@ import type { ModelTier } from '@shared/ai'
 import { validateInRenderer } from './rendererValidate'
 import { newId } from '../../lib/ids'
 import { loadSkill, readSkillFile } from './skills'
-import { retrieve } from './retrieve'
+import { retrieve, type RetrievalOptions } from './retrieve'
 import { saveMemory, searchMemories } from '../memory'
 import { conceptsIn, describeConcept } from '../learner'
 import { browserState, openTab } from '../browser/manager'
@@ -50,7 +50,12 @@ export interface AgentSession {
   scope: ChatScope
   attachmentSourceIds?: string[]
   suppressAttachmentMemory?: boolean
-  retrieveAttachments?: (query: string, filters: import('@shared/lens').RecordingFilters, limit: number) => Promise<SearchHit[]>
+  retrieveAttachments?: (
+    query: string,
+    filters: import('@shared/lens').RecordingFilters,
+    limit: number,
+    opts?: RetrievalOptions
+  ) => Promise<SearchHit[]>
   incognito: boolean
   conversationId: string
   messageId: string
@@ -108,6 +113,13 @@ const webHost = (url?: string): string => {
   }
 }
 
+function sourceLocation(hit: SearchHit, zh: boolean): string {
+  const page = /^page=(\d+)$/.exec(hit.locator ?? '')?.[1]
+  if (!page) return hit.locator ? ' · ' + hit.locator : ''
+  const range = hit.pageEnd && hit.pageEnd > Number(page) ? `${page}–${hit.pageEnd}` : page
+  return zh ? ` · 第 ${range} 页` : ` · p. ${range}`
+}
+
 /** 片段 → 带编号的文字（同一片段在一次回答中只编号一次） */
 export function numberHits(session: AgentSession, hits: SearchHit[]): string {
   const zh = session.zh
@@ -160,8 +172,13 @@ export function numberHits(session: AgentSession, hits: SearchHit[]): string {
         const meta =
           h.parentType === 'note'
             ? `${zh ? '笔记' : 'Note'}《${h.title || '—'}》（noteId: ${h.parentId}）· ${zh ? '学习于' : 'learned'} ${fmtDate(h.learnedAt)} · ${zh ? '修改于' : 'edited'} ${fmtDate(h.updatedAt)}${STATUS[h.status ?? 'active']}${ORIGIN[h.origin ?? 'user']}`
-            : `${zh ? '资料' : 'Source'}《${h.title}》（sourceId: ${h.parentId}）${h.locator ? ' · ' + h.locator : ''} · ${zh ? '片段' : 'segment'} ${h.ownerId}`
-        return `[${n}] ${meta}\n${h.text}`
+            : `${zh ? `资料《${h.title}》` : `Source "${h.title}"`}${h.heading ? ' › ' + h.heading : ''}${sourceLocation(h, zh)}（sourceId: ${h.parentId}） · ${zh ? '片段' : 'segment'} ${h.ownerId}`
+        const also = h.alsoIn?.length
+          ? zh
+            ? `\n另见：${h.alsoIn.map((t) => `《${t}》`).join('、')}`
+            : `\nAlso in: ${h.alsoIn.map((t) => `"${t}"`).join(', ')}`
+          : ''
+        return `[${n}] ${meta}\n${h.text}${also}`
       })
       .join('\n\n')
   )
@@ -342,10 +359,11 @@ export function buildTools(s: AgentSession): ToolSet {
       }),
       knowledge_search: tool({
         description: zh
-          ? '在用户的知识库（笔记 + 资料）中检索。结果带编号，回答时用 [编号] 引用。已提供的片段不够时再用。importedRange 按实际导入创建时间枚举资料，返回 JSON 引用元数据（非相关度排序）；时间戳毫秒、endAt不含；可省略关键词、分页后用 source_read 阅读。'
-          : "Search the user's knowledge base (notes + sources). Results are numbered; cite as [n]. importedRange enumerates sources by import creation time as JSON references; optional query, paginated, endAt exclusive epoch ms. Use source_read for content.",
+          ? '在用户的知识库（笔记 + 资料）中检索。结果带编号，回答时用 [编号] 引用。已提供的片段不够时再用；sourceIds 只用于缩小到用户范围内的某几份资料，例如比较两个方案时分别检索。importedRange 按实际导入创建时间枚举资料，返回 JSON 引用元数据（非相关度排序）；时间戳毫秒、endAt不含；可省略关键词、分页后用 source_read 阅读。'
+          : "Search the user's knowledge base (notes + sources). Results are numbered; cite as [n]. sourceIds only narrows to selected sources, e.g. search each of two proposals for comparison. importedRange enumerates sources by import creation time as JSON references; optional query, paginated, endAt exclusive epoch ms. Use source_read for content.",
         inputSchema: RecordingFiltersSchema.extend({
           query: z.string().trim().max(500).optional(),
+          sourceIds: z.array(z.string().min(1).max(64)).max(10).optional(),
           importedRange: ReadDateRange.optional(),
           ...ReadPage
         })
@@ -354,11 +372,29 @@ export function buildTools(s: AgentSession): ToolSet {
             (v) => !v.importedRange || !Object.keys(RecordingFiltersSchema.shape).some((k) => v[k as keyof typeof v] !== undefined),
             'importedRange cannot be combined with recording filters'
           ),
-        execute: async ({ query, importedRange, limit, offset, ...filters }) => {
-          if (importedRange) return JSON.stringify(importedSources(importedRange, s.scope, query, limit, offset))
+        execute: async ({ query, sourceIds, importedRange, limit, offset, ...filters }) => {
+          for (const id of sourceIds ?? []) {
+            if (
+              (s.scope.type === 'none' && !s.attachmentSourceIds?.includes(id)) ||
+              (s.scope.type === 'items' && !s.scope.sources.includes(id) && !s.attachmentSourceIds?.includes(id))
+            )
+              throw new Error('Source is outside the selected scope')
+            readableSource(id, zh, s.conversationId)
+          }
+          if (importedRange)
+            return JSON.stringify(
+              importedSources(
+                importedRange,
+                sourceIds?.length ? { type: 'items', sources: sourceIds, notes: [] } : s.scope,
+                query,
+                limit,
+                offset
+              )
+            )
+          const count = Math.min(limit ?? 8, 30)
           const hits = s.retrieveAttachments
-            ? await s.retrieveAttachments(query!, filters, 6)
-            : await retrieve(query!, s.scope, 6, filters, s.preferSource)
+            ? await s.retrieveAttachments(query!, filters, count, { sourceIds })
+            : await retrieve(query!, s.scope, count, filters, s.preferSource, { sourceIds: s.attachmentSourceIds ?? [] }, { sourceIds })
           return hits.length ? numberHits(s, hits) : zh ? '没有找到相关内容。' : 'Nothing found.'
         }
       }),
@@ -402,7 +438,7 @@ export function buildTools(s: AgentSession): ToolSet {
           const segs = listSegments(sourceId)
           const part =
             src.space === 'attachment' || s.attachmentSourceIds?.includes(sourceId)
-              ? tablePreview(segs.slice(from, from + count))
+              ? tablePreview(segs).filter((g) => segs.slice(from, from + count).some((p) => p.id === g.id))
               : segs.slice(from, from + count)
           const loc = (l: Record<string, unknown>): string => (l.value ? ` · ${String(l.value)}` : '')
           const metadata = includeMetadata
@@ -428,6 +464,8 @@ export function buildTools(s: AgentSession): ToolSet {
                 ownerId: g.id,
                 title: src.title,
                 text: g.text,
+                heading: g.heading,
+                ...(typeof g.locator.pageEnd === 'number' ? { pageEnd: g.locator.pageEnd } : {}),
                 locator: typeof g.locator.value === 'string' ? g.locator.value : null,
                 score: 1,
                 learnedAt: null,

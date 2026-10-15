@@ -181,8 +181,24 @@ describe('web and knowledge citation numbering', () => {
       '[1] 笔记《Controlled note》（noteId: note-1）· 学习于 2026-09-01 · 修改于 2026-10-13 · 已过时 · AI 生成未审阅\nNote evidence.'
     )
     expect(numberHits(session(false), [kb({ parentType: 'source', parentId: 'source-1', ownerId: 'segment-1', locator: 'page=3' })])).toBe(
-      '[1] Source《Controlled note》（sourceId: source-1） · page=3 · segment segment-1\nNote evidence.'
+      '[1] Source "Controlled note" · p. 3（sourceId: source-1） · segment segment-1\nNote evidence.'
     )
+  })
+  it('source citations show chapter, page range and duplicate titles in both languages', () => {
+    const hit = kb({
+      parentType: 'source',
+      parentId: 's',
+      ownerId: 'g',
+      title: 'Synthetic',
+      heading: 'Chapter 2',
+      locator: 'page=3',
+      pageEnd: 4,
+      alsoIn: ['Other']
+    })
+    expect(numberHits(session(), [hit])).toContain('[1] 资料《Synthetic》 › Chapter 2 · 第 3–4 页')
+    expect(numberHits(session(), [hit])).toContain('另见：《Other》')
+    expect(numberHits(session(false), [hit])).toContain('[1] Source "Synthetic" › Chapter 2 · p. 3–4')
+    expect(numberHits(session(false), [hit])).toContain('Also in: "Other"')
   })
   it('returns empty text without consuming a citation number', () => {
     const s = session()

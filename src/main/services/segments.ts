@@ -1,3 +1,4 @@
+import { canReadSource } from './attachmentsAccess'
 import { correctionPair, speakerBody } from '@shared/recording'
 import { and, asc, eq, inArray, isNull, like } from 'drizzle-orm'
 import { getDb, getSqlite } from '../db'
@@ -31,17 +32,18 @@ export function listSegments(sourceId: string): Segment[] {
 }
 
 /** 按永久片段身份定位；智能界面不能借此读取已排除或删除的资料。 */
-export function getSegment(id: string): Segment | null {
+export function getSegment(id: string, conversationId: string | null = null): Segment | null {
   const resolved = resolveSegmentId(id)
   if (!resolved) return null
   const row = getDb()
     .select({ segment: sourceSegments })
     .from(sourceSegments)
     .innerJoin(sources, eq(sourceSegments.sourceId, sources.id))
-    .where(and(eq(sourceSegments.id, resolved), isNull(sources.deletedAt), eq(sources.aiExcluded, false), eq(sources.space, 'library')))
+    .where(and(eq(sourceSegments.id, resolved), isNull(sources.deletedAt)))
     .get()
   if (
     !row ||
+    !canReadSource(row.segment.sourceId, conversationId) ||
     getDb()
       .select({ id: recordings.id })
       .from(recordings)

@@ -636,8 +636,14 @@ export const capabilities = {
     trash: cap<void>()({ description: '删除资料（进入最近删除）', params: [id()] })
   },
   segments: {
-    resolve: cap<string | null>()({ description: '解析仍可读取的资料片段永久身份', params: [id()] }),
-    get: cap<Segment | null>()({ description: '按片段身份读取允许用于智能界面的资料原文', params: [id()] }),
+    resolve: cap<string | null>()({
+      description: '解析仍可读取的资料片段永久身份，附件仅所属对话有效',
+      params: [id(), ['conversationId', z.string().max(64).nullable().optional()]]
+    }),
+    get: cap<Segment | null>()({
+      description: '按片段身份读取允许用于智能界面的资料原文',
+      params: [id(), ['conversationId', z.string().max(64).nullable().optional()]]
+    }),
     update: cap<Segment | null>()({
       description: '修改片段文字（如纠正转写错误）',
       params: [id(), ['text', z.string().min(1).max(20000)]]
@@ -1175,6 +1181,13 @@ export const capabilities = {
     reindex: cap<void>()({ description: '重建知识库索引', params: none })
   },
   knowledge: {
+    queryFor: cap<string>()({
+      description: '仅供评测：构造与线上相同的追问检索文字',
+      params: [
+        ['text', z.string().max(2000)],
+        ['prev', z.string().max(20000).nullable()]
+      ]
+    }),
     search: cap<SearchHit[]>()({
       description: '在知识库（笔记与资料）中检索与问题相关的片段，结果带时间与状态',
       params: [

@@ -20,11 +20,13 @@ vi.mock('../../settings', () => ({
   getSettings: () => ({ language: 'en', review: { retention: 0.9 }, ai: { disabledSkills: [] }, browser: { aiBlockedSites: [] } })
 }))
 vi.mock('../../device', () => ({ deviceId: () => 'test' }))
-vi.mock('../../../events', () => ({ emit: vi.fn() }))
+vi.mock('../../../events', () => ({ emit: vi.fn(), onMainEvent: () => () => {} }))
 vi.mock('../../mcp/client', () => ({ assistantMcpTools: async () => ({ tools: {}, meta: {} }) }))
 vi.mock('../../mail/tools', () => ({ mailTools: () => ({ tools: {}, meta: {} }) }))
 vi.mock('../embedding', () => ({ isReady: async () => false }))
 vi.mock('../../browser/manager', () => ({ browserState: () => ({ tabs: [] }) }))
+import * as sourceContext from '../context'
+import { replaceSegments } from '../../segments'
 import { buildTools, type AgentSession } from '../tools'
 import { buildDoTools, BUILTIN_META } from '../doTools'
 import { taskToolCatalog } from '../../tasks/tools'
@@ -248,7 +250,7 @@ it('reads real note/source metadata and keeps source citations on ordinary retri
   expect(metadata).toContain('"sourceId":"public"')
   expect(metadata).not.toContain('private')
   expect(await call(tools, 'knowledge_search', { query: 'quantum' })).toContain(
-    '[1] Source《public》（sourceId: public） · page=3 · segment segment'
+    '[1] Source "public" · p. 3（sourceId: public） · segment segment'
   )
   expect(await call(tools, 'source_read', { sourceId: 'public', includeMetadata: true, count: 1 })).toContain('"totalSegments":1')
   expect(await call(tools, 'source_read', { sourceId: 'public' })).toContain('[segment · page=3] Unusual quantum evidence')
@@ -536,4 +538,58 @@ it('registers image viewing only for vision; rejects excluded and out-of-scope n
     })
   ).rejects.toThrow(/scope/)
   expect(BUILTIN_META.note_image_view.level).toBe('read')
+})
+
+it('knowledge_search narrows sourceIds, rejects ids outside scope and defaults to eight', async () => {
+  source('in')
+  source('out')
+  replaceSegments(
+    'in',
+    Array.from({ length: 9 }, (_, i) => ({ kind: 'paragraph', locator: {}, text: `Synthetic evidence ${i} ${'abcdefghijk'.slice(i)}` }))
+  )
+  replaceSegments('out', [{ kind: 'paragraph', locator: {}, text: 'Synthetic evidence OUTSIDE' }])
+  const tools = buildTools(session({ type: 'items', notes: [], sources: ['in'] }))
+  await expect(call(tools, 'knowledge_search', { query: 'Synthetic evidence', sourceIds: ['out'] })).rejects.toThrow(
+    'outside the selected scope'
+  )
+  const result = await call(tools, 'knowledge_search', { query: 'Synthetic evidence', sourceIds: ['in'] })
+  expect(result).not.toContain('OUTSIDE')
+  expect((result.match(/\[\d+\]/g) ?? []).length).toBe(8)
+  await expect(call(tools, 'knowledge_search', { query: 'Synthetic', sourceIds: Array(11).fill('in') })).rejects.toThrow()
+})
+it('full source plan unions explicit scope and whole context, preserves all segments and refuses incomplete sources', () => {
+  source('a')
+  source('b')
+  source('private', { aiExcluded: true })
+  source('attachment', { space: 'attachment' })
+  replaceSegments(
+    'a',
+    Array.from({ length: 15 }, (_, i) => ({ kind: 'paragraph', locator: {}, text: `Synthetic full source paragraph ${i}` }))
+  )
+  replaceSegments('b', [{ kind: 'paragraph', locator: {}, text: 'Other full source text' }])
+  const packet = { targets: [{ kind: 'viewport' as const, parentType: 'source' as const, parentId: 'b' }] }
+  const plan = sourceContext.fullSourceEvidence(
+    packet,
+    { type: 'items', notes: [], sources: ['a', 'private', 'attachment'] },
+    [],
+    null,
+    128000
+  )
+  expect(plan.full).toBe(true)
+  expect(plan.sourceIds).toEqual(['a', 'b'])
+  expect(plan.hits).toHaveLength(16)
+  expect(sourceContext.fullSourceEvidence(packet, { type: 'all' }, [], null, 10).full).toBe(false)
+  env.sqlite!.exec("INSERT INTO source_pages(source_id,page,need,status,updated_at) VALUES('a',1,'scan','pending',1)")
+  expect(sourceContext.fullSourceEvidence(packet, { type: 'items', sources: ['a'], notes: [] }, [], null, 128000).full).toBe(false)
+})
+
+it('source_read attachment citations preserve section and cross-page location', async () => {
+  source('s')
+  replaceSegments('s', [
+    { kind: 'paragraph', heading: '合成章节', locator: { value: 'page=3', pageEnd: 4 }, text: 'Synthetic source reading evidence' }
+  ])
+  const state = session()
+  state.attachmentSourceIds = ['s']
+  const result = await call(buildTools(state), 'source_read', { sourceId: 's', count: 1 })
+  expect(result).toContain('Source "s" › 合成章节 · p. 3–4')
 })

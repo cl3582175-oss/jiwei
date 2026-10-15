@@ -10,8 +10,9 @@ import { nodesToMarkdown } from '../../lib/markdown'
 import { embedText } from '@shared/embeds'
 import { MindmapDataSchema, toTree, type MindmapTree } from '@shared/embeds/mindmap'
 import { fmtTime, type Anchor, type ContextPacket } from '@shared/context'
+import type { ChatScope } from '@shared/schemas'
 import type { DocNode, SearchHit, Segment } from '@shared/types'
-import { sourceContextHits, type ContextSource } from '../../lib/sourceContext'
+import { fullSourceFits, sourceContextHits, type ContextSource } from '../../lib/sourceContext'
 import { tablePreview } from '../../lib/attachmentText'
 
 // 上下文包 → 提示词：把用户“指着”的内容连同必要的前后文交给模型。
@@ -164,6 +165,64 @@ export function contextSourceEvidence(packet: ContextPacket | undefined, convers
     }
   }
   return sourceContextHits(selected).map((h) => ({ ...h, via: 'context' as const }))
+}
+
+export interface FullSourceEvidence {
+  sourceIds: string[]
+  full: boolean
+  hits: SearchHit[]
+}
+
+/** 本轮明确指定的资料共用一个词元预算；缺页或预览省略不能称为全文。每次发给模型前重新核对权限。 */
+export function fullSourceEvidence(
+  packet: ContextPacket | undefined,
+  scope: ChatScope,
+  attachments: string[],
+  conversationId: string | null,
+  contextLength: number
+): FullSourceEvidence {
+  const anchors = [...(packet?.targets ?? []), ...(packet?.viewport ? [packet.viewport] : [])].filter(wholeSource)
+  const ids = [...new Set([...(scope.type === 'items' ? scope.sources : []), ...anchors.map((a) => a.parentId), ...attachments])]
+  const selected: ContextSource[] = []
+  let complete = true
+  for (const id of ids) {
+    const source = sourceRow(id, conversationId)
+    if (!source) continue
+    const segments = listSegments(id),
+      limited = source.space === 'attachment' || isConversationAttachment(id, conversationId)
+    const pending = getSqlite().prepare("SELECT 1 FROM source_pages WHERE source_id=? AND need='scan' AND status<>'done' LIMIT 1").get(id)
+    const parsing = getSqlite()
+      .prepare("SELECT 1 FROM jobs WHERE dedupe_key=? AND status IN ('queued','running') LIMIT 1")
+      .get(`segment:${id}`)
+    if (
+      pending ||
+      parsing ||
+      (limited &&
+        segments.some(
+          (g) =>
+            g.kind === 'table' &&
+            ('totalRows' in g.locator || 'sheet' in g.locator) &&
+            (typeof g.locator.totalRows !== 'number' || g.locator.totalRows > 200)
+        ))
+    )
+      complete = false
+    const preview = limited ? tablePreview(segments) : segments
+    if (
+      limited &&
+      segments.some(
+        (g) => g.kind === 'table' && typeof g.locator.dataStart !== 'number' && preview.find((p) => p.id === g.id)?.text !== g.text
+      )
+    )
+      complete = false
+    selected.push({ ...source, segments: preview })
+  }
+  const full = complete && fullSourceFits(selected, contextLength)
+  const chars = selected.reduce((sum, s) => sum + s.segments.reduce((n, g) => n + g.text.length, 0), 0)
+  return {
+    sourceIds: selected.map((s) => s.id),
+    full,
+    hits: full ? sourceContextHits(selected, chars, { full: true }).map((h) => ({ ...h, via: 'context' as const })) : []
+  }
 }
 
 /** 在文档中找到块及其所在行 */

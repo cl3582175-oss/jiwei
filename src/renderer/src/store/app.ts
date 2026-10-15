@@ -178,7 +178,7 @@ interface AppState extends Location {
   /** 进入选定的二级导航条目 */
   goNav: (item: NavItem) => void
   /** 打开笔记 / 资料后需要定位并高亮的段落（来自 AI 引用） */
-  highlight: { type: 'block' | 'segment'; id: string; locator?: string | null } | null
+  highlight: { type: 'block' | 'segment'; id: string; locator?: string | null; conversationId?: string | null } | null
   setHighlight: (h: AppState['highlight']) => void
 
   noteFilter: NoteFilter
@@ -406,7 +406,7 @@ export const useApp = create<AppState>((set, get) => {
       const request = ++highlightRequest
       if (highlight?.type === 'segment' && highlight.id) {
         set({ highlight: null })
-        void resolveSourceHighlight(highlight, (id) => window.jiwei.segments.resolve(id)).then((resolved) => {
+        void resolveSourceHighlight(highlight, (id) => window.jiwei.segments.resolve(id, highlight.conversationId)).then((resolved) => {
           // 等待 IPC 时用户可能跳到另一处；迟到的别名结果不能覆盖新的定位。
           if (highlightRequest === request) set({ highlight: resolved })
         })

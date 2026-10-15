@@ -109,7 +109,7 @@ export async function prepareAttachmentTurn(
     const include =
       a.status === 'ready' && (a.kind === 'image' ? size.chars > 0 : (table || size.chars <= 12000) && (!ref.fullTextSent || named))
     if (include) {
-      const segments = table ? tablePreview(listSegments(a.sourceId)) : listSegments(a.sourceId)
+      const segments = tablePreview(listSegments(a.sourceId))
       const content = segments.map((s) => s.text).join('\n\n'),
         chars = Array.from(content).length
       if (chars <= 12000 && chars <= budget && content.trim()) {
@@ -124,6 +124,8 @@ export async function prepareAttachmentTurn(
             ownerId: s.id,
             title: row.title,
             text: s.text,
+            heading: s.heading,
+            ...(typeof s.locator.pageEnd === 'number' ? { pageEnd: s.locator.pageEnd } : {}),
             locator: typeof s.locator.value === 'string' ? s.locator.value : null,
             score: 1,
             learnedAt: row.publishedAt ?? row.accessedAt,

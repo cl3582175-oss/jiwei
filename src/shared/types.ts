@@ -1003,6 +1003,9 @@ export interface SearchHit {
   ownerId: string
   title: string
   text: string
+  heading?: string
+  pageEnd?: number
+  alsoIn?: string[]
   locator: string | null
   score: number
   /** 余弦相似度（0–1）；向量不可用时不设置，检索排序仍使用 score。 */
