@@ -117,6 +117,47 @@ async function attachment(owner?: string) {
 }
 const rowCount = (table: string): number => (f.sql!.prepare(`SELECT count(*) AS n FROM ${table}`).get() as { n: number }).n
 
+it('附件删除、彻底清除与无痕对话结束都会清理来源的步骤缓存', async () => {
+  const s = await svc(),
+    ordinary = await attachment('c1'),
+    privateFile = await attachment('private')
+  const add = (id: string) =>
+    f.sql!.prepare('INSERT INTO job_steps VALUES(?,?,?,?,?)').run('controlled', id, id, '{"text":"CACHE-MARKER"}', Date.now())
+  add(ordinary.sourceId)
+  add(privateFile.sourceId)
+  s.deleteAttachments([ordinary.sourceId])
+  expect(f.sql!.prepare('SELECT source_id FROM job_steps').all()).toEqual([{ source_id: privateFile.sourceId }])
+  s.detachConversationAttachments('private')
+  expect(rowCount('job_steps')).toBe(0)
+  restore('source', ordinary.sourceId)
+  add(ordinary.sourceId)
+  ;(await import('../sources')).purgeSourceData(ordinary.sourceId)
+  expect(rowCount('job_steps')).toBe(0)
+})
+
+it('派生笔记归档后解锁；在附件管理里删除时重新隔离，归档后从资料库彻底清除不再上锁', async () => {
+  const s = await svc(),
+    a = await attachment('c1')
+  f.sql!.exec(
+    "INSERT INTO notes(id,doc_version,learned_at,created_at,edited_at,updated_at,updated_by) VALUES('derived',1,1,1,1,1,'controlled')"
+  )
+  const { protectNoteAttachments } = await import('../attachmentDerived')
+  protectNoteAttachments('derived', [a.sourceId])
+  const effective = () => (f.sql!.prepare("SELECT ai_excluded FROM notes WHERE id='derived'").get() as { ai_excluded: number }).ai_excluded
+  s.archiveAttachments([a.sourceId], null)
+  expect(effective()).toBe(0)
+  s.deleteAttachments([a.sourceId])
+  expect(effective()).toBe(1)
+  restore('source', a.sourceId)
+  expect(effective()).toBe(1)
+  s.archiveAttachments([a.sourceId], null)
+  expect(effective()).toBe(0)
+  // 归档即公开：内容已经可被 AI 使用，彻底删除资料不再给派生笔记加一把用户解释不了的锁。
+  const { purgeSourceData } = await import('../sources')
+  purgeSourceData(a.sourceId)
+  expect(effective()).toBe(0)
+})
+
 it('默认隐藏附件，只有主动添加的所属会话可读，普通资料隐私开关优先', async () => {
   const s = await svc(),
     a = await attachment('c1')

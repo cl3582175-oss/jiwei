@@ -44,6 +44,7 @@
     "src/renderer/src/features/import/importMessages.ts",
     "src/renderer/src/features/retrieval/messages.ts",
     "src/renderer/src/features/ui/messages.ts",
-    "src/renderer/src/features/library/readinessMessages.ts"
+    "src/renderer/src/features/library/readinessMessages.ts",
+    "src/renderer/src/features/notes/notePrivacyMessages.ts"
   ]
 }

@@ -239,7 +239,7 @@ describe('inbox service boundaries', () => {
     })
     await state.jobs
       .get('inbox.triage')!
-      .run({}, { isCanceled: () => canceled, progress: () => undefined, worker: async <T>() => undefined as T })
+      .run({}, { step: directStep, isCanceled: () => canceled, progress: () => undefined, worker: async <T>() => undefined as T })
     expect(state.rows[0].status).toBe('new')
     expect(state.notification).not.toHaveBeenCalled()
   })
@@ -271,7 +271,12 @@ describe('inbox service boundaries', () => {
   })
 })
 
-const context = (isCanceled = () => false) => ({ isCanceled, progress: () => undefined, worker: async <T>() => undefined as T })
+const context = (isCanceled = () => false) => ({
+  step: directStep,
+  isCanceled,
+  progress: () => undefined,
+  worker: async <T>() => undefined as T
+})
 const output = (id = 'item') => ({ suggestions: [{ id, suggestion: { type: 'idea', action: 'keep', reason: 'reason' } }] })
 const pendingImage = (): Row => ({
   ...row('item'),
@@ -563,3 +568,7 @@ describe('item-based recognition retry', () => {
     expect(state.retryOrEnqueue).not.toHaveBeenCalled()
   })
 })
+
+function directStep<T>(_key: string, _sourceId: string | null, fn: () => Promise<T>): Promise<T> {
+  return fn()
+}

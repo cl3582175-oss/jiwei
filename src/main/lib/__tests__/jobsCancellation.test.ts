@@ -44,8 +44,11 @@ vi.mock('../../db', () => ({
         })
       })
     }),
+    delete: () => ({ where: () => ({ run: () => {} }) }),
     transaction: (fn: () => unknown) => fn()
-  })
+  }),
+  // 长任务步骤缓存的清理语句；本测试只关心取消与重试协调。
+  getSqlite: () => ({ prepare: () => ({ run: () => ({}), get: () => undefined, all: () => [] }) })
 }))
 vi.mock('../../events', () => ({ emit: vi.fn() }))
 vi.mock('electron', () => ({ utilityProcess: { fork: vi.fn() } }))

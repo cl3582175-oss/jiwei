@@ -445,7 +445,7 @@ async function importRun(id: string, ctx: JobContext): Promise<void> {
           id: noteId,
           title: converted.title,
           categoryId: category(path),
-          aiExcluded: options.aiExcluded,
+          userAiExcluded: options.aiExcluded,
           createdAt: converted.createdAt
         })
         replaceDoc(noteId, { ...converted.doc, content: converted.doc.content?.map(walk) }, embeds)

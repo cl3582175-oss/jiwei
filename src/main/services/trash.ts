@@ -1,3 +1,4 @@
+import { refreshAttachmentNotePrivacy, refreshNotePrivacy } from './notePrivacy'
 import { and, eq, isNotNull, or, sql } from 'drizzle-orm'
 import { getDb } from '../db'
 import { annotations, categories, links, notes, sources, recordings } from '../db/schema'
@@ -70,7 +71,9 @@ export function restore(type: TrashType, id: string): void {
       .set({ aiExcluded: true })
       .where(and(eq(sources.id, id), eq(sources.space, 'attachment')))
       .run()
+    refreshAttachmentNotePrivacy([id])
   }
+  if (type === 'note') refreshNotePrivacy([id])
 }
 
 export async function purge(type: TrashType, id: string): Promise<void> {

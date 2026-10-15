@@ -1,11 +1,10 @@
-import { generateText, tool, type LanguageModelUsage, type ModelMessage } from 'ai'
+import { tool } from 'ai'
 import { z } from 'zod'
-import log from 'electron-log/main'
-import { resolveCaps, type Effort } from '@shared/ai'
+import { resolveCaps } from '@shared/ai'
 import { extractJson } from '../../lib/learner'
-import { buildModel } from './model'
 import { withPurpose } from '../agent/context'
 import { getProviderRow } from './providers'
+import { createModelRequest, logModelFailure, ModelOutputTruncated, type ModelRequestOptions } from './request'
 
 // 后台小任务（记忆整理、技能偏好归纳）的结构化输出。
 // 首选“强制调用一个提交工具”——各家服务商都支持函数调用（DeepSeek、OpenAI 兼容、Claude、Gemini），
@@ -26,73 +25,33 @@ export function quickModel(providerId: string, model: string): string {
   }
 }
 
-export async function structured<T>(opts: {
-  providerId: string
-  model: string
-  system: string
-  prompt: string
-  schema: z.ZodType<T>
-  effort?: Effort
-  images?: { data: Uint8Array; mediaType: string }[]
-  onUsage?: (usage: LanguageModelUsage) => void
-  signal?: AbortSignal
-  /** 长流程每次发请求（含回退）前重读隐私与取消状态。 */
-  guard?: () => void
-  /** 记账用途（v0.7）；不填时沿用外层（后台任务按任务类型） */
-  purpose?: string
-  /** 输出上限；长结构（如几十个排期时段）需要调高，否则 JSON 会被截断 */
-  maxOutputTokens?: number
-}): Promise<T> {
+export async function structured<T>(opts: ModelRequestOptions & { schema: z.ZodType<T> }): Promise<T> {
   return opts.purpose ? withPurpose(opts.purpose, () => run(opts)) : run(opts)
 }
 
-async function run<T>(opts: Parameters<typeof structured<T>>[0]): Promise<T> {
-  const built = buildModel({ providerId: opts.providerId, model: opts.model, effort: opts.effort ?? 'off' })
-  const input = opts.images?.length
-    ? {
-        messages: [
-          {
-            role: 'user',
-            content: [
-              ...opts.images.map((i) => ({ type: 'image' as const, image: i.data, mediaType: i.mediaType })),
-              { type: 'text', text: opts.prompt }
-            ]
-          }
-        ] as ModelMessage[]
-      }
-    : { prompt: opts.prompt }
-  const base = {
-    model: built.model,
-    providerOptions: built.providerOptions as never,
-    maxOutputTokens: opts.effort && opts.effort !== 'off' ? (built.maxOutputTokens ?? 32768) : (opts.maxOutputTokens ?? 4096),
-    // 长输出给足时间（约 40 token/s）
-    abortSignal: opts.signal ?? AbortSignal.timeout((opts.maxOutputTokens ?? 0) > 4096 ? 240_000 : 90_000)
-  }
+async function run<T>(opts: ModelRequestOptions & { schema: z.ZodType<T> }): Promise<T> {
+  const request = createModelRequest(opts)
+  opts.guard?.()
   try {
-    opts.guard?.()
-    const r = await generateText({
-      ...base,
-      system: opts.system,
-      ...input,
+    const r = await request.generate('tool', {
       tools: { submit: tool({ description: 'Submit the result', inputSchema: opts.schema }) },
       toolChoice: { type: 'tool', toolName: 'submit' }
     })
-    opts.onUsage?.(r.usage)
-    opts.guard?.()
     const call = r.toolCalls.find((c) => c.toolName === 'submit')
     if (call) return opts.schema.parse(call.input)
-    log.warn('[structured] no tool call, falling back to JSON text')
+    throw new Error('No tool call in model output')
   } catch (e) {
-    if (opts.signal?.aborted) throw e
-    log.warn('[structured] tool call failed, falling back to JSON text:', e instanceof Error ? e.message : e)
+    logModelFailure('structured', request.diagnostics('tool'), request.state.last)
+    if (opts.signal?.aborted || e instanceof ModelOutputTruncated) throw e
   }
   opts.guard?.()
-  const r = await generateText({
-    ...base,
-    system: `${opts.system}\n\nOutput only one JSON object matching this JSON Schema, with no other text:\n${JSON.stringify(z.toJSONSchema(opts.schema))}`,
-    ...input
-  })
-  opts.onUsage?.(r.usage)
-  opts.guard?.()
-  return opts.schema.parse(extractJson(r.text))
+  try {
+    const r = await request.generate('json', {
+      system: `${opts.system}\n\nOutput only one JSON object matching this JSON Schema, with no other text:\n${JSON.stringify(z.toJSONSchema(opts.schema))}`
+    })
+    return opts.schema.parse(extractJson(r.text.replace(/<think\b[^>]*>[\s\S]*?<\/think>/gi, '')))
+  } catch (e) {
+    logModelFailure('structured', request.diagnostics('json'), request.state.last)
+    throw e
+  }
 }

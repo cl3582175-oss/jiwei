@@ -58,6 +58,10 @@ vi.mock('../../mcp/secrets', () => ({
   sealJson: () => Buffer.from('synthetic-purpose-probe-marker')
 }))
 vi.mock('../../ai/model', () => ({ buildModel: () => ({ model: probe.model, providerOptions: {} }) }))
+vi.mock('../../ai/providers', async (original) => ({
+  ...(await original<Record<string, unknown>>()),
+  getProviderRow: () => ({ modelCaps: '{}', models: '[]' })
+}))
 vi.mock('../../ai/embedding', () => ({ isReady: async () => false }))
 vi.mock('../../ai/retrieve', () => ({ retrieve: async () => [], similarTo: async () => [] }))
 vi.mock('../../memory', () => ({
@@ -216,6 +220,25 @@ beforeEach(async () => {
     .run()
   // 保留 AI SDK 的工具执行与 structured 的 withPurpose；模型替身仅提供受控返回。
   probe.model = new MockLanguageModelV4({
+    doStream: async (opts) => {
+      const result = await probe.model!.doGenerate(opts)
+      return {
+        stream: new ReadableStream({
+          start(c) {
+            for (const part of result.content) {
+              if (part.type === 'tool-call') c.enqueue(part)
+              if (part.type === 'text') {
+                c.enqueue({ type: 'text-start', id: 'text' })
+                c.enqueue({ type: 'text-delta', id: 'text', delta: part.text })
+                c.enqueue({ type: 'text-end', id: 'text' })
+              }
+            }
+            c.enqueue({ type: 'finish', finishReason: result.finishReason, usage: result.usage })
+            c.close()
+          }
+        })
+      }
+    },
     doGenerate: async () => {
       await Promise.resolve()
       const purpose = currentRun()?.purpose
@@ -334,6 +357,7 @@ describe('P0 production search caller purposes', () => {
   it('task runner, task policy and guarded web_search execute under task', async () => {
     probe.entry = 'task'
     const result = await runTask('probe-task', { type: 'manual' }, false, {
+      step: <T>(_key: string, _sourceId: string | null, fn: () => Promise<T>) => fn(),
       isCanceled: () => false,
       progress: () => undefined,
       worker: async () => {

@@ -182,7 +182,7 @@ export function prepare(input: z.infer<typeof LensLand>): Landing {
     if (mapping.ops.length) {
       const categoryId = listSeries().find((s) => s.id === recording.seriesId)?.categoryId ?? null
       const note = input.noteId ? getNote(input.noteId) : createNote({ title: titleFor(d, date).slice(0, 500), categoryId })
-      if (!note || note.deletedAt || note.aiExcluded || note.kind !== 'cornell') throw new Error(lensMessage('note'))
+      if (!note || note.deletedAt || note.aiExcluded || note.attachmentOnly || note.kind !== 'cornell') throw new Error(lensMessage('note'))
       noteId = note.id
       if (!input.noteId)
         objects.push({
@@ -297,7 +297,7 @@ export function complete(id: string, update: Uint8Array): Landing {
   requireLensCloud(d.sourceId)
   if (row.noteId) {
     const note = getNote(row.noteId)
-    if (!note || note.deletedAt || note.aiExcluded) throw new Error(lensMessage('note'))
+    if (!note || note.deletedAt || note.aiExcluded || note.attachmentOnly) throw new Error(lensMessage('note'))
   }
   if (!d.result || d.transcriptRevision !== transcriptRevision(d.sourceId)) throw new Error(lensMessage('changed'))
   let p: Proposal | undefined,

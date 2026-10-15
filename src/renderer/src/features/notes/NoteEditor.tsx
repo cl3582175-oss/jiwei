@@ -315,11 +315,11 @@ function EditorBody({ note: initial }: { note: NoteSummary }) {
               <SaveSeal saving={saving} />
             </span>
           </Tip>
-          {note.aiExcluded && (
-            <Tip label={t('notes.aiExcludedHint')} side="bottom">
+          {(note.aiExcluded || note.attachmentOnly) && (
+            <Tip label={t(note.aiExcluded ? 'notes.notePrivacyLockUser' : 'notes.notePrivacyAttachmentOnly')} side="bottom">
               <span className="mr-1 inline-flex h-6 items-center gap-1 rounded-full bg-sunken px-2 text-2xs text-muted">
                 <ShieldOff className="size-3" />
-                {t('notes.aiExcluded')}
+                {t(note.aiExcluded ? 'notes.aiExcluded' : 'notes.notePrivacyAttachmentBadge')}
               </span>
             </Tip>
           )}
@@ -424,6 +424,9 @@ function EditorBody({ note: initial }: { note: NoteSummary }) {
                 {note.aiExcluded ? <Shield /> : <ShieldOff />}
                 {note.aiExcluded ? t('notes.aiInclude') : t('notes.aiExclude')}
               </MenuItem>
+              {note.attachmentOnly && (
+                <p className="max-w-64 px-2 py-1 text-xs leading-relaxed text-muted">{t('notes.notePrivacyAttachmentOnly')}</p>
+              )}
               {note.kind === 'cornell' && goals.length > 0 && (
                 <MenuSub>
                   <MenuSubTrigger>

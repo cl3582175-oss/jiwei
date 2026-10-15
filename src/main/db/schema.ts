@@ -104,7 +104,9 @@ export const notes = sqliteTable(
     aiWordCount: integer('ai_word_count').notNull().default(0),
     /** 正文最后修改时间（区别于 updated_at：后者包含置顶、分类等元数据变化） */
     editedAt: integer('edited_at').notNull(),
-    ...syncCols
+    ...syncCols,
+    /** 用户自己的 AI 排除选择；aiExcluded 保留为生效排除值。 */
+    userAiExcluded: integer('user_ai_excluded', { mode: 'boolean' }).notNull().default(false)
   },
   (t) => [
     index('notes_category_idx').on(t.categoryId),
@@ -1430,3 +1432,22 @@ export const importItems = sqliteTable(
   },
   (t) => [primaryKey({ columns: [t.runId, t.sourceKey] }), index('import_items_note_idx').on(t.noteId)]
 )
+
+/** 长任务可恢复的中间结果，任务完成与来源删除时清理。 */
+export const jobSteps = sqliteTable(
+  'job_steps',
+  {
+    jobId: text('job_id').notNull(),
+    stepKey: text('step_key').notNull(),
+    sourceId: text('source_id'),
+    output: text('output').notNull(),
+    createdAt: integer('created_at').notNull()
+  },
+  (t) => [primaryKey({ columns: [t.jobId, t.stepKey] })]
+)
+
+/** 归档过的附件：来源记录被彻底删除后，派生笔记仍按“已公开”处理，不重新上锁。 */
+export const releasedAttachments = sqliteTable('released_attachments', {
+  sourceId: text('source_id').primaryKey(),
+  releasedAt: integer('released_at').notNull()
+})

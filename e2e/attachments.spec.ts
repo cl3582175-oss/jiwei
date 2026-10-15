@@ -749,17 +749,11 @@ test('P6 复核回归：直接笔记工具持久隔离，任务工具拒绝，�
     .poll(async () => (await page.evaluate((id) => window.jiwei.chat.messages(id), result.conversation.id)).at(-1)?.status)
     .toBe('done')
   const n = (await page.evaluate(() => window.jiwei.notes.list({}))).find((n) => n.title === '附件生成的私有笔记')!
-  expect(n.aiExcluded).toBe(true)
-  expect(
-    await page.evaluate(
-      (id) =>
-        window.jiwei.notes.update(id, { aiExcluded: false }).then(
-          () => false,
-          () => true
-        ),
-      n.id
-    )
-  ).toBe(true)
+  expect(n).toMatchObject({ aiExcluded: false, attachmentOnly: true })
+  expect(await page.evaluate((id) => window.jiwei.notes.update(id, { aiExcluded: false }), n.id)).toMatchObject({
+    aiExcluded: false,
+    attachmentOnly: true
+  })
   model.setAnswer('普通对话回复')
   model.tool('note_find', { query: '附件生成的私有笔记' })
   await send('查询刚才生成的笔记', [], null, true)
@@ -881,4 +875,70 @@ test('P6 合并单元格Word附件在初始上下文、关键词命中与source_
   model.tool('source_read', { sourceId: id, from: segments.at(-1)!.ordinal, count: 1 })
   await send('读后面的行', [], first.conversation.id)
   expect(lastRequestText()).not.toMatch(/>ROW_240</)
+})
+
+test('长任务：上传附件整理成总结，提案持久化，跨对话隔离，归档后可检索', async () => {
+  await newChat()
+  const path = join(userDataDir, 'longtask-controlled.txt')
+  writeFileSync(path, '摘要稳定事实 LONGTASK-RESULT-MARKER：这是一段受控资料。')
+  await pickPaths([path])
+  await expect(page.getByTestId('attachment-chip')).toHaveAttribute('data-status', 'ready')
+  if (await page.getByTestId('attachment-cloud-notice').isVisible()) await page.getByRole('button', { name: '知道了', exact: true }).click()
+  const attachment = (await page.evaluate(() => window.jiwei.attachments.list({ state: 'unarchived' }))).find(
+    (a) => a.name === 'longtask-controlled.txt'
+  )!
+  const summary = '# 受控总结\n\n摘要稳定事实 LONGTASK-RESULT-MARKER。' + '受控资料的核心结论已经整理，并保留可编辑的笔记提案。'.repeat(4)
+  model.setAnswer(summary)
+  const existingJobs = new Set((await page.evaluate(() => window.jiwei.jobs.list())).map((j) => j.id))
+  const lockedTarget = await page.evaluate(async () => {
+    const note = await window.jiwei.notes.create({ title: 'Protected digest target' })
+    await window.jiwei.notes.update(note.id, { aiExcluded: true })
+    return note.id
+  })
+  model.tool('source_digest', { sourceId: attachment.sourceId, task: 'summary', noteId: lockedTarget })
+  await page.locator('textarea').last().fill('请把本对话附件完整整理成总结')
+  await page.getByRole('button', { name: '发送', exact: true }).last().click()
+  await expect(page.getByTestId('approval-card')).toContainText('目标笔记现在不能由 AI 写入，结果会放进一篇新笔记。')
+  await page.getByTestId('approval-card').getByRole('button', { name: '允许', exact: true }).click()
+  await expect
+    .poll(
+      async () =>
+        (await page.evaluate(() => window.jiwei.jobs.list())).find((j) => j.kind === 'source.digest' && !existingJobs.has(j.id))?.status
+    )
+    .toBe('done')
+  const note = (await page.evaluate(() => window.jiwei.notes.list({}))).find((n) => n.title.includes('longtask-controlled'))!
+  expect(note.id).not.toBe(lockedTarget)
+  await expect(page.getByText(`原来的笔记不能写入了，结果已放进新笔记《${note.title}》。`, { exact: true })).toBeVisible()
+  expect(note).toMatchObject({ aiExcluded: false, attachmentOnly: true })
+  const proposals = await page.evaluate((id) => window.jiwei.proposals.list(id), note.id)
+  expect(JSON.stringify(proposals)).toContain('LONGTASK-RESULT-MARKER')
+  expect(proposals).toHaveLength(1)
+  await navTo(page, /笔记/)
+  await page.getByText(note.title, { exact: true }).first().click()
+  await expect(page.getByText('仅限所属对话', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '全部接受', exact: true }).click()
+  await expect
+    .poll(async () => JSON.stringify(await page.evaluate((id) => window.jiwei.notes.blocks(id), note.id)))
+    .toContain('LONGTASK-RESULT-MARKER')
+  model.setAnswer('受控公共回复')
+  const toolText = () =>
+    model.requests
+      .at(-1)!
+      .messages.filter((m) => m.role === 'tool')
+      .map((m) => textOf(m.content))
+      .join('\n')
+  model.tool('note_find', { query: note.title })
+  await send('在另一个对话中查找笔记', [], null, true)
+  expect(toolText()).not.toContain(note.id)
+  model.tool('knowledge_search', { query: '摘要稳定事实' })
+  await send('在另一个对话中检索稳定事实', [], null, true)
+  expect(toolText()).not.toContain('LONGTASK-RESULT-MARKER')
+  await page.evaluate((id) => window.jiwei.attachments.archive([id], null), attachment.sourceId)
+  expect(await page.evaluate((id) => window.jiwei.notes.get(id), note.id)).toMatchObject({ aiExcluded: false, attachmentOnly: false })
+  model.tool('note_find', { query: note.title })
+  await send('归档后再查找笔记', [], null, true)
+  expect(toolText()).toContain(note.id)
+  model.tool('knowledge_search', { query: '摘要稳定事实' })
+  await send('归档后再检索稳定事实', [], null, true)
+  expect(toolText()).toContain('LONGTASK-RESULT-MARKER')
 })

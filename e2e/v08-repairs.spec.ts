@@ -25,7 +25,27 @@ const task = (name: string, rest: Partial<TaskInput> = {}): TaskInput => ({
 })
 const textOf = (v: unknown): string =>
   typeof v === 'string' ? v : Array.isArray(v) ? v.map((p: { text?: string }) => p.text ?? '').join('') : ''
-function respond(res: ServerResponse, value: string | null, name?: string, args: unknown = {}) {
+function respond(res: ServerResponse, value: string | null, name?: string, args: unknown = {}, stream = false) {
+  if (stream) {
+    res.writeHead(200, { 'content-type': 'text/event-stream' })
+    const send = (delta: unknown, finish_reason: string | null): void => {
+      res.write(
+        `data: ${JSON.stringify({ id: 'repair', object: 'chat.completion.chunk', created: 1, model: 'deepseek-flash', choices: [{ index: 0, delta, finish_reason }] })}\n\n`
+      )
+    }
+    send(
+      name
+        ? { tool_calls: [{ index: 0, id: name, type: 'function', function: { name, arguments: JSON.stringify(args) } }] }
+        : { content: value },
+      null
+    )
+    send({}, name ? 'tool_calls' : 'stop')
+    res.write(
+      `data: ${JSON.stringify({ id: 'repair', object: 'chat.completion.chunk', created: 1, model: 'deepseek-flash', choices: [], usage: { prompt_tokens: 100, completion_tokens: 500, total_tokens: 600 } })}\n\n`
+    )
+    res.end('data: [DONE]\n\n')
+    return
+  }
   res.writeHead(200, { 'content-type': 'application/json' }).end(
     JSON.stringify({
       id: 'repair',
@@ -157,12 +177,18 @@ test.beforeAll(async () => {
       } else if (system.includes('Score each candidate')) {
         const raw = textOf(input.messages.find((m: { role: string }) => m.role === 'user')?.content),
           data = JSON.parse(raw.slice(raw.indexOf('\n') + 1, raw.lastIndexOf('\n')))
-        respond(res, null, 'submit', { items: data.candidates.map((c: { id: string }) => ({ id: c.id, ...score() })) })
+        respond(res, null, 'submit', { items: data.candidates.map((c: { id: string }) => ({ id: c.id, ...score() })) }, input.stream)
       } else if (body.includes('discover.podcast'))
-        respond(res, null, 'submit', {
-          paragraphs: Array.from({ length: 3 }, () => '先想一想条件何时成立，再阅读公开材料对照自己的理解。'.repeat(20))
-        })
-      else respond(res, '受控结果')
+        respond(
+          res,
+          null,
+          'submit',
+          {
+            paragraphs: Array.from({ length: 3 }, () => '先想一想条件何时成立，再阅读公开材料对照自己的理解。'.repeat(20))
+          },
+          input.stream
+        )
+      else respond(res, '受控结果', undefined, {}, input.stream)
     })
   })
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r))

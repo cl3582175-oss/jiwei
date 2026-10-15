@@ -210,7 +210,7 @@ export function buildDoTools(
       }),
       execute: async ({ title, rows, summary }) => {
         const note = getDb().transaction(() => {
-          const note = createNote({ title: bare(title), aiExcluded: privacy?.privateAttachments ?? false })
+          const note = createNote({ title: bare(title) })
           if (privacy?.sourceIds.length) protectNoteAttachments(note.id, privacy.sourceIds)
           return note
         })
