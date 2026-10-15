@@ -113,6 +113,7 @@ function buildRawModel(req: ModelRequest): BuiltModel {
   const kind = row.kind as ProviderKind
   const preset = PROVIDER_PRESETS[kind]
   const apiKey = decryptKey(row) ?? undefined
+  if (!row.baseUrl) throw new Error(`「${row.name}」还没有填写接口地址`)
   if (preset.needsKey && !apiKey) throw new Error(`「${row.name}」还没有设置 API Key`)
   const effort = clampEffort(kind, req.effort)
   const fetch = net.fetch as unknown as typeof globalThis.fetch

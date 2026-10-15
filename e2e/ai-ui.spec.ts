@@ -60,3 +60,45 @@ test('AI settings and chat UI without a key', async () => {
   expect(Object.keys(providers[0])).not.toContain('apiKey')
   await app.close()
 })
+
+// 自定义（OpenAI 兼容）：预设地址为空，必须能先建卡片，再填地址、密钥、模型
+test('custom OpenAI-compatible provider can be added', async () => {
+  const app = await electron.launch({
+    args: ['.', `--user-data-dir=${mkdtempSync(join(tmpdir(), 'jiwei-e2e-ai-custom-'))}`],
+    env: { ...process.env, JIWEI_LANG: 'zh-CN', JIWEI_SKIP_ONBOARDING: '1' }
+  })
+  const page = await app.firstWindow()
+  await page.waitForSelector('nav')
+  const errors: string[] = []
+  await navTo(page, /AI 对话/)
+  await page.getByRole('button', { name: '去设置模型服务' }).click()
+  await page.getByRole('button', { name: /更多选择/ }).click()
+  await page.getByRole('menuitem', { name: /高级设置/ }).click()
+  await page.getByRole('button', { name: '添加服务' }).click()
+  await page.getByRole('menuitem', { name: '自定义（OpenAI 兼容）' }).click()
+  page.on('console', (m) => m.type() === 'error' && errors.push(m.text()))
+  const addr = page.getByRole('textbox', { name: '接口地址（Base URL）' })
+  await expect(addr).toHaveValue('')
+  // 地址未填时连接测试给出提示，而不是去请求空地址
+  expect(await page.evaluate(async () => window.jiwei.providers.test((await window.jiwei.providers.list())[0].id))).toMatchObject({
+    ok: false,
+    message: '请先填写接口地址'
+  })
+  await addr.fill('https://api.example.test/v1')
+  await page.getByLabel('API Key').fill('sk-test-placeholder')
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  await page.getByPlaceholder('手动添加模型…').fill('example-flash')
+  await page.getByPlaceholder('手动添加模型…').press('Enter')
+  await expect
+    .poll(async () => (await page.evaluate(() => window.jiwei.providers.list()))[0])
+    .toMatchObject({ kind: 'custom', baseUrl: 'https://api.example.test/v1', hasKey: true, models: ['example-flash'] })
+  // 用户提交的非法地址仍会被拒绝
+  await expect(
+    page.evaluate(async () => {
+      const p = (await window.jiwei.providers.list())[0]
+      return window.jiwei.providers.save({ id: p.id, kind: 'custom', baseUrl: 'example.test' })
+    })
+  ).rejects.toThrow(/http/)
+  expect(errors).toEqual([])
+  await app.close()
+})

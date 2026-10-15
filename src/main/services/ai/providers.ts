@@ -89,7 +89,9 @@ export function saveProvider(input: ProviderInput): ProviderInfo {
   const patch: Partial<Row> = { kind: input.kind, updatedAt: now, updatedBy: deviceId() }
   if (!input.id || input.baseUrl !== undefined) {
     const baseUrl = (input.baseUrl ?? preset.baseURL).trim().replace(/\/+$/, '')
-    if (!/^https?:\/\//.test(baseUrl)) throw new Error('请填写以 http:// 或 https:// 开头的接口地址')
+    // 新建“自定义”时预设地址为空，先建卡片再让用户填写；用户提交的地址必须合法
+    const blankNew = !input.id && input.baseUrl === undefined && !baseUrl
+    if (!blankNew && !/^https?:\/\//.test(baseUrl)) throw new Error('请填写以 http:// 或 https:// 开头的接口地址')
     patch.baseUrl = baseUrl
   }
   if (!input.id || input.name !== undefined) patch.name = input.name?.trim() || preset.name
@@ -141,6 +143,7 @@ function headers(row: Row): Record<string, string> {
 /** 拉取服务商的模型列表（OpenAI 兼容 / Anthropic / Gemini 三种格式） */
 export async function fetchModels(id: string): Promise<string[]> {
   const row = getProviderRow(id)
+  if (!row.baseUrl) throw new Error('请先填写接口地址')
   const res = await net.fetch(`${row.baseUrl}/models`, { headers: headers(row), signal: AbortSignal.timeout(15_000) })
   if (!res.ok) throw new Error(`HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`)
   const body = (await res.json()) as { data?: { id: string }[]; models?: { name: string }[] }
@@ -154,6 +157,7 @@ export async function fetchModels(id: string): Promise<string[]> {
 export async function testProvider(id: string): Promise<ProviderTestResult> {
   const row = getProviderRow(id)
   const t0 = Date.now()
+  if (!row.baseUrl) return { ok: false, latencyMs: 0, message: '请先填写接口地址' }
   try {
     const res = await net.fetch(`${row.baseUrl}/models`, { headers: headers(row), signal: AbortSignal.timeout(15_000) })
     if (res.status === 401 || res.status === 403) return { ok: false, latencyMs: Date.now() - t0, message: 'API Key 无效或没有权限' }
