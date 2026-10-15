@@ -20,13 +20,15 @@ export function parsePointLines(text: string, validIds: Set<string>): Points {
     const body = match[1]
       .replace(/[{｛（(【[]([^}｝）)】\]]+)[}｝）)】\]]/g, (ref, id: string) => {
         id = id.trim()
-        if (validIds.has(id)) {
-          segmentId ??= id
+        // 模型常照原文行首写成 {ID p.3} 或 {ID1, ID2}：拆开取第一个有效 ID。
+        const hit = [id, ...id.split(/[\s,，;；|]+/)].find((t) => validIds.has(t))
+        if (hit) {
+          segmentId ??= hit
           return ''
         }
         // 花括号和【】是引用标记；普通括号里的缩写、年份和参数属于正文。
         const explicitReference = /^[{｛【]/.test(ref) && /^[\w-]+$/.test(id)
-        const unknownSegmentId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)
+        const unknownSegmentId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:\s+p\.?\s*\d+)?$/i.test(id)
         return explicitReference || unknownSegmentId ? '' : ref
       })
       .trim()

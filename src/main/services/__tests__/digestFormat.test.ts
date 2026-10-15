@@ -82,3 +82,15 @@ it('康奈尔schema接受大结果，规整为原有行数、长度与引用上�
   expect(result).toHaveLength(24)
   expect(result.every((r) => r.cue.length === 200 && r.body.length === 2000 && r.segmentIds.length === 12)).toBe(true)
 })
+
+it('照原文行首写成 {ID p.3} 或多个 ID 时仍取到有效引用，不留在正文里', async () => {
+  const { parsePointLines } = await import('../digestFormat')
+  const a = '01a13e66-98b8-7705-b3f4-c47ebbbbe576',
+    b = '01a13e66-98b8-7705-b3f4-c47ebbbbe577',
+    gone = '01a13e66-98b8-7705-b3f4-c47ebbbbe999'
+  expect(parsePointLines(`- 第一条 {${a} p.3}\n- 第二条 {${b}, ${a}}\n- 第三条 [${gone} p.9]`, new Set([a, b])).points).toEqual([
+    { text: '第一条', segmentId: a },
+    { text: '第二条', segmentId: b },
+    { text: '第三条' }
+  ])
+})
