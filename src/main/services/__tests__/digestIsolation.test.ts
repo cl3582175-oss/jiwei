@@ -83,6 +83,7 @@ it('整理新建笔记在首次模型请求前就隔离；失败和取消不能�
   const ctx = {
     worker: vi.fn(),
     progress: vi.fn(),
+    yieldPoint: () => {},
     isCanceled: () => false,
     step: <T>(_key: string, _source: string | null, fn: () => Promise<T>) => fn()
   }
@@ -119,6 +120,7 @@ it('整理已有目标笔记先隔离，并且模型只能读取表格前200行'
     f.run!(input, {
       worker: vi.fn(),
       progress: vi.fn(),
+      yieldPoint: () => {},
       isCanceled: () => false,
       step: <T>(_key: string, _source: string | null, fn: () => Promise<T>) => fn()
     })

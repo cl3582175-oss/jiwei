@@ -7,7 +7,7 @@ import { getDb, getSqlite } from '../db'
 import { jobs, jobSteps, sources } from '../db/schema'
 import { newId } from '../lib/ids'
 import { emit } from '../events'
-import type { Job } from '@shared/types'
+import type { Job, JobWaiting, Lane } from '@shared/types'
 import { voiceErrorText } from './voiceMessages'
 
 // 持久化后台任务：
@@ -16,8 +16,19 @@ import { voiceErrorText } from './voiceMessages'
 //   - 耗时计算在 utilityProcess 工作进程中执行，主进程只做调度与落库
 
 const MAX_ATTEMPTS = 3
-const CONCURRENCY = 2
+const POOL = { user: 2, background: 2 } satisfies Record<Lane, number>
 const TICK_MS = 1000
+const YIELD_AFTER_MS = 180_000
+
+export class JobDeferred extends Error {
+  constructor(
+    readonly after: number,
+    readonly reason: 'yield' | 'waiting'
+  ) {
+    super(reason)
+    this.name = 'JobDeferred'
+  }
+}
 
 export class PermanentJobError extends Error {
   readonly permanent = true
@@ -67,6 +78,8 @@ export interface JobContext {
   step<T>(key: string, sourceId: string | null, fn: () => Promise<T>): Promise<T>
   signal?: AbortSignal
   progress(p: number): void
+  /** 已持久化一个安全批次后，让同通道的其他任务运行。 */
+  yieldPoint(): void
   /** 在工作进程中执行任务 */
   worker<T>(task: string, payload: unknown, signal?: AbortSignal): Promise<T>
   isCanceled(): boolean
@@ -75,6 +88,8 @@ export interface JobContext {
 }
 
 export interface JobKind<P = unknown> {
+  lane?: Lane | ((payload: P) => Lane)
+  waiting?(payload: P): JobWaiting | null
   maxAttempts?: number
   retryOnRestart?: boolean
   title(payload: P): string
@@ -90,7 +105,8 @@ export interface JobKind<P = unknown> {
 }
 
 const kinds = new Map<string, JobKind>()
-const running = new Set<string>()
+const running = new Map<string, Lane>()
+const yielded = new Set<string>()
 const canceled = new Set<string>()
 const interrupted = new Set<string>()
 const controllers = new Map<string, AbortController>()
@@ -170,12 +186,30 @@ export function runInWorker<T>(task: string, payload: unknown, onProgress?: (p: 
 
 type Row = typeof jobs.$inferSelect
 
+function laneOf(r: Pick<Row, 'kind' | 'payload'>): Lane {
+  try {
+    const lane = kinds.get(r.kind)?.lane
+    return typeof lane === 'function' ? lane(JSON.parse(r.payload)) : (lane ?? 'background')
+  } catch (error) {
+    log.warn('[jobs] lane calculation failed', r.kind, error)
+    return 'background'
+  }
+}
+
 function toJob(r: Row): Job {
   let title = r.kind
+  let waiting: JobWaiting | null = null
   try {
     title = kinds.get(r.kind)?.title(JSON.parse(r.payload)) ?? r.kind
   } catch {
     /* 保持默认标题 */
+  }
+  if (r.status === 'queued') {
+    try {
+      waiting = kinds.get(r.kind)?.waiting?.(JSON.parse(r.payload)) ?? null
+    } catch (error) {
+      log.warn('[jobs] waiting calculation failed', r.kind, error)
+    }
   }
   return {
     id: r.id,
@@ -185,6 +219,9 @@ function toJob(r: Row): Job {
     attempts: r.attempts,
     error: r.error,
     title,
+    lane: running.get(r.id) ?? laneOf(r),
+    waiting,
+    yielded: r.status === 'queued' && yielded.has(r.id),
     key: r.dedupeKey,
     runAfter: r.runAfter,
     createdAt: r.createdAt,
@@ -225,6 +262,7 @@ export function enqueue(kind: string, payload: unknown, opts?: { dedupeKey?: str
 
 function setStatus(id: string, set: Partial<Row>, notify = true): void {
   if (stopped) return
+  if (set.status && !['queued', 'running'].includes(set.status)) yielded.delete(id)
   getDb()
     .update(jobs)
     .set({ ...set, updatedAt: Date.now() })
@@ -233,17 +271,21 @@ function setStatus(id: string, set: Partial<Row>, notify = true): void {
   if (notify) emit('jobs:changed', { ids: [id] })
 }
 
-async function execute(r: Row): Promise<void> {
+async function execute(r: Row, lane: Lane): Promise<void> {
   const kind = kinds.get(r.kind)
   if (!kind) {
     setStatus(r.id, { status: 'failed', error: `Unknown job kind: ${r.kind}` })
     return
   }
-  running.add(r.id)
+  running.set(r.id, lane)
+  yielded.delete(r.id)
   const abort = new AbortController()
   controllers.set(r.id, abort)
-  setStatus(r.id, { status: 'running', attempts: r.attempts + 1, progress: 0 })
+  setStatus(r.id, { status: 'running', attempts: r.attempts + 1 })
   let lastEmit = 0
+  const startedAt = Date.now()
+  let checkedAt = -Infinity
+  let hasWaiter = false
   const identity = getDb()
   const ctx: JobContext = {
     jobId: r.id,
@@ -299,6 +341,23 @@ async function execute(r: Row): Promise<void> {
       if (notify) lastEmit = Date.now()
       setStatus(r.id, { progress: Math.max(0, Math.min(1, p)) }, notify)
     },
+    yieldPoint: () => {
+      abort.signal.throwIfAborted()
+      if (laneOf(r) !== lane) throw new JobDeferred(0, 'yield')
+      const now = Date.now()
+      if (now - startedAt < YIELD_AFTER_MS) return
+      if (now - checkedAt >= 5000) {
+        // 函数通道依赖当前领域状态，仅读取到期候选的类型和 payload，缓存本通道的计数结果。
+        hasWaiter = identity
+          .select({ kind: jobs.kind, payload: jobs.payload })
+          .from(jobs)
+          .where(and(eq(jobs.status, 'queued'), lte(jobs.runAfter, now)))
+          .all()
+          .some((candidate) => laneOf(candidate) === lane)
+        checkedAt = now
+      }
+      if (hasWaiter) throw new JobDeferred(0, 'yield')
+    },
     worker: (task, payload, signal) =>
       runInWorker(task, payload, ctx.progress, signal ? AbortSignal.any([abort.signal, signal]) : abort.signal),
     isCanceled: () => canceled.has(r.id),
@@ -313,6 +372,12 @@ async function execute(r: Row): Promise<void> {
     })
   } catch (e) {
     if (canceled.has(r.id)) return
+    if (e instanceof JobDeferred) {
+      if (e.reason === 'yield') yielded.add(r.id)
+      else yielded.delete(r.id)
+      setStatus(r.id, { status: 'queued', attempts: r.attempts, runAfter: Date.now() + e.after })
+      return
+    }
     const attempts = r.attempts + 1
     const msg = voiceErrorText(e)
     log.warn('[jobs]', r.kind, r.id, 'failed', attempts, msg)
@@ -330,8 +395,9 @@ async function execute(r: Row): Promise<void> {
 
 function tick(): void {
   if (stopped) return
-  const free = CONCURRENCY - running.size
-  if (free <= 0) return
+  const free = { ...POOL }
+  for (const lane of running.values()) free[lane]--
+  if (free.user <= 0 && free.background <= 0) return
   const low = [...kinds].filter(([, kind]) => kind.priority === 'low').map(([name]) => name)
   const priority = low.length
     ? [
@@ -345,12 +411,14 @@ function tick(): void {
     .select()
     .from(jobs)
     .where(and(eq(jobs.status, 'queued'), lte(jobs.runAfter, Date.now())))
-    .orderBy(...priority, asc(jobs.createdAt))
-    .limit(free)
+    .orderBy(...priority, asc(jobs.runAfter), asc(jobs.createdAt))
     .all()
     .filter((r) => !running.has(r.id))
   for (const r of due) {
-    const run = execute(r)
+    const lane = laneOf(r)
+    if (free[lane] <= 0) continue
+    free[lane]--
+    const run = execute(r, lane)
     executions.set(run, r.kind)
     void run.finally(() => executions.delete(run))
   }
@@ -358,6 +426,7 @@ function tick(): void {
 
 export function startJobs(): void {
   stopped = false
+  yielded.clear()
   getSqlite()
     .prepare('DELETE FROM job_steps WHERE created_at < ? OR job_id NOT IN (SELECT id FROM jobs)')
     .run(Date.now() - 30 * 86_400_000)
@@ -378,10 +447,10 @@ export function startJobs(): void {
 export function stopJobs(): void {
   stopped = true
   // 正在运行的任务标记为取消：它们的后续结果不会再写入
-  running.forEach((id) => {
+  for (const id of running.keys()) {
     if (!canceled.has(id)) interrupted.add(id)
     canceled.add(id)
-  })
+  }
   for (const abort of controllers.values()) abort.abort()
   if (timer) clearInterval(timer)
   timer = null
@@ -420,6 +489,7 @@ export function retryJob(id: string): void {
   const db = getDb()
   const job = db.select().from(jobs).where(eq(jobs.id, id)).get()
   if (!job) return
+  yielded.delete(id)
   db.transaction(() => {
     setStatus(id, { status: 'queued', attempts: 0, error: null, runAfter: Date.now() })
     kinds.get(job.kind)?.onRetry?.(JSON.parse(job.payload))
@@ -435,6 +505,26 @@ export function runJobNow(id: string): void {
   if (!job || job.status !== 'queued') return
   setStatus(id, { runAfter: Date.now() })
   setImmediate(tick)
+}
+
+/** 只合并排队任务的对象 payload，不能改变已经运行的尝试。 */
+export function patchQueuedPayload(id: string, patch: Record<string, unknown>): boolean {
+  const db = getDb()
+  const job = db
+    .select()
+    .from(jobs)
+    .where(and(eq(jobs.id, id), eq(jobs.status, 'queued')))
+    .get()
+  if (!job) return false
+  const payload: unknown = JSON.parse(job.payload)
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return false
+  const result = db
+    .update(jobs)
+    .set({ payload: JSON.stringify({ ...payload, ...patch }), updatedAt: Date.now() })
+    .where(and(eq(jobs.id, id), eq(jobs.status, 'queued')))
+    .run()
+  if (result.changes) emit('jobs:changed', { ids: [id] })
+  return result.changes > 0
 }
 
 /** 原件恢复使用完整键查找，复用活动任务及取消尝试的迟到结果隔离。 */

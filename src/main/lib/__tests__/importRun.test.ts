@@ -114,6 +114,7 @@ function context(block?: { at: number; entered: () => void; resume: Promise<void
   return {
     step: <T>(_key: string, _sourceId: string | null, fn: () => Promise<T>) => fn(),
     progress: vi.fn(),
+    yieldPoint: () => {},
     isCanceled: () => false,
     worker: async <T>(_task: string, payload: unknown): Promise<T> => {
       if (++count === block?.at) {
