@@ -171,6 +171,8 @@ export interface FullSourceEvidence {
   sourceIds: string[]
   full: boolean
   hits: SearchHit[]
+  /** 资料只来自隐式的当前视图（未指定范围、目标或附件）：可作证据，但不能收窄全库检索。 */
+  implicit: boolean
 }
 
 /** 本轮明确指定的资料共用一个词元预算；缺页或预览省略不能称为全文。每次发给模型前重新核对权限。 */
@@ -218,10 +220,17 @@ export function fullSourceEvidence(
     selected.push({ ...source, segments: preview })
   }
   const full = complete && fullSourceFits(selected, contextLength, ceiling)
+  const explicit = new Set([
+    ...(scope.type === 'items' ? scope.sources : []),
+    ...(packet?.targets ?? []).filter(wholeSource).map((a) => a.parentId),
+    ...attachments
+  ])
+  const implicit = scope.type === 'all' && selected.some((s) => !explicit.has(s.id))
   const chars = selected.reduce((sum, s) => sum + s.segments.reduce((n, g) => n + g.text.length, 0), 0)
   return {
     sourceIds: selected.map((s) => s.id),
     full,
+    implicit,
     hits: full ? sourceContextHits(selected, chars, { full: true }).map((h) => ({ ...h, via: 'context' as const })) : []
   }
 }

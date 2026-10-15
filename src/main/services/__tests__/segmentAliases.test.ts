@@ -165,6 +165,24 @@ describe('旧库升级与永久片段身份', () => {
     expect(segments.resolveSegmentId(old.id)).toBeNull()
     expect(f.sql!.prepare('SELECT count(*) n FROM segment_aliases').get()).toEqual({ n: 0 })
   })
+  it('长资料无页码重切时别名匹配不做全量两两比较', () => {
+    apply(sqlFiles())
+    source()
+    // 合成常用汉字段落：相邻段共享部分字词，与真实书籍的二字分布相近。
+    const para = (i: number) =>
+      Array.from({ length: 80 }, (_, j) => String.fromCharCode(0x4e00 + ((i * 131 + j * 17 + ((j * j) % 23)) % 3000))).join('')
+    segments.replaceSegments(
+      's',
+      Array.from({ length: 6000 }, (_, i) => ({ kind: 'paragraph', locator: {}, text: para(i) }))
+    )
+    const started = performance.now()
+    segments.replaceSegments(
+      's',
+      Array.from({ length: 2000 }, (_, i) => ({ kind: 'paragraph', locator: {}, text: para(3 * i) + para(3 * i + 1) + para(3 * i + 2) }))
+    )
+    expect(performance.now() - started).toBeLessThan(15000)
+    expect(f.sql!.prepare('SELECT count(*) n FROM segment_aliases').get()).toEqual({ n: 6000 })
+  }, 30000)
   it('不同页和低相似度不误配，失败事务不留下半写结果', () => {
     apply(sqlFiles())
     source()

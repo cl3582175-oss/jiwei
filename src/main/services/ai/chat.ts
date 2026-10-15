@@ -793,11 +793,14 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
     attachmentTurn = special ? attachmentTurn : await prepareAttachmentTurn(conversationId, input.text, zh, uiMode, session.vision ?? false)
     let sourcePlan = fullSourceEvidence(input.context, input.scope, session.attachmentSourceIds, conversationId, contextLength, fullCeiling)
     // 全文已包含资料所有片段，检索只补笔记；长资料在明确的集合内检索。
-    const retrievalOpts = sourcePlan.full
-      ? { notesOnly: true }
-      : sourcePlan.sourceIds.length
-        ? { sourceIds: sourcePlan.sourceIds, includeNotes: true }
-        : {}
+    // 只因“正在看”而选中的资料不收窄全库检索；与全文重复的片段在下方去重。
+    const retrievalOpts = sourcePlan.implicit
+      ? {}
+      : sourcePlan.full
+        ? { notesOnly: true }
+        : sourcePlan.sourceIds.length
+          ? { sourceIds: sourcePlan.sourceIds, includeNotes: true }
+          : {}
     const retrieved =
       special || (input.scope.type === 'none' && !sourcePlan.sourceIds.length)
         ? []

@@ -165,31 +165,47 @@ export function replaceSegments(sourceId: string, input: SegmentInput[]): number
     })
     const dropped = prev.filter((r) => !kept.has(r.id))
     const remap = new Map<string, string>()
+    // 倒排二字索引：只比较共享二字的新片段，长书升级时不在主进程做全量笛卡尔积。
+    const ranges = next.map((c) => pageRange(c.locator)),
+      postings = new Map<string, number[]>()
+    next.forEach((c, i) =>
+      c.grams.forEach((g) => {
+        const list = postings.get(g)
+        if (list) list.push(i)
+        else postings.set(g, [i])
+      })
+    )
+    // 已有别名一次读入，避免每个旧片段各扫一遍本资料的别名表。
+    const aliasesTo = new Map<string, string[]>()
+    if (dropped.length)
+      for (const a of tx.select().from(segmentAliases).where(eq(segmentAliases.sourceId, sourceId)).all())
+        aliasesTo.set(a.newId, [...(aliasesTo.get(a.newId) ?? []), a.oldId])
     for (const old of dropped) {
       const range = pageRange(JSON.parse(old.locator)),
-        grams = bigrams(old.text)
-      let best: (typeof next)[number] | null = null,
+        grams = bigrams(old.text),
+        shared = new Map<number, number>()
+      for (const g of grams) for (const i of postings.get(g) ?? []) shared.set(i, (shared.get(i) ?? 0) + 1)
+      let index = -1,
         score = 0
-      for (const candidate of next) {
-        const candidateRange = pageRange(candidate.locator)
+      for (const [i, count] of shared) {
+        const candidateRange = ranges[i]
         if (range && (!candidateRange || candidateRange[1] < range[0] || candidateRange[0] > range[1])) continue
-        const similarity = grams.size ? [...grams].filter((g) => candidate.grams.has(g)).length / grams.size : 0
-        if (similarity > score) {
-          best = candidate
+        const similarity = count / grams.size
+        // 同分取顺序靠前者，与逐个比较时的结果一致。
+        if (similarity > score || (similarity === score && i < index)) {
+          index = i
           score = similarity
         }
       }
+      const best = index >= 0 ? next[index] : null
       if (!best || score < 0.3) continue
-      for (const prior of tx
-        .select()
-        .from(segmentAliases)
-        .where(and(eq(segmentAliases.sourceId, sourceId), eq(segmentAliases.newId, old.id)))
-        .all())
-        remap.set(prior.oldId, best.id)
-      tx.update(segmentAliases)
-        .set({ newId: best.id })
-        .where(and(eq(segmentAliases.sourceId, sourceId), eq(segmentAliases.newId, old.id)))
-        .run()
+      const priors = aliasesTo.get(old.id) ?? []
+      for (const prior of priors) remap.set(prior, best.id)
+      if (priors.length)
+        tx.update(segmentAliases)
+          .set({ newId: best.id })
+          .where(and(eq(segmentAliases.sourceId, sourceId), eq(segmentAliases.newId, old.id)))
+          .run()
       tx.insert(segmentAliases)
         .values({ oldId: old.id, newId: best.id, sourceId, createdAt: now })
         .onConflictDoUpdate({ target: segmentAliases.oldId, set: { newId: best.id, sourceId, createdAt: now } })

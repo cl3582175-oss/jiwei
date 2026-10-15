@@ -579,6 +579,11 @@ it('full source plan unions explicit scope and whole context, preserves all segm
   expect(plan.sourceIds).toEqual(['a', 'b'])
   expect(plan.hits).toHaveLength(16)
   expect(sourceContext.fullSourceEvidence(packet, { type: 'all' }, [], null, 10).full).toBe(false)
+  // 显式目标仍收窄检索；仅“正在看”的整份资料不能把全库提问收窄成单份资料。
+  expect(sourceContext.fullSourceEvidence(packet, { type: 'all' }, [], null, 128000).implicit).toBe(false)
+  const viewing = { targets: [], viewport: { kind: 'viewport' as const, parentType: 'source' as const, parentId: 'b' } }
+  expect(sourceContext.fullSourceEvidence(viewing, { type: 'all' }, [], null, 128000).implicit).toBe(true)
+  expect(sourceContext.fullSourceEvidence(viewing, { type: 'none' }, [], null, 128000).implicit).toBe(false)
   env.sqlite!.exec("INSERT INTO source_pages(source_id,page,need,status,updated_at) VALUES('a',1,'scan','pending',1)")
   expect(sourceContext.fullSourceEvidence(packet, { type: 'items', sources: ['a'], notes: [] }, [], null, 128000).full).toBe(false)
 })
