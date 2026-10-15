@@ -42,7 +42,7 @@ export function ContextChip({ model, caps, onSave }: { model: string; caps: Mode
         </Popover.Trigger>
       </Tip>
       <Popover.Portal>
-        <Popover.Content sideOffset={6} align="end" className="z-60 w-72 rounded-xl border border-border bg-surface-raised p-3 shadow-lg">
+        <Popover.Content sideOffset={6} align="end" className="z-[60] w-72 rounded-xl border border-border bg-surface p-3 shadow-float">
           <p className="mb-2 text-xs text-muted">{t('ai.caps.contextHelp')}</p>
           <div className="flex flex-wrap gap-1">
             {[32000, 64000, 128000, 200000, 1000000].map((n) => (

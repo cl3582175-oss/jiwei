@@ -81,8 +81,11 @@ function ModelRow({
     )
   const how = (k: 'vision' | 'tools' | 'tier'): string => (custom(k) ? t('ai.caps.custom') : t('ai.caps.auto'))
   return (
-    <li className="group flex min-h-9 flex-wrap items-center gap-2 rounded-lg px-2.5 hover:bg-surface-hover" data-model={model}>
-      <span className="min-w-0 flex-1 truncate font-mono text-xs text-fg">{model}</span>
+    <li
+      className="group flex min-h-9 flex-wrap items-center gap-x-2 gap-y-1 rounded-lg px-2.5 py-1 hover:bg-surface-hover"
+      data-model={model}
+    >
+      <span className="min-w-32 flex-1 truncate font-mono text-xs text-fg">{model}</span>
       <ContextChip model={model} caps={caps} onSave={(context) => set({ context })} />
       <PriceChip
         model={model}
