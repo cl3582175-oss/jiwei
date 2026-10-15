@@ -258,6 +258,7 @@ export const ProviderInputSchema = z.object({
         vision: z.boolean().optional(),
         tools: z.boolean().optional(),
         tier: z.enum(['basic', 'strong']).optional(),
+        context: z.number().int().min(1024).max(100_000_000).optional(),
         /** 每百万 token 单价（v0.7.5） */
         price: z
           .object({

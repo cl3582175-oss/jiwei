@@ -329,6 +329,11 @@ export interface ModelCapsOverride {
   vision?: boolean
   tools?: boolean
   tier?: ModelTier
+  /** 用户手动设定的上下文预算（词元） */
+  context?: number
+  /** 主进程发现/学习的自动预算，与手动覆盖分开保存 */
+  reportedContext?: number
+  learnedContext?: number
   /** 用户填写的价格（v0.7.5），优先于内置价格 */
   price?: ModelPrice
 }
@@ -336,8 +341,29 @@ export interface ModelCaps {
   vision: boolean
   tools: boolean
   tier: ModelTier
+  context: number
+  contextSource: ContextSource
   /** 按名称自动判断的结果（界面上显示“自动”时用） */
-  auto: { vision: boolean; tools: boolean; tier: ModelTier }
+  auto: { vision: boolean; tools: boolean; tier: ModelTier; context: number; contextSource: Exclude<ContextSource, 'manual'> }
+}
+
+export type ContextSource = 'manual' | 'provider' | 'error' | 'builtin' | 'default'
+export const validContext = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isSafeInteger(value) && value >= 1024 && value <= 100_000_000
+
+/** 仅用于预算兜底，不代表服务商保证的官方上限。 */
+function builtinContext(model: string, kind: ProviderKind): number | null {
+  if (kind === 'ollama') return null
+  if (/^deepseek-(?:flash|v4(?:\.1)?-(?:flash|pro))(?:-|$)/i.test(model)) return 1_000_000
+  if (/^minimax-/i.test(model)) return 1_000_000
+  if (/^deepseek-(?:chat|reasoner)$/i.test(model)) return 128000
+  if (/^qwen-(?:plus|turbo)/i.test(model)) return 32768
+  if (/^kimi-|^moonshot-/i.test(model)) return 128000
+  if (/^glm-/i.test(model)) return 32768
+  if (/^gpt-|^o[1-4](?:-|$)/i.test(model)) return 128000
+  if (/^claude-/i.test(model)) return 200000
+  if (/^gemini-/i.test(model)) return 1048576
+  return null
 }
 
 /** 按名称识别的旗舰模型；无法识别的视为 basic（宁可降级为模板，也不产出低质量结果） */
@@ -377,10 +403,30 @@ export const autoTier = (model: string): ModelTier => (STRONG_MODELS.some((r) =>
 export const autoVision = (model: string): boolean => VISION_MODELS.some((r) => r.test(model))
 
 /** 模型的实际能力：用户设定优先，否则按名称自动判断 */
-export function resolveCaps(model: string, overrides?: Record<string, ModelCapsOverride> | null): ModelCaps {
-  const auto = { vision: autoVision(model), tools: true, tier: autoTier(model) }
+export function resolveCaps(model: string, overrides?: Record<string, ModelCapsOverride> | null, kind: ProviderKind = 'custom'): ModelCaps {
   const o = overrides?.[model]
-  return { vision: o?.vision ?? auto.vision, tools: o?.tools ?? auto.tools, tier: o?.tier ?? auto.tier, auto }
+  const builtin = builtinContext(model, kind)
+  const context = validContext(o?.reportedContext)
+    ? o.reportedContext
+    : validContext(o?.learnedContext)
+      ? o.learnedContext
+      : (builtin ?? (kind === 'ollama' ? 8192 : 65536))
+  const contextSource = validContext(o?.reportedContext)
+    ? 'provider'
+    : validContext(o?.learnedContext)
+      ? 'error'
+      : builtin
+        ? 'builtin'
+        : 'default'
+  const auto = { vision: autoVision(model), tools: true, tier: autoTier(model), context, contextSource } as ModelCaps['auto']
+  return {
+    vision: o?.vision ?? auto.vision,
+    tools: o?.tools ?? auto.tools,
+    tier: o?.tier ?? auto.tier,
+    context: validContext(o?.context) ? o.context : context,
+    contextSource: validContext(o?.context) ? 'manual' : contextSource,
+    auto
+  }
 }
 
 /* ——— 向量模型 ——— */

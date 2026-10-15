@@ -980,6 +980,18 @@ const en: Messages = {
     models: 'Models',
     fetchModels: 'Fetch from provider',
     caps: {
+      context: 'Context',
+      contextTokens: 'Context tokens',
+      contextHelp: 'Used for source budgets. Automatic values are discovered or estimated; adjust to your service.',
+      contextAuto: 'Use automatic',
+      contextAutomatic: 'Automatic: {{value}} ({{source}})',
+      contextSource: {
+        manual: 'Manual',
+        provider: 'Provider report',
+        error: 'Learned from error',
+        builtin: 'Built-in estimate',
+        default: 'Default'
+      },
       vision: 'Vision',
       strong: 'Strong',
       visionOn: 'Sees images: region and video-frame questions include the image',

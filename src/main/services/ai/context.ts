@@ -179,7 +179,8 @@ export function fullSourceEvidence(
   scope: ChatScope,
   attachments: string[],
   conversationId: string | null,
-  contextLength: number
+  contextLength: number,
+  ceiling?: number
 ): FullSourceEvidence {
   const anchors = [...(packet?.targets ?? []), ...(packet?.viewport ? [packet.viewport] : [])].filter(wholeSource)
   const ids = [...new Set([...(scope.type === 'items' ? scope.sources : []), ...anchors.map((a) => a.parentId), ...attachments])]
@@ -216,7 +217,7 @@ export function fullSourceEvidence(
       complete = false
     selected.push({ ...source, segments: preview })
   }
-  const full = complete && fullSourceFits(selected, contextLength)
+  const full = complete && fullSourceFits(selected, contextLength, ceiling)
   const chars = selected.reduce((sum, s) => sum + s.segments.reduce((n, g) => n + g.text.length, 0), 0)
   return {
     sourceIds: selected.map((s) => s.id),

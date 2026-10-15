@@ -33,11 +33,11 @@ import type { AgentStep, ChatMessage, Citation, Conversation, SearchHit } from '
 import type { WebMode } from '@shared/retrieval'
 import { buildModel } from './model'
 import { recognizeRegion, recognizingSources } from '../recognize'
-import { capsFor, getProviderRow } from './providers'
+import { capsFor, getProviderRow, learnContextLimit } from './providers'
 import { retrieve } from './retrieve'
-import { estimateTokens } from '../../lib/sourceContext'
+import { estimateTokens, shortAttachmentBudget, FULL_SOURCE_MAX_TOKENS } from '../../lib/sourceContext'
 import { retrievalQuery } from './followUp'
-import { modelContextLength } from './modelContext'
+import { contextLimitFromError, withContextWindowRetry } from './modelContext'
 import { contextSourceEvidence, fullSourceEvidence, resolveContext } from './context'
 import { buildTools, numberHits, stepLabel, type AgentSession } from './tools'
 import { attachNoteToolImages } from './noteToolImages'
@@ -638,6 +638,13 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
   const uiSettings = getSettings().ai.ui ?? UI_DEFAULTS
   const providerKind = getProviderRow(input.providerId).kind as ProviderKind
   const uiMode = uiModeFor(conv.kind, providerKind, uiSettings)
+  const initialCaps = capsFor(input.providerId, input.model)
+  let contextLength = initialCaps.context
+  let contextRetried = false
+  // 仅未打包、显式启用的评测可切换 E5 档位；产品默认始终来自集中常量。
+  const experiment = !app.isPackaged && process.env.JIWEI_RAG_EVAL ? process.env.JIWEI_RAG_FULL_SOURCE_MAX_TOKENS : undefined
+  const fullCeiling =
+    experiment === 'window40' ? Infinity : ['0', '60000', '200000'].includes(experiment ?? '') ? Number(experiment) : FULL_SOURCE_MAX_TOKENS
   const fullLocal = !app.isPackaged && process.env.JIWEI_TEST_NETWORK === '1' && process.env.JIWEI_TEST_UI_FULL === '1'
   const localUi = providerKind === 'ollama' && !fullLocal
   const effectiveMode = (conv.web as WebMode | null) ?? getSettings().retrieval.mode
@@ -783,13 +790,7 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
     const query = [retrievalQuery(input.text, previousUserText ?? null), ctx.query].filter(Boolean).join('\n').slice(0, 2000)
     session.preferSource = 'sourceId' in ctx ? ctx.sourceId : null
     attachmentTurn = special ? attachmentTurn : await prepareAttachmentTurn(conversationId, input.text, zh, uiMode, session.vision ?? false)
-    let sourcePlan = fullSourceEvidence(
-      input.context,
-      input.scope,
-      session.attachmentSourceIds,
-      conversationId,
-      modelContextLength(providerKind, input.model)
-    )
+    let sourcePlan = fullSourceEvidence(input.context, input.scope, session.attachmentSourceIds, conversationId, contextLength, fullCeiling)
     // 全文已包含资料所有片段，检索只补笔记；长资料在明确的集合内检索。
     const retrievalOpts = sourcePlan.full
       ? { notesOnly: true }
@@ -800,19 +801,18 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
       special || (input.scope.type === 'none' && !sourcePlan.sourceIds.length)
         ? []
         : await session.retrieveAttachments(query, {}, 8, retrievalOpts)
-    if (!special && !sourcePlan.full) {
-      // 保留已有短附件独立全文路径，但几份短附件仍须共用本轮的模型预算。
-      let budget = Math.min(60000, 0.4 * modelContextLength(providerKind, input.model))
-      const prepared = new Set(attachmentTurn.full.map((f) => f.sourceId))
-      attachmentTurn.full = attachmentTurn.full.filter((f) => {
+    const preparedFull = [...attachmentTurn.full]
+    const preparedSent = [...attachmentTurn.sentIds]
+    const budgetShortAttachments = (): void => {
+      let budget = shortAttachmentBudget(contextLength, initialCaps.contextSource === 'manual' || contextRetried, fullCeiling)
+      attachmentTurn.full = preparedFull.filter((f) => {
         const tokens = estimateTokens(f.text)
         if (tokens > budget) return false
         budget -= tokens
         return true
       })
-      attachmentTurn.sentIds = attachmentTurn.sentIds.filter(
-        (id) => !prepared.has(id) || attachmentTurn.full.some((f) => f.sourceId === id)
-      )
+      const prepared = new Set(preparedFull.map((f) => f.sourceId))
+      attachmentTurn.sentIds = preparedSent.filter((id) => !prepared.has(id) || attachmentTurn.full.some((f) => f.sourceId === id))
     }
     requireRecordingCloudAccess(privacyInput, conversationId)
     ctx = special ? { text: '', query: '' } : resolveContext(input.context, zh, conversationId)
@@ -947,8 +947,10 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
           input.scope,
           session.attachmentSourceIds ?? [],
           conversationId,
-          modelContextLength(providerKind, input.model)
+          contextLength,
+          fullCeiling
         )
+        budgetShortAttachments()
         fullTextInstruction = sourcePlan.full
           ? zh
             ? '以下是用户指定资料的全文，请完整阅读后回答，并引用具体片段。'
@@ -1113,63 +1115,93 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
     let result = run(true)
     let retried = false
     const usage: Usage = { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, cachedInputTokens: 0 }
-    for (;;) {
-      try {
-        for await (const part of result.fullStream) {
-          if (part.type === 'text-delta') {
-            content += part.text
-            emit('chat:delta', { messageId, conversationId, text: part.text })
-          } else if (part.type === 'reasoning-delta') {
-            reasoning += part.text
-            emit('chat:delta', { messageId, conversationId, reasoning: part.text })
-          } else if (part.type === 'tool-call') {
-            if (!steps.some((x) => x.id === part.toolCallId))
-              pushStep({
-                id: part.toolCallId,
-                tool: part.toolName,
-                status: 'running',
-                ...stepLabel(part.toolName, part.input, zh),
-                ...(part.toolName === ASK_USER ? { choices: choicesOf(part.input) } : {})
-              })
-          } else if (part.type === 'tool-result') {
-            const prev = steps.find((x) => x.id === part.toolCallId)
-            if (prev && prev.status !== 'denied') pushStep({ ...prev, status: 'done', ...createdLink(part.toolName, part.output) })
-          } else if (part.type === 'tool-error') {
-            const prev = steps.find((x) => x.id === part.toolCallId)
-            const err = part.error instanceof Error ? part.error.message : String(part.error)
-            if (prev) pushStep({ ...prev, status: 'error', detail: err.slice(0, 300) })
-          } else if (part.type === 'finish-step') {
-            // 多步之间补一个段落分隔，避免两步的文字粘在一起
-            if (content && !content.endsWith('\n')) content += '\n\n'
-          } else if (part.type === 'error') {
-            throw part.error
-          }
-          flush()
-        }
-        break
-      } catch (e) {
-        // 少数模型 / 接口不支持工具调用：去掉工具重试一次
-        const msg = e instanceof Error ? e.message : String(e)
-        if (!retried && !content && !ctrl.signal.aborted && /tool|function/i.test(msg)) {
-          log.warn('[chat] tools unsupported, retrying without tools:', msg)
-          retried = true
-          const gate = session.web.gate
-          if (
-            gate.status === 'available' &&
-            !preSearchAttempted &&
-            !getSettings().retrieval.cautious &&
-            (gate.explicitAsk || gate.timeSensitive || gate.coverage === 'none')
-          ) {
-            await doPreSearch()
-          }
-          // 每次重试都重查当前隐私，包含已做过主动搜索和上一轮网页引用的情况。
+    await withContextWindowRetry(
+      async (limit, retry) => {
+        if (retry) {
+          contextLength = limit
+          contextRetried = true
+          // 首次全文计划只检索了笔记；窗口变小时必须补取同一范围的资料片段。
+          const plan = fullSourceEvidence(
+            input.context,
+            input.scope,
+            session.attachmentSourceIds ?? [],
+            conversationId,
+            contextLength,
+            fullCeiling
+          )
+          if (!special && !plan.full && plan.sourceIds.length)
+            kbHits = filterCloudHits(
+              await session.retrieveAttachments!(query, {}, 8, { sourceIds: plan.sourceIds, includeNotes: true }),
+              conversationId
+            )
+          reasoning = ''
           buildTurn()
-          result = run(false)
-          continue
+          result = run(!retried)
         }
-        throw e
+        for (;;) {
+          try {
+            for await (const part of result.fullStream) {
+              if (part.type === 'text-delta') {
+                content += part.text
+                emit('chat:delta', { messageId, conversationId, text: part.text })
+              } else if (part.type === 'reasoning-delta') {
+                reasoning += part.text
+                emit('chat:delta', { messageId, conversationId, reasoning: part.text })
+              } else if (part.type === 'tool-call') {
+                if (!steps.some((x) => x.id === part.toolCallId))
+                  pushStep({
+                    id: part.toolCallId,
+                    tool: part.toolName,
+                    status: 'running',
+                    ...stepLabel(part.toolName, part.input, zh),
+                    ...(part.toolName === ASK_USER ? { choices: choicesOf(part.input) } : {})
+                  })
+              } else if (part.type === 'tool-result') {
+                const prev = steps.find((x) => x.id === part.toolCallId)
+                if (prev && prev.status !== 'denied') pushStep({ ...prev, status: 'done', ...createdLink(part.toolName, part.output) })
+              } else if (part.type === 'tool-error') {
+                const prev = steps.find((x) => x.id === part.toolCallId)
+                const err = part.error instanceof Error ? part.error.message : String(part.error)
+                if (prev) pushStep({ ...prev, status: 'error', detail: err.slice(0, 300) })
+              } else if (part.type === 'finish-step') {
+                // 多步之间补一个段落分隔，避免两步的文字粘在一起
+                if (content && !content.endsWith('\n')) content += '\n\n'
+              } else if (part.type === 'error') {
+                throw part.error
+              }
+              flush()
+            }
+            break
+          } catch (e) {
+            // 少数模型 / 接口不支持工具调用：去掉工具重试一次
+            const msg = e instanceof Error ? e.message : String(e)
+            if (!retried && !content && !steps.length && !ctrl.signal.aborted && !contextLimitFromError(e) && /tool|function/i.test(msg)) {
+              log.warn('[chat] tools unsupported, retrying without tools:', msg)
+              retried = true
+              const gate = session.web.gate
+              if (
+                gate.status === 'available' &&
+                !preSearchAttempted &&
+                !getSettings().retrieval.cautious &&
+                (gate.explicitAsk || gate.timeSensitive || gate.coverage === 'none')
+              ) {
+                await doPreSearch()
+              }
+              // 每次重试都重查当前隐私，包含已做过主动搜索和上一轮网页引用的情况。
+              buildTurn()
+              result = run(false)
+              continue
+            }
+            throw e
+          }
+        }
+      },
+      {
+        context: initialCaps.context,
+        learn: (limit) => learnContextLimit(input.providerId, input.model, limit),
+        canRetry: () => !content && !steps.length && !ctrl.signal.aborted
       }
-    }
+    )
     content = cleanContent(content)
     // 只保留回答中实际引用到的片段（保持原编号）
     const used = new Set([...content.matchAll(/\[(\d+)\]/g)].map((m) => Number(m[1])))

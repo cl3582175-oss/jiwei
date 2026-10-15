@@ -12,7 +12,7 @@ describe('model capabilities', () => {
 
   it('user settings win, auto is kept for display', () => {
     const c = resolveCaps('deepseek-flash', { 'deepseek-flash': { tier: 'strong' }, other: { vision: true } })
-    expect(c).toEqual({ vision: true, tools: true, tier: 'strong', auto: { vision: true, tools: true, tier: 'basic' } })
+    expect(c).toMatchObject({ vision: true, tools: true, tier: 'strong', auto: { vision: true, tools: true, tier: 'basic' } })
     expect(resolveCaps('my-local-llava-ish', { 'my-local-llava-ish': { vision: true } }).vision).toBe(true)
     expect(resolveCaps('gpt-5', { 'gpt-5': { vision: false } }).vision).toBe(false)
   })

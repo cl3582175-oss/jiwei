@@ -37,6 +37,7 @@ import { confirm } from '@/components/ui/confirm'
 import { EffortPicker } from './EffortPicker'
 import { PriceChip } from './PriceEditor'
 import { ModelPicker } from './ModelPicker'
+import { ContextChip } from './ContextChip'
 import { Switch } from '@/components/ui/switch'
 import { useRecognitionEvents } from '../workspace/RecognitionBar'
 
@@ -60,7 +61,7 @@ function ModelRow({
   onRemove: () => void
 }) {
   const { t } = useTranslation()
-  const caps = resolveCaps(model, p.modelCaps)
+  const caps = resolveCaps(model, p.modelCaps, p.kind)
   const set = (patch: ModelCapsOverride): void => {
     const next: ModelCapsOverride = { ...p.modelCaps[model], ...patch }
     if (next.vision === caps.auto.vision) delete next.vision
@@ -80,8 +81,9 @@ function ModelRow({
     )
   const how = (k: 'vision' | 'tools' | 'tier'): string => (custom(k) ? t('ai.caps.custom') : t('ai.caps.auto'))
   return (
-    <li className="group flex h-9 items-center gap-2 rounded-lg px-2.5 hover:bg-surface-hover" data-model={model}>
+    <li className="group flex min-h-9 flex-wrap items-center gap-2 rounded-lg px-2.5 hover:bg-surface-hover" data-model={model}>
       <span className="min-w-0 flex-1 truncate font-mono text-xs text-fg">{model}</span>
+      <ContextChip model={model} caps={caps} onSave={(context) => set({ context })} />
       <PriceChip
         model={model}
         custom={p.modelCaps[model]?.price}

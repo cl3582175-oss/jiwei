@@ -8,7 +8,17 @@ export function estimateTokens(text: string): number {
   const han = text.match(/\p{Script=Han}/gu)?.length ?? 0
   return han * 0.7 + (text.length - han) / 4
 }
-export function fullSourceFits(sources: readonly ContextSource[], contextLength: number): boolean {
+/** E5 比较后由后续版本裁定默认值；所有全文路径共用此处。 */
+export const FULL_SOURCE_MAX_TOKENS = 60_000
+export const FULL_SOURCE_CONTEXT_FRACTION = 0.4
+export const sourceTextBudget = (contextLength: number, ceiling = FULL_SOURCE_MAX_TOKENS): number =>
+  Math.max(0, Math.min(ceiling, FULL_SOURCE_CONTEXT_FRACTION * contextLength))
+
+/** 保留 v0.14.4 的单个短附件全文；明确的小窗口/服务商拒绝后的重试遵守真实预算。 */
+export const shortAttachmentBudget = (contextLength: number, constrained: boolean, ceiling = FULL_SOURCE_MAX_TOKENS): number =>
+  constrained ? sourceTextBudget(contextLength, ceiling) : Math.max(8400, sourceTextBudget(contextLength, ceiling))
+
+export function fullSourceFits(sources: readonly ContextSource[], contextLength: number, ceiling = FULL_SOURCE_MAX_TOKENS): boolean {
   if (!sources.length || sources.length > 5 || contextLength <= 0) return false
   if (sources.some((s) => s.aiExcluded || s.deletedAt !== null || !s.segments.some((g) => g.sourceId === s.id && g.text.trim())))
     return false
@@ -16,7 +26,7 @@ export function fullSourceFits(sources: readonly ContextSource[], contextLength:
     (sum, s) => sum + s.segments.filter((g) => g.sourceId === s.id).reduce((n, g) => n + estimateTokens(g.text), 0),
     0
   )
-  return tokens <= Math.min(60000, 0.4 * contextLength)
+  return tokens <= sourceTextBudget(contextLength, ceiling)
 }
 
 /** 每份资料共享预算，保留真实分段身份；截断处明确标记，模型可继续用 source_read 读取。 */

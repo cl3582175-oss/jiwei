@@ -76,3 +76,21 @@ describe('explicit multi-source context citations', () => {
     expect(sourceContextHits([a, a]).map((hit) => hit.ownerId)).toEqual(['a-0'])
   })
 })
+
+it('keeps a 12000-character short attachment under automatic unknown/local budgets but honors a smaller manual window', async () => {
+  const { resolveCaps } = await import('@shared/ai')
+  const text = '文'.repeat(12000)
+  const unknown = resolveCaps('unknown'),
+    local = resolveCaps('local', {}, 'ollama')
+  expect(context.shortAttachmentBudget(unknown.context, false)).toBeGreaterThanOrEqual(context.estimateTokens(text))
+  expect(context.shortAttachmentBudget(local.context, false)).toBeGreaterThanOrEqual(context.estimateTokens(text))
+  const manual = resolveCaps('unknown', { unknown: { context: 8192 } })
+  expect(context.shortAttachmentBudget(manual.context, true)).toBeLessThan(context.estimateTokens(text))
+})
+it('allows experiment ceilings while never treating oversized or incomplete sources as truncated full text', () => {
+  const large = source('large', ['文'.repeat(100000)])
+  expect(context.fullSourceFits([large], 1000000, 60000)).toBe(false)
+  expect(context.fullSourceFits([large], 1000000, 200000)).toBe(true)
+  expect(context.fullSourceFits([large], 100000, 200000)).toBe(false)
+  expect(context.fullSourceFits([large], 1000000, 0)).toBe(false)
+})
