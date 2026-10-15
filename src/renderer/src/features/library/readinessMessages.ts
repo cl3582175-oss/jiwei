@@ -16,7 +16,7 @@ export const readyZh = {
   readyChatDone: '已识别完成，可以重新提问',
   readyChatAskAgain: '重新提问',
   readyUpgradeTitle: '资料检索升级',
-  readyUpgradeDesc: '用新的方式重新整理已导入资料的段落，找得更准；不会重新识别或下载，引用和批注保持有效',
+  readyUpgradeDesc: '按新的切分方式重新整理已导入资料的段落（表格、条款、章节保持完整）；不会重新识别或下载，引用和批注保持有效',
   readyUpgradeProgress: '已完成 {{done}}/{{total}} 份',
   readyUpgradeToggle: '空闲时自动升级',
   readyUpgradeDone: '已完成',
@@ -42,7 +42,7 @@ export const readyEn: Record<keyof typeof readyZh, string> = {
   readyChatAskAgain: 'Ask again',
   readyUpgradeTitle: 'Search upgrade for sources',
   readyUpgradeDesc:
-    'Re-organizes imported sources with the new method for better search. No re-recognition or downloads; citations and annotations stay valid',
+    'Re-splits imported sources with the new method, keeping tables, clauses and sections intact. No re-recognition or downloads; citations and annotations stay valid',
   readyUpgradeProgress: '{{done}} of {{total}} done',
   readyUpgradeToggle: 'Upgrade automatically when idle',
   readyUpgradeDone: 'Completed',
