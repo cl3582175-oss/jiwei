@@ -1,6 +1,7 @@
 import { navTo } from './fixtures/nav'
 import { attachmentModel, textOf } from './fixtures/attachment-model'
-import { test, expect, _electron as electron } from '@playwright/test'
+import { test, expect } from '@playwright/test'
+import { isolatedElectron as electron } from './fixtures/isolateElectron'
 import { mkdtempSync, writeFileSync, readFileSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { createServer } from 'node:http'
