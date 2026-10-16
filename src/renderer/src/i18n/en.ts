@@ -1840,6 +1840,9 @@ const en: Messages = {
   memory: {
     saving: 'Saving…',
     saveFailed: 'Could not save. Please try again.',
+    notSaved: 'Not saved',
+    profileCharacterCount: '{{count}} / {{limit}} characters used',
+    profileLimitExceeded: 'Character limit exceeded: maximum {{limit}} characters, currently {{count}}. Please shorten and try again.',
     profileTitle: 'Profile',
     profileDesc:
       'Tell Jiwei who you are, what you want to learn and how you like answers. This becomes background for every answer. Changes save automatically and apply from your next message.',

@@ -22,6 +22,7 @@ import {
   Folder
 } from 'lucide-react'
 import { PROFILE_KEYS, type Concept, type Memory, type MemoryKind, type MemorySettings, type ProfileKey } from '@shared/types'
+import { PROFILE_LIMITS } from '@shared/profile'
 import type { ChatProject } from '@shared/chatProjects'
 import { useChatProjects, useMemories, useUserProfile } from '@/lib/queries'
 import { api, cn, formatDate, formatRelative } from '@/lib/utils'
@@ -43,18 +44,29 @@ function ProfileField({ k, value }: { k: ProfileKey; value: string }) {
   const { t } = useTranslation()
   const qc = useQueryClient()
   const [draft, setDraft] = useState(value)
-  const [status, setStatus] = useState<'saving' | 'saved'>('saved')
+  const [status, setStatus] = useState<'saving' | 'saved' | 'error'>('saved')
+  const limit = PROFILE_LIMITS[k]
+  const overLimit = draft.length > limit
+  const descriptionId = `profile-${k}-characters`
   const focused = useRef(false)
   const [save] = useState(() =>
     createAutosave(
       value,
       async (text: string) => {
+        if (text.length > limit) throw new RangeError(t('memory.profileLimitExceeded', { limit, count: text.length }))
         await api.memory.setProfile({ [k]: text.trim() })
         void qc.invalidateQueries({ queryKey: ['userProfile'] })
       },
-      { onState: setStatus, onError: () => toast.error(t('memory.saveFailed')) }
+      {
+        onState: setStatus,
+        onError: (error) => {
+          setStatus('error')
+          toast.error(error instanceof RangeError ? error.message : t('memory.saveFailed'))
+        }
+      }
     )
   )
+  const displayStatus = !save.dirty ? 'saved' : overLimit || status === 'error' ? 'notSaved' : status
   useEffect(() => {
     if (!focused.current && !save.dirty) {
       save.accept(value)
@@ -75,8 +87,8 @@ function ProfileField({ k, value }: { k: ProfileKey; value: string }) {
     <label className="block">
       <span className="flex items-center justify-between gap-2">
         <span className="text-xs font-medium text-fg">{t(`memory.profile.${k}`)}</span>
-        <span role="status" className="text-2xs text-subtle">
-          {t(`memory.${status === 'saving' ? 'saving' : 'saved'}`)}
+        <span role="status" className={cn('text-2xs', displayStatus === 'notSaved' ? 'text-danger' : 'text-subtle')}>
+          {t(`memory.${displayStatus}`)}
         </span>
       </span>
       <textarea
@@ -84,6 +96,8 @@ function ProfileField({ k, value }: { k: ProfileKey; value: string }) {
         rows={k === 'role' ? 1 : 2}
         placeholder={t(`memory.profile.${k}Ph`)}
         aria-label={t(`memory.profile.${k}`)}
+        aria-invalid={overLimit || undefined}
+        aria-describedby={overLimit ? `${descriptionId} ${descriptionId}-error` : descriptionId}
         onFocus={() => {
           focused.current = true
         }}
@@ -95,8 +109,19 @@ function ProfileField({ k, value }: { k: ProfileKey; value: string }) {
           focused.current = false
           void save.flush().catch(() => {})
         }}
-        className="mt-1.5 block w-full resize-none rounded-lg border border-border bg-surface px-3 py-2 text-sm leading-relaxed text-fg outline-none placeholder:text-subtle focus:border-accent"
+        className={cn(
+          'mt-1.5 block w-full resize-none rounded-lg border bg-surface px-3 py-2 text-sm leading-relaxed text-fg outline-none placeholder:text-subtle',
+          overLimit ? 'border-danger focus:border-danger' : 'border-border focus:border-accent'
+        )}
       />
+      <p id={descriptionId} className={cn('mt-1 text-2xs', overLimit ? 'text-danger' : 'text-subtle')}>
+        {t('memory.profileCharacterCount', { count: draft.length, limit })}
+      </p>
+      {overLimit && (
+        <p id={`${descriptionId}-error`} role="alert" className="mt-1 text-2xs text-danger">
+          {t('memory.profileLimitExceeded', { count: draft.length, limit })}
+        </p>
+      )}
     </label>
   )
 }

@@ -1767,6 +1767,9 @@ const zhCN = {
   memory: {
     saving: '保存中…',
     saveFailed: '保存失败，请重试。',
+    notSaved: '未保存',
+    profileCharacterCount: '已用 {{count}} / 最多 {{limit}} 字符',
+    profileLimitExceeded: '超出字符限制：最多 {{limit}} 字符，当前 {{count}} 字符。请缩短后再试。',
     profileTitle: '个人档案',
     profileDesc: '告诉积微你是谁、想学什么、喜欢怎样的回答。这些内容会作为背景，让每次回答更贴合你。修改后自动保存，下一条消息起生效。',
     profile: {

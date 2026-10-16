@@ -14,6 +14,7 @@ import { AnchorSchema, ContextPacketSchema } from './context'
 import { RecordingFiltersSchema } from './lens'
 import { UpdateSettingsSchema } from './updates'
 import { RetrievalSettingsSchema, WebModeSchema } from './retrieval'
+import { PROFILE_LIMITS } from './profile'
 
 // 所有跨进程输入的 zod 模式。类型由模式推导，保证“声明一次、处处一致”。
 
@@ -378,11 +379,11 @@ export type MemoryQuery = z.infer<typeof MemoryQuerySchema>
 export const MemorySettingsSchema = z.object({ autoLearn: z.boolean().optional(), learnSkills: z.boolean().optional() })
 
 export const UserProfileSchema = z.object({
-  role: z.string().max(500).optional(),
-  goals: z.string().max(1000).optional(),
-  background: z.string().max(1000).optional(),
-  style: z.string().max(1000).optional(),
-  avoid: z.string().max(1000).optional()
+  role: z.string().max(PROFILE_LIMITS.role).optional(),
+  goals: z.string().max(PROFILE_LIMITS.goals).optional(),
+  background: z.string().max(PROFILE_LIMITS.background).optional(),
+  style: z.string().max(PROFILE_LIMITS.style).optional(),
+  avoid: z.string().max(PROFILE_LIMITS.avoid).optional()
 })
 
 /** 「存入笔记」：把 AI 的回答（连同出处）写成笔记中的一行 */
