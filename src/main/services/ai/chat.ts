@@ -9,7 +9,8 @@ import {
   canReadSource,
   conversationProjectSources,
   hasPrivateAttachmentHistory,
-  hasAttachmentHistory
+  hasAttachmentHistory,
+  memoryBlocked
 } from '../attachmentsAccess'
 import { prepareProjectTurn, type ProjectTurn } from './projectContext'
 import { listSegments, resolveSegmentId } from '../segments'
@@ -832,6 +833,7 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
     .filter((a) => !a.sourceId.startsWith('note:') && !a.deleted && canReadSource(a.sourceId, conversationId))
     .map((a) => a.sourceId)
   session.suppressAttachmentMemory = hasAttachmentHistory(conversationId)
+  session.memoryBlocked = memoryBlocked(conversationId)
   session.retrieveAttachments = async (query, filters, limit, opts) => {
     assertProjectSources()
     const projectItems = conversationProjectSources(conversationId)
@@ -1021,6 +1023,7 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
       .where(eq(messages.id, messageId))
       .run()
     session.suppressAttachmentMemory = hasAttachmentHistory(conversationId)
+    session.memoryBlocked = memoryBlocked(conversationId)
     const initialCoverage = coverage(kbHits)
     const explicitAtStart = special
       ? []
@@ -1474,7 +1477,7 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
       .run()
     finish('done', null, { ...usage, cost: costOf(input.providerId, input.model, usage).cost, durationMs: Date.now() - t0 })
     markAttachmentTurnSent(conversationId, attachmentTurn.sentIds)
-    if (!session.incognito && !session.suppressAttachmentMemory) scheduleExtract(conversationId)
+    if (!session.incognito && !session.memoryBlocked) scheduleExtract(conversationId)
     if (Date.now() - t0 > 20_000) notifyDone(conversationId, conv.title, zh)
   } catch (e) {
     if (ctrl.signal.aborted) return finish('stopped', null, null)

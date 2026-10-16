@@ -707,7 +707,9 @@ test('P5 private project sources reach only live project conversations, with pro
       await window.jiwei.memory.setSettings({ autoLearn: true })
       await window.jiwei.memory.learnNow(id)
     }, own.conversation.id)
-    expect(model.requests.length).toBe(memoryStart)
+    // 仅限项目：本项目私有来源只在本项目可读，学到的记忆也只留在本项目，所以照常整理（Claude 审查裁定）
+    expect(model.requests.length).toBeGreaterThan(memoryStart)
+    expect(JSON.stringify(await page.evaluate(() => window.jiwei.memory.list({})))).not.toContain('PROJECT-TEXT-PRIVATE')
 
     model.setAnswer('普通公共回答。')
     const outside = model.requests.length

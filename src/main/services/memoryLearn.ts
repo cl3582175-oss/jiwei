@@ -1,4 +1,4 @@
-import { hasAttachmentHistory } from './attachmentsAccess'
+import { memoryBlocked } from './attachmentsAccess'
 import { z } from 'zod'
 import { and, asc, desc, eq, gt, isNull } from 'drizzle-orm'
 import log from 'electron-log/main'
@@ -159,7 +159,7 @@ async function extract(conversationId: string): Promise<{ added: number; concept
   if (stopped || !getMemorySettings().autoLearn) return none
   const db = getDb()
   const conv = db.select().from(conversations).where(eq(conversations.id, conversationId)).get()
-  if (!conv || conv.deletedAt || conv.incognito || hasAttachmentHistory(conversationId)) return none
+  if (!conv || conv.deletedAt || conv.incognito || memoryBlocked(conversationId)) return none
   const project = conversationProject(conversationId)
   if (conv.projectId && !project) return none
   const projectId = project?.memory === 'project' ? project.id : null
@@ -251,7 +251,7 @@ async function extract(conversationId: string): Promise<{ added: number; concept
     current.projectId !== conv.projectId ||
     (current.projectId && !conversationProject(conversationId)) ||
     memoryProjectId(conversationId) !== projectId ||
-    hasAttachmentHistory(conversationId)
+    memoryBlocked(conversationId)
   )
     return none
   const result = apply(out, refs, { conversationId, episodeKey, projectId, lastMessageId: msgs.at(-1)?.id })

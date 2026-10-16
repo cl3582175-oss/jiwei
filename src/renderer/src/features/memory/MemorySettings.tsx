@@ -347,7 +347,7 @@ function MemoriesSection() {
         </ul>
       )}
       {projects
-        .filter((project) => project.memory === 'project')
+        .filter((project) => project.memory === 'project' && project.memoryCount > 0)
         .map((project) => (
           <ProjectMemoryGroup key={project.id} project={project} kind={kind} />
         ))}
@@ -519,7 +519,7 @@ function EpisodesSection() {
         </ol>
       )}
       {projects
-        .filter((project) => project.memory === 'project')
+        .filter((project) => project.memory === 'project' && project.memoryCount > 0)
         .map((project) => (
           <ProjectMemoryGroup key={project.id} project={project} kind="all" episodes />
         ))}

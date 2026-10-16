@@ -1,5 +1,6 @@
 import { and, eq, isNull, inArray } from 'drizzle-orm'
 import { getDb, getSqlite } from '../db'
+import { memoryProjectId } from './ai/memoryScope'
 import { sources, conversations, decisions, conversationAttachments as conversationAttachmentsTable } from '../db/schema'
 
 export interface ProjectSourceItem {
@@ -140,6 +141,37 @@ export function hasAttachmentHistory(conversationId: string): boolean {
       )
       .get(conversationId, conversationId, conversationId)
   )
+}
+
+/**
+ * 记忆整理与 memory_remember 的门槛。
+ * 仅限项目的对话：本项目的私有来源本来就只在本项目内可读，由此学到的记忆也只留在本项目，所以不因项目来源停用；
+ * 对话自己的附件（只属于这一个对话）、继承来的限制、其他项目或已移除的私有材料仍然停用。
+ */
+export function memoryBlocked(conversationId: string): boolean {
+  if (!memoryProjectId(conversationId)) return hasAttachmentHistory(conversationId)
+  if (inheritedMemoryRestriction(conversationId)) return true
+  const sqlite = getSqlite()
+  if (
+    sqlite
+      .prepare(
+        `SELECT 1 FROM conversation_attachments WHERE conversation_id=?
+    UNION ALL SELECT 1 FROM messages m JOIN json_each(CASE WHEN json_valid(m.context) THEN json_extract(m.context,'$.attachmentSourceIds') END) j WHERE m.conversation_id=? AND EXISTS (SELECT 1 FROM conversation_attachments ca WHERE ca.source_id=j.value) LIMIT 1`
+      )
+      .get(conversationId, conversationId)
+  )
+    return true
+  const own = new Set(
+    conversationProjectSources(conversationId)
+      .filter((s) => s.private)
+      .map((s) => s.itemId)
+  )
+  const used = sqlite
+    .prepare(
+      `SELECT j.value AS id FROM messages m JOIN json_each(CASE WHEN json_valid(m.context) THEN json_extract(m.context,'$.projectPrivateSourceIds') END) j WHERE m.conversation_id=?`
+    )
+    .all(conversationId) as { id: string }[]
+  return used.some((r) => !own.has(r.id))
 }
 
 /** 参谋备忘录可能复述原文；派生摘要不能成为洞察等其他AI入口的材料。 */

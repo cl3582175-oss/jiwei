@@ -607,6 +607,26 @@ it('项目私有来源仅同一有效项目内可读，移动后旧回答与来�
   expect(access.canReadSource(a.sourceId, 'c1')).toBe(false)
 })
 
+it('仅限项目：本项目私有来源不停用记忆；默认模式、其他项目材料与对话附件仍停用', async () => {
+  const a = await attachment()
+  f.sql!.exec('DELETE FROM conversation_attachments')
+  projectSource(a.sourceId)
+  const access = await import('../attachmentsAccess')
+  const context = JSON.stringify({ attachmentSourceIds: [a.sourceId], projectPrivateSourceIds: [a.sourceId] })
+  f.sql!.prepare(
+    "INSERT INTO messages(id,conversation_id,role,content,context,created_at,updated_at) VALUES('own-answer','c1','assistant','derived',?,1,1)"
+  ).run(context)
+  expect(access.hasAttachmentHistory('c1')).toBe(true)
+  expect(access.memoryBlocked('c1')).toBe(false)
+  f.sql!.exec("UPDATE chat_projects SET memory='default' WHERE id='project-a'")
+  expect(access.memoryBlocked('c1')).toBe(true)
+  f.sql!.exec("UPDATE chat_projects SET memory='project' WHERE id='project-a'; UPDATE conversations SET project_id='project-b' WHERE id='c1'")
+  expect(access.memoryBlocked('c1')).toBe(true)
+  f.sql!.exec("UPDATE conversations SET project_id='project-a' WHERE id='c1'")
+  f.sql!.prepare('INSERT INTO conversation_attachments(conversation_id,source_id,created_at) VALUES(?,?,1)').run('c1', a.sourceId)
+  expect(access.memoryBlocked('c1')).toBe(true)
+})
+
 it('项目优先检索绕过 none 范围但保留资料权限，在截断前优先于库内候选', async () => {
   const a = await attachment()
   projectSource(a.sourceId)

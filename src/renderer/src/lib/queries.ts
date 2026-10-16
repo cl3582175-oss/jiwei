@@ -103,6 +103,8 @@ export function useChatProjects() {
       }),
     [qc]
   )
+  // 项目记忆条数随记忆变化（「关于我」只列出有记忆的项目）
+  useEffect(() => window.jiweiEvents.on('memory:changed', () => void qc.invalidateQueries({ queryKey: ['chatProjects'] })), [qc])
   return useQuery({ queryKey: ['chatProjects'], queryFn: () => api.chatProjects.list() })
 }
 

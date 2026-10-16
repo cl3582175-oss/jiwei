@@ -1,6 +1,6 @@
 import { memoryProjectId, conversationProject } from './memoryScope'
 import { tablePreview } from '../../lib/attachmentText'
-import { canReadSource, hasAttachmentHistory, conversationProjectSources } from '../attachmentsAccess'
+import { canReadSource, memoryBlocked, conversationProjectSources } from '../attachmentsAccess'
 import { manimAvailable } from '../plugins/manim'
 import { visual as embedVisual } from './embedProposal'
 import { neutralizeUiFences } from '@shared/ui/sanitize'
@@ -75,6 +75,8 @@ export interface AgentSession {
   attachmentSourceIds?: string[]
   projectSourceIds?: { notes: string[]; sources: string[] }
   suppressAttachmentMemory?: boolean
+  /** 记忆整理与 memory_remember 是否停用（见 attachmentsAccess.memoryBlocked） */
+  memoryBlocked?: boolean
   retrieveAttachments?: (
     query: string,
     filters: import('@shared/lens').RecordingFilters,
@@ -861,7 +863,7 @@ export function buildTools(s: AgentSession): ToolSet {
     })
   }
 
-  if (!s.incognito && !s.suppressAttachmentMemory) {
+  if (!s.incognito && !s.memoryBlocked) {
     Object.assign(tools, {
       memory_remember: tool({
         description: zh
@@ -886,7 +888,7 @@ export function buildTools(s: AgentSession): ToolSet {
             .describe(zh ? '涉及健康、财务、人际关系、身份证件等敏感信息时为 true' : 'True for health, finance, relationships, IDs')
         }),
         execute: async ({ kind, content, skill, sensitive }) => {
-          if (hasAttachmentHistory(s.conversationId))
+          if (memoryBlocked(s.conversationId))
             throw new Error(zh ? '附件对话不参与记忆整理' : 'Attachment conversations are not used for memory')
           const m = saveMemory(
             { kind, content, skill, sensitive },

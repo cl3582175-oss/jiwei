@@ -135,19 +135,17 @@ function Modal({ title, close, busy, children }: { title: string; close: () => v
         >
           <D.Title className="pr-8 font-serif text-lg font-semibold text-fg">{title}</D.Title>
           <D.Description className="sr-only">{title}</D.Description>
-          <Tip label={t('projects.close')} side="left">
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              className="absolute top-4 right-4"
-              aria-label={t('projects.close')}
-              disabled={busy}
-              onClick={close}
-            >
-              <X />
-            </Button>
-          </Tip>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            className="absolute top-4 right-4"
+            aria-label={t('projects.close')}
+            disabled={busy}
+            onClick={close}
+          >
+            <X />
+          </Button>
           {children}
         </D.Content>
       </D.Portal>

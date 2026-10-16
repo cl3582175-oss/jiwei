@@ -7,7 +7,7 @@ import { toast } from 'sonner'
 import type { ChatProjectSource, ProjectSourcesInput } from '@shared/chatProjects'
 import { api, cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-import { Input, Tip } from '@/components/ui/primitives'
+import { Input } from '@/components/ui/primitives'
 import { ItemsDialog } from './ScopePicker'
 import { errText } from './useChat'
 
@@ -169,19 +169,18 @@ export function AddProjectSources({ projectId, existing, close }: { projectId: s
             {t(mode === 'text' ? 'projects.pasteText' : mode === 'url' ? 'projects.addUrl' : 'projects.addSources')}
           </D.Title>
           <D.Description className="mt-2 text-xs leading-relaxed text-muted">{t('projects.addSourcesDesc')}</D.Description>
-          <Tip label={t('common.close')}>
-            <Button
-              type="button"
-              size="icon-sm"
-              variant="ghost"
-              className="absolute top-4 right-4"
-              disabled={adder.adding}
-              aria-label={t('common.close')}
-              onClick={close}
-            >
-              <X />
-            </Button>
-          </Tip>
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="ghost"
+            className="absolute top-4 right-4"
+            disabled={adder.adding}
+            aria-label={t('common.close')}
+            onClick={close}
+          >
+            <X />
+          </Button>
+
           {mode === 'choose' ? (
             <>
               <ProjectSourceDropZone
