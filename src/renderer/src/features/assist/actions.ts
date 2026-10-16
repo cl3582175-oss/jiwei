@@ -110,7 +110,10 @@ export async function askInline(
       kind: 'inline',
       anchor,
       ...(image ? { images: [image] } : {}),
-      context: { targets: [anchor, ...extra].slice(0, 8), noteId: ws.noteId, sourceId: ws.sourceId, cursorRowId: ws.cursorRowId }
+      context:
+        anchor.parentType === 'message'
+          ? { targets: [anchor] }
+          : { targets: [anchor, ...extra].slice(0, 8), noteId: ws.noteId, sourceId: ws.sourceId, cursorRowId: ws.cursorRowId }
     })
     queryClient.setQueryData<ChatMessage[]>(['messages', conversation.id], [userMessage, assistant])
     if (useAssist.getState().card?.key === key) useAssist.getState().updateCard({ conversationId: conversation.id })
@@ -193,7 +196,10 @@ export async function followUp(
       effort: effortFor('ask', settings, p),
       uiEvent,
       scope: { type: 'all' },
-      context: { targets: [anchor, ...extra].slice(0, 8), noteId: ws.noteId, sourceId: ws.sourceId }
+      context:
+        anchor.parentType === 'message'
+          ? { targets: [anchor] }
+          : { targets: [anchor, ...extra].slice(0, 8), noteId: ws.noteId, sourceId: ws.sourceId }
     })
     queryClient.setQueryData<ChatMessage[]>(['messages', conversationId], (list) => [...(list ?? []), userMessage, assistant])
     return true

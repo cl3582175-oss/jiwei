@@ -1,3 +1,4 @@
+import * as chatProjects from './services/ai/projects'
 import * as attachments from './services/attachments'
 import * as graphAi from './services/graphAi'
 import * as pluginMarkets from './services/plugins/markets'
@@ -467,7 +468,21 @@ const handlers: Handlers = {
     fetchModels: (_, id) => providers.fetchModels(id),
     test: (_, id) => providers.testProvider(id)
   },
+  chatProjects: {
+    list: () => chatProjects.listProjects(),
+    get: (_, id) => chatProjects.getProject(id),
+    create: (_, input) => chatProjects.createProject(input),
+    update: (_, id, patch) => chatProjects.updateProject(id, patch),
+    remove: (_, id, mode) => chatProjects.removeProject(id, mode),
+    conversations: (_, id) => chatProjects.projectConversations(id),
+    sources: (_, id) => chatProjects.projectSourceList(id),
+    addSources: ({ win }, id, input) => chatProjects.addProjectSources(id, input, win),
+    removeSource: (_, id, itemType, itemId) => chatProjects.removeProjectSource(id, itemType, itemId),
+    archiveSource: (_, id, itemId, categoryId) => chatProjects.archiveProjectSource(id, itemId, categoryId),
+    exportMarkdown: ({ win }, id) => chatProjects.exportMarkdown(id, win)
+  },
   chat: {
+    search: (_, query) => chat.searchConversations(query),
     get: (_, id) => chat.getConversation(id),
     conversations: () => chat.listConversations(),
     messages: (_, id) => chat.listMessages(id),
@@ -648,7 +663,11 @@ const handlers: Handlers = {
   },
   memory: {
     list: (_, q) => memory.listMemories(q),
-    save: (_, input) => memory.saveMemory(input, 'user'),
+    save: (_, input) => {
+      if (input.projectId && chatProjects.requireProject(input.projectId).memory !== 'project')
+        throw new Error('This project uses global memory')
+      return memory.saveMemory(input, 'user')
+    },
     remove: (_, id) => memory.removeMemory(id),
     confirm: (_, id) => memory.confirmMemory(id),
     profile: () => memory.getUserProfile(),

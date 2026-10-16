@@ -1,24 +1,22 @@
 import { attachmentContext } from '../attachments/context'
-import { useAttachments, resetAttachmentDraft, type AttachmentsController } from '../attachments/useAttachments'
-import { AttachmentInput, AttachmentDropZone } from '../attachments/AttachmentInput'
-import { AttachmentButton } from '../attachments/AttachmentBar'
+import { useAttachments } from '../attachments/useAttachments'
+import { AttachmentDropZone } from '../attachments/AttachmentInput'
 import { ConversationAttachments } from '../attachments/ConversationAttachments'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Plus, MessageSquare, Trash2, ArrowUp, Square, Settings2, Pin, EyeOff } from 'lucide-react'
+import { Settings2, EyeOff } from 'lucide-react'
 import { PROVIDER_PRESETS } from '@shared/ai'
 import type { ChatScope } from '@shared/schemas'
 import { packetFromWorkspace } from '@shared/context'
-import { useConversations, useProviders, useEmbeddingStatus } from '@/lib/queries'
-import { api, cn, formatRelative, modKey } from '@/lib/utils'
+import { useConversations, useProviders, useEmbeddingStatus, useChatProjects } from '@/lib/queries'
+import { api, cn, modKey } from '@/lib/utils'
 import { useApp, getWorkspaceContext } from '@/store/app'
 import { Button } from '@/components/ui/button'
 import { Tip } from '@/components/ui/primitives'
-import { confirm } from '@/components/ui/confirm'
 import { FloatingPanel } from '@/components/FloatingPanel'
-import { PageSidebar, SidebarToggle, useWindowWidth } from '@/components/PageSidebar'
+import { PageSidebar, useWindowWidth } from '@/components/PageSidebar'
 import { InkMountains } from '@/components/Illustrations'
 import { ModelPicker } from '../ai/ModelPicker'
 import { EffortPicker } from '../ai/EffortPicker'
@@ -27,211 +25,28 @@ import { WebModePicker, useWebMode } from '../retrieval/WebModePicker'
 import { MessageItem, REPLY_EVENT, type ReplyDetail } from './MessageItem'
 import type { UiEvent } from '@shared/ui/events'
 import { errText, sendChat, useChatThread, useModelChoice } from './useChat'
-
-function ChatSidebar() {
-  const { t, i18n } = useTranslation()
-  const qc = useQueryClient()
-  const { conversationId, openConversation } = useApp()
-  const { data: list = [] } = useConversations()
-  const remove = async (id: string, title: string): Promise<void> => {
-    const ok = await confirm({
-      title: t('chat.deleteTitle', { title: title || t('common.untitled') }),
-      description: t('chat.deleteDesc'),
-      confirmText: t('common.delete'),
-      danger: true
-    })
-    if (!ok) return
-    await api.chat.remove(id)
-    if (conversationId === id) openConversation(null)
-    void qc.invalidateQueries({ queryKey: ['conversations'] })
-  }
-  return (
-    <aside className="flex h-full w-full flex-col">
-      <div className="drag flex h-[52px] shrink-0 items-end justify-between px-4 pb-1.5">
-        <h2 className="font-serif text-lg font-semibold tracking-wide text-fg">{t('chat.title')}</h2>
-        <div className="no-drag flex items-center gap-0.5">
-          <SidebarToggle />
-          <Button
-            variant="outline"
-            size="sm"
-            className="ml-1 h-7 rounded-full px-2.5"
-            onClick={() => {
-              resetAttachmentDraft('chat')
-              openConversation(null)
-            }}
-            aria-label={t('chat.new')}
-          >
-            <Plus />
-            {t('common.create')}
-          </Button>
-        </div>
-      </div>
-      <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 pt-3 pb-4">
-        {list.map((c) => (
-          <div
-            key={c.id}
-            role="button"
-            tabIndex={0}
-            onClick={() => openConversation(c.id)}
-            className={cn(
-              'group relative flex cursor-default items-start gap-2 rounded-lg px-3 py-2.5 transition-colors',
-              c.id === conversationId ? 'bg-surface shadow-card' : 'hover:bg-surface-hover'
-            )}
-          >
-            {c.pinned ? (
-              <Pin className="mt-0.5 size-3.5 shrink-0 text-accent" />
-            ) : (
-              <MessageSquare className="mt-0.5 size-3.5 shrink-0 text-subtle" />
-            )}
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm text-fg">{c.title || t('common.untitled')}</p>
-              <p className="mt-0.5 text-2xs text-subtle">{formatRelative(c.updatedAt, i18n.language)}</p>
-            </div>
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                void remove(c.id, c.title)
-              }}
-              className="rounded p-0.5 text-subtle opacity-0 group-hover:opacity-100 hover:text-danger"
-              aria-label={t('common.delete')}
-            >
-              <Trash2 className="size-3.5" />
-            </button>
-          </div>
-        ))}
-        {list.length === 0 && <p className="px-3 py-8 text-center text-xs text-subtle">{t('chat.noConversations')}</p>}
-      </div>
-    </aside>
-  )
-}
-
-export function Composer({
-  busy,
-  onSend,
-  onStop,
-  placeholder,
-  prefill,
-  attachments,
-  provider,
-  newConversation
-}: {
-  busy: boolean
-  onSend: (text: string) => void | boolean | Promise<void | boolean>
-  onStop: () => void
-  placeholder?: string
-  /** 预填的文字（角色起步卡）：只填入输入框，由用户检查后发送 */
-  prefill?: string
-  attachments?: AttachmentsController
-  provider?: import('@shared/types').ProviderInfo | null
-  newConversation?: boolean
-}) {
-  const { t } = useTranslation()
-  const [text, setText] = useState('')
-  const ref = useRef<HTMLTextAreaElement>(null)
-  const [sending, setSending] = useState(false)
-  useEffect(() => ref.current?.focus(), [])
-  const resize = (): void => {
-    const el = ref.current
-    if (!el) return
-    el.style.height = '0px'
-    el.style.height = Math.min(el.scrollHeight, 220) + 'px'
-  }
-  useEffect(() => {
-    if (!prefill) return
-    setText(prefill)
-    requestAnimationFrame(() => {
-      resize()
-      ref.current?.setSelectionRange(prefill.length, prefill.length)
-    })
-  }, [prefill])
-  const submit = async (value = text): Promise<void> => {
-    if ((!value.trim() && !attachments?.ids().length) || busy || sending || attachments?.adding) return
-    setSending(true)
-    try {
-      if ((await onSend(value.trim())) !== false) {
-        setText((current) => (current === text ? '' : current))
-        requestAnimationFrame(resize)
-      }
-    } finally {
-      setSending(false)
-    }
-  }
-  return (
-    <div className="relative">
-      {attachments && (
-        <AttachmentInput
-          controller={attachments}
-          provider={provider}
-          text={text}
-          newConversation={newConversation}
-          onSend={(q) => void submit(q)}
-          onMentionPicked={() => setText(text.replace(/@[^\s@]*$/, ''))}
-        />
-      )}
-      <textarea
-        ref={ref}
-        rows={1}
-        value={text}
-        onChange={(e) => {
-          setText(e.target.value)
-          attachments?.textChanged(e.target.value)
-          resize()
-        }}
-        onPaste={attachments?.paste}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-            e.preventDefault()
-            void submit()
-          }
-        }}
-        placeholder={placeholder ?? t('chat.placeholder')}
-        aria-label={placeholder ?? t('chat.placeholder')}
-        className="block max-h-[220px] min-h-[52px] w-full resize-none bg-transparent px-4 pt-3.5 pb-2 text-sm leading-relaxed text-fg outline-none placeholder:text-subtle"
-      />
-      {attachments && (
-        <div className="px-2 pb-2">
-          <AttachmentButton controller={attachments} />
-        </div>
-      )}
-      <div className="absolute right-2.5 bottom-2.5">
-        {busy ? (
-          <Tip label={t('chat.stop')} side="top">
-            <Button size="icon-sm" variant="secondary" className="rounded-full" onClick={onStop} aria-label={t('chat.stop')}>
-              <Square className="size-3 fill-current" />
-            </Button>
-          </Tip>
-        ) : (
-          <Tip label={t('chat.sendHint')} side="top">
-            <Button
-              size="icon-sm"
-              variant="primary"
-              className="rounded-full"
-              disabled={(!text.trim() && !attachments?.ids().length) || sending || attachments?.adding}
-              onClick={() => void submit()}
-              aria-label={t('chat.send')}
-            >
-              <ArrowUp />
-            </Button>
-          </Tip>
-        )}
-      </div>
-    </div>
-  )
-}
+import { ChatSidebar } from './sidebar/ChatSidebar'
+import { ProjectHome } from './ProjectHome'
+import { Composer } from './Composer'
+export { Composer } from './Composer'
 
 const SUGGESTIONS = ['chat.s1', 'chat.s2', 'chat.s3']
 
 function ChatPanel() {
   const { t } = useTranslation()
   const qc = useQueryClient()
-  const { conversationId, openConversation, openSettings } = useApp()
+  const { conversationId, chatNewProjectId, chatMessageId, openConversation, openSettings } = useApp()
   const { data: providers = [] } = useProviders()
   const { data: emb } = useEmbeddingStatus()
   const { data: conversations = [] } = useConversations()
   const conv = conversations.find((c) => c.id === conversationId)
+  const { data: projects = [] } = useChatProjects()
+  const projectId = conv?.projectId ?? chatNewProjectId
+  const project = projects.find((p) => p.id === projectId)
   const { web, setWeb } = useWebMode(conversationId, conv?.web)
   const { choice, setChoice, effort, setEffort, provider } = useModelChoice()
   const [scope, setScope] = useState<ChatScope>({ type: 'all' })
+  const scopeExplicit = useRef(false)
   const { msgs, setMsgs, streaming } = useChatThread(conversationId)
   // 无痕只能在新对话开始前选择；已有对话沿用其设置
   const [incognitoNew, setIncognitoNew] = useState(false)
@@ -240,12 +55,29 @@ function ChatPanel() {
   const scroller = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
 
-  useEffect(() => setScope(conv?.scope ?? { type: 'all' }), [conv?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    scopeExplicit.current = false
+  }, [conversationId, chatNewProjectId])
+
+  useEffect(() => {
+    if (!scopeExplicit.current) setScope(conv?.scope ?? { type: project?.libraryScope === 'none' ? 'none' : 'all' })
+  }, [conv?.id, project?.id, project?.libraryScope]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const el = scroller.current
     if (el && stick.current) el.scrollTop = el.scrollHeight
   }, [msgs])
+
+  useEffect(() => {
+    if (!chatMessageId) return
+    const el = [...(scroller.current?.querySelectorAll<HTMLElement>('[data-message-id]') ?? [])].find(
+      (item) => item.dataset.messageId === chatMessageId
+    )
+    if (!el) return
+    stick.current = false
+    el.scrollIntoView({ block: 'center' })
+    useApp.setState({ chatMessageId: null })
+  }, [chatMessageId, msgs])
 
   const send = async (text: string, page?: { title: string; text: string }, uiEvent?: UiEvent): Promise<boolean> => {
     if (!choice.providerId || !choice.model) {
@@ -259,6 +91,7 @@ function ChatPanel() {
     try {
       const { conversation, userMessage, assistant } = await sendChat({
         conversationId,
+        ...(!conversationId && chatNewProjectId ? { projectId: chatNewProjectId } : {}),
         text,
         attachments: attachmentIds,
         uiEvent,
@@ -266,7 +99,8 @@ function ChatPanel() {
         providerId: choice.providerId,
         model: choice.model,
         effort,
-        scope,
+        // 未手动修改时由主进程读取项目默认或已有对话范围，避免加载期间误放宽范围。
+        ...(scopeExplicit.current ? { scope } : {}),
         // 既有会话由模式菜单立即更新；发送不写回旧渲染值，避免待回包的切换被撤销。
         ...(conversationId ? {} : { web }),
         context: await attachmentContext(
@@ -277,14 +111,24 @@ function ChatPanel() {
         ...(conversationId ? {} : { incognito: incognitoNew })
       })
       attachments.clear(attachmentIds)
-      if (useApp.getState().conversationId !== conversationId) return true
+      if (
+        useApp.getState().conversationId !== conversationId ||
+        useApp.getState().chatNewProjectId !== chatNewProjectId ||
+        useApp.getState().chatProjectId
+      )
+        return true
       const r = { conversation, userMessage }
       setMsgs((list) => [...list, r.userMessage, assistant])
       if (!conversationId) {
         qc.setQueryData(['messages', r.conversation.id], [r.userMessage, assistant])
+        qc.setQueryData<import('@shared/types').Conversation[]>(['conversations'], (items = []) => [
+          r.conversation,
+          ...items.filter((c) => c.id !== r.conversation.id)
+        ])
         openConversation(r.conversation.id)
       }
       void qc.invalidateQueries({ queryKey: ['conversations'] })
+      void qc.invalidateQueries({ queryKey: ['projectConversations'] })
       return true
     } catch (e) {
       toast.error(errText(e))
@@ -329,7 +173,9 @@ function ChatPanel() {
     <AttachmentDropZone controller={attachments} className="flex h-full flex-col">
       <header className="drag flex h-[52px] shrink-0 items-center justify-between gap-4 border-b border-border/70 pr-[calc(var(--tb-right)+12px)] pl-6">
         <span className="flex min-w-0 items-center gap-2">
-          <span className="truncate text-sm font-medium text-fg">{conv?.title || t('chat.new')}</span>
+          <span className="truncate text-sm font-medium text-fg">
+            {conv?.title || (project ? t('projects.newChatIn', { name: project.name }) : t('chat.new'))}
+          </span>
           {incognito && (
             <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-sunken px-2 py-0.5 text-2xs text-muted">
               <EyeOff className="size-3" />
@@ -383,7 +229,9 @@ function ChatPanel() {
             </div>
           )}
           {msgs.map((m, i) => (
-            <MessageItem key={m.id} m={m} grounded={msgs[i - 1]?.contextual} last={i === msgs.length - 1} />
+            <div key={m.id} data-message-id={m.id}>
+              <MessageItem m={m} grounded={msgs[i - 1]?.contextual} last={i === msgs.length - 1} />
+            </div>
           ))}
         </div>
       </div>
@@ -391,7 +239,9 @@ function ChatPanel() {
       <div className="shrink-0 px-8 pb-5">
         <div className="paper mx-auto max-w-[760px] rounded-2xl shadow-[var(--shadow-2)]">
           <Composer
+            conversationId={conversationId}
             prefill={prefill}
+            placeholder={project && !conversationId ? t('projects.newChatIn', { name: project.name }) : undefined}
             busy={!!streaming}
             attachments={attachments}
             provider={provider}
@@ -402,7 +252,13 @@ function ChatPanel() {
           <div className="flex flex-wrap items-center gap-2 border-t border-border/60 px-3 py-2">
             <ModelPicker compact value={choice} onChange={setChoice} />
             {provider && <EffortPicker compact kind={provider.kind} value={effort} onChange={setEffort} />}
-            <ScopePicker value={scope} onChange={setScope} />
+            <ScopePicker
+              value={scope}
+              onChange={(next) => {
+                scopeExplicit.current = true
+                setScope(next)
+              }}
+            />
             <span className="contents" data-testid="chat-web-mode">
               <WebModePicker value={web} onChange={setWeb} />
             </span>
@@ -435,14 +291,13 @@ function ChatPanel() {
 export function ChatView() {
   const { t } = useTranslation()
   const narrow = useWindowWidth() < 1100
+  const { chatProjectId } = useApp()
   return (
     <div className="flex h-full">
       <PageSidebar page="chat" auto={narrow} label={t('chat.history')}>
         <ChatSidebar />
       </PageSidebar>
-      <FloatingPanel flushLeft>
-        <ChatPanel />
-      </FloatingPanel>
+      <FloatingPanel flushLeft>{chatProjectId ? <ProjectHome key={chatProjectId} id={chatProjectId} /> : <ChatPanel />}</FloatingPanel>
     </div>
   )
 }

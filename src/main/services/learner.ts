@@ -3,6 +3,7 @@ import { newId } from '../lib/ids'
 import { emit } from '../events'
 import { LEVEL_MASTERY, MASTERY_START, masteryLevel, nextMastery, normConcept } from '../lib/learner'
 import type { Concept, ConceptSignal } from '@shared/types'
+import { memoryProjectId } from './ai/memoryScope'
 
 // 学习者模型：每个概念的掌握度，由行为信号累积（请求解释、没听懂、表现出理解）。
 // 用途：回答时据此调整讲解深浅；「关于我」中可查看、校正；v0.4 的复习与掌握度地图在此基础上扩展。
@@ -53,6 +54,10 @@ export function recordConcept(
   const norm = normConcept(clean)
   if (norm.length < 2) return null
   const db = profileDb()
+  // 掌握度仍是全局信号，但仅限项目对话中的原文不能进入全局备注或证据。
+  // 保留对话 ID 供同类信号去重，不保存可能复述项目内容的 note。
+  const publicEvidence =
+    evidence.conversationId && memoryProjectId(evidence.conversationId) ? { conversationId: evidence.conversationId } : evidence
   const now = Date.now()
   let row = db.prepare('SELECT * FROM concepts WHERE norm = ?').get(norm) as Row | undefined
   if (row && evidence.conversationId) {
@@ -77,7 +82,7 @@ export function recordConcept(
     const col = COUNTER[signal]
     db.prepare(`UPDATE concepts SET mastery = ?, ${col} = ${col} + 1, note = COALESCE(?, note), last_seen = ? WHERE id = ?`).run(
       nextMastery(row.mastery, signal),
-      signal === 'understood' ? null : (evidence.note?.slice(0, 200) ?? null),
+      signal === 'understood' ? null : 'note' in publicEvidence ? (publicEvidence.note?.slice(0, 200) ?? null) : null,
       now,
       row.id
     )
@@ -86,7 +91,7 @@ export function recordConcept(
       row.id,
       signal,
       now,
-      JSON.stringify(evidence)
+      JSON.stringify(publicEvidence)
     )
   })()
   if (!opts.silent) emit('memory:changed', {})

@@ -42,7 +42,7 @@ export function AttachmentSpaceView() {
     <section data-testid="attachment-space" className="flex h-full min-h-0 flex-col">
       <header className="drag shrink-0 border-b border-border px-6 pt-4 pb-3">
         <h2 className="font-serif text-lg font-semibold text-fg">{t('attach.space.title')}</h2>
-        <p className="no-drag mt-2 max-w-3xl text-xs leading-relaxed text-muted">{t('attach.space.intro')}</p>
+        <p className="no-drag mt-2 max-w-3xl text-xs leading-relaxed text-muted">{t('projects.attachmentSpaceIntro')}</p>
         <div className="no-drag mt-4 flex flex-wrap gap-3">
           <div className="flex rounded-lg bg-sunken p-1">
             {(['unarchived', 'archived', 'all'] as const).map((s) => (
@@ -93,7 +93,7 @@ export function AttachmentSpaceView() {
                 </th>
                 {['name', 'from', 'added', 'size', 'state'].map((k) => (
                   <th className="px-2 py-3 font-normal" key={k}>
-                    {t('attach.space.' + k)}
+                    {t(k === 'from' ? 'projects.attachmentFrom' : 'attach.space.' + k)}
                   </th>
                 ))}
                 <th />
@@ -119,7 +119,20 @@ export function AttachmentSpaceView() {
                     </button>
                   </td>
                   <td className="max-w-48 px-2">
-                    {a.conversations.length ? (
+                    {a.projects?.length ? (
+                      <div>
+                        <span className="block text-2xs text-subtle">{t('projects.attachmentOwnerProject')}</span>
+                        {a.projects.map((project) => (
+                          <button
+                            key={project.id}
+                            className="block max-w-full truncate py-1 text-accent"
+                            onClick={() => useApp.getState().openChatProject(project.id)}
+                          >
+                            {project.name}
+                          </button>
+                        ))}
+                      </div>
+                    ) : a.conversations.length ? (
                       a.conversations.map((c) => (
                         <button
                           key={c.id}

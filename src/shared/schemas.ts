@@ -287,12 +287,13 @@ export const ChatSendSchema = z
   .object({
     uiEvent: UiEventSchema.optional(),
     conversationId: Id.nullable(),
+    projectId: Id.nullable().optional(),
     text: z.string().min(0).max(20000),
     attachments: z.array(Id).max(10).optional(),
     providerId: Id,
     model: z.string().min(1).max(200),
     effort: EffortSchema,
-    scope: ChatScopeSchema,
+    scope: ChatScopeSchema.optional(),
     web: WebModeSchema.optional(),
     context: ContextPacketSchema.optional(),
     /** 由快捷操作直接指定的技能（省去路由） */
@@ -313,7 +314,8 @@ export const ChatSendSchema = z
     images: z.array(z.string().max(8_000_000).startsWith('data:image/')).max(4).optional()
   })
   .refine((v) => !!v.text.trim() || !!v.attachments?.length, 'Provide text or an attachment')
-export type ChatSend = z.infer<typeof ChatSendSchema>
+export type ChatSendRequest = z.infer<typeof ChatSendSchema>
+export type ChatSend = Omit<ChatSendRequest, 'scope'> & { scope: ChatScope }
 
 export const AiSettingsSchema = z.object({
   ui: UiSettingsSchema.default(UI_DEFAULTS),
@@ -353,6 +355,7 @@ export type AiSettings = z.infer<typeof AiSettingsSchema>
 export const MemoryKindSchema = z.enum(['profile', 'preference', 'fact', 'glossary', 'skill', 'episode', 'concept'])
 
 export const MemoryInputSchema = z.object({
+  projectId: Id.nullable().optional(),
   id: Id.optional(),
   kind: MemoryKindSchema,
   key: z.string().max(64).optional(),
@@ -365,6 +368,7 @@ export const MemoryInputSchema = z.object({
 export type MemoryInput = z.infer<typeof MemoryInputSchema>
 
 export const MemoryQuerySchema = z.object({
+  projectId: Id.nullable().optional(),
   kind: MemoryKindSchema.optional(),
   status: z.enum(['active', 'pending', 'archived']).optional(),
   search: z.string().max(200).optional()

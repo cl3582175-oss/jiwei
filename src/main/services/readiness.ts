@@ -1,9 +1,9 @@
-import { eq, inArray } from 'drizzle-orm'
+import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { FORMATS } from '@shared/formats'
 import { ReadinessItemSchema, type Readiness, type ReadinessItem } from '@shared/readiness'
 export type { Readiness } from '@shared/readiness'
 import { getDb, getSqlite } from '../db'
-import { sources, assets } from '../db/schema'
+import { sources, assets, chatProjects, projectSources } from '../db/schema'
 import { canReadSource } from './attachmentsAccess'
 import { sourceRecognition } from './recognize'
 import { canAutoTranscribe } from './asr'
@@ -11,15 +11,16 @@ import { getStatus } from './ai/embedding'
 import { sourceIndexCounts } from './ai/sourceIndexStatus'
 import { enqueueSegment } from './segmentJobs'
 import { getSettings } from './settings'
+import { tr } from '../lib/messages'
 
 type SourceRow = typeof sources.$inferSelect & { ext: string | null }
 function calculate(row: SourceRow): Readiness {
   const sql = getSqlite()
   const jobs = sql
     .prepare(
-      "SELECT status FROM jobs WHERE kind='source.segment' AND (dedupe_key=? OR json_extract(payload,'$.sourceId')=?) ORDER BY updated_at DESC,created_at DESC"
+      "SELECT status FROM jobs WHERE kind IN ('source.segment','source.fetch') AND (dedupe_key IN (?,?) OR json_extract(payload,'$.sourceId')=?) ORDER BY updated_at DESC,created_at DESC"
     )
-    .all(`segment:${row.id}`, row.id) as { status: string }[]
+    .all(`segment:${row.id}`, `fetch:${row.id}`, row.id) as { status: string }[]
   if (jobs.some((j) => j.status === 'queued' || j.status === 'running')) return { state: 'preparing', reason: 'parsing' }
   const media = ['audio', 'video', 'recording'].includes(row.kind)
   const format = row.ext ? FORMATS[row.ext] : null
@@ -56,6 +57,35 @@ function calculate(row: SourceRow): Readiness {
 }
 /** 默认只返回允许AI读取的资料库；附件必须有仍有效的所属对话关系，不能接受调用者自造的allow。 */
 export function readinessMany(ids: string[], conversationId: string | null = null): Record<string, Readiness> {
+  return calculateMany(ids, (row) => canReadSource(row.id, conversationId))
+}
+
+/** 项目来源管理界面显式验证有效项目和所属关系；不借用对话身份，也不接受自造 allow。 */
+export function projectReadinessMany(projectId: string, ids: string[]): Record<string, Readiness> {
+  const db = getDb()
+  if (
+    !db
+      .select({ id: chatProjects.id })
+      .from(chatProjects)
+      .where(and(eq(chatProjects.id, projectId), isNull(chatProjects.deletedAt)))
+      .get()
+  )
+    throw new Error(tr('项目不存在或已删除', 'Project not found'))
+  const relations = new Map(
+    db
+      .select()
+      .from(projectSources)
+      .where(and(eq(projectSources.projectId, projectId), eq(projectSources.itemType, 'source')))
+      .all()
+      .map((row) => [row.itemId, row])
+  )
+  return calculateMany(ids, (row) => {
+    const relation = relations.get(row.id)
+    return !!relation && row.deletedAt === null && (row.space === 'library' ? !row.aiExcluded : relation.origin !== 'library')
+  })
+}
+
+function calculateMany(ids: string[], permitted: (row: typeof sources.$inferSelect) => boolean): Record<string, Readiness> {
   const out: Record<string, Readiness> = {}
   for (let at = 0; at < ids.length; at += 500) {
     const rows = getDb()
@@ -64,7 +94,7 @@ export function readinessMany(ids: string[], conversationId: string | null = nul
       .leftJoin(assets, eq(assets.id, sources.assetId))
       .where(inArray(sources.id, ids.slice(at, at + 500)))
       .all()
-    for (const { s, ext } of rows) if (canReadSource(s.id, conversationId)) out[s.id] = calculate({ ...s, ext })
+    for (const { s, ext } of rows) if (permitted(s)) out[s.id] = calculate({ ...s, ext })
   }
   return out
 }

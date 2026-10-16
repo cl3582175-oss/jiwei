@@ -7,14 +7,15 @@ import { cn } from '@/lib/utils'
 import { BrowserPane } from './BrowserPane'
 import { NoteEditor } from '../notes/NoteEditor'
 import { AiPanelBody, AiPanelFloat } from '../assist/AiPanel'
-import { useAssist } from '../assist/store'
+import { usePanel } from '../assist/store'
 
 // 浏览器工作区（v0.7.2）：从「浏览」进入时浏览器独占整页；点“记笔记”新建或打开一篇笔记，
 // 浏览器与笔记分栏显示（不显示笔记分类与搜索栏）。笔记栏在左 / 右 / 上 / 下由用户选择，分隔条可拖动，都会记住。
 
 export function BrowserWorkspace() {
   const browserNote = useApp((s) => s.browserNote)
-  const pinned = useAssist((s) => s.panelOpen && s.panelPinned)
+  const panel = usePanel()
+  const pinned = panel.open && panel.pinned
   const { side, size, save } = useNoteLayout()
   const vertical = side === 'top' || side === 'bottom'
   const noteFirst = side === 'left' || side === 'top'

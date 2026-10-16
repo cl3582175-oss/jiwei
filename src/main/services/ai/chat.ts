@@ -1,8 +1,18 @@
+import { conversationProject, memoryProjectId } from './memoryScope'
+import type { ChatSearchHit } from '@shared/chatProjects'
 import { readinessForSources, readinessDescription, storedReadiness } from '../readiness'
 import { matchSourcesByTitle } from './sourceMentions'
 import { prepareAttachmentTurn, markAttachmentTurnSent, assertAttachmentTurn, type AttachmentTurn } from './chatAttachments'
 import { bindAttachments, bindAttachmentNotes, attachmentStatus, conversationAttachments, noteReference } from '../attachments'
-import { attachmentHistoryReadable, canReadSource, hasPrivateAttachmentHistory, hasAttachmentHistory } from '../attachmentsAccess'
+import {
+  attachmentHistoryReadable,
+  canReadSource,
+  conversationProjectSources,
+  hasPrivateAttachmentHistory,
+  hasAttachmentHistory,
+  memoryBlocked
+} from '../attachmentsAccess'
+import { prepareProjectTurn, type ProjectTurn } from './projectContext'
 import { listSegments, resolveSegmentId } from '../segments'
 import { conversationAttachmentIds } from '../attachmentDerived'
 import { tr } from '../../lib/messages'
@@ -10,11 +20,12 @@ import { detachConversationAttachments } from '../attachments'
 import { collectGarbage } from '../assets'
 import { asSchema, hasToolCall, stepCountIs, streamText, type ModelMessage, type ToolSet } from 'ai'
 import { ASK_USER, buildScopeTools } from './scopeTools'
-import { and, asc, desc, eq, inArray, isNull, ne } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import log from 'electron-log/main'
-import { getDb } from '../../db'
+import { getDb, getSqlite } from '../../db'
 import {
   conversations,
+  chatProjects,
   messages,
   sources,
   conversationAttachments as attachmentRefs,
@@ -27,7 +38,7 @@ import { deviceId } from '../device'
 import { emit, onMainEvent } from '../../events'
 import { getSettings } from '../settings'
 import { type Effort, type ModelTier, type Usage, type ProviderKind } from '@shared/ai'
-import type { ChatScope, ChatSend } from '@shared/schemas'
+import type { ChatScope, ChatSend, ChatSendRequest } from '@shared/schemas'
 import type { Anchor } from '@shared/context'
 import type { AgentStep, ChatMessage, Citation, Conversation, SearchHit } from '@shared/types'
 import type { WebMode } from '@shared/retrieval'
@@ -35,7 +46,7 @@ import { buildModel } from './model'
 import { recognizeRegion, recognizingSources } from '../recognize'
 import { capsFor, getProviderRow, learnContextLimit } from './providers'
 import { retrieve } from './retrieve'
-import { estimateTokens, shortAttachmentBudget, FULL_SOURCE_MAX_TOKENS } from '../../lib/sourceContext'
+import { estimateTokens, shortAttachmentBudget, sourceTextBudget, FULL_SOURCE_MAX_TOKENS } from '../../lib/sourceContext'
 import { retrievalQuery } from './followUp'
 import { contextGenerationBudget, contextLimitFromError, withContextWindowRetry } from './modelContext'
 import { contextSourceEvidence, fullSourceEvidence, resolveContext } from './context'
@@ -88,13 +99,20 @@ const running = new Map<string, AbortController>()
  * 下一次对话再取最新的。
  */
 const cards = new Map<string, string | null>()
-function cardFor(conversationId: string, zh: boolean): string | null {
+export function cardFor(conversationId: string, zh: boolean): string | null {
   if (!cards.has(conversationId)) {
     if (cards.size > 200) cards.delete(cards.keys().next().value!)
-    cards.set(conversationId, userCard(zh))
+    cards.set(conversationId, userCard(zh, { projectId: memoryProjectId(conversationId) }))
   }
   return cards.get(conversationId)!
 }
+
+export function invalidateUserCards(conversationIds?: string[]): void {
+  if (conversationIds) for (const id of conversationIds) cards.delete(id)
+  else cards.clear()
+}
+onMainEvent('memory:profileChanged', () => invalidateUserCards())
+onMainEvent('chatProjects:changed', () => invalidateUserCards())
 
 const resolvedAnchor = (raw: string | null): Anchor | null => {
   if (!raw) return null
@@ -106,6 +124,8 @@ const resolvedAnchor = (raw: string | null): Anchor | null => {
 const toConversation = (r: ConvRow): Conversation => ({
   id: r.id,
   title: r.title,
+  projectId: r.projectId,
+  lastMessageAt: r.createdAt,
   scope: JSON.parse(r.scope) as ChatScope,
   web: r.web as WebMode | null,
   pinned: r.pinned,
@@ -154,20 +174,37 @@ const toMessage = (r: MsgRow): ChatMessage => ({
 
 /** 对话页列表：就地提问（inline）挂在原文旁边，费曼练习（feynman）在复习与学习经历中，都不在其中 */
 export function listConversations(): Conversation[] {
+  const activity = sql<number>`COALESCE((SELECT MAX(m.created_at) FROM messages m WHERE m.conversation_id=${conversations.id}), ${conversations.createdAt})`
   return getDb()
-    .select()
+    .select({ conversation: conversations, lastMessageAt: activity })
     .from(conversations)
-    .where(
-      and(
-        isNull(conversations.deletedAt),
-        ne(conversations.kind, 'inline'),
-        ne(conversations.kind, 'feynman'),
-        ne(conversations.kind, 'reflection')
-      )
-    )
-    .orderBy(desc(conversations.pinned), desc(conversations.updatedAt))
+    .where(and(isNull(conversations.deletedAt), inArray(conversations.kind, ['chat', 'workspace'])))
+    .orderBy(desc(activity), desc(conversations.createdAt), desc(conversations.id))
     .all()
-    .map(toConversation)
+    .map((r) => ({ ...toConversation(r.conversation), lastMessageAt: r.lastMessageAt }))
+}
+
+export function searchConversations(query: string): ChatSearchHit[] {
+  const q = query.trim()
+  if (!q) return []
+  const pattern = `%${q.replace(/[\\%_]/g, '\\$&')}%`
+  const rows = getSqlite()
+    .prepare(
+      `SELECT c.id AS conversationId,c.title,c.project_id AS projectId,p.name AS projectName,
+    COALESCE((SELECT MAX(m.created_at) FROM messages m WHERE m.conversation_id=c.id),c.created_at) AS lastMessageAt
+    FROM conversations c LEFT JOIN chat_projects p ON p.id=c.project_id AND p.deleted_at IS NULL
+    WHERE c.deleted_at IS NULL AND c.kind IN ('chat','workspace') AND
+    (c.title LIKE ? ESCAPE '\\' OR EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id=c.id AND m.content LIKE ? ESCAPE '\\'))
+    ORDER BY lastMessageAt DESC,c.id DESC LIMIT 50`
+    )
+    .all(pattern, pattern) as Omit<ChatSearchHit, 'snippet' | 'messageId'>[]
+  return rows.map((r) => {
+    const hit = getSqlite()
+      .prepare("SELECT id,content FROM messages WHERE conversation_id=? AND content LIKE ? ESCAPE '\\' ORDER BY created_at,rowid LIMIT 1")
+      .get(r.conversationId, pattern) as { id: string; content: string } | undefined
+    const start = hit ? Math.max(0, hit.content.toLocaleLowerCase().indexOf(q.toLocaleLowerCase()) - 50) : 0
+    return { ...r, snippet: hit?.content.slice(start, start + 200) ?? r.title, messageId: hit?.id ?? null }
+  })
 }
 
 export function getConversation(id: string): Conversation | null {
@@ -196,10 +233,23 @@ export function listMessages(conversationId: string): ChatMessage[] {
     .map(toMessage)
 }
 
-export function updateConversation(id: string, patch: { title?: string; scope?: ChatScope; pinned?: boolean; web?: WebMode | null }): void {
+export function updateConversation(
+  id: string,
+  patch: { title?: string; scope?: ChatScope; pinned?: boolean; web?: WebMode | null; projectId?: string | null }
+): void {
+  if (
+    patch.projectId &&
+    !getDb()
+      .select({ id: chatProjects.id })
+      .from(chatProjects)
+      .where(and(eq(chatProjects.id, patch.projectId), isNull(chatProjects.deletedAt)))
+      .get()
+  )
+    throw new Error('Project not found')
   getDb()
     .update(conversations)
     .set({
+      ...(patch.projectId !== undefined ? { projectId: patch.projectId } : {}),
       ...(patch.title !== undefined ? { title: patch.title } : {}),
       ...(patch.scope ? { scope: JSON.stringify(patch.scope) } : {}),
       ...(patch.pinned !== undefined ? { pinned: patch.pinned } : {}),
@@ -209,22 +259,59 @@ export function updateConversation(id: string, patch: { title?: string; scope?: 
     })
     .where(eq(conversations.id, id))
     .run()
+  if (patch.projectId !== undefined) {
+    const family = conversationFamily(id)
+    getDb()
+      .update(conversations)
+      .set({ projectId: patch.projectId, updatedAt: Date.now(), updatedBy: deviceId() })
+      .where(inArray(conversations.id, [...family]))
+      .run()
+    invalidateUserCards([...family])
+    emit('chatProjects:changed', {})
+  }
+}
+
+function conversationFamily(id: string): Set<string> {
+  const db = getDb(),
+    family = new Set([id])
+  for (const conversationId of family) {
+    const ids = db
+      .select({ id: messages.id })
+      .from(messages)
+      .where(eq(messages.conversationId, conversationId))
+      .all()
+      .map((m) => m.id)
+    if (ids.length)
+      for (const c of db
+        .select({ id: conversations.id })
+        .from(conversations)
+        .where(and(eq(conversations.kind, 'inline'), inArray(conversations.anchorParentId, ids)))
+        .all())
+        family.add(c.id)
+  }
+  return family
 }
 
 export async function deleteConversation(id: string): Promise<void> {
-  const db = getDb()
+  const db = getDb(),
+    family = conversationFamily(id)
   running.forEach((ctrl, mid) => {
     const m = db.select({ c: messages.conversationId }).from(messages).where(eq(messages.id, mid)).get()
-    if (m?.c === id) ctrl.abort()
+    if (m && family.has(m.c)) ctrl.abort()
   })
   db.transaction((tx) => {
-    detachConversationAttachments(id)
-    tx.delete(webPageRefs).where(eq(webPageRefs.conversationId, id)).run()
-    tx.delete(uiStates)
-      .where(inArray(uiStates.messageId, tx.select({ id: messages.id }).from(messages).where(eq(messages.conversationId, id))))
-      .run()
-    tx.delete(messages).where(eq(messages.conversationId, id)).run()
-    tx.delete(conversations).where(eq(conversations.id, id)).run()
+    for (const conversationId of family) {
+      detachConversationAttachments(conversationId)
+      tx.delete(webPageRefs).where(eq(webPageRefs.conversationId, conversationId)).run()
+      tx.delete(uiStates)
+        .where(
+          inArray(uiStates.messageId, tx.select({ id: messages.id }).from(messages).where(eq(messages.conversationId, conversationId)))
+        )
+        .run()
+      tx.delete(messages).where(eq(messages.conversationId, conversationId)).run()
+      tx.delete(conversations).where(eq(conversations.id, conversationId)).run()
+      cards.delete(conversationId)
+    }
   })
   await collectGarbage()
 }
@@ -279,6 +366,12 @@ Rules:
       : 'Use memory_remember when the user explicitly asks to remember, or states stable preferences, goals or background; not for one-off requests.'
   const card = incognito ? null : cardFor(conversationId, zh)
   const goals = incognito ? null : activeGoalsText(zh)
+  const project = conversationProject(conversationId)
+  const projectName = project?.name.replace(
+    /[&<>"']/g,
+    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[c]!
+  )
+  const projectPrompt = project?.instructions.trim() ? `<project name="${projectName}">${project.instructions}</project>` : null
   return [
     rules.replace('{{MEMORY_RULE}}', memoryRule),
     promptCatalog(uiMode, zh, localUi),
@@ -286,6 +379,7 @@ Rules:
     card
       ? `${zh ? '用户卡片（关于这位用户，回答时自然地参考，不要复述）' : 'About the user (use naturally, do not recite)'}：\n${card}`
       : null,
+    projectPrompt,
     goals
       ? `${zh ? '用户正在进行的方向（回答时可以联系到它们）' : "The user's active learning goals (relate to them when useful)"}：\n${goals}`
       : null,
@@ -363,6 +457,20 @@ function sendInTransaction(input: ChatSend): SendResult {
   const attachmentIds = input.attachments ?? []
   if (attachmentIds.length && (input.feynman || input.reflectionId || ['feynman', 'reflection'].includes(input.kind ?? '')))
     throw new Error('Attachments are not supported in this conversation')
+  const messageAnchor = input.anchor?.parentType === 'message' ? input.anchor : null
+  const reply = messageAnchor ? db.select().from(messages).where(eq(messages.id, messageAnchor.parentId)).get() : null
+  const parent = reply ? db.select().from(conversations).where(eq(conversations.id, reply.conversationId)).get() : null
+  if (
+    messageAnchor &&
+    (!reply ||
+      reply.role !== 'assistant' ||
+      reply.status === 'streaming' ||
+      !parent ||
+      parent.deletedAt !== null ||
+      parent.id !== messageAnchor.ownerId)
+  )
+    throw new Error(tr('原回复已不可用', 'The original reply is no longer available'))
+  const inheritPrivate = !!parent && (hasPrivateAttachmentHistory(parent.id) || hasAttachmentHistory(parent.id))
   const now = Date.now()
   let convId = input.conversationId
   if (!convId) {
@@ -370,12 +478,13 @@ function sendInTransaction(input: ChatSend): SendResult {
     db.insert(conversations)
       .values({
         id: convId,
+        projectId: input.projectId ?? null,
         title: input.feynman
           ? input.feynman.concept.slice(0, 40)
           : input.text.replace(/\s+/g, ' ').slice(0, 40) || tr('附件对话', 'Attachment chat'),
         scope: JSON.stringify(input.scope),
         web: input.web ?? null,
-        incognito: !!input.incognito,
+        incognito: !!input.incognito || !!parent?.incognito,
         kind: input.feynman ? 'feynman' : input.reflectionId ? 'reflection' : (input.kind ?? 'chat'),
         anchor: input.anchor ? JSON.stringify(input.anchor) : null,
         anchorParentId: input.anchor?.parentId ?? input.feynman?.noteId ?? null,
@@ -388,7 +497,9 @@ function sendInTransaction(input: ChatSend): SendResult {
                 cardId: input.feynman.cardId ?? null,
                 report: null
               } satisfies FeynmanMeta)
-            : null,
+            : inheritPrivate
+              ? JSON.stringify({ suppressAttachmentMemory: true })
+              : null,
         createdAt: now,
         updatedAt: now,
         updatedBy: deviceId()
@@ -509,7 +620,24 @@ function messageNoteIds(context: string | null): string[] {
     return []
   }
 }
-export function send(input: ChatSend): SendResult {
+export function send(request: ChatSendRequest): SendResult {
+  const previous = request.conversationId ? getConversation(request.conversationId) : null
+  if (request.conversationId && !previous) throw new Error('Conversation not found')
+  const replyParent =
+    !request.conversationId && request.anchor?.parentType === 'message' && request.anchor.ownerId
+      ? getConversation(request.anchor.ownerId)
+      : null
+  const projectId = previous ? (previous.projectId ?? null) : replyParent ? (replyParent.projectId ?? null) : (request.projectId ?? null)
+  const project = projectId
+    ? getDb()
+        .select()
+        .from(chatProjects)
+        .where(and(eq(chatProjects.id, projectId), isNull(chatProjects.deletedAt)))
+        .get()
+    : null
+  if (projectId && !project) throw new Error('Project not found')
+  const input: ChatSend = { ...request, projectId, scope: request.scope ?? previous?.scope ?? { type: project?.libraryScope ?? 'all' } }
+
   for (const id of input.attachments ?? []) {
     if (id.startsWith('note:')) {
       const note = noteReference(id.slice(5))
@@ -588,7 +716,12 @@ async function agentTools(
   Object.assign(tools, web.tools)
   Object.assign(meta, web.meta)
   for (const name of Object.keys(tools)) if (isProposalTool(name)) meta[name] = { level: 'write', proposal: true }
-  if (session.scope.type !== 'none' || session.attachmentSourceIds?.length) {
+  if (
+    session.scope.type !== 'none' ||
+    session.attachmentSourceIds?.length ||
+    session.projectSourceIds?.notes.length ||
+    session.projectSourceIds?.sources.length
+  ) {
     {
       const doing = buildDoTools(zh, {
         sourceIds: conversationAttachmentIds(session.conversationId),
@@ -602,7 +735,17 @@ async function agentTools(
     const scope = buildScopeTools(zh, {
       ...chat,
       conversationId: session.conversationId,
-      ...(session.scope.type === 'none' ? { sourceIds: session.attachmentSourceIds ?? [] } : {})
+      ...(session.scope.type !== 'all'
+        ? {
+            sourceIds: [
+              ...new Set([
+                ...(session.scope.type === 'items' ? session.scope.sources : []),
+                ...(session.attachmentSourceIds ?? []),
+                ...(session.projectSourceIds?.sources ?? [])
+              ])
+            ]
+          }
+        : {})
     })
     Object.assign(tools, scope.tools)
     Object.assign(meta, scope.meta)
@@ -657,6 +800,8 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
     tier: capsFor(input.providerId, input.model).tier,
     vision: capsFor(input.providerId, input.model).vision,
     scope: input.scope,
+    projectId: conv.projectId ?? null,
+    memoryProjectId: memoryProjectId(conversationId),
     incognito: conv.incognito,
     conversationId,
     messageId,
@@ -672,11 +817,30 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
     }
   }
   let attachmentTurn: AttachmentTurn = { section: '', full: [], images: [], sentIds: [], sourceIds: [] }
+  let projectTurn: ProjectTurn = { section: '', full: [], items: [] }
+  const initialProjectItems = conversationProjectSources(conversationId)
+  session.projectSourceIds = {
+    notes: initialProjectItems.filter((s) => s.itemType === 'note').map((s) => s.itemId),
+    sources: initialProjectItems.filter((s) => s.itemType === 'source').map((s) => s.itemId)
+  }
+  const projectPrivateIds = initialProjectItems.filter((s) => s.private).map((s) => s.itemId)
+  const assertProjectSources = (): void => {
+    const current = conversationProjectSources(conversationId)
+    if (initialProjectItems.some((s) => !current.some((c) => c.itemId === s.itemId && c.itemType === s.itemType)))
+      throw new Error(zh ? '项目来源权限已改变，已停止后续请求' : 'Project source access changed; further requests stopped')
+  }
   session.attachmentSourceIds = conversationAttachments(conversationId)
     .filter((a) => !a.sourceId.startsWith('note:') && !a.deleted && canReadSource(a.sourceId, conversationId))
     .map((a) => a.sourceId)
   session.suppressAttachmentMemory = hasAttachmentHistory(conversationId)
+  session.memoryBlocked = memoryBlocked(conversationId)
   session.retrieveAttachments = async (query, filters, limit, opts) => {
+    assertProjectSources()
+    const projectItems = conversationProjectSources(conversationId)
+    const priorityIds = {
+      notes: projectItems.filter((s) => s.itemType === 'note').map((s) => s.itemId),
+      sources: projectItems.filter((s) => s.itemType === 'source').map((s) => s.itemId)
+    }
     const ids = conversationAttachments(conversationId)
       .filter((a) => !a.sourceId.startsWith('note:') && !a.deleted && canReadSource(a.sourceId, conversationId))
       .map((a) => a.sourceId)
@@ -694,10 +858,34 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
               ])
             ]
           }
-    return retrieve(query, scope, limit, filters, session.preferSource, { sourceIds: ids }, opts)
+    return retrieve(
+      query,
+      scope,
+      limit,
+      filters,
+      session.preferSource,
+      { sourceIds: [...new Set([...ids, ...projectItems.filter((s) => s.private).map((s) => s.itemId)])] },
+      { ...opts, priorityIds }
+    )
   }
+  const initialMemoryProject = memoryProjectId(conversationId)
+  const stopProjectGuard = onMainEvent('chatProjects:changed', () => {
+    const latest = getConversation(conversationId)
+    if (
+      !latest ||
+      (latest.projectId && !conversationProject(conversationId)) ||
+      (latest.projectId ?? null) !== (conv.projectId ?? null) ||
+      memoryProjectId(conversationId) !== initialMemoryProject
+    )
+      ctrl.abort()
+  })
   const stopAttachmentGuard = onMainEvent('attachments:changed', () => {
     if (attachmentTurn.sourceIds.some((id) => !canReadSource(id, conversationId))) ctrl.abort()
+    try {
+      assertProjectSources()
+    } catch {
+      ctrl.abort()
+    }
   })
   let lastFlush = 0
   const flush = (force = false): void => {
@@ -760,6 +948,7 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
     })
     db.update(conversations).set({ updatedAt: Date.now() }).where(eq(conversations.id, conversationId)).run()
     stopAttachmentGuard()
+    stopProjectGuard()
     running.delete(messageId)
     emit('chat:done', { message: toMessage(db.select().from(messages).where(eq(messages.id, messageId)).get()!) })
   }
@@ -802,7 +991,7 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
           ? { sourceIds: sourcePlan.sourceIds, includeNotes: true }
           : {}
     const retrieved =
-      special || (input.scope.type === 'none' && !sourcePlan.sourceIds.length)
+      special || (input.scope.type === 'none' && !sourcePlan.sourceIds.length && !initialProjectItems.length)
         ? []
         : await session.retrieveAttachments(query, {}, 8, retrievalOpts)
     const preparedFull = [...attachmentTurn.full]
@@ -824,15 +1013,17 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
     const evidenceIds = [
       ...new Set([
         ...(session.attachmentSourceIds ?? []),
+        ...(session.projectSourceIds?.sources ?? []),
         ...sourcePlan.sourceIds,
         ...kbHits.filter((h) => h.parentType === 'source').map((h) => h.parentId)
       ])
     ]
     db.update(messages)
-      .set({ context: JSON.stringify({ attachmentSourceIds: evidenceIds }) })
+      .set({ context: JSON.stringify({ attachmentSourceIds: evidenceIds, projectPrivateSourceIds: projectPrivateIds }) })
       .where(eq(messages.id, messageId))
       .run()
     session.suppressAttachmentMemory = hasAttachmentHistory(conversationId)
+    session.memoryBlocked = memoryBlocked(conversationId)
     const initialCoverage = coverage(kbHits)
     const explicitAtStart = special
       ? []
@@ -852,7 +1043,7 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
       })
     let searchFailed = false
     let preSearchAttempted = false
-    const skillBody = input.skill && !special ? loadSkill(input.skill, zh) : null
+    const skillBody = input.skill && !special ? loadSkill(input.skill, zh, { projectId: memoryProjectId(conversationId) }) : null
     if (!special) {
       const status = retrievalStatus()
       session.web.gate = webGate({
@@ -955,6 +1146,13 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
           fullCeiling
         )
         budgetShortAttachments()
+        const projectBudget = Math.max(
+          0,
+          sourceTextBudget(contextLength, fullCeiling) -
+            attachmentTurn.full.reduce((n, f) => n + estimateTokens(f.text), 0) -
+            (sourcePlan.full ? sourcePlan.hits.reduce((n, h) => n + estimateTokens(h.text), 0) : 0)
+        )
+        projectTurn = special ? { section: '', full: [], items: [] } : prepareProjectTurn(conversationId, zh, contextLength, projectBudget)
         fullTextInstruction = sourcePlan.full
           ? zh
             ? '以下是用户指定资料的全文，请完整阅读后回答，并引用具体片段。'
@@ -971,11 +1169,15 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
           conversationId
         )
         const currentHits = filterCloudHits(
-          [...explicit, ...kbHits.filter((h) => !explicit.some((e) => e.ownerId === h.ownerId && e.parentId === h.parentId))],
+          [
+            ...explicit,
+            ...projectTurn.full.filter((h) => !explicit.some((e) => e.ownerId === h.ownerId && e.parentId === h.parentId)),
+            ...kbHits.filter((h) => ![...explicit, ...projectTurn.full].some((e) => e.ownerId === h.ownerId && e.parentId === h.parentId))
+          ],
           conversationId
         ).filter((h) => !attachmentTurn.full.some((f) => f.sourceId === h.parentId))
         let kb = currentHits.length ? numberHits(session, currentHits) : null
-        if (kb && currentHits.some((h) => session.attachmentSourceIds?.includes(h.parentId)))
+        if (kb && currentHits.some((h) => session.attachmentSourceIds?.includes(h.parentId) || projectPrivateIds.includes(h.parentId)))
           kb = asExternalData('attachment-excerpts', kb, { maxChars: kb.length, overflow: 'reject' })
         const attachmentFull = attachmentTurn.full
           .map((f) => asExternalData('attachment:' + f.name, numberHits(session, f.hits), { maxChars: 60000, overflow: 'reject' }))
@@ -987,7 +1189,8 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
             ...sourcePlan.sourceIds,
             ...matchSourcesByTitle(query, input.scope).map((m) => m.sourceId),
             ...(session.preferSource ? [session.preferSource] : []),
-            ...(session.attachmentSourceIds ?? [])
+            ...(session.attachmentSourceIds ?? []),
+            ...(session.projectSourceIds?.sources ?? [])
           ])
         ]
         const readinessItems = readinessForSources(involved, conversationId)
@@ -1019,6 +1222,7 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
           : ''
 
         assertAttachmentTurn(conversationId, attachmentTurn.sourceIds)
+        assertProjectSources()
         // 资料还在识别（扫描页、表格、图片）：回答可能不完整，要如实告诉用户（v0.7.6）
         const pending = recognizingSources(
           [...currentHits.filter((h) => h.parentType === 'source').map((h) => h.parentId), 'sourceId' in ctx ? ctx.sourceId : null].filter(
@@ -1099,6 +1303,7 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
           ? coachSystem(coach, zh)
           : [
               systemPrompt(zh, session.tier, session.incognito, conversationId, uiMode, localUi),
+              projectTurn.section,
               attachmentTurn.section,
               fullTextInstruction
             ]
@@ -1113,6 +1318,7 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
         messages: msgs,
         prepareStep: ({ messages }) => {
           assertAttachmentTurn(conversationId, attachmentTurn.sourceIds)
+          assertProjectSources()
           requireRecordingCloudAccess(privacyInput, conversationId)
           // 连续工具轮次会复用已经发送过的证据；确认或工具等待期间撤销权限后，不能再次发送旧正文。
           if (filterCurrentWebHits(session.hits).length !== session.hits.length)
@@ -1230,6 +1436,7 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
     citations = session.hits
       .map((h, i) => ({
         n: i + 1,
+        projectSource: h.projectSource,
         parentType: h.parentType,
         parentId: h.parentId,
         ownerId: h.ownerId,
@@ -1270,7 +1477,7 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
       .run()
     finish('done', null, { ...usage, cost: costOf(input.providerId, input.model, usage).cost, durationMs: Date.now() - t0 })
     markAttachmentTurnSent(conversationId, attachmentTurn.sentIds)
-    if (!session.incognito && !session.suppressAttachmentMemory) scheduleExtract(conversationId)
+    if (!session.incognito && !session.memoryBlocked) scheduleExtract(conversationId)
     if (Date.now() - t0 > 20_000) notifyDone(conversationId, conv.title, zh)
   } catch (e) {
     if (ctrl.signal.aborted) return finish('stopped', null, null)

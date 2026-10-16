@@ -43,7 +43,7 @@ import { AnswerCard } from './features/assist/AnswerCard'
 import { TodayView } from './features/today/TodayView'
 import { useActivityTracker } from './features/today/useActivityTracker'
 import { AiPanelBody, AiPanelFloat } from './features/assist/AiPanel'
-import { useAssist } from './features/assist/store'
+import { usePanel } from './features/assist/store'
 import { WebSnapshotDialog } from './features/retrieval/WebSnapshotDialog'
 
 function useThemeSync(): 'light' | 'dark' {
@@ -246,7 +246,8 @@ export function App() {
   useMemoryToasts()
   useActivityTracker()
   // 积微助手侧栏（v0.6.7）：笔记工作区自己安排侧栏；其余页面在这里浮动或钉在右侧，助手全屏页不需要
-  const pinned = useAssist((a) => a.panelOpen && a.panelPinned)
+  const panel = usePanel()
+  const pinned = panel.open && panel.pinned
   const shellPanel = view !== 'notes' && view !== 'chat'
 
   // 设置加载完成前不渲染，避免语言/主题闪烁

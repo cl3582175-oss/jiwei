@@ -852,11 +852,38 @@ export const providers = sqliteTable('providers', {
   ...syncCols
 })
 
+export const chatProjects = sqliteTable('chat_projects', {
+  id: text('id').primaryKey().notNull(),
+  name: text('name').notNull(),
+  color: text('color'),
+  instructions: text('instructions').notNull().default(''),
+  memory: text('memory', { enum: ['default', 'project'] })
+    .notNull()
+    .default('default'),
+  libraryScope: text('library_scope', { enum: ['all', 'none'] })
+    .notNull()
+    .default('all'),
+  pinned: integer('pinned', { mode: 'boolean' }).notNull().default(false),
+  ...syncCols
+})
+export const projectSources = sqliteTable(
+  'project_sources',
+  {
+    projectId: text('project_id').notNull(),
+    itemType: text('item_type', { enum: ['note', 'source'] }).notNull(),
+    itemId: text('item_id').notNull(),
+    origin: text('origin', { enum: ['upload', 'library', 'text', 'url'] }).notNull(),
+    createdAt: integer('created_at').notNull()
+  },
+  (t) => [primaryKey({ columns: [t.projectId, t.itemType, t.itemId] }), index('project_sources_item_idx').on(t.itemType, t.itemId)]
+)
+
 export const conversations = sqliteTable(
   'conversations',
   {
     id: text('id').primaryKey(),
     title: text('title').notNull().default(''),
+    projectId: text('project_id'),
     /** 检索范围（JSON）：全部知识库 / 指定笔记与资料 / 不使用知识库 */
     scope: text('scope').notNull().default('{"type":"all"}'),
     web: text('web', { enum: ['off', 'auto', 'always'] }),
@@ -875,7 +902,7 @@ export const conversations = sqliteTable(
     meta: text('meta'),
     ...syncCols
   },
-  (t) => [index('conversations_updated_idx').on(t.updatedAt)]
+  (t) => [index('conversations_updated_idx').on(t.updatedAt), index('conversations_project_idx').on(t.projectId)]
 )
 
 /** 组件状态只属于对话回答；不进入用户知识检索。 */

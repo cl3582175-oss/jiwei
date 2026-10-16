@@ -32,7 +32,10 @@ vi.mock('electron', () => ({
   safeStorage: {},
   BrowserWindow: { getAllWindows: () => [] }
 }))
-vi.mock('../../../db', () => ({ getDb: () => env.db, getSqlite: () => null }))
+vi.mock('../../../db', () => ({
+  getDb: () => env.db,
+  getSqlite: () => (env.db as { $client?: unknown } | null)?.$client ?? null
+}))
 vi.mock('../../../lib/messages', () => ({ tr: (_zh: string, en: string) => en }))
 vi.mock('../../settings', () => ({
   getSettings: () => ({

@@ -5,8 +5,9 @@ import { useApp } from '@/store/app'
 import { api } from './utils'
 import { invalidate } from './queries'
 import { toggleActiveSidebar } from '@/components/PageSidebar'
-import { useAssist } from '@/features/assist/store'
+import { useAssist, getPanel } from '@/features/assist/store'
 import { requestTimestamp } from '@/features/browser/courseNotes'
+import { resetAttachmentDraft } from '@/features/attachments/useAttachments'
 
 /** 新建笔记并打开（继承当前分类筛选） */
 export function useCreateNote() {
@@ -29,7 +30,10 @@ export function useGlobalShortcuts(): void {
       if (!mod || e.altKey) return
       const k = e.key.toLowerCase()
       const s = useApp.getState()
-      if (k === 'k') {
+      if (k === 'w' && s.settingsOpen) {
+        e.preventDefault()
+        s.setSettingsOpen(false)
+      } else if (k === 'k') {
         e.preventDefault()
         s.setPaletteOpen(!s.paletteOpen)
       } else if (k === 't' && e.shiftKey && (s.browserOpen || !!useRecording.getState().current)) {
@@ -43,7 +47,10 @@ export function useGlobalShortcuts(): void {
         s.openBrowser('')
       } else if (k === 'n' && !e.shiftKey) {
         e.preventDefault()
-        void createNote()
+        if (s.view === 'chat') {
+          resetAttachmentDraft('chat')
+          s.openConversation(null)
+        } else void createNote()
       } else if (k === ',') {
         e.preventDefault()
         s.setSettingsOpen(true)
@@ -89,7 +96,7 @@ export function useGlobalShortcuts(): void {
         e.preventDefault()
         if (s.view === 'chat') return
         const a = useAssist.getState()
-        a.setPanel({ panelOpen: !a.panelOpen })
+        a.setPanel({ panelOpen: !getPanel().open })
       } else if (k === '9') {
         e.preventDefault()
         s.setView('today')

@@ -44,7 +44,8 @@ export function useAnnotations(targetType: 'note' | 'source', targetId: string |
   useEffect(
     () =>
       window.jiweiEvents.on('annotations:changed', (p) => {
-        if (p.targetType === targetType && p.targetId === targetId) void qc.invalidateQueries({ queryKey: ['annotations', targetType, targetId] })
+        if (p.targetType === targetType && p.targetId === targetId)
+          void qc.invalidateQueries({ queryKey: ['annotations', targetType, targetId] })
       }),
     [qc, targetType, targetId]
   )
@@ -105,6 +106,7 @@ export async function annotate(
   rects?: Rect[],
   color: AnnoColor = lastColor()
 ): Promise<Annotation | null> {
+  if (anchor.parentType === 'message') return null
   try {
     const a = await api.annotations.create({
       targetType: anchor.parentType,
@@ -114,7 +116,8 @@ export async function annotate(
       color
     })
     queryClient.setQueryData<Annotation[]>(['annotations', a.targetType, a.targetId], (list) => [...(list ?? []), a])
-    if (motivation !== 'highlighting') useAnnotate.getState().open({ id: a.id, targetType: a.targetType, targetId: a.targetId, rect, edit: true })
+    if (motivation !== 'highlighting')
+      useAnnotate.getState().open({ id: a.id, targetType: a.targetType, targetId: a.targetId, rect, edit: true })
     window.getSelection()?.removeAllRanges()
     return a
   } catch (e) {

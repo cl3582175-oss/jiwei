@@ -1,3 +1,5 @@
+import { ReplyQuote, useReplyQuote } from './ReplyQuote'
+import { quotedMessage } from './replySelection'
 import { attachmentContext } from '../attachments/context'
 import { useAttachments, resetAttachmentDraft } from '../attachments/useAttachments'
 import { AttachmentInput, AttachmentDropZone } from '../attachments/AttachmentInput'
@@ -40,7 +42,7 @@ import { errText, sendChat, useChatThread, useModelChoice } from '../chat/useCha
 import { ModelPicker } from '../ai/ModelPicker'
 import { EffortPicker } from '../ai/EffortPicker'
 import { WebModePicker, useWebMode } from '../retrieval/WebModePicker'
-import { useAssist } from './store'
+import { useAssist, usePanel, usePanelPage, getPanel } from './store'
 import { activeTab, aiAllowed, useBrowser } from '../browser/store'
 
 // 工作区 AI 面板：右下角按钮 → 浮动面板 → 可钉住为右侧栏。
@@ -110,13 +112,21 @@ const PAGE_SUGGESTIONS: Partial<Record<string, string[]>> = {
 const GENERAL_SUGGESTIONS = ['assist.general1', 'assist.general2', 'assist.general3']
 
 export function AiPanelBody({ pinned }: { pinned: boolean }) {
+  const page = usePanelPage()
+  return <PanelBody key={page} pinned={pinned} page={page} />
+}
+function PanelBody({ pinned, page }: { pinned: boolean; page: string }) {
   const { t } = useTranslation()
   const qc = useQueryClient()
   const ctx = useApp((s) => s.context)
   const view = useApp((s) => s.view)
-  const conversationId = useAssist((s) => s.panelConversationId)
+  const { conversationId, draft, autoSend } = usePanel()
   const { data: conversations = [] } = useConversations()
   const conv = conversations.find((c) => c.id === conversationId)
+  const quote = useReplyQuote(conversationId)
+  useEffect(() => {
+    if (quote) input.current?.focus()
+  }, [quote])
   const attachments = useAttachments({ kind: 'workspace', conversationId, incognito: conv?.incognito })
   const { web, setWeb } = useWebMode(conversationId, conv?.web)
   const { choice, setChoice, effort, setEffort, provider } = useModelChoice()
@@ -127,7 +137,11 @@ export function AiPanelBody({ pinned }: { pinned: boolean }) {
   const availableTabs = browserState.tabs.filter(aiAllowed)
   const [selectedTabs, setSelectedTabs] = useState<(SelectedTab & { title: string })[]>([])
   const [off, setOff] = useState<Set<ChipId>>(new Set())
-  const [text, setText] = useState('')
+  const [text, setLocalText] = useState(() => getPanel(page).draft ?? '')
+  const setText = (value: string): void => {
+    setLocalText(value)
+    useAssist.getState().setPanel({ panelDraft: value || null }, page)
+  }
   const [preparing, setPreparing] = useState(false)
   const sending = useRef(false)
   const scroller = useRef<HTMLDivElement>(null)
@@ -196,7 +210,7 @@ export function AiPanelBody({ pinned }: { pinned: boolean }) {
       }
       const r = await sendChat({
         conversationId,
-        text: q.trim(),
+        text: quotedMessage(q.trim(), quote),
         attachments: attachmentIds,
         uiEvent,
         providerId: choice.providerId,
@@ -209,12 +223,13 @@ export function AiPanelBody({ pinned }: { pinned: boolean }) {
         context: await attachmentContext(packet, conversationId, attachmentIds)
       })
       attachments.clear(attachmentIds)
-      if (useAssist.getState().panelConversationId !== conversationId) return
+      if (getPanel(page).conversationId !== conversationId) return
+      if (conversationId) useAssist.getState().setReplyQuote(conversationId, null)
       setText('')
       setMsgs((list) => [...list, r.userMessage, r.assistant])
       if (!conversationId) {
         qc.setQueryData(['messages', r.conversation.id], [r.userMessage, r.assistant])
-        useAssist.getState().setPanel({ panelConversationId: r.conversation.id })
+        useAssist.getState().setPanel({ panelConversationId: r.conversation.id }, page)
       }
       void qc.invalidateQueries({ queryKey: ['conversations'] })
     } catch (e) {
@@ -225,19 +240,14 @@ export function AiPanelBody({ pinned }: { pinned: boolean }) {
     }
   }
   // 预填的问题（v0.7.6）：资料起始页选好了范围时直接发出，否则放进输入框等用户确认
-  const draft = useAssist((s) => s.panelDraft)
   const ready = !!choice.providerId && !!choice.model
   useEffect(() => {
-    // 面板刚打开时模型选择可能还没读出来：等就绪再发
-    if (!draft || (useAssist.getState().panelAutoSend && !ready)) return
-    const auto = useAssist.getState().panelAutoSend
-    useAssist.getState().setPanel({ panelDraft: null, panelAutoSend: false })
-    if (auto) void sendRef.current(draft)
-    else {
-      setText(draft)
-      requestAnimationFrame(() => input.current?.focus())
-    }
-  }, [draft, ready])
+    if (autoSend) {
+      if (!draft || !ready) return
+      useAssist.getState().setPanel({ panelDraft: null, panelAutoSend: false }, page)
+      void sendRef.current(draft)
+    } else setLocalText(draft ?? '')
+  }, [draft, ready, autoSend, page])
 
   // 点了 AI 选择题的选项（v0.7.6）：当作用户的回答发出
   const sendRef = useRef(send)
@@ -264,7 +274,7 @@ export function AiPanelBody({ pinned }: { pinned: boolean }) {
               variant="ghost"
               aria-label={t('assist.expand')}
               onClick={() => {
-                const id = useAssist.getState().panelConversationId
+                const id = getPanel(page).conversationId
                 useAssist.getState().setPanel({ panelOpen: false, panelPinned: false })
                 useApp.getState().openConversation(id)
               }}
@@ -439,6 +449,7 @@ export function AiPanelBody({ pinned }: { pinned: boolean }) {
               onSend={(q) => void send(q)}
               onMentionPicked={() => setText(text.replace(/@[^\s@]*$/, ''))}
             />
+            <ReplyQuote conversationId={conversationId} />
             <textarea
               ref={input}
               rows={2}
@@ -501,7 +512,7 @@ export function AiPanelBody({ pinned }: { pinned: boolean }) {
 /** 浮动面板与右下角按钮（未钉住时） */
 export function AiPanelFloat() {
   const { t } = useTranslation()
-  const { panelOpen, panelPinned } = useAssist()
+  const { open: panelOpen, pinned: panelPinned } = usePanel()
   if (panelPinned) return null
   if (!panelOpen)
     return (

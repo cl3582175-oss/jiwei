@@ -376,6 +376,8 @@ export interface Segment {
 export type ProposalOpStatus = 'pending' | 'accepted' | 'rejected'
 
 export interface Proposal {
+  /** Trusted project-only memory provenance, supplied by the main process. */
+  memoryProjectId?: string | null
   attachmentSourceIds?: string[]
   id: string
   noteId: string
@@ -477,6 +479,8 @@ export interface ProviderTestResult {
 }
 
 export interface Conversation {
+  projectId?: string | null
+  lastMessageAt?: number
   id: string
   title: string
   scope: ChatScope
@@ -785,6 +789,8 @@ export interface AgentStep {
 
 /** 回答引用的知识库片段 */
 export interface Citation {
+  /** 本轮属于项目来源的依据，独立于关键词/语义的检索方式。 */
+  projectSource?: boolean
   /** 回答中的引用编号 [n] */
   n: number
   parentType: 'note' | 'source' | 'web'
@@ -845,6 +851,7 @@ export type ProfileKey = (typeof PROFILE_KEYS)[number]
 export type UserProfile = Partial<Record<ProfileKey, string>>
 
 export interface Memory {
+  projectId?: string | null
   id: string
   kind: MemoryKind
   key: string | null
@@ -1008,6 +1015,7 @@ export interface EmbeddingStatus {
 }
 
 export interface SearchHit {
+  projectSource?: boolean
   parentType: 'note' | 'source' | 'web'
   parentId: string
   ownerId: string
@@ -1093,6 +1101,7 @@ export interface SourceRecognition {
 
 /** 主进程 → 渲染进程的事件 */
 export interface JiweiEvents {
+  'chatProjects:changed': Record<string, never>
   'attachments:changed': { sourceIds?: string[]; conversationId?: string }
   'mail:changed': Record<string, never>
   'discover:changed': Record<string, never>
@@ -1160,6 +1169,7 @@ export interface JiweiEvents {
   'speech:status': import('./discover').LocalSpeechStatus
   'moss:status': import('./moss').MossStatus
   /** 记忆变化；added 为 AI 新记住的内容（界面提示，可撤销 / 确认） */
+  'memory:profileChanged': Record<string, never>
   'memory:changed': { added?: Memory; learned?: Memory[] }
   /** 深层链接：jiwei://note/<id> 或 jiwei://source/<id> */
   'inbox:changed': Record<string, never>
@@ -1209,6 +1219,7 @@ export interface ScanPageText {
 
 export type AttachmentStatus = 'adding' | 'parsing' | 'recognizing' | 'transcribing' | 'ready' | 'failed' | 'unsupported'
 export interface Attachment {
+  projects?: { id: string; name: string }[]
   sourceId: string
   name: string
   kind: SourceKind

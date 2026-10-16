@@ -18,6 +18,8 @@ export const RETRIEVAL = {
   DUP_JACCARD: 0.9
 } as const
 export interface RetrievalOptions {
+  /** 项目补充材料独立于普通 scope，在候选截断前单独检索。 */
+  priorityIds?: { notes: string[]; sources: string[] }
   sourceIds?: string[]
   notesOnly?: boolean
   includeNotes?: boolean
@@ -26,6 +28,8 @@ export type CandidateKey = string
 type Binding = string | number | Buffer
 type Clause = { sql: string; params: Binding[] }
 export interface CandidateScope {
+  excludeSources?: string[]
+  excludeNotes?: string[]
   sourceIds: string[] | null
   noteIds: string[] | null
   allowIds: string[]
@@ -57,8 +61,8 @@ export function candidateScope(
   allow?: { sourceIds: string[] },
   opts: RetrievalOptions = {}
 ): CandidateScope {
-  let sourceIds = scope.type === 'items' ? [...new Set(scope.sources)] : null
-  let noteIds = scope.type === 'items' ? [...new Set(scope.notes)] : null
+  let sourceIds = scope.type === 'items' ? [...new Set(scope.sources)] : scope.type === 'none' ? [] : null
+  let noteIds = scope.type === 'items' ? [...new Set(scope.notes)] : scope.type === 'none' ? [] : null
   if (opts.sourceIds?.length) {
     sourceIds = [...new Set(opts.sourceIds)].filter((id) => sourceIds === null || sourceIds.includes(id))
     if (!opts.includeNotes) noteIds = []
@@ -84,6 +88,10 @@ function sourceClause(ctx: CandidateScope, ids: string[] | null = ctx.sourceIds,
     scope.sql
   ]
   const params: Binding[] = [...grant.params, ...scope.params]
+  if (ctx.excludeSources?.length) {
+    clauses.push(`s.id NOT IN (${ctx.excludeSources.map(() => '?').join(',')})`)
+    params.push(...ctx.excludeSources)
+  }
   if (filtered(ctx)) {
     const f = lensFilterSQL(ctx.filters)
     clauses.push("g.kind='transcript'", f.sql)
@@ -91,9 +99,12 @@ function sourceClause(ctx: CandidateScope, ids: string[] | null = ctx.sourceIds,
   }
   return { sql: clauses.join(' AND '), params }
 }
-function noteClause(ids: string[] | null): Clause {
+function noteClause(ids: string[] | null, excluded: string[] = []): Clause {
   const scope = inIds('n.id', ids)
-  return { sql: `n.deleted_at IS NULL AND n.ai_excluded=0 AND ${scope.sql}`, params: scope.params }
+  return {
+    sql: `n.deleted_at IS NULL AND n.ai_excluded=0 AND ${scope.sql}${excluded.length ? ` AND n.id NOT IN (${excluded.map(() => '?').join(',')})` : ''}`,
+    params: [...scope.params, ...excluded]
+  }
 }
 const sourceJoin =
   'JOIN source_segments g ON g.id=segments_fts.segment_id JOIN sources s ON s.id=g.source_id LEFT JOIN recordings r ON r.source_id=s.id'
@@ -115,7 +126,7 @@ function phrases(ctx: CandidateScope, query: string, limit: number): { notes: st
     n: { id: string; rank: number }[] = [],
     s: { id: string; rank: number }[] = []
   for (const ids of groups(ctx.noteIds)) {
-    const c = noteClause(ids)
+    const c = noteClause(ids, ctx.excludeNotes)
     n.push(
       ...(sql
         .prepare(
@@ -146,7 +157,7 @@ export function keywordCandidates(query: string, ctx: CandidateScope): Candidate
     q = normalizeQuery(query)
   if (!filtered(ctx) && q.length >= 2 && q.length <= 60) {
     const pattern = '%' + q.replace(/[\\%_]/g, (c) => '\\' + c) + '%'
-    const n = noteClause(ctx.noteIds),
+    const n = noteClause(ctx.noteIds, ctx.excludeNotes),
       s = sourceClause(ctx, ctx.sourceIds, [])
     for (const r of sql
       .prepare(
@@ -177,7 +188,7 @@ function scanCandidates(ctx: CandidateScope, predicate: string, values: string[]
   // 两边共享同一检索单位；笔记的 cue/body 命中仍归并到真实康奈尔行。
   const notePredicate = predicate.replace(/g\.heading/g, "''").replace(/g\.text/g, 'b.text')
   for (const ids of groups(ctx.noteIds)) {
-    const c = noteClause(ids)
+    const c = noteClause(ids, ctx.excludeNotes)
     const rows = sql
       .prepare(
         `SELECT o.id,o.text FROM ${blockScanJoin} WHERE b.deleted_at IS NULL AND ${c.sql} AND (${notePredicate}) GROUP BY o.id ORDER BY o.position,o.id LIMIT ?`
@@ -227,7 +238,7 @@ export function shortCandidates(query: string, ctx: CandidateScope): CandidateKe
 
 function validChunks(ctx: CandidateScope): Clause {
   const source = sourceClause(ctx),
-    note = noteClause(ctx.noteIds)
+    note = noteClause(ctx.noteIds, ctx.excludeNotes)
   return {
     sql: `c.model=? AND ((c.parent_type='source' AND ${source.sql}) OR (c.parent_type='note' AND ${note.sql})) AND ((c.owner_type='segment' AND g.id IS NOT NULL AND g.source_id=c.parent_id) OR (c.owner_type='block' AND b.id IS NOT NULL AND b.deleted_at IS NULL AND b.note_id=c.parent_id) OR (c.owner_type='annotation' AND a.id IS NOT NULL AND a.deleted_at IS NULL AND a.target_type=c.parent_type AND a.target_id=c.parent_id AND trim(COALESCE(a.body,''))<>'') OR (c.owner_type='asset' AND ab.id IS NOT NULL AND ab.note_id=c.parent_id))`,
     params: [currentModelId(), ...source.params, ...note.params]
@@ -252,7 +263,7 @@ export function vectorCandidates(v: number[] | null, ctx: CandidateScope): Vecto
   const count = ctx.restricted
     ? scoped.reduce((sum, c) => {
         const source = sourceClause(c),
-          note = noteClause(c.noteIds)
+          note = noteClause(c.noteIds, c.excludeNotes)
         const n = (sql.prepare(`SELECT count(*) n FROM ${sourceScanJoin} WHERE ${source.sql}`).get(...source.params) as { n: number }).n
         const b = (
           sql

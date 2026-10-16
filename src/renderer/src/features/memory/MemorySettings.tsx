@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { createAutosave } from '@/lib/autosave'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -16,10 +17,13 @@ import {
   RotateCcw,
   MessageSquare,
   Quote,
-  GraduationCap
+  GraduationCap,
+  ChevronRight,
+  Folder
 } from 'lucide-react'
 import { PROFILE_KEYS, type Concept, type Memory, type MemoryKind, type MemorySettings, type ProfileKey } from '@shared/types'
-import { useMemories, useUserProfile } from '@/lib/queries'
+import type { ChatProject } from '@shared/chatProjects'
+import { useChatProjects, useMemories, useUserProfile } from '@/lib/queries'
 import { api, cn, formatDate, formatRelative } from '@/lib/utils'
 import { useApp } from '@/store/app'
 import { Button } from '@/components/ui/button'
@@ -38,22 +42,58 @@ const LIST_KINDS: MemoryKind[] = ['preference', 'fact', 'glossary', 'skill']
 function ProfileField({ k, value }: { k: ProfileKey; value: string }) {
   const { t } = useTranslation()
   const qc = useQueryClient()
+  const [draft, setDraft] = useState(value)
+  const [status, setStatus] = useState<'saving' | 'saved'>('saved')
+  const focused = useRef(false)
+  const [save] = useState(() =>
+    createAutosave(
+      value,
+      async (text: string) => {
+        await api.memory.setProfile({ [k]: text.trim() })
+        void qc.invalidateQueries({ queryKey: ['userProfile'] })
+      },
+      { onState: setStatus, onError: () => toast.error(t('memory.saveFailed')) }
+    )
+  )
+  useEffect(() => {
+    if (!focused.current && !save.dirty) {
+      save.accept(value)
+      setDraft(value)
+    }
+  }, [value, save])
+  useEffect(() => {
+    const flush = () => {
+      void save.flush().catch(() => {})
+    }
+    window.addEventListener('jiwei:flush-settings', flush)
+    return () => {
+      window.removeEventListener('jiwei:flush-settings', flush)
+      flush()
+    }
+  }, [save])
   return (
     <label className="block">
-      <span className="text-xs font-medium text-fg">{t(`memory.profile.${k}`)}</span>
+      <span className="flex items-center justify-between gap-2">
+        <span className="text-xs font-medium text-fg">{t(`memory.profile.${k}`)}</span>
+        <span role="status" className="text-2xs text-subtle">
+          {t(`memory.${status === 'saving' ? 'saving' : 'saved'}`)}
+        </span>
+      </span>
       <textarea
-        key={value}
-        defaultValue={value}
+        value={draft}
         rows={k === 'role' ? 1 : 2}
         placeholder={t(`memory.profile.${k}Ph`)}
         aria-label={t(`memory.profile.${k}`)}
-        onBlur={(e) => {
-          const v = e.target.value.trim()
-          if (v === value) return
-          void api.memory.setProfile({ [k]: v }).then(() => {
-            void qc.invalidateQueries({ queryKey: ['userProfile'] })
-            toast.success(t('memory.saved'))
-          })
+        onFocus={() => {
+          focused.current = true
+        }}
+        onChange={(e) => {
+          setDraft(e.target.value)
+          save.change(e.target.value)
+        }}
+        onBlur={() => {
+          focused.current = false
+          void save.flush().catch(() => {})
         }}
         className="mt-1.5 block w-full resize-none rounded-lg border border-border bg-surface px-3 py-2 text-sm leading-relaxed text-fg outline-none placeholder:text-subtle focus:border-accent"
       />
@@ -67,7 +107,8 @@ function MemoryRow({ m }: { m: Memory }) {
   const refresh = (): void => void qc.invalidateQueries({ queryKey: ['memories'] })
   const edit = async (): Promise<void> => {
     const v = await prompt({ title: t('memory.edit'), defaultValue: m.content, confirmText: t('common.save') })
-    if (v?.trim() && v.trim() !== m.content) await api.memory.save({ id: m.id, kind: m.kind, content: v.trim() })
+    if (v?.trim() && v.trim() !== m.content)
+      await api.memory.save({ id: m.id, kind: m.kind, projectId: m.projectId ?? null, content: v.trim() })
     refresh()
   }
   const remove = async (): Promise<void> => {
@@ -95,7 +136,13 @@ function MemoryRow({ m }: { m: Memory }) {
           </p>
         )}
         <p className="mt-0.5 text-2xs text-subtle">
-          {m.status === 'pending' ? t('memory.pending') : archived ? t('memory.faded') : m.origin === 'ai' ? t('memory.byAi') : t('memory.byYou')}
+          {m.status === 'pending'
+            ? t('memory.pending')
+            : archived
+              ? t('memory.faded')
+              : m.origin === 'ai'
+                ? t('memory.byAi')
+                : t('memory.byYou')}
           {m.skill && ` · ${m.skill}`} · {formatRelative(m.updatedAt, i18n.language)}
           {m.useCount > 0 && ` · ${t('memory.used', { count: m.useCount })}`}
         </p>
@@ -116,7 +163,11 @@ function MemoryRow({ m }: { m: Memory }) {
           <Button
             size="sm"
             variant="ghost"
-            onClick={() => void api.memory.save({ id: m.id, kind: m.kind, content: m.content, status: 'active' }).then(refresh)}
+            onClick={() =>
+              void api.memory
+                .save({ id: m.id, kind: m.kind, projectId: m.projectId ?? null, content: m.content, status: 'active' })
+                .then(refresh)
+            }
           >
             <RotateCcw />
             {t('memory.restore')}
@@ -134,7 +185,11 @@ function MemoryRow({ m }: { m: Memory }) {
               size="icon-sm"
               variant="ghost"
               aria-label={m.pinned ? t('memory.unpin') : t('memory.pin')}
-              onClick={() => void api.memory.save({ id: m.id, kind: m.kind, content: m.content, pinned: !m.pinned }).then(refresh)}
+              onClick={() =>
+                void api.memory
+                  .save({ id: m.id, kind: m.kind, projectId: m.projectId ?? null, content: m.content, pinned: !m.pinned })
+                  .then(refresh)
+              }
             >
               {m.pinned ? <PinOff /> : <Pin />}
             </Button>
@@ -175,11 +230,66 @@ function LearnSwitches() {
   return <div className="rounded-xl border border-border px-4 py-1.5">{(['autoLearn', 'learnSkills'] as const).map(row)}</div>
 }
 
+function ProjectMemoryGroup({
+  project,
+  kind,
+  episodes = false
+}: {
+  project: ChatProject
+  kind: MemoryKind | 'all' | 'archived'
+  episodes?: boolean
+}) {
+  const { t } = useTranslation()
+  const [open, setOpen] = useState(false)
+  const { data: list = [], isPending, isError } = useMemories(project.id)
+  const { data: archived = [] } = useQuery({
+    queryKey: ['memories', 'project', project.id, 'archived'],
+    queryFn: () => api.memory.list({ projectId: project.id, status: 'archived' }),
+    enabled: kind === 'archived'
+  })
+  const shown = (kind === 'archived' ? archived : list).filter((m) =>
+    episodes ? m.kind === 'episode' : LIST_KINDS.includes(m.kind) && (kind === 'all' || kind === 'archived' || m.kind === kind)
+  )
+  const ordered = [...shown.filter((m) => m.status === 'pending'), ...shown.filter((m) => m.status !== 'pending')]
+  return (
+    <section className="mt-4 overflow-hidden rounded-xl border border-border" data-project-memory={project.id}>
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+        className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm font-medium text-fg hover:bg-surface-hover"
+      >
+        <ChevronRight className={cn('size-3.5 shrink-0 text-subtle transition-transform', open && 'rotate-90')} />
+        <Folder className="size-4 shrink-0 text-muted" />
+        <span className="min-w-0 flex-1 truncate">{project.name}</span>
+        <span className="text-2xs font-normal text-subtle">{ordered.length}</span>
+      </button>
+      {open && (
+        <div className="border-t border-border px-1 py-2">
+          <p className="px-3 py-1 text-2xs text-subtle">{t('projects.memoryProjectDesc')}</p>
+          {ordered.length ? (
+            <ul>
+              {ordered.map((m) => (
+                <MemoryRow key={m.id} m={m} />
+              ))}
+            </ul>
+          ) : (
+            <p className="px-3 py-5 text-xs text-muted">
+              {t(isPending ? 'projects.loading' : isError ? 'projects.loadFailed' : 'projects.noMemories')}
+            </p>
+          )}
+        </div>
+      )}
+    </section>
+  )
+}
+
 function MemoriesSection() {
   const { t } = useTranslation()
   const qc = useQueryClient()
   const { data: list = [] } = useMemories()
   const [kind, setKind] = useState<MemoryKind | 'all' | 'archived'>('all')
+  const { data: projects = [] } = useChatProjects()
   const { data: archived = [] } = useQuery({
     queryKey: ['memories', 'archived'],
     queryFn: () => api.memory.list({ status: 'archived' }),
@@ -236,6 +346,11 @@ function MemoriesSection() {
           ))}
         </ul>
       )}
+      {projects
+        .filter((project) => project.memory === 'project' && project.memoryCount > 0)
+        .map((project) => (
+          <ProjectMemoryGroup key={project.id} project={project} kind={kind} />
+        ))}
     </section>
   )
 }
@@ -282,7 +397,12 @@ function ConceptRow({ c }: { c: Concept }) {
             </button>
           ))}
           <Tip label={t('common.delete')}>
-            <Button size="icon-sm" variant="ghost" aria-label={t('common.delete')} onClick={() => void api.memory.removeConcept(c.id).then(refresh)}>
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              aria-label={t('common.delete')}
+              onClick={() => void api.memory.removeConcept(c.id).then(refresh)}
+            >
               <Trash2 />
             </Button>
           </Tip>
@@ -290,7 +410,10 @@ function ConceptRow({ c }: { c: Concept }) {
         <span className="w-12 shrink-0 text-right text-2xs text-muted group-hover:hidden">{t(`memory.concept.${c.level}`)}</span>
       </div>
       <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-sunken">
-        <div className={cn('h-full rounded-full transition-[width]', LEVEL_BAR[c.level])} style={{ width: `${Math.max(4, c.mastery * 100)}%` }} />
+        <div
+          className={cn('h-full rounded-full transition-[width]', LEVEL_BAR[c.level])}
+          style={{ width: `${Math.max(4, c.mastery * 100)}%` }}
+        />
       </div>
       <p className="mt-1 text-2xs text-subtle">
         {[...counts, formatRelative(c.lastSeen, i18n.language)].join(' · ')}
@@ -344,6 +467,7 @@ function EpisodesSection() {
   const qc = useQueryClient()
   const { data: list = [] } = useMemories()
   const episodes = list.filter((m) => m.kind === 'episode')
+  const { data: projects = [] } = useChatProjects()
   // 费曼练习回到练习页面，其他对话回到对话页
   const open = async (id: string): Promise<void> => {
     const c = await api.feynman.get(id)
@@ -369,7 +493,12 @@ function EpisodesSection() {
               <div className="absolute top-1.5 right-1.5 flex gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
                 {m.evidence?.conversationId && (
                   <Tip label={t('memory.openChat')}>
-                    <Button size="icon-sm" variant="ghost" aria-label={t('memory.openChat')} onClick={() => void open(m.evidence!.conversationId!)}>
+                    <Button
+                      size="icon-sm"
+                      variant="ghost"
+                      aria-label={t('memory.openChat')}
+                      onClick={() => void open(m.evidence!.conversationId!)}
+                    >
                       <MessageSquare />
                     </Button>
                   </Tip>
@@ -389,6 +518,11 @@ function EpisodesSection() {
           ))}
         </ol>
       )}
+      {projects
+        .filter((project) => project.memory === 'project' && project.memoryCount > 0)
+        .map((project) => (
+          <ProjectMemoryGroup key={project.id} project={project} kind="all" episodes />
+        ))}
     </section>
   )
 }

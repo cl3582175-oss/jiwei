@@ -2,7 +2,7 @@ import { canReadSource, isConversationAttachment } from '../attachmentsAccess'
 import { asExternalData } from '../agent/wrap'
 import { eq } from 'drizzle-orm'
 import { getDb, getSqlite } from '../../db'
-import { notes, sources } from '../../db/schema'
+import { notes, sources, messages, conversations } from '../../db/schema'
 import { listSegments, resolveSegmentId } from '../segments'
 import { loadDoc, stateToContent } from '../docs'
 import { nodeText } from '../../lib/derive'
@@ -101,6 +101,7 @@ function sourceAnchor(anchor: Anchor, zh: boolean, conversationId: string | null
   const segs = src.space === 'attachment' || isConversationAttachment(a.parentId, conversationId) ? tablePreview(all) : all
   const head = `${zh ? '资料' : 'Source'}《${src.title}》（ID：${a.parentId}）`
   const kindLabel: Record<Anchor['kind'], [string, string]> = {
+    text: ['回复中的选中文字', 'Selected reply text'],
     'source-text': ['用户在资料中选中的文字', 'Text the user selected in the source'],
     'note-text': ['用户在笔记中选中的文字', 'Text selected in the note'],
     block: ['用户指向的段落', 'Block the user points at'],
@@ -296,6 +297,31 @@ function noteAnchor(a: Anchor, zh: boolean): string | null {
   return lines.join('\n')
 }
 
+/** A reply is user-selected context, never a note/source retrieval target. */
+function messageAnchor(a: Anchor, zh: boolean): string {
+  const db = getDb(),
+    reply = db.select().from(messages).where(eq(messages.id, a.parentId)).get()
+  if (!reply || reply.role !== 'assistant' || reply.conversationId !== a.ownerId || reply.status === 'streaming') return ''
+  const parent = db.select().from(conversations).where(eq(conversations.id, reply.conversationId)).get()
+  if (!parent || parent.deletedAt !== null) return ''
+  const question = getSqlite()
+    .prepare(
+      "SELECT content FROM messages WHERE conversation_id=? AND role='user' AND created_at<=? ORDER BY created_at DESC,rowid DESC LIMIT 1"
+    )
+    .get(reply.conversationId, reply.createdAt) as { content: string } | undefined
+  const quote = a.quote ?? ''
+  const content = reply.content.slice(0, 6000)
+  const marked = quote && content.includes(quote) ? content.replace(quote, `<selected>${quote}</selected>`) : content
+  return [
+    zh
+      ? '用户在你之前的一条回答里选中了这段，请针对它解释，必要时结合整条回答。'
+      : 'The user selected a passage from your earlier answer. Explain it using the full answer when needed.',
+    `<selected>${quote}</selected>`,
+    `<previous-question>${question?.content.slice(0, 6000) ?? ''}</previous-question>`,
+    `<previous-answer>${marked}</previous-answer>`
+  ].join('\n')
+}
+
 export function resolveContext(p: ContextPacket | undefined, zh: boolean, conversationId: string | null = null): ResolvedContext {
   const empty: ResolvedContext = { text: '', query: '', noteId: null, sourceId: null }
   if (!p) return empty
@@ -305,7 +331,14 @@ export function resolveContext(p: ContextPacket | undefined, zh: boolean, conver
   const sourceId = p.sourceId && sourceRow(p.sourceId, conversationId) ? p.sourceId : null
 
   for (const a of p.targets) {
-    const t = a.parentType === 'source' ? sourceAnchor(a, zh, conversationId) : noteAnchor(a, zh)
+    const t =
+      a.parentType === 'message'
+        ? messageAnchor(a, zh)
+        : a.parentType === 'source'
+          ? sourceAnchor(a, zh, conversationId)
+          : a.parentType === 'note'
+            ? noteAnchor(a, zh)
+            : ''
     if (t) {
       parts.push(t)
       if (a.quote) queries.push(a.quote)

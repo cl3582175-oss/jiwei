@@ -91,8 +91,82 @@ export function invalidate(
   for (const g of groups) void qc.invalidateQueries({ queryKey: [g] })
 }
 
-export function useMemories() {
-  return useQuery({ queryKey: ['memories'], queryFn: () => api.memory.list({}) })
+export function useChatProjects() {
+  const qc = useQueryClient()
+  useEffect(
+    () =>
+      window.jiweiEvents.on('chatProjects:changed', () => {
+        void qc.invalidateQueries({ queryKey: ['chatProjects'] })
+        void qc.invalidateQueries({ queryKey: ['projectConversations'] })
+        void qc.invalidateQueries({ queryKey: ['conversations'] })
+        void qc.invalidateQueries({ queryKey: ['memories'] })
+      }),
+    [qc]
+  )
+  // 项目记忆条数随记忆变化（「关于我」只列出有记忆的项目）
+  useEffect(() => window.jiweiEvents.on('memory:changed', () => void qc.invalidateQueries({ queryKey: ['chatProjects'] })), [qc])
+  return useQuery({ queryKey: ['chatProjects'], queryFn: () => api.chatProjects.list() })
+}
+
+export function useProjectConversations(id: string) {
+  const qc = useQueryClient()
+  useEffect(
+    () =>
+      window.jiweiEvents.on('chat:done', () => {
+        void qc.invalidateQueries({ queryKey: ['projectConversations', id] })
+      }),
+    [qc, id]
+  )
+  return useQuery({ queryKey: ['projectConversations', id], queryFn: () => api.chatProjects.conversations(id) })
+}
+
+/** Project source processing has no persistent polling once it reaches a terminal state. */
+export function useProjectSources(id: string) {
+  const qc = useQueryClient()
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const changed = (): void => {
+      if (timer) return
+      timer = setTimeout(() => {
+        timer = undefined
+        void qc.invalidateQueries({ queryKey: ['projectSources', id] })
+      }, 100)
+    }
+    const offs = (
+      [
+        'chatProjects:changed',
+        'sources:changed',
+        'notes:changed',
+        'segments:changed',
+        'attachments:changed',
+        'jobs:changed',
+        'recognition:source',
+        'recognition:status',
+        'embedding:status'
+      ] as const
+    ).map((event) => window.jiweiEvents.on(event, changed))
+    return () => {
+      offs.forEach((off) => off())
+      clearTimeout(timer)
+    }
+  }, [qc, id])
+  return useQuery({
+    queryKey: ['projectSources', id],
+    queryFn: () => api.chatProjects.sources(id),
+    refetchInterval: (query) =>
+      query.state.data?.some(
+        (item) => item.readiness?.state === 'preparing' || (item.readiness && 'recognizing' in item.readiness && item.readiness.recognizing)
+      )
+        ? 1000
+        : false
+  })
+}
+
+export function useMemories(projectId?: string) {
+  return useQuery({
+    queryKey: projectId ? ['memories', 'project', projectId] : ['memories'],
+    queryFn: () => api.memory.list(projectId ? { projectId } : {})
+  })
 }
 
 export function useUserProfile() {

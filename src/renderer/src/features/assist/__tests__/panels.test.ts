@@ -1,0 +1,39 @@
+import { beforeEach, describe, expect, it } from 'vitest'
+import { useApp } from '../../../store/app'
+import { currentPanelPage, getPanel, useAssist } from '../store'
+
+beforeEach(() => {
+  useApp.setState({ view: 'notes', browserOpen: false })
+  useAssist.setState({ panels: {}, toolbar: null, card: null })
+})
+describe('page workspace panels', () => {
+  it('keeps open, pin, conversation and draft independently for each page', () => {
+    useAssist.getState().setPanel({ panelOpen: true, panelPinned: true, panelConversationId: 'notes-chat', panelDraft: 'notes draft' })
+    useApp.setState({ view: 'today' })
+    expect(getPanel()).toMatchObject({ open: false, pinned: false, conversationId: null, draft: null })
+    useAssist.getState().setPanel({ panelOpen: true, panelConversationId: 'today-chat' })
+    useApp.setState({ view: 'notes' })
+    expect(getPanel()).toMatchObject({ open: true, pinned: true, conversationId: 'notes-chat', draft: 'notes draft' })
+    useAssist.getState().setPanel({ panelOpen: !getPanel().open })
+    expect(getPanel('today').open).toBe(true)
+  })
+  it('uses a distinct browser workspace and clears transient selections on every page change', () => {
+    useAssist.getState().setPanel({ panelOpen: true })
+    const anchor = { parentType: 'note' as const, parentId: 'n', kind: 'note-text' as const, quote: 'q' }
+    useAssist.getState().showToolbar({ anchor, rect: { x: 0, y: 0, w: 1, h: 1 } })
+    useAssist.getState().openCard({ anchor, rect: { x: 0, y: 0, w: 1, h: 1 }, action: 'ask', conversationId: null, question: '' })
+    useApp.setState({ browserOpen: true })
+    expect(currentPanelPage()).toBe('browser')
+    expect(getPanel().open).toBe(false)
+    expect(useAssist.getState()).toMatchObject({ toolbar: null, card: null })
+    useApp.setState({ browserOpen: false, noteId: 'another' })
+    expect(getPanel().open).toBe(true)
+  })
+  it('binds an async send completion to its originating page', () => {
+    const page = currentPanelPage()
+    useApp.setState({ view: 'today' })
+    useAssist.getState().setPanel({ panelConversationId: 'completed' }, page)
+    expect(getPanel().conversationId).toBeNull()
+    expect(getPanel('notes').conversationId).toBe('completed')
+  })
+})

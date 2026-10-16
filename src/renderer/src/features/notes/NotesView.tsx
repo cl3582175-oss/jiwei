@@ -11,7 +11,7 @@ import { FloatingPanel } from '@/components/FloatingPanel'
 import { PageSidebar, useWindowWidth } from '@/components/PageSidebar'
 import { useNoteFilterLabel } from './filterLabel'
 import { AiPanelBody, AiPanelFloat } from '../assist/AiPanel'
-import { useAssist } from '../assist/store'
+import { usePanel } from '../assist/store'
 
 /**
  * 笔记工作区：侧栏 | [资料] | 笔记 | [AI 面板（钉住时）]
@@ -27,7 +27,8 @@ export function NotesView() {
   }, [focus, sourceRef])
   // 左栏：资料（浏览器自 v0.7.2 起是独立工作区）
   const left = !browserOpen && sourceId ? <SourcePane sourceId={sourceId} /> : null
-  const pinned = useAssist((s) => s.panelOpen && s.panelPinned)
+  const panel = usePanel()
+  const pinned = panel.open && panel.pinned
   const windowWidth = useWindowWidth()
   const filterLabel = useNoteFilterLabel()
   // 空间不够时自动收成书脊（不改用户设置）：整理审阅、钉住 AI 面板、资料与笔记并排而窗口较窄

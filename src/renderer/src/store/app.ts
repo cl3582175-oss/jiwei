@@ -74,11 +74,24 @@ export interface Location {
   sourceReturn?: SourceReturn | null
   browserOpen?: boolean
   browserNote?: string | null
+  conversationId?: string | null
+  chatProjectId?: string | null
+  chatNewProjectId?: string | null
 }
 
 type SourceReturn = Pick<
   AppState,
-  'view' | 'noteId' | 'conversationId' | 'decisionId' | 'workId' | 'goalId' | 'reflectionId' | 'browserOpen' | 'browserNote'
+  | 'view'
+  | 'noteId'
+  | 'conversationId'
+  | 'chatProjectId'
+  | 'chatNewProjectId'
+  | 'decisionId'
+  | 'workId'
+  | 'goalId'
+  | 'reflectionId'
+  | 'browserOpen'
+  | 'browserNote'
 >
 
 const HISTORY_MAX = 100
@@ -168,7 +181,13 @@ interface AppState extends Location {
 
   /** 当前 AI 对话（null 为新对话） */
   conversationId: string | null
-  openConversation: (id: string | null) => void
+  openConversation: (id: string | null, messageId?: string | null) => void
+  /** 项目主页与尚未发送的项目对话分别记录，避免 null 对话产生歧义。 */
+  chatProjectId: string | null
+  chatNewProjectId: string | null
+  chatMessageId: string | null
+  openChatProject: (id: string) => void
+  startProjectConversation: (id: string) => void
   /** 在积微助手页自动发送的一句话（来自「今日」输入框、晨报回复） */
   assistantDraft: { text: string; context?: string } | null
   askAssistant: (text: string, context?: string) => void
@@ -207,7 +226,10 @@ const same = (a: Location, b: Location): boolean =>
   a.noteId === b.noteId &&
   a.sourceId === b.sourceId &&
   (a.sourceReturn ?? null) === (b.sourceReturn ?? null) &&
-  (a.browserOpen ?? false) === (b.browserOpen ?? false)
+  (a.browserOpen ?? false) === (b.browserOpen ?? false) &&
+  (a.conversationId ?? null) === (b.conversationId ?? null) &&
+  (a.chatProjectId ?? null) === (b.chatProjectId ?? null) &&
+  (a.chatNewProjectId ?? null) === (b.chatNewProjectId ?? null)
 
 export const useApp = create<AppState>((set, get) => {
   let highlightRequest = 0
@@ -215,6 +237,10 @@ export const useApp = create<AppState>((set, get) => {
     set((s) => ({
       ...loc,
       sourceReturn: loc.sourceReturn ?? null,
+      conversationId: loc.conversationId ?? null,
+      chatProjectId: loc.chatProjectId ?? null,
+      chatNewProjectId: loc.chatNewProjectId ?? null,
+      chatMessageId: null,
       context: {
         ...s.context,
         noteId: loc.noteId,
@@ -248,7 +274,10 @@ export const useApp = create<AppState>((set, get) => {
         sourceId: to.sourceId !== undefined ? to.sourceId : s.sourceId,
         sourceReturn: to.sourceReturn !== undefined ? to.sourceReturn : (to.view ?? s.view) === 'notes' ? s.sourceReturn : null,
         browserOpen: to.browserOpen ?? s.browserOpen,
-        browserNote: to.browserNote !== undefined ? to.browserNote : s.browserNote
+        browserNote: to.browserNote !== undefined ? to.browserNote : s.browserNote,
+        conversationId: to.conversationId !== undefined ? to.conversationId : s.conversationId,
+        chatProjectId: to.chatProjectId !== undefined ? to.chatProjectId : s.chatProjectId,
+        chatNewProjectId: to.chatNewProjectId !== undefined ? to.chatNewProjectId : s.chatNewProjectId
       }
       const cur = s.history[s.historyIndex]
       if (cur && same(cur, next)) return apply(next)
@@ -299,6 +328,8 @@ export const useApp = create<AppState>((set, get) => {
                 view: s.view,
                 noteId: s.noteId,
                 conversationId: s.conversationId,
+                chatProjectId: s.chatProjectId,
+                chatNewProjectId: s.chatNewProjectId,
                 decisionId: s.decisionId,
                 workId: s.workId,
                 goalId: s.goalId,
@@ -375,14 +406,25 @@ export const useApp = create<AppState>((set, get) => {
     setFeynmanConversation: (id) => set((s) => (s.feynman ? { feynman: { ...s.feynman, conversationId: id } } : {})),
 
     conversationId: null,
-    openConversation: (conversationId) => {
-      set({ conversationId })
-      get().navigate({ view: 'chat' })
+    chatProjectId: null,
+    chatNewProjectId: null,
+    chatMessageId: null,
+    openConversation: (conversationId, messageId = null) => {
+      get().navigate({ view: 'chat', conversationId, chatProjectId: null, chatNewProjectId: null })
+      set({ chatMessageId: messageId })
+    },
+    openChatProject: (chatProjectId) => {
+      get().navigate({ view: 'chat', conversationId: null, chatProjectId, chatNewProjectId: null })
+      set({ chatMessageId: null })
+    },
+    startProjectConversation: (chatNewProjectId) => {
+      get().navigate({ view: 'chat', conversationId: null, chatProjectId: null, chatNewProjectId })
+      set({ chatMessageId: null })
     },
     assistantDraft: null,
     askAssistant: (text, context) => {
-      set({ conversationId: null, assistantDraft: { text, context } })
-      get().navigate({ view: 'chat' })
+      set({ assistantDraft: { text, context }, chatMessageId: null })
+      get().navigate({ view: 'chat', conversationId: null, chatProjectId: null, chatNewProjectId: null })
     },
     starterIntent: null,
     takeStarterIntent: (kind) => {
@@ -423,7 +465,10 @@ export const useApp = create<AppState>((set, get) => {
     noteSort: 'edited',
     setNoteSort: (noteSort) => set({ noteSort }),
     settingsOpen: false,
-    setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
+    setSettingsOpen: (settingsOpen) => {
+      if (!settingsOpen) window.dispatchEvent(new Event('jiwei:flush-settings'))
+      set({ settingsOpen })
+    },
     settingsTab: null,
     openSettings: (tab) => set({ settingsOpen: true, settingsTab: tab ?? null, modelSetupOpen: false }),
     modelSetupOpen: false,

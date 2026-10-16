@@ -220,11 +220,20 @@ export async function retrieve(
   opts: RetrievalOptions = {}
 ): Promise<KnowledgeHit[]> {
   query = normalizeQuery(query)
-  if (scope.type === 'none' || !query || limit <= 0) return []
+  const priorityIds = opts.priorityIds ?? { notes: [], sources: [] }
+  const priority = new Set([...priorityIds.notes.map((id) => 'note:' + id), ...priorityIds.sources.map((id) => 'source:' + id)])
+  if ((scope.type === 'none' && !priority.size) || !query || limit <= 0) return []
   const base = candidateScope(scope, filters, allow, opts)
+  base.excludeNotes = priorityIds.notes
+  base.excludeSources = priorityIds.sources
   const matches = !base.restricted ? matchSourcesByTitle(query, scope) : []
   const routedIds = new Set(matches.map((m) => m.sourceId))
-  const routes = [{ ctx: base, boost: 1 }, ...(matches.length ? [{ ctx: routedScope(base, [...routedIds]), boost: 1.5 }] : [])]
+  const routes = [
+    ...(priority.size ? [{ ctx: candidateScope({ type: 'items', ...priorityIds }, filters, allow), boost: 1 }] : []),
+    ...(scope.type !== 'none'
+      ? [{ ctx: base, boost: 1 }, ...(matches.length ? [{ ctx: routedScope(base, [...routedIds]), boost: 1.5 }] : [])]
+      : [])
+  ]
   const privateAllowed =
     allow?.sourceIds.length &&
     getDb()
@@ -267,19 +276,28 @@ export async function retrieve(
     for (const [key, d] of vec.dist) dist.set(key, Math.min(dist.get(key) ?? Infinity, d))
   }
   const effective: ChatScope =
-    base.sourceIds !== null && base.noteIds !== null ? { type: 'items', sources: base.sourceIds, notes: base.noteIds } : scope
+    base.sourceIds !== null && base.noteIds !== null
+      ? {
+          type: 'items',
+          sources: [...new Set([...base.sourceIds, ...priorityIds.sources])],
+          notes: [...new Set([...base.noteIds, ...priorityIds.notes])]
+        }
+      : scope
   const hydrated = hydrate([...scores.keys()], effective, allow)
   const ranked = [...hydrated]
     .map(([key, hit]) => ({
       key,
       hit: {
         ...hit,
+        ...(priority.has(hit.parentType + ':' + hit.parentId) ? { projectSource: true } : {}),
         via: (kwSet.has(key) && vecSet.has(key) ? 'both' : vecSet.has(key) ? 'semantic' : 'keyword') as SearchHit['via'],
         score: (scores.get(key) ?? 0) * weight(hit) * (prefer && hit.parentId === prefer ? 1.6 : 1),
         ...(dist.has(key) ? { sim: clampSim(1 - dist.get(key)!) } : {})
       }
     }))
-    .sort((a, b) => b.hit.score - a.hit.score || a.key.localeCompare(b.key))
+    .sort(
+      (a, b) => Number(!!b.hit.projectSource) - Number(!!a.hit.projectSource) || b.hit.score - a.hit.score || a.key.localeCompare(b.key)
+    )
   const selected: typeof ranked = [],
     sets: Set<string>[] = [],
     counts = new Map<string, number>()

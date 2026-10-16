@@ -31,6 +31,17 @@ type NoteInfo = { id: string; title: string; text: string }
 type Pair = { a: NoteInfo; b: NoteInfo; context: string }
 const pairKey = (a: string, b: string): string => [a, b].sort().join('|')
 
+/** aiExcluded 包含附件派生的系统隐私锁；异步发现和批次等待后必须重查。 */
+function pairReadable(pair: Pair): boolean {
+  return (
+    getDb()
+      .select({ id: notes.id })
+      .from(notes)
+      .where(and(inArray(notes.id, [pair.a.id, pair.b.id]), isNull(notes.deletedAt), eq(notes.aiExcluded, false)))
+      .all().length === 2
+  )
+}
+
 function candidates(): Pair[] {
   const db = getDb()
   const rows = db
@@ -182,7 +193,12 @@ export async function suggestRelations(): Promise<{ judged: number; suggested: n
     const touched = new Set<string>()
     for (let start = 0; start < pairs.length; start += BATCH) {
       checkBudget()
-      const batch = pairs.slice(start, start + BATCH)
+      const batch = pairs.slice(start, start + BATCH).filter(pairReadable)
+      if (!batch.length) continue
+      const guard = (): void => {
+        checkBudget()
+        if (batch.some((pair) => !pairReadable(pair))) throw new Error('Graph note permission changed')
+      }
       const result = await structured({
         purpose: 'graph.relations',
         providerId: chat.providerId!,
@@ -200,7 +216,7 @@ export async function suggestRelations(): Promise<{ judged: number; suggested: n
             }))
           )
         ),
-        guard: checkBudget
+        guard
       })
       const now = Date.now()
       const db = getDb()

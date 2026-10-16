@@ -11,6 +11,7 @@ import type { MemoryInput, MemoryQuery } from '@shared/schemas'
 
 type Row = {
   id: string
+  project_id: string | null
   kind: MemoryKind
   key: string | null
   skill: string | null
@@ -28,6 +29,7 @@ type Row = {
 
 const toMemory = (r: Row): Memory => ({
   id: r.id,
+  projectId: r.project_id,
   kind: r.kind,
   key: r.key,
   skill: r.skill,
@@ -45,10 +47,12 @@ const toMemory = (r: Row): Memory => ({
 
 const norm = (s: string): string => s.replace(/[\s，。,.!！?？;；:："“”'’]/g, '').toLowerCase()
 
+export type MemoryScope = { projectId?: string | null }
+
 export function listMemories(q: MemoryQuery = {}): Memory[] {
   const db = profileDb()
-  const where: string[] = []
-  const args: unknown[] = []
+  const where: string[] = ['project_id IS ?']
+  const args: unknown[] = [q.projectId ?? null]
   if (q.kind) {
     where.push('kind = ?')
     args.push(q.kind)
@@ -82,21 +86,24 @@ export function saveMemory(
   input: MemoryInput,
   origin: Memory['origin'],
   evidence?: Memory['evidence'],
-  opts: { silent?: boolean } = {}
+  opts: MemoryScope & { silent?: boolean } = {}
 ): Memory {
   const db = profileDb()
   const now = Date.now()
   const content = input.content.trim()
+  // 档案永远属于用户；按 ID 的管理操作只修改内容，绝不暗中迁移所属项目。
+  const projectId = input.kind === 'profile' ? null : opts.projectId !== undefined ? opts.projectId : (input.projectId ?? null)
   let existing: Row | undefined
   if (input.id) existing = db.prepare('SELECT * FROM memories WHERE id = ?').get(input.id) as Row | undefined
   else if (input.key)
-    existing = db.prepare('SELECT * FROM memories WHERE kind = ? AND key = ?').get(input.kind, input.key) as Row | undefined
+    existing = db.prepare('SELECT * FROM memories WHERE kind = ? AND key = ? AND project_id IS ?').get(input.kind, input.key, projectId) as
+      Row | undefined
   else {
     const n = norm(content)
     existing = (
       db
-        .prepare("SELECT * FROM memories WHERE kind = ? AND status != 'archived' AND (skill IS ? OR skill = ?)")
-        .all(input.kind, input.skill ?? null, input.skill ?? null) as Row[]
+        .prepare("SELECT * FROM memories WHERE kind = ? AND status != 'archived' AND skill IS ? AND project_id IS ?")
+        .all(input.kind, input.skill ?? null, projectId) as Row[]
     ).find((r) => norm(r.content) === n)
   }
   const sensitive = input.sensitive ?? !!existing?.sensitive
@@ -111,8 +118,8 @@ export function saveMemory(
   }
   const id = newId()
   db.prepare(
-    `INSERT INTO memories (id, kind, key, skill, content, sensitive, status, pinned, origin, evidence, valid_from, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO memories (id, kind, key, skill, content, sensitive, status, pinned, origin, evidence, valid_from, created_at, updated_at, project_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
     input.kind,
@@ -126,11 +133,42 @@ export function saveMemory(
     evidence ? JSON.stringify(evidence) : null,
     now,
     now,
-    now
+    now,
+    projectId
   )
   const m = getMemory(id)!
-  if (!opts.silent) emit('memory:changed', origin === 'ai' ? { added: m } : {})
+  if (!opts.silent) emit('memory:changed', origin === 'ai' && m.projectId === null ? { added: m } : {})
   return m
+}
+
+/** 项目改为默认记忆时保留所有记录；键冲突时给晋升的行分配稳定的新键。由项目服务统一广播。 */
+export function promoteProjectMemories(projectId: string): number {
+  const db = profileDb()
+  return db.transaction(() => {
+    const rows = db.prepare('SELECT * FROM memories WHERE project_id = ? ORDER BY id').all(projectId) as Row[]
+    const collision = db.prepare('SELECT 1 FROM memories WHERE project_id IS NULL AND kind = ? AND key = ?')
+    const promote = db.prepare('UPDATE memories SET project_id = NULL, key = ? WHERE id = ? AND project_id = ?')
+    for (const row of rows) {
+      let key = row.key
+      if (key !== null && collision.get(row.kind, key)) {
+        const base = `promoted:${row.id}`.slice(0, 54)
+        key = base
+        for (let suffix = 1; collision.get(row.kind, key); suffix++) key = `${base}:${suffix}`
+      }
+      promote.run(key, row.id, projectId)
+    }
+    db.prepare('UPDATE skill_feedback SET project_id = NULL WHERE project_id = ?').run(projectId)
+    return rows.length
+  })()
+}
+
+/** 删除项目时同时清除尚未归纳的反馈；反复执行不会影响其他项目或全局记录。 */
+export function deleteProjectMemories(projectId: string): number {
+  const db = profileDb()
+  return db.transaction(() => {
+    db.prepare('DELETE FROM skill_feedback WHERE project_id = ?').run(projectId)
+    return db.prepare('DELETE FROM memories WHERE project_id = ?').run(projectId).changes
+  })()
 }
 
 export function removeMemory(id: string): void {
@@ -147,7 +185,9 @@ export function confirmMemory(id: string): Memory | null {
 /* ——— 个人档案 ——— */
 
 export function getUserProfile(): Partial<Record<ProfileKey, string>> {
-  const rows = profileDb().prepare("SELECT key, content FROM memories WHERE kind = 'profile' AND key IS NOT NULL").all() as {
+  const rows = profileDb()
+    .prepare("SELECT key, content FROM memories WHERE kind = 'profile' AND key IS NOT NULL AND project_id IS NULL")
+    .all() as {
     key: string
     content: string
   }[]
@@ -158,20 +198,22 @@ export function setUserProfile(patch: Partial<Record<ProfileKey, string>>): Part
   const db = profileDb()
   for (const [key, value] of Object.entries(patch)) {
     if (value === undefined) continue
-    if (!value.trim()) db.prepare("DELETE FROM memories WHERE kind = 'profile' AND key = ?").run(key)
+    if (!value.trim()) db.prepare("DELETE FROM memories WHERE kind = 'profile' AND key = ? AND project_id IS NULL").run(key)
     else saveMemory({ kind: 'profile', key, content: value }, 'user')
   }
   emit('memory:changed', {})
+  emit('memory:profileChanged', {})
   return getUserProfile()
 }
 
 /* ——— 供 AI 使用 ——— */
 
 /** 检索记忆（全文 trigram；短词用 LIKE），并记录使用 */
-export function searchMemories(query: string, limit = 8): Memory[] {
+export function searchMemories(query: string, limit = 8, opts: MemoryScope = {}): Memory[] {
   const db = profileDb()
   const q = query.trim()
   if (!q) return []
+  const projectId = opts.projectId ?? null
   let rows: Row[]
   if (q.length >= 3) {
     const terms = q
@@ -182,15 +224,15 @@ export function searchMemories(query: string, limit = 8): Memory[] {
       ? (db
           .prepare(
             `SELECT m.* FROM memories_fts f JOIN memories m ON m.rowid = f.rowid
-             WHERE memories_fts MATCH ? AND m.status = 'active' ORDER BY rank LIMIT ?`
+             WHERE memories_fts MATCH ? AND m.status = 'active' AND m.project_id IS ? ORDER BY rank LIMIT ?`
           )
-          .all(terms.join(' OR '), limit) as Row[])
+          .all(terms.join(' OR '), projectId, limit) as Row[])
       : []
   } else rows = []
   if (rows.length < limit) {
     const like = db
-      .prepare("SELECT * FROM memories WHERE status = 'active' AND content LIKE ? ORDER BY updated_at DESC LIMIT ?")
-      .all(`%${q.slice(0, 20)}%`, limit) as Row[]
+      .prepare("SELECT * FROM memories WHERE status = 'active' AND content LIKE ? AND project_id IS ? ORDER BY updated_at DESC LIMIT ?")
+      .all(`%${q.slice(0, 20)}%`, projectId, limit) as Row[]
     for (const r of like) if (!rows.some((x) => x.id === r.id)) rows.push(r)
   }
   rows = rows.slice(0, limit)
@@ -199,11 +241,13 @@ export function searchMemories(query: string, limit = 8): Memory[] {
 }
 
 /** 某个技能的输出偏好 */
-export function skillPreferences(skill: string): string[] {
+export function skillPreferences(skill: string, opts: MemoryScope = {}): string[] {
   return (
     profileDb()
-      .prepare("SELECT content FROM memories WHERE kind = 'skill' AND skill = ? AND status = 'active' ORDER BY created_at")
-      .all(skill) as {
+      .prepare(
+        "SELECT content FROM memories WHERE kind = 'skill' AND skill = ? AND status = 'active' AND project_id IS ? ORDER BY created_at"
+      )
+      .all(skill, opts.projectId ?? null) as {
       content: string
     }[]
   ).map((r) => r.content)
@@ -236,17 +280,17 @@ const CARD_BUDGET = 1200
  * 常驻“用户卡片”：个人档案 + 钉住的 + 最常用的偏好 / 事实 / 术语。
  * 排序确定，内容不变时字节相同，便于命中模型服务的前缀缓存。
  */
-export function userCard(zh: boolean): string | null {
+export function userCard(zh: boolean, opts: MemoryScope = {}): string | null {
   const db = profileDb()
   const profile = getUserProfile()
   const lines: string[] = []
   for (const k of PROFILE_KEYS) if (profile[k]) lines.push(`- ${PROFILE_LABEL[k][zh ? 0 : 1]}：${profile[k]}`)
   const rows = db
     .prepare(
-      `SELECT * FROM memories WHERE status = 'active' AND kind IN ('preference', 'fact', 'glossary')
+      `SELECT * FROM memories WHERE status = 'active' AND kind IN ('preference', 'fact', 'glossary') AND project_id IS ?
        ORDER BY pinned DESC, use_count DESC, created_at ASC LIMIT 60`
     )
-    .all() as Row[]
+    .all(opts.projectId ?? null) as Row[]
   let used = lines.join('\n').length
   const groups = new Map<MemoryKind, string[]>()
   for (const r of rows) {
@@ -258,8 +302,10 @@ export function userCard(zh: boolean): string | null {
   for (const [kind, ls] of groups) lines.push(`- ${KIND_LABEL[kind]![zh ? 0 : 1]}：`, ...ls)
   // 最近的学习经历（每条截短），帮助接上“上次学到哪”
   const episodes = db
-    .prepare("SELECT content FROM memories WHERE status = 'active' AND kind = 'episode' ORDER BY updated_at DESC LIMIT 3")
-    .all() as { content: string }[]
+    .prepare(
+      "SELECT content FROM memories WHERE status = 'active' AND kind = 'episode' AND project_id IS ? ORDER BY updated_at DESC LIMIT 3"
+    )
+    .all(opts.projectId ?? null) as { content: string }[]
   if (episodes.length && used < CARD_BUDGET)
     lines.push(`- ${zh ? '最近在学' : 'Recently studied'}：`, ...episodes.map((e) => `  - ${e.content.slice(0, 80)}`))
   return lines.length ? lines.join('\n') : null

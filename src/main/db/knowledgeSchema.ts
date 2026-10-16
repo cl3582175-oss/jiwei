@@ -59,6 +59,8 @@ export {
   jobs,
   providers,
   conversations,
+  chatProjects,
+  projectSources,
   conversationAttachments,
   messages,
   uiStates,

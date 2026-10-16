@@ -2,10 +2,11 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
+import { X } from 'lucide-react'
 import { api } from '@/lib/utils'
 import { useCategories } from '@/lib/queries'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent } from '@/components/ui/primitives'
+import { Dialog, DialogContent, Tip } from '@/components/ui/primitives'
 import { confirm } from '@/components/ui/confirm'
 import type { Attachment } from '@shared/types'
 import { AttachmentBar } from './AttachmentBar'
@@ -25,11 +26,13 @@ export function useAttachmentEvents(): void {
 export function ArchiveAttachmentsDialog({
   ids,
   onClose,
-  onArchived
+  onArchived,
+  archive
 }: {
   ids: string[]
   onClose: () => void
   onArchived?: (categoryId: string | null) => void
+  archive?: (categoryId: string | null) => Promise<void>
 }) {
   const { t } = useTranslation(),
     { data: categories = [] } = useCategories('source'),
@@ -42,9 +45,22 @@ export function ArchiveAttachmentsDialog({
         if (!open && !busy) onClose()
       }}
     >
-      <DialogContent title={t('attach.archive')} className="max-w-sm">
+      <DialogContent title={t('attach.archive')} className="max-w-sm" hideClose>
+        <Tip label={t('common.close')}>
+          <Button
+            className="absolute top-4 right-4"
+            size="icon-sm"
+            variant="ghost"
+            disabled={busy}
+            aria-label={t('common.close')}
+            onClick={onClose}
+          >
+            <X />
+          </Button>
+        </Tip>
         <select
           aria-label={t('attach.archiveTo')}
+          disabled={busy}
           value={category}
           onChange={(e) => setCategory(e.target.value)}
           className="h-9 w-full rounded-lg border border-border bg-surface px-2 text-sm text-fg"
@@ -65,8 +81,7 @@ export function ArchiveAttachmentsDialog({
             disabled={busy}
             onClick={() => {
               setBusy(true)
-              void api.attachments
-                .archive(ids, category || null)
+              void (archive ? archive(category || null) : api.attachments.archive(ids, category || null))
                 .then(() => {
                   if (!onArchived) toast.success(t('attach.space.archivedToast', { n: ids.length }))
                   onArchived?.(category || null)

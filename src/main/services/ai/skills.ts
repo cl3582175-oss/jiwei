@@ -26,7 +26,7 @@ import type { ModelTier } from '@shared/ai'
 import { getSettings, setSettings } from '../settings'
 import { enabledPlugins, pluginRegistryRevision } from '../plugins/registry'
 import { asExternalData } from '../agent/wrap'
-import { skillPreferences } from '../memory'
+import { skillPreferences, type MemoryScope } from '../memory'
 
 // 技能：采用 Agent Skills 开放标准（https://agentskills.io）——每个技能一个文件夹，核心是 SKILL.md
 // （YAML 头 name / description + Markdown 正文），可附带 references 等文件。
@@ -146,13 +146,13 @@ export function skillCatalog(tier: ModelTier, zh: boolean): string | null {
 }
 
 /** 加载技能正文 + 附带文件清单 + 用户对该技能的偏好（记忆） */
-export function loadSkill(name: string, zh: boolean): string {
+export function loadSkill(name: string, zh: boolean, opts: MemoryScope = {}): string {
   const s = all().get(name)
   if (!s || s.metadata.kind === 'lens' || disabled().has(name)) throw new Error(`没有名为 ${name} 的可用技能`)
   const files = readdirSync(s.dir, { recursive: true })
     .map(String)
     .filter((f) => f !== 'SKILL.md' && !isSymlink(join(s.dir, f)) && statSync(join(s.dir, f)).isFile())
-  const prefs = skillPreferences(name)
+  const prefs = skillPreferences(name, opts)
   const content = [
     `# ${zh ? '技能' : 'Skill'}：${s.metadata.title || s.name}`,
     s.body,

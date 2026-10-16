@@ -16,7 +16,9 @@ import {
   decisions,
   notes,
   jobs,
-  sources
+  sources,
+  chatProjects,
+  projectSources
 } from '../db/schema'
 import { emit, onMainEvent } from '../events'
 import { newId } from '../lib/ids'
@@ -64,6 +66,12 @@ export const ATTACHMENT_EXTS = [
 
 const relations = (sourceId: string) =>
   getDb().select().from(conversationAttachmentsTable).where(eq(conversationAttachmentsTable.sourceId, sourceId)).all()
+const projectRelations = (sourceId: string) =>
+  getDb()
+    .select()
+    .from(projectSources)
+    .where(and(eq(projectSources.itemType, 'source'), eq(projectSources.itemId, sourceId)))
+    .all()
 function privateSource(id: string): boolean {
   return relations(id).some((r) => r.conversationId.startsWith(PRIVATE_DRAFT) || owner(r.conversationId)?.incognito)
 }
@@ -134,6 +142,12 @@ export function attachmentStatus(sourceIds: string[]): Attachment[] {
           const o = owner(r.conversationId)
           return o && !o.incognito ? [{ id: r.conversationId, title: o.title }] : []
         }),
+        projects: db
+          .select({ id: chatProjects.id, name: chatProjects.name })
+          .from(projectSources)
+          .innerJoin(chatProjects, eq(chatProjects.id, projectSources.projectId))
+          .where(and(eq(projectSources.itemType, 'source'), eq(projectSources.itemId, id), isNull(chatProjects.deletedAt)))
+          .all(),
         createdAt: source.createdAt
       }
     ]
@@ -169,10 +183,20 @@ function queue(sourceId: string, ext: string, path: string): void {
   }
 }
 
-export async function addAttachments(input: z.infer<typeof AttachmentAddSchema>): Promise<Attachment[]> {
+export async function addAttachments(input: z.infer<typeof AttachmentAddSchema>, opts: { projectId?: string } = {}): Promise<Attachment[]> {
   const db = getDb(),
     o = input.conversationId ? owner(input.conversationId) : null
   if (input.conversationId && !o) throw new Error('Conversation or decision not found')
+  const projectActive = (): boolean =>
+    !opts.projectId ||
+    !!db
+      .select({ id: chatProjects.id })
+      .from(chatProjects)
+      .where(and(eq(chatProjects.id, opts.projectId), isNull(chatProjects.deletedAt)))
+      .get()
+  if (!projectActive()) throw new Error(tr('项目不存在或已删除', 'Project not found'))
+  if (opts.projectId && (input.conversationId || input.incognito || input.draftId))
+    throw new Error(tr('项目来源不能绑定到单独对话', 'Project sources cannot be bound as conversation attachments'))
   const incognito = o?.incognito || input.incognito
   const temp = await mkdtemp(join(tmpdir(), 'jiwei-attachment-'))
   const inputs: { path?: string; name: string; data?: Uint8Array }[] = [
@@ -184,8 +208,17 @@ export async function addAttachments(input: z.infer<typeof AttachmentAddSchema>)
     for (const [index, entry] of inputs.entries()) {
       let size = entry.data?.byteLength ?? 0
       try {
-        if (index >= 10) {
-          result.push(failure(entry.name, size, 'failed', tr('一条消息最多 10 个附件', 'At most 10 attachments per message')))
+        if (index >= (opts.projectId ? 50 : 10)) {
+          result.push(
+            failure(
+              entry.name,
+              size,
+              'failed',
+              opts.projectId
+                ? tr('一次最多添加 50 个来源', 'Add at most 50 sources at a time')
+                : tr('一条消息最多 10 个附件', 'At most 10 attachments per message')
+            )
+          )
           continue
         }
         const ext = extname(entry.name).slice(1).toLowerCase(),
@@ -228,42 +261,61 @@ export async function addAttachments(input: z.infer<typeof AttachmentAddSchema>)
           await writeFile(path, compressImage(await readFile(entry.path ?? join(temp, `${index}-${basename(entry.name)}`))))
         }
         const { row: asset } = await importFile(path)
+        if (!projectActive()) throw new Error(tr('项目不存在或已删除', 'Project not found'))
         const candidates = db
           .select()
           .from(sources)
           .where(and(eq(sources.assetId, asset.id), isNull(sources.deletedAt)))
           .all()
-        const existing = incognito
-          ? candidates.find(
-              (s) =>
-                s.space === 'attachment' &&
-                !!(input.conversationId || input.draftId) &&
-                relations(s.id).some((r) => r.conversationId === (input.conversationId ?? PRIVATE_DRAFT + input.draftId)) &&
-                relations(s.id).every((r) => r.conversationId === (input.conversationId ?? PRIVATE_DRAFT + input.draftId))
-            )
-          : (candidates.find((s) => s.space === 'library') ?? candidates.find((s) => s.space === 'attachment' && !privateSource(s.id)))
+        const existing = opts.projectId
+          ? candidates.find((source) => {
+              const refs = projectRelations(source.id)
+              return (
+                source.space === 'attachment' &&
+                !privateSource(source.id) &&
+                refs.length > 0 &&
+                refs.every((ref) => ref.projectId === opts.projectId)
+              )
+            })
+          : incognito
+            ? candidates.find(
+                (s) =>
+                  s.space === 'attachment' &&
+                  !!(input.conversationId || input.draftId) &&
+                  relations(s.id).some((r) => r.conversationId === (input.conversationId ?? PRIVATE_DRAFT + input.draftId)) &&
+                  relations(s.id).every((r) => r.conversationId === (input.conversationId ?? PRIVATE_DRAFT + input.draftId))
+              )
+            : (candidates.find((s) => s.space === 'library') ??
+              candidates.find((s) => s.space === 'attachment' && !privateSource(s.id) && !projectRelations(s.id).length))
         const id = existing?.id ?? newId(),
           now = Date.now()
         if (!existing) {
-          db.insert(sources)
-            .values({
-              id,
-              title: entry.name.replace(/\.[^.]+$/, ''),
-              kind,
-              assetId: asset.id,
-              originalName: basename(entry.name),
-              space: 'attachment',
-              aiExcluded: true,
-              accessedAt: now,
-              createdAt: now,
-              updatedAt: now,
-              updatedBy: deviceId()
-            })
-            .run()
-          if (incognito && !input.conversationId)
-            db.insert(conversationAttachmentsTable)
-              .values({ conversationId: PRIVATE_DRAFT + (input.draftId ?? newId()), sourceId: id, createdAt: now })
+          db.transaction(() => {
+            if (!projectActive()) throw new Error(tr('项目不存在或已删除', 'Project not found'))
+            db.insert(sources)
+              .values({
+                id,
+                title: entry.name.replace(/\.[^.]+$/, ''),
+                kind,
+                assetId: asset.id,
+                originalName: basename(entry.name),
+                space: 'attachment',
+                aiExcluded: true,
+                accessedAt: now,
+                createdAt: now,
+                updatedAt: now,
+                updatedBy: deviceId()
+              })
               .run()
+            if (opts.projectId)
+              db.insert(projectSources)
+                .values({ projectId: opts.projectId, itemType: 'source', itemId: id, origin: 'upload', createdAt: now })
+                .run()
+            if (incognito && !input.conversationId)
+              db.insert(conversationAttachmentsTable)
+                .values({ conversationId: PRIVATE_DRAFT + (input.draftId ?? newId()), sourceId: id, createdAt: now })
+                .run()
+          })
           queue(id, asset.ext, entry.path ?? path)
         }
         if (input.conversationId) bindAttachments(input.conversationId, [id], null)
@@ -274,6 +326,7 @@ export async function addAttachments(input: z.infer<typeof AttachmentAddSchema>)
     }
   } finally {
     await rm(temp, { recursive: true, force: true })
+    if (opts.projectId && !projectActive()) await collectGarbage()
   }
   changed(
     result.filter((a) => !['failed', 'unsupported'].includes(a.status)).map((a) => a.sourceId),
@@ -292,6 +345,10 @@ export function bindAttachments(conversationId: string, sourceIds: string[], mes
     for (const sourceId of new Set(sourceIds)) {
       let s = db.select().from(sources).where(eq(sources.id, sourceId)).get()
       if (!s || s.deletedAt !== null) throw new Error(tr('附件已删除', 'Attachment deleted'))
+      if (s.space === 'attachment' && projectRelations(sourceId).length)
+        throw new Error(
+          tr('请通过项目来源使用此资料，或先归档到资料库', 'Use this source through its project, or archive it to the library first')
+        )
       if (s.space === 'library' && s.aiExcluded) throw new Error(tr('这份资料设为不给 AI', 'This source is excluded from AI'))
       const refs = relations(sourceId)
       if (
@@ -406,7 +463,7 @@ export function listAttachmentSpace(filter: { state: 'unarchived' | 'archived' |
   const ids = rows
     .filter(
       (s) =>
-        (s.space === 'attachment' || relations(s.id).length) &&
+        (s.space === 'attachment' || relations(s.id).length || projectRelations(s.id).length) &&
         !privateSource(s.id) &&
         (filter.state === 'all' || (filter.state === 'unarchived' ? s.space === 'attachment' : s.space === 'library'))
     )
@@ -424,7 +481,7 @@ export function archiveAttachments(sourceIds: string[], categoryId: string | nul
       .where(and(eq(categories.id, categoryId), eq(categories.kind, 'source'), isNull(categories.deletedAt)))
       .get()
   )
-    throw new Error('Category not found')
+    throw new Error(tr('分类不存在或已删除', 'Category not found'))
   if (sourceIds.some(privateSource)) throw new Error(tr('无痕附件不能归档', 'Incognito attachments cannot be archived'))
   getDb()
     .update(sources)
@@ -466,6 +523,7 @@ export async function cleanupDrafts(now = Date.now()): Promise<number> {
       and(
         eq(sources.space, 'attachment'),
         sql`${sources.createdAt} < ${now - 86400000}`,
+        sql`NOT EXISTS (SELECT 1 FROM project_sources p WHERE p.item_type='source' AND p.item_id=${sources.id})`,
         sql`NOT EXISTS (SELECT 1 FROM conversation_attachments a WHERE a.source_id=${sources.id} AND a.conversation_id NOT LIKE ${PRIVATE_DRAFT + '%'})`
       )
     )
@@ -473,6 +531,17 @@ export async function cleanupDrafts(now = Date.now()): Promise<number> {
   for (const { id } of drafts) purgeSourceData(id)
   if (drafts.length) await collectGarbage()
   return drafts.length
+}
+
+/** 保留已分离附件的生命周期；orphan 标记没有有效 owner，不授予任何对话读取权限。调用方可纳入同一事务。 */
+export function retainDetachedAttachment(sourceId: string, originId: string): void {
+  const source = getSource(sourceId)
+  if (!source) return
+  getDb()
+    .insert(conversationAttachmentsTable)
+    .values({ conversationId: ORPHAN + originId, sourceId, createdAt: Date.now() })
+    .onConflictDoNothing()
+    .run()
 }
 
 /** 调用方在删除会话的同一事务内执行。孤儿关系保留来源历史，防止被当成草稿清掉。 */
@@ -488,11 +557,9 @@ export function detachConversationAttachments(conversationId: string): void {
   db.delete(conversationAttachmentsTable).where(eq(conversationAttachmentsTable.conversationId, conversationId)).run()
   for (const id of ids) {
     const s = getSource(id)
+    if (projectRelations(id).length) continue
     if (incognito && s?.space === 'attachment') purgeSourceData(id)
-    else if (s && !relations(id).length)
-      db.insert(conversationAttachmentsTable)
-        .values({ conversationId: ORPHAN + conversationId, sourceId: id, createdAt: Date.now() })
-        .run()
+    else if (s && !relations(id).length) retainDetachedAttachment(id, conversationId)
   }
   changed(ids, conversationId)
 }
