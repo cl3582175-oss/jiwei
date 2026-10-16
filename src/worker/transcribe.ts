@@ -2,6 +2,7 @@ import { execFile } from 'child_process'
 import { join } from 'path'
 import { createRequire } from 'module'
 import type { Cue } from '../main/lib/subtitles'
+import { localSpeechConfig } from './localSpeechConfig'
 
 // 转写：ffmpeg 流式解码为 16 kHz 单声道 → Silero VAD 切出语音段 → SenseVoice 识别。
 // 流式处理，长视频也不会占用大量内存；进度按已处理时长 / 总时长计算。
@@ -46,6 +47,7 @@ interface Sherpa {
       }
       sampleRate: number
       numThreads: number
+      provider: string
       debug: boolean
     },
     seconds: number
@@ -56,6 +58,7 @@ interface Sherpa {
       senseVoice: { model: string; language: string; useInverseTextNormalization: number }
       tokens: string
       numThreads: number
+      provider: string
       debug: boolean
     }
   }) => OfflineRecognizer
@@ -74,8 +77,7 @@ export async function transcribe(p: Paths, progress: (n: number) => void): Promi
         windowSize: WINDOW
       },
       sampleRate: SR,
-      numThreads: 1,
-      debug: false
+      ...localSpeechConfig('vad')
     },
     60
   )
@@ -84,8 +86,7 @@ export async function transcribe(p: Paths, progress: (n: number) => void): Promi
     modelConfig: {
       senseVoice: { model: p.model, language: '', useInverseTextNormalization: 1 },
       tokens: p.tokens,
-      numThreads: 2,
-      debug: false
+      ...localSpeechConfig('transcribe')
     }
   })
 

@@ -1,6 +1,7 @@
 import { readFile, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { createRequire } from 'module'
+import { localSpeechConfig } from './localSpeechConfig'
 
 // 本机语音合成（v0.8 审查后加入）：sherpa-onnx + ZipVoice（零样本，语气与节奏跟随一段参考录音）。
 // 在后台工作进程中逐句生成 wav；模型加载较慢，同一模型目录的实例在进程内复用。
@@ -33,7 +34,7 @@ function load(input: SpeechInput): NonNullable<typeof cached> {
   const req = createRequire(join(input.runtime, 'index.js')),
     sherpa = req(join(input.runtime, 'node_modules/sherpa-onnx-node')) as Sherpa
   const tts = new sherpa.OfflineTts({
-    model: { zipvoice: input.model, numThreads: 4, provider: 'cpu', debug: false },
+    model: { zipvoice: input.model, ...localSpeechConfig('speech') },
     maxNumSentences: 1
   })
   cached = { key, tts, sherpa }

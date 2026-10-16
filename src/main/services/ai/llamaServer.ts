@@ -255,6 +255,9 @@ export class LlamaServer {
       '127.0.0.1',
       '--port',
       String(port),
+      // b11491 defaults to level 3, which suppresses actual device/offload diagnostics.
+      '-lv',
+      '4',
       ...computeArgs(mode, runtime.variant, this.options.service)
     ]
     this.options.beforeSpawn?.()

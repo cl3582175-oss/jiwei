@@ -63,6 +63,11 @@ function starts(): { args: string[]; pid: number }[] {
     .map((line) => JSON.parse(line))
 }
 
+it('enables b11491 device and offload diagnostics for actual settings status', async () => {
+  const result = await server().run(request)
+  expect(result.args.slice(result.args.indexOf('-lv'), result.args.indexOf('-lv') + 2)).toEqual(['-lv', '4'])
+})
+
 it('passes explicit auto fit arguments through the real spawn/HTTP path and preserves context', async () => {
   const instance = server()
   const result = await instance.run(request)

@@ -3,6 +3,7 @@ import { createRequire } from 'module'
 import { join } from 'path'
 import type { VoiceCue } from '../main/lib/voiceprint'
 import { trackHint } from '../main/lib/voiceprint'
+import { localSpeechConfig } from './localSpeechConfig'
 
 interface Stream {
   acceptWaveform(v: { sampleRate: number; samples: Float32Array }): void
@@ -72,7 +73,7 @@ export async function extractVoiceprints(input: VoiceprintInput, progress: (n: n
   signal?.throwIfAborted()
   const req = createRequire(join(input.runtime, 'index.js')),
     sherpa = req(join(input.runtime, 'node_modules/sherpa-onnx-node')) as Sherpa
-  const extractor = new sherpa.SpeakerEmbeddingExtractor({ model: input.model, numThreads: 2, provider: 'cpu', debug: false })
+  const extractor = new sherpa.SpeakerEmbeddingExtractor({ model: input.model, ...localSpeechConfig('voiceprint') })
   const result: VoiceCue[] = []
   for (const [i, cue] of input.cues.entries()) {
     signal?.throwIfAborted()
