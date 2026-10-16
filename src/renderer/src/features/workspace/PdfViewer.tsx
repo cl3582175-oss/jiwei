@@ -120,7 +120,9 @@ export function PdfViewer({ source }: { source: Source }) {
         // 一次读入（素材协议不支持跨源 Range 预检）
         const data = new Uint8Array(await (await fetch(source.assetUrl!)).arrayBuffer())
         if (destroyed) return
-        task = pdfjs.getDocument({ data })
+        // CCITT/JBIG2 scan images also need the decoder in the renderer's PDF worker.
+        // Use bundled resources through the app protocol on every OS, including inside ASAR.
+        task = pdfjs.getDocument({ data, wasmUrl: 'jiwei://pdfjs/wasm/', useWorkerFetch: false })
         const doc = await task.promise
         if (destroyed) return void task.destroy()
         viewer.setDocument(doc)

@@ -20,6 +20,29 @@ export function makeMaskPdf(content = 'q 595 0 0 842 0 0 cm /Scan Do Q'): Buffer
   )
 }
 
+/** Group 3 CCITT: each 8-pixel row is four white pixels (1011), then four black (011). */
+export function makeCcittMaskPdf(): Buffer {
+  const bits = '1011011'.repeat(8)
+  const data = Buffer.from(Array.from({ length: 7 }, (_, i) => parseInt(bits.slice(i * 8, i * 8 + 8), 2)))
+  const content = 'q 595 0 0 842 0 0 cm /Scan Do Q'
+  return serialize(
+    [
+      '<< /Type /Catalog /Pages 2 0 R >>',
+      '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+      '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /XObject << /Scan 4 0 R >> >> /Contents 5 0 R >>',
+      [
+        Buffer.from(
+          `<< /Type /XObject /Subtype /Image /Width 8 /Height 8 /ImageMask true /BitsPerComponent 1 /Filter /CCITTFaxDecode /DecodeParms << /K 0 /Columns 8 /Rows 8 /EndOfBlock false >> /Length ${data.length} >>\nstream\n`
+        ),
+        data,
+        Buffer.from('\nendstream')
+      ],
+      `<< /Length ${content.length} >>\nstream\n${content}\nendstream`
+    ],
+    1
+  )
+}
+
 type Obj = string | Buffer[]
 
 function serialize(objs: Obj[], catalog: number): Buffer {

@@ -1,4 +1,5 @@
 import { sandboxResponse } from './sandbox'
+import { pdfDecoderResponse } from './pdfDecoderAssets'
 import { createHash } from 'crypto'
 import { createReadStream } from 'fs'
 import { Readable } from 'stream'
@@ -195,6 +196,7 @@ export function registerSchemePrivileges(): void {
 export function registerProtocol(): void {
   protocol.handle('jiwei', async (req) => {
     const url = new URL(req.url)
+    if (url.hostname === 'pdfjs') return pdfDecoderResponse(url.pathname)
     if (url.hostname === 'sandbox') return sandboxResponse(url.pathname.slice(1))
     if (url.hostname === 'recording') {
       const id = url.pathname.slice(1)

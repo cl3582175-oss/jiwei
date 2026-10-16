@@ -7,6 +7,7 @@ export default defineConfig({
   globalSetup: undefined,
   testMatch: [
     '**/scanned-pdf.spec.ts',
+    '**/pdf-preview.spec.ts',
     '**/assistant-ux.spec.ts',
     '**/attachments.spec.ts',
     '**/recognize.spec.ts',
