@@ -15,7 +15,11 @@ async function openProjectPdf(app: ElectronApplication, page: Page, path: string
     return window.jiwei.chatProjects.create({ name: 'PDF 预览验证', memory: 'project', libraryScope: 'none' })
   })
   await navTo(page, /积微助手/)
-  await page.locator(`[data-project-id="${project.id}"] [data-sidebar-row]`).first().click()
+  const sidebar = page.getByTestId('sidebar-chat')
+  await expect(sidebar).toBeVisible()
+  if ((await sidebar.getAttribute('data-collapsed')) === 'true') await sidebar.getByTestId('sidebar-spine').click()
+  await expect(sidebar).toHaveAttribute('data-collapsed', 'false')
+  await sidebar.locator(`[data-project-id="${project.id}"] [data-sidebar-row]`).first().click()
   await page.getByTestId('project-home').getByRole('tab', { name: '来源', exact: true }).click()
   await app.evaluate(({ dialog }, file) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [file] })
@@ -51,6 +55,8 @@ test('project preview renders a CCITT mask as visible black and white pixels wit
   const file = join(dir, 'CCITT.pdf')
   writeFileSync(file, makeCcittMaskPdf())
   const { app, page } = await launchScannedPdfApp(dir)
+  // CI desktops can constrain the window below the sidebar's automatic collapse threshold.
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1000, 760))
   const errors: string[] = []
   page.on('pageerror', (e) => errors.push(String(e)))
   try {
