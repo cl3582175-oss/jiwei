@@ -93,7 +93,7 @@ export function registerJobKinds(): void {
         const n = replaceSegments(sourceId, [...(segs as SegmentInput[]), ...course])
         // PDF：登记需要识别的页，并入已有的识别结果（重新解析不必重算），按设置自动识别
         if (!Array.isArray(result) && 'pages' in result) {
-          recordPages(sourceId, (result as { pages: { page: number; need: 'scan' | 'table' | 'figure' }[] }).pages)
+          recordPages(sourceId, (result as { pages: { page: number; need: 'scan' | 'table' | 'figure'; error?: string }[] }).pages)
           applyRecognized(sourceId)
           if (!upgrade) maybeAutoRecognize(sourceId)
         }

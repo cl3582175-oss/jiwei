@@ -34,7 +34,7 @@ async function loadPdfJs(): Promise<PdfJs> {
 export interface PdfParse {
   segments: Segment[]
   /** 需要识别的页（扫描页、表格页、图页），见 pdfTriage.ts */
-  pages: { page: number; need: PageNeed }[]
+  pages: { page: number; need: PageNeed; error?: string }[]
 }
 
 export async function parsePdf(path: string, progress: (p: number) => void): Promise<PdfParse> {
@@ -76,12 +76,17 @@ export async function parsePdf(path: string, progress: (p: number) => void): Pro
         const signals = {
           chars: text.replace(/\s/g, '').length,
           lines: text.split('\n'),
-          ...drawingSignals(ops.fnArray, ops.argsArray, (x1 - x0) * (y1 - y0))
+          ...drawingSignals(ops.fnArray, ops.argsArray, (x1 - x0) * (y1 - y0), page.view)
         }
         const needs = classifyPageNeeds(signals)
         for (const need of needs) pages.push({ page: p, need })
-      } catch {
-        // 分流失败不影响文字层
+      } catch (error) {
+        // 保留文字层，同时让检测失败可见；failed 页不会被自动当成待 OCR 页发送。
+        pages.push({
+          page: p,
+          need: 'scan',
+          error: `Page detection failed: ${error instanceof Error ? error.message : String(error)}`.slice(0, 500)
+        })
       }
       page.cleanup()
       progress(p / doc.numPages)

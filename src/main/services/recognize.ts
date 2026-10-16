@@ -424,7 +424,7 @@ async function pageImage(path: string, ext: string, page: number, ctx: JobContex
 /* ——— 资料的待识别页 ——— */
 
 /** 解析后登记需要识别的页：类型没变且已识别的页保留结果，不再出现的页删除 */
-export function recordPages(sourceId: string, pages: { page: number; need: RecognizedNeed }[]): void {
+export function recordPages(sourceId: string, pages: { page: number; need: RecognizedNeed; error?: string }[]): void {
   const db = getDb()
   const prev = new Map(
     db
@@ -440,12 +440,19 @@ export function recordPages(sourceId: string, pages: { page: number; need: Recog
       const key = `${p.page}:${p.need}`
       const old = prev.get(key)
       prev.delete(key)
-      if (old && old.need === p.need) continue
+      if (old && old.need === p.need) {
+        if (old.status !== 'done' && old.status !== 'skipped' && (p.error || old.error?.startsWith('Page detection failed:')))
+          tx.update(sourcePages)
+            .set({ status: p.error ? 'failed' : 'pending', error: p.error ?? null, updatedAt: now })
+            .where(and(eq(sourcePages.sourceId, sourceId), eq(sourcePages.page, p.page), eq(sourcePages.need, p.need)))
+            .run()
+        continue
+      }
       tx.insert(sourcePages)
-        .values({ sourceId, page: p.page, need: p.need, status: 'pending', updatedAt: now })
+        .values({ sourceId, page: p.page, need: p.need, status: p.error ? 'failed' : 'pending', error: p.error ?? null, updatedAt: now })
         .onConflictDoUpdate({
           target: [sourcePages.sourceId, sourcePages.page, sourcePages.need],
-          set: { need: p.need, status: 'pending', text: null, engine: null, error: null, updatedAt: now }
+          set: { need: p.need, status: p.error ? 'failed' : 'pending', text: null, engine: null, error: p.error ?? null, updatedAt: now }
         })
         .run()
     }
