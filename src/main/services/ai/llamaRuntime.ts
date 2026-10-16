@@ -205,6 +205,7 @@ interface RuntimeIo {
 
 /** One owner for installation, upgrades and leases shared by embedding and OCR. */
 export class LlamaRuntimeManager {
+  private reclaiming: Promise<void> | null = null
   private installedListeners = new Set<(runtime: RuntimeInstallation) => void>()
   private installing = new Map<RuntimeVariant, Promise<RuntimeInstallation>>()
   private progressListeners = new Map<RuntimeVariant, Set<(p: DownloadProgress) => void>>()
@@ -243,6 +244,51 @@ export class LlamaRuntimeManager {
   }
   private binaryName(): string {
     return this.environment.platform === 'win32' ? 'llama-server.exe' : 'llama-server'
+  }
+  /** PID ownership protects live installers across app instances; old UUID-only remnants are also recognized. */
+  private reclaimAbandoned(): Promise<void> {
+    if (this.reclaiming) return this.reclaiming
+    const work = (async () => {
+      const root = this.environment.directory()
+      const entries = await readdir(root, { withFileTypes: true }).catch((error) => {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
+        throw error
+      })
+      const uuid = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
+      const pattern = new RegExp(`^llama-${LLAMA_BUILD}-(metal|cpu|vulkan|cuda12|cuda13)\\.(install|previous)-(?:(\\d+)-)?${uuid}$`, 'i')
+      const alive = (pid: string | undefined): boolean => {
+        if (!pid) return false
+        try {
+          process.kill(Number(pid), 0)
+          return true
+        } catch (error) {
+          return (error as NodeJS.ErrnoException).code !== 'ESRCH'
+        }
+      }
+      const candidates = entries
+        .filter((entry) => entry.isDirectory())
+        .flatMap((entry) => {
+          const match = pattern.exec(entry.name)
+          return match ? [{ path: join(root, entry.name), variant: match[1] as RuntimeVariant, kind: match[2], live: alive(match[3]) }] : []
+        })
+      const liveVariants = new Set(candidates.filter((entry) => entry.live).map((entry) => entry.variant))
+      for (const entry of candidates) {
+        if (entry.live || liveVariants.has(entry.variant)) continue
+        try {
+          if (await this.inUse(entry.path)) continue
+          if (entry.kind === 'install') await rm(entry.path, { recursive: true, force: true })
+          else if (!(await exists(this.directory(entry.variant)))) await rename(entry.path, this.directory(entry.variant))
+          else if (await this.installed(entry.variant)) await rm(entry.path, { recursive: true, force: true })
+        } catch (error) {
+          // Another app may have reclaimed this same dead owner's directory first.
+          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+        }
+      }
+    })().finally(() => {
+      this.reclaiming = null
+    })
+    this.reclaiming = work
+    return work
   }
   snapshot(): LocalComputeStatus['runtime'] {
     return { ...this.state }
@@ -299,6 +345,7 @@ export class LlamaRuntimeManager {
   }
 
   async current(): Promise<RuntimeInstallation | null> {
+    await this.reclaimAbandoned()
     const active = loadAccel().activeVariant
     const variants: RuntimeVariant[] = [
       ...new Set<RuntimeVariant>([
@@ -340,6 +387,7 @@ export class LlamaRuntimeManager {
   }
 
   async ensure(onProgress: (p: DownloadProgress) => void = () => undefined): Promise<RuntimeInstallation> {
+    await this.reclaimAbandoned()
     const preferred = await this.desired()
     const ready = await this.installed(preferred)
     if (ready) return ready
@@ -400,6 +448,7 @@ export class LlamaRuntimeManager {
   }
 
   async install(spec: RuntimeSpec, onProgress: (p: DownloadProgress) => void = () => undefined): Promise<RuntimeInstallation> {
+    await this.reclaimAbandoned()
     const ready = await this.installed(spec.variant)
     if (ready) return ready
     const listeners = this.progressListeners.get(spec.variant) ?? new Set<(p: DownloadProgress) => void>()
@@ -424,7 +473,7 @@ export class LlamaRuntimeManager {
   private async extractRuntime(spec: RuntimeSpec): Promise<RuntimeInstallation> {
     const root = this.environment.directory(),
       target = this.directory(spec.variant)
-    const staging = `${target}.install-${randomUUID()}`
+    const staging = `${target}.install-${process.pid}-${randomUUID()}`
     const controller = new AbortController()
     this.controllers.set(spec.variant, controller)
     await mkdir(staging, { recursive: true })
@@ -467,7 +516,7 @@ export class LlamaRuntimeManager {
       let previous: string | null = null
       if (await exists(target)) {
         if (await this.inUse(target)) throw new Error('旧运行时仍在使用，稍后重试安装')
-        previous = `${target}.previous-${randomUUID()}`
+        previous = `${target}.previous-${process.pid}-${randomUUID()}`
         await rename(target, previous)
       }
       try {

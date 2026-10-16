@@ -193,6 +193,7 @@ export class LlamaServer {
   }
 
   async start(): Promise<void> {
+    if (this.recovering) return this.recovering
     if (this.stopping) await this.stopping
     if (this.isRunning()) return
     if (this.starting) return this.starting
@@ -217,9 +218,14 @@ export class LlamaServer {
     } catch (error) {
       await this.terminate(this.session)
       if (epoch !== this.epoch || error instanceof StoppedError) throw new StoppedError()
-      if (mode === 'cpu' || this.options.recover === false) {
+      if (this.options.recover === false) {
         this.changed({ state: 'error', reason: error instanceof Error ? error.message : String(error) })
         throw error
+      }
+      if (mode === 'cpu') {
+        if (runtime.variant.startsWith('cuda'))
+          markGpuFailure(runtime.variant, this.options.service, error instanceof Error ? error.message : String(error))
+        return this.fallbackCpuPackage(runtime, error, epoch)
       }
       await this.recover(runtime, error, epoch)
     }
@@ -234,15 +240,33 @@ export class LlamaServer {
       await this.launch(runtime, 'cpu', epoch)
     } catch (cpuError) {
       await this.terminate(this.session)
-      const fallback = runtime.variant.startsWith('cuda') ? await this.owner.fallback(runtime.directory) : null
-      if (!fallback) {
-        this.changed({ state: 'error', reason: cpuError instanceof Error ? cpuError.message : String(cpuError) })
-        throw cpuError
-      }
-      await this.launch(fallback, 'cpu', epoch)
+      await this.fallbackCpuPackage(runtime, cpuError, epoch)
     }
     if (runtime.variant.startsWith('cuda'))
       void this.owner.prepareVulkan().catch((e) => log.warn('[llama] Vulkan fallback download deferred', e))
+  }
+
+  private async fallbackCpuPackage(runtime: RuntimeInstallation, error: unknown, epoch: number): Promise<void> {
+    if (epoch !== this.epoch) throw new StoppedError()
+    const fallback = runtime.variant.startsWith('cuda') ? await this.owner.fallback(runtime.directory) : null
+    if (!fallback) {
+      this.changed({ state: 'error', reason: error instanceof Error ? error.message : String(error) })
+      throw error
+    }
+    try {
+      await this.launch(fallback, 'cpu', epoch)
+      this.changed({ reason: error instanceof Error ? error.message : String(error) })
+    } catch (fallbackError) {
+      await this.terminate(this.session)
+      if (epoch !== this.epoch) throw new StoppedError()
+      const failure = new AggregateError(
+        [error, fallbackError],
+        `${error instanceof Error ? error.message : String(error)}；CPU fallback: ${fallbackError instanceof Error ? fallbackError.message : String(fallbackError)}`,
+        { cause: fallbackError }
+      )
+      this.changed({ state: 'error', reason: failure.message })
+      throw failure
+    }
   }
 
   private async launch(runtime: RuntimeInstallation, mode: ComputeMode, epoch: number): Promise<void> {
@@ -392,8 +416,11 @@ export class LlamaServer {
         if (session.mode === 'cpu' || this.options.recover === false || (!session.exited && !session.failure && !transport)) throw error
         if (!this.recovering) {
           this.recovering = (async () => {
+            if (this.starting) await this.starting
             if (this.session !== session && this.isRunning()) return
             await this.terminate(session)
+            if (this.starting) await this.starting
+            if (this.session !== session && this.isRunning()) return
             await this.recover(session.runtime, error, session.epoch)
           })().finally(() => {
             this.recovering = null

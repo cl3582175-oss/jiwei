@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createHash } from 'crypto'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'fs'
+import { createHash, randomUUID } from 'crypto'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'fs'
+import { spawnSync } from 'child_process'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import JSZip from 'jszip'
@@ -120,6 +121,50 @@ describe('pinned release assets', () => {
 })
 
 describe('transactional installation', () => {
+  it('reclaims abandoned extracted staging on retry without touching live owners or resumable downloads', async () => {
+    legacy()
+    const deadPid = spawnSync(process.execPath, ['-e', '']).pid
+    const stale = join(modelsDir(), `llama-b11491-cuda13.install-${deadPid}-${randomUUID()}`)
+    const oldFormat = join(modelsDir(), `llama-b11491-vulkan.install-${randomUUID()}`)
+    const live = join(modelsDir(), `llama-b11491-cuda12.install-${process.pid}-${randomUUID()}`)
+    const foreign = join(modelsDir(), 'llama-b11491-vulkan.install-unrelated')
+    for (const directory of [stale, oldFormat, live, foreign]) {
+      mkdirSync(directory, { recursive: true })
+      writeFileSync(join(directory, 'main-archive-extracted'), 'fixture bytes')
+    }
+    const part = join(modelsDir(), '.llama-downloads/cuda12-cudart.zip.part')
+    mkdirSync(join(part, '..'), { recursive: true })
+    writeFileSync(part, 'resumable support archive')
+    await manager().install(specs.get('cuda13')!)
+    expect(existsSync(stale)).toBe(false)
+    expect(existsSync(oldFormat)).toBe(false)
+    expect(existsSync(live)).toBe(true)
+    expect(existsSync(foreign)).toBe(true)
+    expect(readFileSync(part, 'utf8')).toBe('resumable support archive')
+  })
+
+  it('recovers an abandoned previous runtime before offline selection and preserves leased backups', async () => {
+    const first = await manager().install(specs.get('vulkan')!)
+    const deadPid = spawnSync(process.execPath, ['-e', '']).pid
+    const previous = `${first.directory}.previous-${deadPid}-${randomUUID()}`
+    renameSync(first.directory, previous)
+    const restarted = manager({
+      download: async () => {
+        throw new Error('offline')
+      }
+    })
+    expect((await restarted.current())?.directory).toBe(first.directory)
+    expect(existsSync(previous)).toBe(false)
+    const leased = `${first.directory}.previous-${deadPid}-${randomUUID()}`
+    const obsolete = `${first.directory}.previous-${randomUUID()}`
+    cpSync(first.directory, leased, { recursive: true })
+    cpSync(first.directory, obsolete, { recursive: true })
+    writeFileSync(join(leased, `.lease-${process.pid}`), String(process.pid))
+    expect((await manager().current())?.directory).toBe(first.directory)
+    expect(existsSync(leased)).toBe(true)
+    expect(existsSync(obsolete)).toBe(false)
+  })
+
   it('restores an existing target if the final directory rename fails', async () => {
     const target = join(modelsDir(), 'llama-b11491-vulkan')
     mkdirSync(target, { recursive: true })

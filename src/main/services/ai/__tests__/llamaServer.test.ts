@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join, resolve } from 'path'
 import { setTimeout as delay } from 'timers/promises'
+import type { ChildProcess } from 'child_process'
 import type { RuntimeInstallation } from '../llamaRuntime'
 
 const fixture = vi.hoisted(() => ({ root: '', mode: 'auto' as 'auto' | 'cpu' }))
@@ -10,7 +11,7 @@ vi.mock('electron', () => ({ app: { getPath: () => fixture.root } }))
 vi.mock('electron-log/main', () => ({ default: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
 vi.mock('../../settings', () => ({ getSettings: () => ({ ai: { localCompute: fixture.mode } }) }))
 vi.mock('../llamaRuntime', () => ({ runtimeManager: {} }))
-import { gpuFailure, updateAccel } from '../accel'
+import { gpuFailure, markGpuFailure, updateAccel } from '../accel'
 import { LlamaServer, type RuntimeOwner } from '../llamaServer'
 
 let servers: LlamaServer[]
@@ -110,6 +111,72 @@ it('a running GPU process crash retries the request on CPU before returning its 
   expect(starts()).toHaveLength(2)
 })
 
+it('new requests join an ongoing crash recovery instead of leaking a second CPU process', async () => {
+  let releaseGpu: () => void = () => undefined,
+    enteredRelease: () => void = () => undefined
+  const gate = new Promise<void>((resolve) => {
+    releaseGpu = resolve
+  })
+  const entered = new Promise<void>((resolve) => {
+    enteredRelease = resolve
+  })
+  const release = owner.release
+  let first = true
+  owner.release = async (runtime) => {
+    if (first) {
+      first = false
+      enteredRelease()
+      await gate
+    }
+    await release(runtime)
+  }
+  const children: ChildProcess[] = []
+  const instance = new LlamaServer(
+    {
+      service: 'embedding',
+      healthTimeoutMs: 500,
+      args: () => [script, '--fixture-failure', 'crash', '--fixture-trace', join(fixture.root, 'trace')],
+      onSpawn: (child) => {
+        children.push(child)
+      }
+    },
+    owner
+  )
+  servers.push(instance)
+  const outcomes: Promise<unknown>[] = []
+  try {
+    await instance.run(request)
+    const recovering = instance.run(async (url) => (await fetch(`${url}/crash`)).json() as Promise<Response>)
+    outcomes.push(recovering)
+    await entered
+    const arriving = instance.run(request)
+    outcomes.push(arriving)
+    // Widen the real async release boundary, as filesystem cleanup can do in production.
+    await delay(100)
+    releaseGpu()
+    const [a, b] = await Promise.all([recovering, arriving])
+    expect(a.pid).toBe(b.pid)
+    expect(starts()).toHaveLength(2)
+    expect(leased).toBe(1)
+    await instance.stop()
+    expect(leased).toBe(0)
+    expect(children.every((child) => child.exitCode !== null || child.signalCode !== null)).toBe(true)
+  } finally {
+    releaseGpu()
+    await Promise.allSettled(outcomes)
+    await Promise.all(
+      children.map(
+        (child) =>
+          new Promise<void>((resolve) => {
+            if (child.exitCode !== null || child.signalCode !== null) return resolve()
+            child.once('close', () => resolve())
+            child.kill('SIGKILL')
+          })
+      )
+    )
+  }
+})
+
 it('an idle GPU crash is also persisted so the next task does not silently relaunch the failed GPU', async () => {
   const instance = server('crash')
   let base = ''
@@ -191,6 +258,59 @@ it('only-CPU starts on CPU directly without ever launching a GPU process', async
   const instance = server('launch')
   expect((await instance.run(request)).cpu).toBe(true)
   expect(starts()).toHaveLength(1)
+})
+
+it.each(['preference', 'health'] as const)(
+  'a broken CUDA executable in CPU mode still uses an installed CPU package (%s)',
+  async (reason) => {
+    fixture.mode = reason === 'preference' ? 'cpu' : 'auto'
+    if (reason === 'health') markGpuFailure('cuda13', 'embedding', 'previous GPU error')
+    const broken: RuntimeInstallation = {
+      binary: join(fixture.root, 'missing-cuda-server'),
+      directory: join(fixture.root, 'cuda'),
+      variant: 'cuda13',
+      legacy: false
+    }
+    const installed: RuntimeInstallation = {
+      binary: process.execPath,
+      directory: join(fixture.root, 'legacy'),
+      variant: 'cpu',
+      legacy: true
+    }
+    owner.ensure = async () => broken
+    owner.fallback = vi.fn(async () => installed)
+    const instance = server()
+    expect((await instance.run(request)).cpu).toBe(true)
+    expect(owner.fallback).toHaveBeenCalledOnce()
+    expect(instance.snapshot().variant).toBe('cpu')
+    expect(gpuFailure('cuda13', 'embedding')).toMatch(/ENOENT/)
+    expect(leased).toBe(1)
+  }
+)
+
+it('CPU package fallback is bounded and reports both failed executable errors', async () => {
+  fixture.mode = 'cpu'
+  owner.ensure = async () => ({
+    binary: join(fixture.root, 'missing-cuda-server'),
+    directory: fixture.root,
+    variant: 'cuda13',
+    legacy: false
+  })
+  owner.fallback = vi.fn(async (): Promise<RuntimeInstallation> => ({
+    binary: join(fixture.root, 'missing-cpu-server'),
+    directory: join(fixture.root, 'cpu'),
+    variant: 'cpu',
+    legacy: true
+  }))
+  const error = await server()
+    .run(request)
+    .catch((error: unknown) => error)
+  expect(error).toBeInstanceOf(AggregateError)
+  expect((error as AggregateError).errors).toHaveLength(2)
+  expect(String(error)).toContain('missing-cuda-server')
+  expect(String(error)).toContain('missing-cpu-server')
+  expect(owner.fallback).toHaveBeenCalledOnce()
+  expect(leased).toBe(0)
 })
 
 it('a recorded slower-GPU benchmark takes effect on the next actual request', async () => {
