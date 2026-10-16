@@ -1,4 +1,5 @@
 import { notePrivacyZh } from '../features/notes/notePrivacyMessages'
+import { localComputeZh } from '../features/ai/localComputeMessages'
 import { readyZh } from '../features/library/readinessMessages'
 import { attachZh } from '../features/attachments/messages'
 import { uiZh } from '../features/ui/messages'
@@ -132,6 +133,7 @@ const zhCN = {
   ...readyZh,
   ...attachZh,
   ui: uiZh,
+  localCompute: localComputeZh,
   updates: updatesZh,
   importer: importerZh,
   discover: discoverZh,
@@ -1108,7 +1110,7 @@ const zhCN = {
     emb: {
       local: '内置（本地）',
       cloud: '云端服务',
-      localDesc: 'Google DeepMind 开源模型，在本机运行，离线可用。首次使用需下载约 320 MB，会自动选择最快的下载源并校验文件完整性。',
+      localDesc: 'Google DeepMind 开源模型，在本机运行，离线可用。首次使用会按计算设备选择运行时，自动选择下载源并校验文件完整性。',
       install: '下载并启用',
       downloading: '下载中 {{pct}}% · 来源 {{mirror}} · {{speed}}/s',
       starting: '正在启动…',

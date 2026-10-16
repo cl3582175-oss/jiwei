@@ -39,6 +39,7 @@ function defaults(): Settings {
     sidebarCollapsed: false,
     // AI：默认思考强度“高”（DeepSeek 默认值）；向量默认使用内置本地模型
     ai: {
+      localCompute: 'auto',
       ui: { ...UI_DEFAULTS },
       chat: { providerId: null, model: null },
       effort: 'high',

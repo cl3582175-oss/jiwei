@@ -55,9 +55,16 @@ export async function refreshStatus(resetError = false): Promise<EmbeddingStatus
   // 同一配置的维度/加载错误不能因界面轮询被抹去；更换模型或明确重试才复位。
   if (!resetError && status.state === 'error' && errorModel === currentModelId()) return status
   if (e.mode === 'cloud') {
-    setStatus({ mode: 'cloud', state: e.providerId && e.model ? 'ready' : 'unconfigured', message: null, progress: 0 })
+    setStatus({ mode: 'cloud', state: e.providerId && e.model ? 'ready' : 'unconfigured', message: null, progress: 0, size: 0 })
   } else if (!installing) {
-    setStatus({ mode: 'local', state: (await local.isInstalled()) ? 'ready' : 'missing', progress: 0, message: null })
+    const installed = await local.isInstalled()
+    setStatus({
+      mode: 'local',
+      state: installed ? 'ready' : 'missing',
+      progress: 0,
+      message: null,
+      size: installed ? 0 : await local.downloadSize()
+    })
   }
   return status
 }

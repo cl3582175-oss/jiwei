@@ -30,6 +30,7 @@ interface ServerOptions {
   onExit?: () => void
 }
 interface Session {
+  epoch: number
   child: ChildProcess
   runtime: RuntimeInstallation
   mode: ComputeMode
@@ -225,6 +226,7 @@ export class LlamaServer {
   }
 
   private async recover(runtime: RuntimeInstallation, error: unknown, epoch: number): Promise<void> {
+    if (epoch !== this.epoch) throw new StoppedError()
     const reason = error instanceof Error ? error.message : String(error)
     markGpuFailure(runtime.variant, this.options.service, reason)
     this.changed({ reason })
@@ -266,6 +268,7 @@ export class LlamaServer {
     }
     let close: () => void = () => undefined
     const session: Session = {
+      epoch,
       child,
       runtime,
       mode,
@@ -381,13 +384,14 @@ export class LlamaServer {
         return await request(session.url)
       } catch (error) {
         aborted(signal)
+        if (session.epoch !== this.epoch) throw error
         const transport = error instanceof TypeError && /fetch|socket|connect/i.test(error.message)
         if (session.mode === 'cpu' || this.options.recover === false || (!session.exited && !session.failure && !transport)) throw error
         if (!this.recovering) {
           this.recovering = (async () => {
             if (this.session !== session && this.isRunning()) return
             await this.terminate(session)
-            await this.recover(session.runtime, error, this.epoch)
+            await this.recover(session.runtime, error, session.epoch)
           })().finally(() => {
             this.recovering = null
           })

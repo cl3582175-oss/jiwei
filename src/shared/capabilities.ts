@@ -8,6 +8,7 @@ import {
   type ChatSearchHit
 } from './chatProjects'
 import type { Readiness } from './readiness'
+import type { LocalComputeStatus } from './localCompute'
 import { RELATIONS } from './graphRelations'
 import { AnimationSchema } from './manim'
 import { BACKEND_IDS, BackendSaveSchema, WebModeSchema, type RetrievalStatus, type RetrievalUsage, type WebPageView } from './retrieval'
@@ -1216,6 +1217,12 @@ export const capabilities = {
       ai: { effect: 'read' }
     }),
     start: cap<void>()({ description: '识别资料中的扫描页、表格（后台任务）', params: [id('sourceId')] })
+  },
+  localCompute: {
+    status: cap<LocalComputeStatus>()({ description: '本地模型的实际计算设备、加速包与下载状态', params: none }),
+    redetect: cap<void>()({ description: '重新检测计算设备，保留用户偏好并等待当前任务后重启', params: none }),
+    retryCuda: cap<void>()({ description: '重试下载 CUDA 加速运行时', params: none }),
+    removeCuda: cap<void>()({ description: '删除 CUDA 加速包并改用可用回退运行时', params: none })
   },
   embedding: {
     status: cap<EmbeddingStatus>()({ description: '向量模型与索引状态', params: none }),

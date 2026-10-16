@@ -149,7 +149,12 @@ export async function recognizerStatus(): Promise<RecognizerStatus> {
   const m = localModel()
   if (status.state !== 'downloading' && status.state !== 'error')
     status = { ...status, state: localRecognizerInstalled(m) ? 'ready' : 'missing' }
-  const size = status.state === 'ready' ? 0 : m.model.size + m.mmproj.size + (await runtimeDownloadSize())
+  const size =
+    status.state === 'downloading'
+      ? status.size
+      : status.state === 'ready'
+        ? 0
+        : m.model.size + m.mmproj.size + (await runtimeDownloadSize())
   return { ...status, size, running: localServer.isRunning(), model: m.name }
 }
 
@@ -161,17 +166,26 @@ export function installRecognizer(): Promise<void> {
   installing = (async () => {
     if (!llamaSupported()) throw new Error(`暂不支持此平台：${process.platform}-${process.arch}`)
     const m = localModel()
-    const runtime = await runtimeDownloadSize()
-    const total = runtime + m.model.size + m.mmproj.size
+    let runtime = await runtimeDownloadSize()
+    const total = () => runtime + m.model.size + m.mmproj.size
     const done = new Map<string, number>()
-    const report = (key: string) => (p: { received: number; speed: number; mirror: string }) => {
+    const report = (key: string) => (p: { received: number; total: number; speed: number; mirror: string }) => {
+      if (key === 'runtime') runtime = p.total
       done.set(key, p.received)
       const sum = [...done.values()].reduce((a, b) => a + b, 0)
-      setStatus({ state: 'downloading', progress: Math.min(0.999, sum / total), mirror: p.mirror, speed: p.speed, message: null })
+      setStatus({
+        state: 'downloading',
+        progress: Math.min(0.999, sum / total()),
+        size: total(),
+        mirror: p.mirror,
+        speed: p.speed,
+        message: null
+      })
     }
     try {
-      setStatus({ state: 'downloading', progress: 0, message: null })
+      setStatus({ state: 'downloading', progress: 0, size: total(), message: null })
       await ensureRuntime(report('runtime'))
+      if (!done.has('runtime')) runtime = 0
       for (const [key, f] of [
         ['model', m.model],
         ['mmproj', m.mmproj]

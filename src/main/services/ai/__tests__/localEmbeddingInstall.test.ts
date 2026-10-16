@@ -17,10 +17,13 @@ vi.mock('../../download', () => ({
   download: async (spec: { size: number }, progress: (p: { received: number; total: number; speed: number; mirror: string }) => void) =>
     progress({ received: spec.size, total: spec.size, speed: 1, mirror: 'fixture' })
 }))
-import { install } from '../localEmbedding'
+import { downloadSize, install } from '../localEmbedding'
 
 beforeEach(() => {
   fixture.blockingRuntime = true
+})
+it('reports the selected runtime plus model size to onboarding and settings', async () => {
+  expect(await downloadSize()).toBe(fixture.runtimeBytes + 309855456)
 })
 it('uses actual CUDA plus model bytes instead of the former 4 percent runtime assumption', async () => {
   const seen: { received: number; total: number }[] = []

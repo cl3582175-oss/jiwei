@@ -87,6 +87,7 @@ import { requestRendererFlush, resolveFlush } from './lifecycle'
 import * as providers from './services/ai/providers'
 import * as chat from './services/ai/chat'
 import * as embedding from './services/ai/embedding'
+import * as localCompute from './services/ai/localCompute'
 import { clearIndex, indexStats, requestIndex, sourceIndexStatus } from './services/ai/indexer'
 import { retrievalQuery } from './services/ai/followUp'
 import { retrieve } from './services/ai/retrieve'
@@ -777,6 +778,15 @@ const handlers: Handlers = {
     source: (_, id) => recognize.sourceRecognition(id),
     start: (_, id) => recognize.startRecognition(id)
   },
+  localCompute: {
+    status: () => localCompute.status(),
+    redetect: async () => {
+      await localCompute.redetect()
+      await embedding.refreshStatus(true)
+    },
+    retryCuda: () => localCompute.retryCuda(),
+    removeCuda: () => localCompute.removeCuda()
+  },
   embedding: {
     status: async () => {
       await embedding.refreshStatus()
@@ -999,6 +1009,7 @@ const handlers: Handlers = {
 }
 
 export function registerIpc(): void {
+  app.once('will-quit', localCompute.initLocalCompute())
   for (const [ns, name, def] of eachCapability()) {
     const fn = (handlers as unknown as Record<string, Record<string, (ctx: Ctx, ...a: unknown[]) => unknown>>)[ns][name]
     if (!fn) throw new Error(`Capability ${ns}.${name} has no handler`)
@@ -1008,7 +1019,7 @@ export function registerIpc(): void {
       if (['updates', 'importer'].includes(ns) && (e.sender !== getMainWindow()?.webContents || e.senderFrame !== e.sender.mainFrame))
         throw new Error('Forbidden')
       if (
-        ['recording', 'people', 'voiceprint', 'lenses', 'series', 'plugins', 'ui'].includes(ns) &&
+        ['recording', 'people', 'voiceprint', 'lenses', 'series', 'plugins', 'ui', 'localCompute'].includes(ns) &&
         (e.sender !== getMainWindow()?.webContents || e.senderFrame !== e.sender.mainFrame)
       )
         throw new Error('Forbidden')

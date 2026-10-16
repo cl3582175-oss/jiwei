@@ -25,6 +25,8 @@ export interface ComputeServiceStatus {
 }
 
 export interface LocalComputeStatus {
+  maintenance: 'switch' | 'redetect' | 'retryCuda' | 'removeCuda' | null
+  benchmark: { state: 'not-required' | 'pending' | 'passed' | 'cpu' | 'failed'; gpuMs: number | null; cpuMs: number | null }
   mode: ComputeMode
   supported: boolean
   devices: GpuDevice[]

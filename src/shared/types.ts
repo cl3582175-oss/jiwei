@@ -1000,6 +1000,8 @@ export interface SkillInfo {
 }
 
 export interface EmbeddingStatus {
+  /** 当前需要下载的模型与实际选定运行时总字节数。 */
+  size?: number
   mode: 'local' | 'cloud'
   /** 本地模型：未下载 / 下载中 / 启动中 / 就绪 / 出错；云端：就绪 / 未配置 */
   state: 'missing' | 'downloading' | 'starting' | 'ready' | 'error' | 'unconfigured'
@@ -1180,6 +1182,7 @@ export interface JiweiEvents {
   /** 花费接近上限（v0.7.5）：spent、limit 为美元 */
   /** 主进程改了设置（如后台更新汇率），界面重新读取（v0.7.5） */
   'settings:changed': Record<string, never>
+  'local-compute:changed': Record<string, never>
   'providers:changed': Record<string, never>
   /** 整份资料的导图 / 总结 / 提纲已作为提案放进笔记（v0.7.6） */
   'digest:done': { noteId: string; title: string; task: 'mindmap' | 'summary' | 'outline'; redirectedFrom?: string; noteTitle?: string }

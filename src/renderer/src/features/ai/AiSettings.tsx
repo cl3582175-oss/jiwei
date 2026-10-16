@@ -1,4 +1,5 @@
 import { SourceUpgradeSettings } from '../library/SourceUpgradeSettings'
+import { LocalComputeSettings } from './LocalComputeSettings'
 import { VoiceSettings } from '../recording/VoiceSettings'
 import { UiSettingsControls } from '../ui/UiSettings'
 import { useEffect, useState } from 'react'
@@ -368,6 +369,9 @@ function EmbeddingSection() {
         <div className="rounded-xl border border-border bg-surface p-4">
           <p className="text-sm text-fg">EmbeddingGemma 2</p>
           <p className="mt-1 text-2xs leading-relaxed text-subtle">{t('ai.emb.localDesc')}</p>
+          {st.state !== 'ready' && (st.size ?? 0) > 0 ? (
+            <p className="mt-1 text-2xs text-subtle">{t('localCompute.downloadSize', { size: formatBytes(st.size!) })}</p>
+          ) : null}
           {st.state === 'downloading' || st.state === 'starting' ? (
             <div className="mt-3">
               <div className="h-1.5 overflow-hidden rounded-full bg-sunken">
@@ -896,6 +900,7 @@ export function AiSettingsTab() {
       )}
 
       <UiSettingsControls />
+      <LocalComputeSettings />
       <EmbeddingSection />
       <TranscriptionSection />
       <VoiceSettings />

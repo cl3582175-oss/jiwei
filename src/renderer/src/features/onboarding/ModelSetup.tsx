@@ -155,7 +155,9 @@ export function ModelSetupCard({ onConnected }: { onConnected?: () => void }) {
             <span className="flex items-center gap-1.5 font-display text-md font-semibold text-fg">
               {i === 0 && <Star className="size-3.5 fill-current text-accent" />}
               {PROVIDER_PRESETS[k].name}
-              {i === 0 && <span className="rounded-full bg-accent px-1.5 py-px text-2xs font-normal text-white">{t('modelSetup.recommended')}</span>}
+              {i === 0 && (
+                <span className="rounded-full bg-accent px-1.5 py-px text-2xs font-normal text-white">{t('modelSetup.recommended')}</span>
+              )}
             </span>
             <span className="mt-1 block text-xs leading-relaxed text-muted">{t(`modelSetup.pitch.${k}`)}</span>
           </button>
@@ -315,7 +317,7 @@ export function PrepChecklist({ autoStart = true }: { autoStart?: boolean }) {
     return () => offs.forEach((off) => off())
   }, [qc])
 
-  // 智能搜索是知识库问答的基础，体积适中（约 310 MB），进入清单即开始下载
+  // 智能搜索进入清单即开始下载，显示当前平台实际选定的模型与运行时总大小。
   const started = useRef(false)
   useEffect(() => {
     if (!autoStart || started.current || !emb || emb.mode !== 'local' || emb.state !== 'missing') return
@@ -341,11 +343,16 @@ export function PrepChecklist({ autoStart = true }: { autoStart?: boolean }) {
             : emb.state === 'starting'
               ? { id: 'search', state: 'busy', note: t('modelSetup.prep.starting') }
               : emb.state === 'error'
-                ? { id: 'search', state: 'error', note: t('modelSetup.prep.failed'), action: () => void api.embedding.installLocal().catch(() => {}) }
+                ? {
+                    id: 'search',
+                    state: 'error',
+                    note: t('modelSetup.prep.failed'),
+                    action: () => void api.embedding.installLocal().catch(() => {})
+                  }
                 : {
                     id: 'search',
                     state: 'idle',
-                    note: t('modelSetup.prep.size', { size: '310 MB' }),
+                    note: t('modelSetup.prep.size', { size: emb.size ? formatBytes(emb.size) : '…' }),
                     action: () => void api.embedding.installLocal().catch(() => {})
                   },
     ocrMode !== 'local'

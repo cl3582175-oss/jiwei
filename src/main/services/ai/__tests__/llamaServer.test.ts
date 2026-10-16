@@ -16,7 +16,7 @@ import { LlamaServer, type RuntimeOwner } from '../llamaServer'
 let servers: LlamaServer[]
 let owner: RuntimeOwner
 let leased: number
-const script = resolve('src/main/services/ai/__tests__/fixtures/llama-server.cjs')
+const script = resolve('src/main/services/ai/__tests__/fixtures/llama-server.mjs')
 beforeEach(() => {
   fixture.root = mkdtempSync(join(tmpdir(), 'jiwei-llama-process-'))
   fixture.mode = 'auto'
@@ -132,6 +132,29 @@ it('does not poison GPU health when the user cancels a live request', async () =
   await expect(pending).rejects.toThrow(/cancelled/)
   expect(gpuFailure('metal', 'embedding')).toBeNull()
   expect(instance.isRunning()).toBe(true)
+})
+
+it('explicit service shutdown never resurrects a process or records a GPU fault', async () => {
+  const waiting = join(fixture.root, 'waiting')
+  const instance = server('none', ['--fixture-waiting', waiting])
+  let settled = false
+  const outcome = instance
+    .run((url) => fetch(`${url}/wait`))
+    .then(
+      () => null,
+      (error: unknown) => error
+    )
+    .finally(() => {
+      settled = true
+    })
+  for (let i = 0; i < 100 && !existsSync(waiting); i++) await delay(5)
+  expect(existsSync(waiting)).toBe(true)
+  await instance.stop()
+  for (let i = 0; i < 50 && !settled && starts().length < 2; i++) await delay(5)
+  expect(starts()).toHaveLength(1)
+  expect(await outcome).toBeInstanceOf(Error)
+  expect(instance.isRunning()).toBe(false)
+  expect(gpuFailure('metal', 'embedding')).toBeNull()
 })
 it('switching settings preserves an in-flight request and queues new work until CPU is ready', async () => {
   const waiting = join(fixture.root, 'waiting')

@@ -1,6 +1,8 @@
 // Transport/process test double only; this fixture is never a model-quality acceptance source.
-const http = require('node:http')
-const fs = require('node:fs')
+import http from 'node:http'
+import fs from 'node:fs'
+import process from 'node:process'
+import { setTimeout, clearTimeout } from 'node:timers'
 const args = process.argv.slice(2)
 const value = (name) => args[args.indexOf(name) + 1]
 const cpu = value('-ngl') === '0'

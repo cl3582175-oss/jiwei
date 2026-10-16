@@ -92,7 +92,7 @@ export function runtimeSpec(
   platform: NodeJS.Platform = process.platform,
   arch: string = process.arch
 ): RuntimeSpec {
-  if (platform === 'darwin' && (arch === 'arm64' || arch === 'x64'))
+  if (platform === 'darwin' && ((arch === 'arm64' && (variant === 'metal' || variant === 'cpu')) || (arch === 'x64' && variant === 'cpu')))
     return { variant, archives: [arch === 'arm64' ? ASSETS.macArm : ASSETS.macIntel] }
   if (platform === 'linux' && arch === 'x64' && (variant === 'cpu' || variant === 'vulkan'))
     return { variant, archives: [variant === 'cpu' ? ASSETS.linuxCpu : ASSETS.linuxVulkan] }
@@ -261,6 +261,24 @@ export class LlamaRuntimeManager {
     return chooseVariant(this.environment.platform, this.environment.arch, await this.nvidia, !cudaRetryAllowed() || this.attemptedCuda)
   }
 
+  async nvidiaDevices(): Promise<NvidiaDevice[]> {
+    this.nvidia ??= this.environment.detect()
+    return this.nvidia
+  }
+  async cudaOption(): Promise<RuntimeSpec | null> {
+    if (this.environment.platform !== 'win32' || this.environment.arch !== 'x64') return null
+    const variant = chooseVariant(this.environment.platform, this.environment.arch, await this.nvidiaDevices())
+    return variant.startsWith('cuda') ? this.manifest(variant) : null
+  }
+  async discover(): Promise<GpuDevice[]> {
+    const runtime = await this.current()
+    const devices = runtime ? await this.io.probe(runtime.binary) : []
+    updateAccel((state) => {
+      state.devices = devices
+    })
+    return devices
+  }
+
   async installed(variant: RuntimeVariant): Promise<RuntimeInstallation | null> {
     const directory = this.directory(variant)
     if (!(await exists(directory))) return null
@@ -372,8 +390,10 @@ export class LlamaRuntimeManager {
       try {
         return await this.install(this.manifest('vulkan'), onProgress)
       } catch (fallbackError) {
-        throw new Error(
-          `CUDA: ${error instanceof Error ? error.message : String(error)}；Vulkan: ${fallbackError instanceof Error ? fallbackError.message : String(fallbackError)}`
+        throw new AggregateError(
+          [error, fallbackError],
+          `CUDA: ${error instanceof Error ? error.message : String(error)}；Vulkan: ${fallbackError instanceof Error ? fallbackError.message : String(fallbackError)}`,
+          { cause: fallbackError }
         )
       }
     }
@@ -444,14 +464,25 @@ export class LlamaRuntimeManager {
       const devices = await this.io.probe(binary)
       controller.signal.throwIfAborted()
       await writeFile(join(staging, 'runtime.json'), JSON.stringify({ build: LLAMA_BUILD, variant: spec.variant, archives: spec.archives }))
+      let previous: string | null = null
       if (await exists(target)) {
         if (await this.inUse(target)) throw new Error('旧运行时仍在使用，稍后重试安装')
-        await rm(target, { recursive: true, force: true })
+        previous = `${target}.previous-${randomUUID()}`
+        await rename(target, previous)
       }
-      await rename(staging, target)
+      try {
+        await rename(staging, target)
+      } catch (error) {
+        if (previous) await rename(previous, target)
+        throw error
+      }
       updateAccel((s) => {
         s.devices = devices
       })
+      if (previous)
+        await rm(previous, { recursive: true, force: true }).catch((error: unknown) => {
+          this.state.error = `旧运行时目录清理未完成：${error instanceof Error ? error.message : String(error)}`
+        })
       for (const asset of spec.archives) await rm(join(root, '.llama-downloads', asset.file), { force: true })
       this.state = { ...this.state, downloading: false, receivedBytes: total, variant: spec.variant, speed: null }
       notifyComputeChanged()
@@ -520,13 +551,11 @@ export class LlamaRuntimeManager {
         }
         if (!loadAccel().cuda.removePending) return
         if (!(await this.installed('vulkan'))) return
-        for (const variant of ['cuda12', 'cuda13'] as const) {
-          const directory = this.directory(variant)
-          if (await exists(directory)) {
-            if (await this.inUse(directory)) return
-            await rm(directory, { recursive: true, force: true })
-          }
+        for (const directory of await this.cudaDirectories()) {
+          if (await this.inUse(directory)) return
+          await rm(directory, { recursive: true, force: true })
         }
+        for (const path of await this.cudaCacheFiles()) await rm(path, { force: true })
         updateAccel((state) => {
           state.cuda.removePending = false
           if (state.activeVariant?.startsWith('cuda')) state.activeVariant = 'vulkan'
@@ -585,11 +614,55 @@ export class LlamaRuntimeManager {
       for (const entry of await readdir(directory, { withFileTypes: true })) {
         const path = join(directory, entry.name)
         if (entry.isDirectory()) total += await size(path)
-        else if (entry.isFile()) total += (await stat(path)).size
+        else if (entry.isFile())
+          total += await stat(path).then(
+            (s) => s.size,
+            (error: NodeJS.ErrnoException) => {
+              if (error.code === 'ENOENT') return 0
+              throw error
+            }
+          )
       }
       return total
     }
-    return (await size(this.directory('cuda12'))) + (await size(this.directory('cuda13')))
+    let total = 0
+    for (const directory of await this.cudaDirectories()) total += await size(directory)
+    for (const path of await this.cudaCacheFiles())
+      total += await stat(path).then(
+        (s) => s.size,
+        (error: NodeJS.ErrnoException) => {
+          if (error.code === 'ENOENT') return 0
+          throw error
+        }
+      )
+    return total
+  }
+  private async cudaDirectories(): Promise<string[]> {
+    const root = this.environment.directory()
+    if (!(await exists(root))) return []
+    const owned = new RegExp(`^llama-${LLAMA_BUILD}-cuda(?:12|13)(?:\\.(?:install|previous)-[0-9a-f-]+)?$`)
+    return (await readdir(root, { withFileTypes: true }))
+      .filter((e) => e.isDirectory() && owned.test(e.name))
+      .map((e) => join(root, e.name))
+  }
+  private async cudaCacheFiles(): Promise<string[]> {
+    const directory = join(this.environment.directory(), '.llama-downloads')
+    if (!(await exists(directory))) return []
+    const files =
+      this.environment.platform === 'win32'
+        ? [...this.manifest('cuda12').archives, ...this.manifest('cuda13').archives].map((a) => a.file)
+        : [ASSETS.cuda12, ASSETS.cuda12rt, ASSETS.cuda13, ASSETS.cuda13rt].map((a) => a.file)
+    return (await readdir(directory, { withFileTypes: true }))
+      .filter(
+        (e) =>
+          e.isFile() &&
+          files.some((file) => {
+            if (!e.name.startsWith(file)) return false
+            const suffix = e.name.slice(file.length)
+            return suffix === '' || suffix === '.part' || /^\.part\.\d+-\d+$/.test(suffix)
+          })
+      )
+      .map((e) => join(directory, e.name))
   }
 }
 

@@ -8,7 +8,7 @@ import { LlamaServer } from './llamaServer'
 import { runEmbeddingBenchmark } from './llamaBenchmark'
 import { getSettings } from '../settings'
 export { freePort } from './llamaServer'
-import { ensureRuntime, llamaSupported, runtimeManager, serverBinary } from './llamaRuntime'
+import { ensureRuntime, llamaSupported, runtimeDownloadSize, runtimeManager, serverBinary } from './llamaRuntime'
 export { modelsDir } from './accel'
 export { ensureRuntime, llamaSupported, runtimeDownloadSize, serverBinary } from './llamaRuntime'
 
@@ -27,6 +27,14 @@ const MODEL = {
 }
 
 const modelPath = (): string => join(modelsDir(), MODEL.file)
+
+export async function downloadSize(): Promise<number> {
+  const modelBytes = await stat(modelPath()).then(
+    (s) => (s.size === MODEL.size ? 0 : MODEL.size),
+    () => MODEL.size
+  )
+  return modelBytes + (llamaSupported() ? await runtimeDownloadSize() : 0)
+}
 
 export async function isInstalled(): Promise<boolean> {
   const [bin, model] = await Promise.all([

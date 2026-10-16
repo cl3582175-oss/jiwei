@@ -7,7 +7,18 @@ import JSZip from 'jszip'
 import { c as tar } from 'tar'
 import type { RuntimeVariant } from '@shared/localCompute'
 
-const fixture = vi.hoisted(() => ({ root: '', mode: 'auto' as 'auto' | 'cpu' }))
+const fixture = vi.hoisted(() => ({ root: '', mode: 'auto' as 'auto' | 'cpu', failRenameTarget: null as string | null }))
+vi.mock('fs/promises', async (original) => {
+  const actual = await original<typeof import('fs/promises')>()
+  return {
+    ...actual,
+    rename: async (from: Parameters<typeof actual.rename>[0], to: Parameters<typeof actual.rename>[1]) => {
+      if (fixture.failRenameTarget === String(to) && String(from).includes('.install-'))
+        throw Object.assign(new Error('rename denied'), { code: 'EIO' })
+      return actual.rename(from, to)
+    }
+  }
+})
 vi.mock('electron', () => ({ app: { getPath: () => fixture.root } }))
 vi.mock('../../settings', () => ({ getSettings: () => ({ ai: { localCompute: fixture.mode } }) }))
 vi.mock('../../download', () => ({ download: vi.fn(), sha256File: vi.fn() }))
@@ -21,6 +32,7 @@ let requested: string[]
 beforeEach(async () => {
   fixture.root = mkdtempSync(join(tmpdir(), 'jiwei-runtime-'))
   fixture.mode = 'auto'
+  fixture.failRenameTarget = null
   archives = new Map()
   specs = new Map()
   requested = []
@@ -37,6 +49,7 @@ beforeEach(async () => {
   }
 })
 afterEach(() => {
+  vi.restoreAllMocks()
   rmSync(fixture.root, { recursive: true, force: true })
 })
 
@@ -86,6 +99,10 @@ function deferred(): { promise: Promise<void>; resolve: () => void } {
 }
 
 describe('pinned release assets', () => {
+  it('rejects backend/platform combinations that have no real runtime package', () => {
+    expect(() => runtimeSpec('cuda13', 'darwin', 'arm64')).toThrow(/不支持/)
+    expect(() => runtimeSpec('metal', 'darwin', 'x64')).toThrow(/不支持/)
+  })
   it('includes both CUDA archives and actual GitHub size/digest', () => {
     const spec = runtimeSpec('cuda13', 'win32', 'x64')
     expect(spec.archives.reduce((sum, f) => sum + f.size, 0)).toBe(576844403)
@@ -103,6 +120,15 @@ describe('pinned release assets', () => {
 })
 
 describe('transactional installation', () => {
+  it('restores an existing target if the final directory rename fails', async () => {
+    const target = join(modelsDir(), 'llama-b11491-vulkan')
+    mkdirSync(target, { recursive: true })
+    writeFileSync(join(target, 'sentinel'), 'preserve')
+    fixture.failRenameTarget = target
+    await expect(manager().install(specs.get('vulkan')!)).rejects.toThrow(/rename denied/)
+    expect(existsSync(join(target, 'sentinel'))).toBe(true)
+    expect(readFileSync(join(target, 'sentinel'), 'utf8')).toBe('preserve')
+  })
   it('installs CUDA and cudart into one complete directory and reports combined progress', async () => {
     const runtime = manager()
     const total = specs.get('cuda13')!.archives.reduce((n, a) => n + a.size, 0)
@@ -164,6 +190,22 @@ describe('transactional installation', () => {
 })
 
 describe('upgrade, offline recovery and opt-out', () => {
+  it('accounts for cached CUDA download bytes and removes only its owned cache files', async () => {
+    legacy()
+    const runtime = manager({
+      download: async (file) => {
+        if (file === 'cuda13-cudart.zip') throw new Error('offline')
+      }
+    })
+    await runtime.ensure()
+    await runtime.waitForUpgrade()
+    const cache = join(modelsDir(), '.llama-downloads')
+    writeFileSync(join(cache, 'unrelated.zip'), 'keep')
+    expect(await runtime.cudaBytes()).toBe(archives.get('cuda13.zip')!.length)
+    await runtime.removeCuda()
+    expect(await runtime.cudaBytes()).toBe(0)
+    expect(readFileSync(join(cache, 'unrelated.zip'), 'utf8')).toBe('keep')
+  })
   it('keeps old runtime serving until a healthy replacement exists and every lease is released', async () => {
     const old = legacy(),
       gate = deferred()

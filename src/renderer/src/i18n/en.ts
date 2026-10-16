@@ -1,4 +1,5 @@
 import { notePrivacyEn } from '../features/notes/notePrivacyMessages'
+import { localComputeEn } from '../features/ai/localComputeMessages'
 import { readyEn } from '../features/library/readinessMessages'
 import { attachEn } from '../features/attachments/messages'
 import { uiEn } from '../features/ui/messages'
@@ -138,6 +139,7 @@ const en: Messages = {
   ...readyEn,
   ...attachEn,
   ui: uiEn,
+  localCompute: localComputeEn,
   updates: updatesEn,
   importer: importerEn,
   discover: discoverEn,
@@ -1156,7 +1158,7 @@ const en: Messages = {
       local: 'Built-in (local)',
       cloud: 'Cloud service',
       localDesc:
-        'An open model by Google DeepMind that runs locally and works offline. First use downloads about 320 MB from the fastest mirror, with integrity checks.',
+        'An open model by Google DeepMind that runs locally and works offline. First use selects the runtime for your compute device and downloads it with integrity checks.',
       install: 'Download and enable',
       downloading: 'Downloading {{pct}}% · from {{mirror}} · {{speed}}/s',
       starting: 'Starting…',

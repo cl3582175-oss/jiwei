@@ -15,6 +15,14 @@ beforeEach(() => {
   sqlite.exec('CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
   fixture.db = drizzle(sqlite)
 })
+it('旧资料库默认自动计算设备，显式仅 CPU 选择会持久化且不改其他 AI 设置', () => {
+  const before = getSettings()
+  expect(before.ai.localCompute).toBe('auto')
+  setSettings(SettingsPatchSchema.parse({ ai: { ...before.ai, localCompute: 'cpu' } }))
+  expect(getSettings().ai.localCompute).toBe('cpu')
+  expect(getSettings().ai.embedding).toEqual(before.ai.embedding)
+  expect(getSettings().ai.chat).toEqual(before.ai.chat)
+})
 it('旧设置补齐组件默认值，局部更新不会抹掉密度与既有 AI 字段', () => {
   fixture
     .db!.insert(settings)
