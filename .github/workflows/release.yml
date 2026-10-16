@@ -56,13 +56,41 @@ jobs:
       - name: 准备预览测试的 Electron 运行时
         run: node -e "require('electron')"
       - name: CCITT 扫描页预览回归（全平台）
+        id: pdf-preview
         shell: bash
+        env:
+          DEBUG: pw:browser,pw:api
         run: |
           if [[ "$RUNNER_OS" == 'Linux' ]]; then
             xvfb-run -a npx playwright test --config playwright.scanned-pdf.config.ts e2e/pdf-preview.spec.ts --grep "project preview renders a CCITT mask"
           else
             npx playwright test --config playwright.scanned-pdf.config.ts e2e/pdf-preview.spec.ts --grep "project preview renders a CCITT mask"
           fi
+      - name: 输出预览失败的界面与应用日志
+        if: failure() && steps.pdf-preview.outcome == 'failure'
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs')
+          const path = require('node:path')
+          const os = require('node:os')
+          const roots = [path.resolve('.superpowers/sdd/v0.14.10-scanned-pdf/test-results')]
+          for (const item of fs.readdirSync(os.tmpdir(), { withFileTypes: true })) {
+            if (item.isDirectory() && item.name.startsWith('jiwei-preview-ccitt-')) {
+              roots.push(path.join(os.tmpdir(), item.name, 'logs'))
+            }
+          }
+          for (const root of roots) {
+            if (!fs.existsSync(root)) continue
+            for (const name of fs.readdirSync(root, { recursive: true })) {
+              if (path.basename(name) !== 'error-context.md' && !name.endsWith('.log')) continue
+              const file = path.join(root, name)
+              console.log(`::group::${file}`)
+              console.log(fs.readFileSync(file, 'utf8'))
+              console.log('::endgroup::')
+            }
+          }
+          NODE
       - name: 打包所有目标（只生成本地文件）
         shell: bash
         # 没配置的 Secret 在 Actions 里是空字符串；electron-builder 会把空的 CSC_LINK 当成证书路径而失败，
