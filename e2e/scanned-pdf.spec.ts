@@ -133,6 +133,9 @@ test('mask upload, explicit blockers, existing-source reprocess, OCR retention a
         ).run(id)
         db.prepare('DELETE FROM source_pages WHERE source_id=? AND page=2').run(id)
         db.prepare('UPDATE sources SET parse_version=2 WHERE id=?').run(id)
+        db.prepare(
+          "INSERT INTO jobs(id,kind,payload,status,run_after,dedupe_key,created_at,updated_at) VALUES('queued-upgrade','source.segment',?,'queued',?,?,1,1)"
+        ).run(JSON.stringify({ sourceId: id, upgrade: true }), Date.now() + 60000, `segment:${id}`)
         const hash = load('node:crypto').createHash('sha1').update('ocr:scan').update('\0').update('PREVIOUS_SYNTHETIC_OCR').digest('hex')
         db.prepare(
           'INSERT INTO source_segments(id,source_id,ordinal,kind,locator,text,hash,created_at,updated_at) VALUES(?,?,0,?,?,?,?,1,1)'
@@ -408,6 +411,9 @@ test('real original has every mask page detected and selected pages produce real
       .toBe(639)
     const full = await snapshot(app, dir, fullId)
     expect(full.pages.filter((p: { page: number }) => p.page >= 5)).toHaveLength(636)
+    expect(full.pages.every((p: { status: string; error: string | null }) => p.status === 'pending' && p.error === null)).toBe(true)
+    expect(full.segments).toHaveLength(2)
+    expect(full.segments.every((s: { locator: string }) => JSON.parse(s.locator).value === 'page=4')).toBe(true)
     const source = await PDFDocument.load(readFileSync(original)),
       selected = await PDFDocument.create(),
       originalPages = [5, 10, 320, 640]

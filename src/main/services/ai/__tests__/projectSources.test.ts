@@ -107,6 +107,8 @@ import { projectReadinessMany, readinessMany } from '../../readiness'
 import { setMessageLanguage } from '../../../lib/messages'
 import { assetPath } from '../../assets'
 import { canReadSource } from '../../attachmentsAccess'
+import { enqueueSegment } from '../../segmentJobs'
+import { setOffPeakPolicy } from '../../jobs'
 
 beforeEach(() => {
   vi.useFakeTimers()
@@ -133,6 +135,7 @@ beforeEach(() => {
   }
 })
 afterEach(() => {
+  setOffPeakPolicy(null)
   vi.clearAllTimers()
   vi.useRealTimers()
   closeProfileDb()
@@ -148,6 +151,30 @@ function file(name: string, text = 'Synthetic project source evidence'): string 
   return path
 }
 const sourceRows = () => f.sql!.prepare('SELECT id,space,ai_excluded,deleted_at FROM sources').all()
+
+it('promotes an already queued automatic upgrade when the project explicitly reprocesses its source', async () => {
+  const a = project('A')
+  const [item] = await projects.addProjectSources(a.id, { origin: 'upload', paths: [file('scan.pdf')] })
+  f.sql!.exec('DELETE FROM jobs')
+  setOffPeakPolicy((at) => at + 60000)
+  enqueueSegment(item.itemId, { upgrade: true, offPeak: true })
+  const before = f.sql!.prepare('SELECT id,run_after FROM jobs').get() as { id: string; run_after: number }
+  expect(before.run_after).toBeGreaterThan(Date.now())
+  projects.reprocessProjectSource(a.id, item.itemId)
+  const after = f.sql!.prepare('SELECT id,payload,run_after FROM jobs').all() as { id: string; payload: string; run_after: number }[]
+  expect(after).toHaveLength(1)
+  expect(after[0].id).toBe(before.id)
+  expect(JSON.parse(after[0].payload)).toMatchObject({ sourceId: item.itemId, upgrade: false })
+  expect(after[0].run_after).toBeLessThanOrEqual(Date.now())
+  f.sql!.prepare("UPDATE jobs SET status='running',payload=? WHERE id=?").run(
+    JSON.stringify({ sourceId: item.itemId, upgrade: true }),
+    before.id
+  )
+  projects.reprocessProjectSource(a.id, item.itemId)
+  const running = f.sql!.prepare("SELECT payload FROM jobs WHERE status='running'").get() as { payload: string }
+  expect(JSON.parse(running.payload).upgrade).toBe(true)
+  expect(f.sql!.prepare("SELECT count(*) n FROM jobs WHERE status='queued'").get()).toEqual({ n: 1 })
+})
 
 it('reprocesses an existing owned PDF on the same source id and preserves OCR identity', async () => {
   const a = project('A'),
