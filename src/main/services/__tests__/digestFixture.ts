@@ -13,6 +13,7 @@ const f = vi.hoisted(() => ({
   model: null as MockLanguageModelV4 | null,
   calls: [] as string[],
   events: [] as { name: string; payload: Record<string, unknown> }[],
+  listeners: new Map<string, Set<() => void>>(),
   language: 'zh-CN',
   recognition: { mode: 'off' as 'off' | 'cloud' | 'local', auto: false, figures: true, providerId: 'controlled', model: 'controlled' },
   vision: true,
@@ -26,7 +27,18 @@ const f = vi.hoisted(() => ({
 }))
 export { f }
 vi.mock('../../db', () => ({ getDb: () => f.db, getSqlite: () => f.sql }))
-vi.mock('../../events', () => ({ emit: (name: string, payload: Record<string, unknown>) => f.events.push({ name, payload }) }))
+vi.mock('../../events', () => ({
+  emit: (name: string, payload: Record<string, unknown>) => {
+    f.events.push({ name, payload })
+    for (const listener of [...(f.listeners.get(name) ?? [])]) listener()
+  },
+  onMainEvent: (name: string, listener: () => void) => {
+    const listeners = f.listeners.get(name) ?? new Set<() => void>()
+    listeners.add(listener)
+    f.listeners.set(name, listeners)
+    return () => listeners.delete(listener)
+  }
+}))
 vi.mock('electron', () => ({
   utilityProcess: {
     fork: () => {
@@ -136,6 +148,7 @@ beforeEach(() => {
   f.db = drizzle(f.sql)
   f.calls = []
   f.events = []
+  f.listeners.clear()
   f.beforeOutput = () => {}
   f.beforePage = async () => {}
   f.language = 'zh-CN'

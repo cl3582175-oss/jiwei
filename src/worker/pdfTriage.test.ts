@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { expect, it } from 'vitest'
 import { drawingSignals, classifyPageNeeds, OPS } from './pdfTriage'
 import { parsePdf } from './parsers'
-import { makeMaskPdf } from '../../e2e/fixtures/makeScanPdf'
+import { makeMaskPdf } from './__tests__/fixtures/maskPdf'
 
 const area = (fns: number[], args: unknown[][]) => drawingSignals(fns, args, 10000, [0, 0, 100, 100]).imageCover
 it('detects a real monochrome ImageMask PDF through the production parser', async () => {

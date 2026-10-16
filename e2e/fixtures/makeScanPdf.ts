@@ -94,28 +94,7 @@ const imageObj = (jpeg: Buffer, w: number, h: number): Buffer[] => [
   Buffer.from('\nendstream', 'latin1')
 ]
 
-/** 自造 1 bit 图像蒙版，保留与黑白扫描 PDF 相同的绘制分支；不包含用户资料。 */
-export function makeMaskPdf(): Buffer {
-  const data = Buffer.alloc(128)
-  for (let row = 0; row < 32; row++) data.fill(row % 4 < 2 ? 0x55 : 0xaa, row * 4, row * 4 + 4)
-  const content = 'q 595 0 0 842 0 0 cm /Scan Do Q'
-  return serialize(
-    [
-      '<< /Type /Catalog /Pages 2 0 R >>',
-      '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
-      '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /XObject << /Scan 4 0 R >> >> /Contents 5 0 R >>',
-      [
-        Buffer.from(
-          `<< /Type /XObject /Subtype /Image /Width 32 /Height 32 /ImageMask true /BitsPerComponent 1 /Length ${data.length} >>\nstream\n`
-        ),
-        data,
-        Buffer.from('\nendstream')
-      ],
-      `<< /Length ${content.length} >>\nstream\n${content}\nendstream`
-    ],
-    1
-  )
-}
+export { makeMaskPdf } from '../../src/worker/__tests__/fixtures/maskPdf'
 
 /** 每页一张图片（占页面上部约四分之三）加几行英文文字层（如图标题），模拟电子书中的插图页 */
 export function makeImagePdf(pages: { jpeg: Buffer; w: number; h: number; text: string[] }[]): Buffer {

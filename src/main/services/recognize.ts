@@ -1,7 +1,8 @@
 import { spawn, type ChildProcess } from 'child_process'
+import { createHash } from 'crypto'
 import { existsSync, rmSync } from 'fs'
 import { join } from 'path'
-import { nativeImage } from 'electron'
+import { nativeImage, net } from 'electron'
 import { and, eq, gte, inArray, lte } from 'drizzle-orm'
 import { generateText } from 'ai'
 import log from 'electron-log/main'
@@ -31,6 +32,7 @@ import {
   type RecognizedNeed
 } from '../lib/recognized'
 import { queueNoteImages, registerNoteImageJob } from './noteImages'
+import { guardRecognition, recognitionScope } from './recognitionAccess'
 import { z } from 'zod'
 import type { JobWaiting, RegionRecognition, ScanPageText, RecognizerStatus, SourceRecognition } from '@shared/types'
 
@@ -116,11 +118,15 @@ const localModel = (): LocalModel => LOCAL_MODELS[recognitionSettings().localMod
 /** 云端看图模型：设置中指定的，否则默认对话模型（能看图时），否则同一服务商中能看图的模型 */
 export function visionModel(): { providerId: string; model: string } | null {
   const r = recognitionSettings()
-  if (r.providerId && r.model) return capsFor(r.providerId, r.model).vision ? { providerId: r.providerId, model: r.model } : null
-  const chat = getSettings().ai.chat
-  if (!chat.providerId) return null
   try {
+    if (r.providerId && r.model) {
+      const row = getProviderRow(r.providerId)
+      return row.enabled && capsFor(r.providerId, r.model).vision ? { providerId: r.providerId, model: r.model } : null
+    }
+    const chat = getSettings().ai.chat
+    if (!chat.providerId) return null
     const row = getProviderRow(chat.providerId)
+    if (!row.enabled) return null
     const models = [chat.model, ...(JSON.parse(row.models) as string[])].filter((m): m is string => !!m)
     const m = models.find((x) => capsFor(chat.providerId, x).vision)
     return m ? { providerId: chat.providerId, model: m } : null
@@ -385,16 +391,34 @@ const PROMPTS: Record<RecognizedNeed, string> = {
     '这一页的正文已经有文字版了，不用转写正文。只说明页面中的图：先写图号和标题，再用几句话说明图的结构——有哪些组成部分、谁包含谁、箭头表示的先后或因果关系、坐标轴与数据趋势。只写图中确实能看到的内容，不要补充图外的知识；看不清的地方直接说看不清。'
 }
 
-async function recognizeCloud(jpeg: Uint8Array, need: RecognizedNeed, signal: AbortSignal): Promise<{ text: string; engine: string }> {
+async function recognizeCloud(
+  jpeg: Uint8Array,
+  need: RecognizedNeed,
+  access: ReturnType<typeof guardRecognition>
+): Promise<{ text: string; engine: string }> {
   const vm = visionModel()
   if (!vm) throw new Error('没有能看图的云端模型：请在设置 → AI 中为模型打开“看图”，或改用本地识别')
-  const built = buildModel({ providerId: vm.providerId, model: vm.model, effort: 'off' })
+  access.check()
+  const built = buildModel({
+    providerId: vm.providerId,
+    model: vm.model,
+    effort: 'off',
+    fetch: async (input, init) => {
+      access.check()
+      const response = await net.fetch(input as string, {
+        ...init,
+        signal: AbortSignal.any([access.signal, ...(init?.signal ? [init.signal] : [])])
+      })
+      access.check()
+      return response
+    }
+  })
   const r = await generateText({
     model: built.model,
     providerOptions: built.providerOptions as never,
     maxOutputTokens: 4000,
     temperature: 0,
-    abortSignal: AbortSignal.any([signal, AbortSignal.timeout(180_000)]),
+    abortSignal: AbortSignal.any([access.signal, AbortSignal.timeout(180_000)]),
     messages: [
       {
         role: 'user',
@@ -405,6 +429,7 @@ async function recognizeCloud(jpeg: Uint8Array, need: RecognizedNeed, signal: Ab
       }
     ]
   })
+  access.check()
   return { text: r.text, engine: `cloud:${vm.model}` }
 }
 
@@ -481,23 +506,20 @@ export function applyRecognized(sourceId: string): number {
   return n
 }
 
-const aiExcluded = (sourceId: string): boolean =>
-  !!getDb().select({ x: sources.aiExcluded }).from(sources).where(eq(sources.id, sourceId)).get()?.x
-
 /** 本次设置下要处理的类型；插图解读走云端，“不发送给 AI”的资料不解读 */
 function wantedNeeds(sourceId: string): RecognizedNeed[] {
   const r = recognitionSettings()
   if (r.mode === 'off') return []
   const needs: RecognizedNeed[] = ['scan', 'table']
   // 插图：本地模型给出简短描述（不出电脑）；云端需要能看图的模型，“不发送给 AI”的资料不上传
-  if (r.figures && (r.mode === 'local' || (visionModel() && !aiExcluded(sourceId)))) needs.push('figure')
+  if (r.figures && (r.mode === 'local' || (visionModel() && recognitionScope(sourceId, 'cloud')))) needs.push('figure')
   return needs
 }
 
 function engineState(sourceId: string): SourceRecognition['engine'] {
   const r = recognitionSettings()
   if (r.mode === 'off') return 'off'
-  if (r.mode === 'cloud' && aiExcluded(sourceId)) return 'excluded'
+  if (!recognitionScope(sourceId, r.mode)) return 'excluded'
   if (r.mode === 'local' && !localRecognizerInstalled()) return 'needs-install'
   if (r.mode === 'cloud' && !visionModel()) return 'no-vision-model'
   return 'ready'
@@ -785,7 +807,32 @@ async function recognizeSource(
 ): Promise<{ done: number; failed: number }> {
   const mode = recognitionSettings().mode
   const path = assetPath(a.id, a.ext)
-  const abort = new AbortController()
+  const stamp = (): string => {
+    const vision = mode === 'cloud' ? visionModel() : null
+    const provider = vision ? getProviderRow(vision.providerId) : null
+    return JSON.stringify({
+      mode: recognitionSettings().mode,
+      localModel: localModel().name,
+      vision,
+      // 服务商 ID 相同也可能更换目的地址或凭证；能力自动学习不应撤销正常请求。
+      transport: provider
+        ? {
+            kind: provider.kind,
+            baseUrl: provider.baseUrl,
+            credential: createHash('sha256')
+              .update(provider.apiKeyEnc ?? '')
+              .digest('hex')
+          }
+        : null
+    })
+  }
+  const initial = stamp()
+  const access = guardRecognition(
+    sourceId,
+    mode as 'local' | 'cloud',
+    () => engineState(sourceId) === 'ready' && stamp() === initial,
+    ctx.signal
+  )
   const outcomes = new Map(recognitionOutcomes(ctx.jobId, sourceId).map((page) => [outcomeKey(page), page]))
   const report = (): { done: number; failed: number } => ({
     done: [...outcomes.values()].filter((page) => page.status !== 'failed').length,
@@ -795,8 +842,8 @@ async function recognizeSource(
   let sinceApply = 0
   try {
     while (engineState(sourceId) === 'ready') {
+      access.check()
       if (ctx.isCanceled()) {
-        abort.abort()
         break
       }
       // 每页重新计算：新确认的范围及时提到前面，取消后不再继续范围外工作。
@@ -814,6 +861,7 @@ async function recognizeSource(
       if (!todo.length) break
       const p = todo[0]
       const set = (patch: Partial<typeof sourcePages.$inferInsert>): void => {
+        access.check()
         ctx.signal?.throwIfAborted()
         if (ctx.isCanceled()) throw new Error('canceled')
         const db = getDb()
@@ -835,18 +883,19 @@ async function recognizeSource(
       }
       try {
         const jpeg = await pageImage(path, a.ext, p.page, ctx)
+        access.check()
         let text: string
         let engine: string
         let blocks: GroundBlock[] | null = null
         if (mode === 'cloud') {
-          const r = await recognizeCloud(jpeg, p.need, abort.signal)
+          const r = await recognizeCloud(jpeg, p.need, access)
           if (isDegenerate(r.text)) throw new Error('识别结果异常（大量重复字符）')
           engine = r.engine
           text = normalizeRecognized(r.text)
           if (p.need === 'table') text = extractTables(text)
         } else {
           // 本地 LightOnOCR-3：grounding 输出按页面类型整理（插图为简短描述，图表为数据表）
-          const raw = await recognizeLocalRobust(jpeg, abort.signal)
+          const raw = await recognizeLocalRobust(jpeg, access.signal)
           engine = `local:${localModel().name}`
           blocks = parseGrounding(raw)
           text = blocks.length ? groundedText(blocks, p.need) : normalizeRecognized(raw)
@@ -855,7 +904,7 @@ async function recognizeSource(
         set({ status: text ? 'done' : 'skipped', text: text || null, engine, blocks: blocks ? JSON.stringify(blocks) : null, error: null })
         sinceApply++
       } catch (e) {
-        if (ctx.isCanceled()) break
+        if (ctx.isCanceled() || access.signal.aborted) break
         const msg = e instanceof Error ? e.message : String(e)
         log.warn('[ocr] page failed', sourceId, p.page, msg)
         set({ status: 'failed', error: msg.slice(0, 500) })
@@ -872,8 +921,13 @@ async function recognizeSource(
       ctx.yieldPoint()
     }
   } finally {
-    applyRecognized(sourceId)
-    emit('recognition:source', { sourceId })
+    try {
+      // 普通取消仍并入已经保存的结果；权限撤销不再写入任何派生分段。
+      if (access.canApply()) applyRecognized(sourceId)
+    } finally {
+      access.dispose()
+      emit('recognition:source', { sourceId })
+    }
   }
   const result = report()
   if (result.failed && !result.done)

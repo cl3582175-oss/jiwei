@@ -707,6 +707,7 @@ export const capabilities = {
     remove: cap<void>()({ description: '删除项目，保留或同时删除对话', params: [id(), ['mode', z.enum(['recent', 'delete'])]] }),
     conversations: cap<ChatProjectConversation[]>()({ description: '列出项目对话', params: [id()] }),
     sources: cap<ChatProjectSource[]>()({ description: '列出项目来源及处理状态', params: [id()] }),
+    reprocessSource: cap<void>()({ description: '重新读取项目文件，保留已有识别和引用', params: [id(), id('sourceId')] }),
     addSources: cap<ChatProjectSource[]>()({ description: '添加项目来源', params: [id(), ['input', ProjectSourcesInputSchema]] }),
     removeSource: cap<void>()({ description: '从项目移除来源', params: [id(), ['itemType', z.enum(['note', 'source'])], id('itemId')] }),
     archiveSource: cap<void>()({

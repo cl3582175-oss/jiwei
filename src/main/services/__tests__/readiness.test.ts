@@ -31,6 +31,19 @@ import { sourceJobTitle } from '../sourceJobTitle'
 import { setMessageLanguage } from '../../lib/messages'
 import { readinessMessage } from '@shared/readiness'
 
+it('explains why a scanned document cannot start instead of hiding the recognition blocker', () => {
+  source('blocked')
+  scan('blocked', 1)
+  for (const engine of ['off', 'no-vision-model', 'excluded']) {
+    f.engine = engine
+    const state = ready.sourceReadiness('blocked')
+    expect(state).toMatchObject({ state: 'unreadable', reason: 'scan-pending', pending: 1, blockedBy: engine, action: null })
+    expect(readinessMessage(state)?.key).toBe(
+      { off: 'readyScanOff', 'no-vision-model': 'readyScanNoVision', excluded: 'readyScanExcluded' }[engine]
+    )
+  }
+})
+
 beforeEach(() => {
   f.engine = 'ready'
   f.running = false

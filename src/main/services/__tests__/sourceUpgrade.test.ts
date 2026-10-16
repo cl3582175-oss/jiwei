@@ -4,6 +4,7 @@ import { drizzle } from 'drizzle-orm/better-sqlite3'
 import { getLoadablePath } from 'sqlite-vec'
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
+import { CURRENT_PARSE_VERSION } from '@shared/formats'
 
 const f = vi.hoisted(() => ({ sql: null as Database.Database | null, db: null as ReturnType<typeof drizzle> | null, enabled: true }))
 vi.mock('../../db', () => ({ getDb: () => f.db, getSqlite: () => f.sql }))
@@ -63,6 +64,18 @@ const queued = () =>
     run_after: number
   }[]
 
+it('upgrades old private project PDFs locally without making them globally readable', async () => {
+  f.sql!.exec(`INSERT INTO assets(id,ext,size,created_at) VALUES('pdf','pdf',1,1);
+    UPDATE sources SET ai_excluded=1 WHERE id='older';
+    UPDATE sources SET space='attachment',ai_excluded=1,asset_id='pdf',kind='pdf',parse_version=2 WHERE id='newer';
+    INSERT INTO chat_projects(id,name,created_at,updated_at) VALUES('project','Synthetic',1,1);
+    INSERT INTO project_sources(project_id,item_type,item_id,origin,created_at) VALUES('project','source','newer','upload',1);`)
+  startSourceUpgrade()
+  await vi.advanceTimersByTimeAsync(300000)
+  expect(queued().map((j) => JSON.parse(j.payload))).toEqual([{ sourceId: 'newer', upgrade: true }])
+  expect(f.sql!.prepare("SELECT ai_excluded,space FROM sources WHERE id='newer'").get()).toEqual({ ai_excluded: 1, space: 'attachment' })
+})
+
 it('启动五分钟后从新到旧一次排一份，沿用去重键与低谷调度', async () => {
   startSourceUpgrade()
   expect(queued()).toEqual([])
@@ -72,7 +85,8 @@ it('启动五分钟后从新到旧一次排一份，沿用去重键与低谷调�
   expect(queued()[0].run_after).toBeGreaterThan(Date.now())
   scheduleSourceUpgrade()
   expect(queued()).toHaveLength(1)
-  f.sql!.exec("UPDATE sources SET parse_version=2 WHERE id='newer';UPDATE jobs SET status='done'")
+  f.sql!.prepare("UPDATE sources SET parse_version=? WHERE id='newer'").run(CURRENT_PARSE_VERSION)
+  f.sql!.exec("UPDATE jobs SET status='done'")
   scheduleSourceUpgrade()
   expect(JSON.parse(queued()[0].payload).sourceId).toBe('older')
   expect(sourceUpgradeStatus()).toEqual({ total: 2, done: 1, running: true, paused: false })

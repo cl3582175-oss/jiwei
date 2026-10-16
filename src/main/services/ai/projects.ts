@@ -4,7 +4,9 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { getDb, getSqlite } from '../../db'
 import { profileDb } from '../../db/profile'
-import { chatProjects, conversations, notes, projectSources, sources } from '../../db/schema'
+import { assets, chatProjects, conversations, notes, projectSources, sources } from '../../db/schema'
+import { FORMATS } from '@shared/formats'
+import { enqueueSegment } from '../segmentJobs'
 import { newId } from '../../lib/ids'
 import { emit } from '../../events'
 import { deviceId } from '../device'
@@ -185,6 +187,22 @@ export function projectSourceList(id: string): ChatProjectSource[] {
 const sourceChanges = (): void => {
   emit('chatProjects:changed', {})
   emit('attachments:changed', {})
+}
+
+/** 保留同一来源、已识别页和批注，重新检测旧文件；项目权限在排队前由后端验证。 */
+export function reprocessProjectSource(id: string, sourceId: string): void {
+  requireProject(id)
+  if (!projectReadinessMany(id, [sourceId])[sourceId])
+    throw new Error(tr('来源不属于此项目或已不可用', 'Source is outside this project or unavailable'))
+  const asset = getDb()
+    .select({ ext: assets.ext })
+    .from(sources)
+    .innerJoin(assets, eq(assets.id, sources.assetId))
+    .where(eq(sources.id, sourceId))
+    .get()
+  if (!asset || !FORMATS[asset.ext]?.parser) throw new Error(tr('这份来源暂不支持重新读取', 'This source cannot be reprocessed'))
+  enqueueSegment(sourceId)
+  sourceChanges()
 }
 
 export async function addProjectSources(id: string, input: ProjectSourcesInput, win?: BrowserWindow | null): Promise<ChatProjectSource[]> {

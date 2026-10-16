@@ -57,6 +57,10 @@ const en: Messages = {
     sourceReady: 'Ready',
     sourceUnavailable: 'Source deleted or unavailable',
     sourceMenu: 'Source menu',
+    reprocessSource: 'Reprocess',
+    reprocessingSource: 'Reading again; existing recognition and references are preserved',
+    cloudRecognitionNotice:
+      'Scanned pages in project uploads follow your cloud recognition settings and are sent to the selected model provider. Unarchived results remain available only in this project.',
     openSource: 'Open',
     removeSource: 'Remove from project',
     removeSourceTitle: 'Remove “{{name}}”?',

@@ -149,6 +149,27 @@ function file(name: string, text = 'Synthetic project source evidence'): string 
 }
 const sourceRows = () => f.sql!.prepare('SELECT id,space,ai_excluded,deleted_at FROM sources').all()
 
+it('reprocesses an existing owned PDF on the same source id and preserves OCR identity', async () => {
+  const a = project('A'),
+    b = project('B')
+  const [item] = await projects.addProjectSources(a.id, { origin: 'upload', paths: [file('scan.pdf')] })
+  f.sql!.exec('DELETE FROM jobs')
+  f.sql!.prepare(
+    "INSERT INTO source_pages(source_id,page,need,status,text,updated_at) VALUES(?,1,'scan','done','Previously recognized',1)"
+  ).run(item.itemId)
+  projects.reprocessProjectSource(a.id, item.itemId)
+  const queued = f.sql!.prepare("SELECT payload FROM jobs WHERE kind='source.segment'").all() as { payload: string }[]
+  expect(queued.map((j) => JSON.parse(j.payload).sourceId)).toEqual([item.itemId])
+  expect(f.sql!.prepare('SELECT status,text FROM source_pages WHERE source_id=?').get(item.itemId)).toEqual({
+    status: 'done',
+    text: 'Previously recognized'
+  })
+  expect(sourceRows()).toContainEqual(expect.objectContaining({ id: item.itemId, space: 'attachment', ai_excluded: 1 }))
+  expect(() => projects.reprocessProjectSource(b.id, item.itemId)).toThrow()
+  projects.removeProjectSource(a.id, 'source', item.itemId)
+  expect(() => projects.reprocessProjectSource(a.id, item.itemId)).toThrow()
+})
+
 describe('project source storage and management', () => {
   it('uploads use separate identities for library, each project, and ordinary conversation while sharing asset bytes', async () => {
     const path = file('project-file.txt'),

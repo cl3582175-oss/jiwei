@@ -11,11 +11,13 @@ import { errText } from '../chat/useChat'
 export function ReadinessAction({
   sourceId,
   readiness,
-  conversationId = null
+  conversationId = null,
+  projectId
 }: {
   sourceId: string
   readiness: Readiness
   conversationId?: string | null
+  projectId?: string
 }) {
   const { t } = useTranslation(),
     [busy, setBusy] = useState(false)
@@ -32,7 +34,8 @@ export function ReadinessAction({
   const run = async () => {
     setBusy(true)
     try {
-      if (retry) await api.sources.retry(sourceId, conversationId)
+      if (retry && projectId) await api.chatProjects.reprocessSource(projectId, sourceId)
+      else if (retry) await api.sources.retry(sourceId, conversationId)
       else if (action === 'recognize') await api.recognition.start(sourceId)
       else if (action === 'install-recognizer') await api.recognition.install()
       else if (action === 'transcribe') await api.asr.transcribe(sourceId)
@@ -66,11 +69,13 @@ export function readinessText(readiness: Readiness, t: (key: string, values?: Re
 export function ReadinessLabel({
   sourceId,
   readiness,
-  conversationId = null
+  conversationId = null,
+  projectId
 }: {
   sourceId: string
   readiness?: Readiness
   conversationId?: string | null
+  projectId?: string
 }) {
   const { t } = useTranslation()
   if (!readiness || readiness.state === 'ready') return null
@@ -88,7 +93,7 @@ export function ReadinessLabel({
           {text}
         </span>
       </Tip>
-      <ReadinessAction sourceId={sourceId} readiness={readiness} conversationId={conversationId} />
+      <ReadinessAction sourceId={sourceId} readiness={readiness} conversationId={conversationId} projectId={projectId} />
     </div>
   )
 }

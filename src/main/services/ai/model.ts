@@ -14,6 +14,8 @@ export interface ModelRequest {
   providerId: string
   model: string
   effort: Effort
+  /** 后台来源处理可在每次 SDK 尝试前复核授权。 */
+  fetch?: typeof globalThis.fetch
 }
 
 export interface BuiltModel {
@@ -116,7 +118,7 @@ function buildRawModel(req: ModelRequest): BuiltModel {
   if (!row.baseUrl) throw new Error(`「${row.name}」还没有填写接口地址`)
   if (preset.needsKey && !apiKey) throw new Error(`「${row.name}」还没有设置 API Key`)
   const effort = clampEffort(kind, req.effort)
-  const fetch = net.fetch as unknown as typeof globalThis.fetch
+  const fetch = req.fetch ?? (net.fetch as unknown as typeof globalThis.fetch)
 
   if (preset.style === 'anthropic') {
     const provider = createAnthropic({ baseURL: row.baseUrl, apiKey, fetch })

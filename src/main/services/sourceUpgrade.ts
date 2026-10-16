@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull, sql } from 'drizzle-orm'
+import { and, desc, eq, isNull, or, sql } from 'drizzle-orm'
 import log from 'electron-log/main'
 import { FORMATS, CURRENT_PARSE_VERSION } from '@shared/formats'
 import { getDb, getSqlite } from '../db'
@@ -22,8 +22,17 @@ const eligible = (sourceId?: string) =>
       and(
         sourceId ? eq(sources.id, sourceId) : undefined,
         isNull(sources.deletedAt),
-        eq(sources.aiExcluded, false),
-        eq(sources.space, 'library'),
+        or(
+          and(eq(sources.aiExcluded, false), eq(sources.space, 'library')),
+          and(
+            eq(sources.space, 'attachment'),
+            eq(assets.ext, 'pdf'),
+            sql`EXISTS (
+            SELECT 1 FROM project_sources ps JOIN chat_projects p ON p.id=ps.project_id AND p.deleted_at IS NULL
+            WHERE ps.item_type='source' AND ps.item_id=${sources.id} AND ps.origin<>'library'
+          )`
+          )
+        ),
         sql`${sources.kind} NOT IN ('audio','video')`,
         sql`NOT EXISTS (SELECT 1 FROM recordings r WHERE r.source_id=${sources.id})`,
         sql`NOT EXISTS (SELECT 1 FROM source_segments g WHERE g.source_id=${sources.id} AND (g.kind='transcript' OR (${sources.url} IS NOT NULL AND g.kind='slide')))`

@@ -476,6 +476,7 @@ const handlers: Handlers = {
     remove: (_, id, mode) => chatProjects.removeProject(id, mode),
     conversations: (_, id) => chatProjects.projectConversations(id),
     sources: (_, id) => chatProjects.projectSourceList(id),
+    reprocessSource: (_, id, sourceId) => chatProjects.reprocessProjectSource(id, sourceId),
     addSources: ({ win }, id, input) => chatProjects.addProjectSources(id, input, win),
     removeSource: (_, id, itemType, itemId) => chatProjects.removeProjectSource(id, itemType, itemId),
     archiveSource: (_, id, itemId, categoryId) => chatProjects.archiveProjectSource(id, itemId, categoryId),

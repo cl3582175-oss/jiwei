@@ -142,6 +142,8 @@ export function useProjectSources(id: string) {
         'jobs:changed',
         'recognition:source',
         'recognition:status',
+        'settings:changed',
+        'providers:changed',
         'embedding:status'
       ] as const
     ).map((event) => window.jiweiEvents.on(event, changed))

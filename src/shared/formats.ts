@@ -7,7 +7,7 @@ export interface FormatInfo {
   label: string
   note?: { zh: string; en: string }
 }
-export const CURRENT_PARSE_VERSION = 2
+export const CURRENT_PARSE_VERSION = 3
 const legacy = {
   zh: '暂时读不了旧版 .xls / .ppt 的内容。在 Excel / PowerPoint 里另存为 .xlsx / .pptx 后重新导入即可。',
   en: "Legacy .xls / .ppt content can't be read yet. Save it as .xlsx / .pptx and import again."

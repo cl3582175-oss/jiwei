@@ -47,7 +47,15 @@ function calculate(row: SourceRow): Readiness {
         : engine === 'needs-install'
           ? 'install-recognizer'
           : null
-    const scan = { reason: 'scan-pending' as const, pending, total: pages.length, action, ...(recognizing ? { recognizing } : {}) }
+    const blockedBy = engine === 'off' || engine === 'no-vision-model' || engine === 'excluded' ? engine : undefined
+    const scan = {
+      reason: 'scan-pending' as const,
+      pending,
+      total: pages.length,
+      action,
+      ...(recognizing ? { recognizing } : {}),
+      ...(blockedBy ? { blockedBy } : {})
+    }
     return counts.segments ? { state: 'partial', ...scan } : { state: 'unreadable', ...scan }
   }
   if (!counts.segments) return { state: 'unreadable', reason: 'empty', action: null }

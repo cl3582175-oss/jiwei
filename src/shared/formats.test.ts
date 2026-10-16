@@ -2,7 +2,7 @@ import { expect, it } from 'vitest'
 import { FORMATS, CURRENT_PARSE_VERSION } from './formats'
 import { CODE_EXTS } from './attachments'
 it('统一格式表保留既有格式、代码和识别路径，并开放doc解析', () => {
-  expect(CURRENT_PARSE_VERSION).toBe(2)
+  expect(CURRENT_PARSE_VERSION).toBe(3)
   expect(FORMATS.doc).toMatchObject({ kind: 'document', parser: 'parseDoc' })
   expect(FORMATS.docx.parser).toBe('parseDocx')
   expect(FORMATS.xlsx.parser).toBe('parseXlsx')

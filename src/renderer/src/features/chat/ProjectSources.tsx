@@ -1,11 +1,11 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQueryClient } from '@tanstack/react-query'
-import { Archive, FileText, FolderOpen, LoaderCircle, MoreHorizontal, NotebookText, Plus, Unlink } from 'lucide-react'
+import { Archive, FileText, FolderOpen, LoaderCircle, MoreHorizontal, NotebookText, Plus, RotateCw, Unlink } from 'lucide-react'
 import { toast } from 'sonner'
 import type { ChatProjectSource } from '@shared/chatProjects'
 import type { SourceKind } from '@shared/types'
-import { useProjectSources } from '@/lib/queries'
+import { useProjectSources, useSettings } from '@/lib/queries'
 import { api, cn, formatRelative } from '@/lib/utils'
 import { useApp } from '@/store/app'
 import { Button } from '@/components/ui/button'
@@ -25,12 +25,14 @@ export function ProjectSources({ projectId }: { projectId: string }) {
   const { t, i18n } = useTranslation()
   const qc = useQueryClient()
   const { data: sources = [], isPending, isError, refetch } = useProjectSources(projectId)
+  const { data: settings } = useSettings()
   const adder = useAddProjectSources(projectId)
   const [adding, setAdding] = useState(false)
   const [filter, setFilter] = useState<SourceFilter>('all')
   const [sort, setSort] = useState<SourceSort>('newest')
   const [archive, setArchive] = useState<ChatProjectSource | null>(null)
   const [removing, setRemoving] = useState<string | null>(null)
+  const [reprocessing, setReprocessing] = useState<string | null>(null)
   const selected = sources
     .filter((item) => filter === 'all' || originFilter[item.origin] === filter)
     .sort((a, b) =>
@@ -45,6 +47,18 @@ export function ProjectSources({ projectId }: { projectId: string }) {
     if (!item.available) return
     if (item.itemType === 'note') useApp.getState().openNote(item.itemId)
     else useApp.getState().openSource(item.itemId)
+  }
+  const reprocess = async (item: ChatProjectSource): Promise<void> => {
+    setReprocessing(item.itemId)
+    try {
+      await api.chatProjects.reprocessSource(projectId, item.itemId)
+      refresh()
+      toast.success(t('projects.reprocessingSource'))
+    } catch (error) {
+      toast.error(errText(error))
+    } finally {
+      setReprocessing(null)
+    }
   }
   const remove = async (item: ChatProjectSource): Promise<void> => {
     if (
@@ -67,6 +81,11 @@ export function ProjectSources({ projectId }: { projectId: string }) {
   }
   return (
     <>
+      {settings?.ai.recognition?.mode === 'cloud' && (
+        <p className="mt-4 text-xs leading-relaxed text-muted" data-testid="project-ocr-cloud-notice">
+          {t('projects.cloudRecognitionNotice')}
+        </p>
+      )}
       <ProjectSourceDropZone busy={adder.adding} addFiles={adder.addFiles} className="mt-4 min-h-64">
         <div className="mb-4 flex flex-wrap items-center justify-end gap-2">
           <label className="flex items-center gap-1.5 text-xs text-muted">
@@ -175,7 +194,7 @@ export function ProjectSources({ projectId }: { projectId: string }) {
                     </p>
                   ) : item.readiness && item.readiness.state !== 'ready' ? (
                     <div aria-label={readinessText(item.readiness, t)} role="status">
-                      <ReadinessLabel sourceId={item.itemId} readiness={item.readiness} />
+                      <ReadinessLabel sourceId={item.itemId} readiness={item.readiness} projectId={projectId} />
                     </div>
                   ) : (
                     <p role="status" className="mt-2 text-2xs text-accent">
@@ -200,6 +219,12 @@ export function ProjectSources({ projectId }: { projectId: string }) {
                     </MenuTrigger>
                   </Tip>
                   <MenuContent>
+                    {item.itemType === 'source' && item.kind === 'pdf' && (
+                      <MenuItem disabled={!item.available || reprocessing === item.itemId} onSelect={() => void reprocess(item)}>
+                        <RotateCw />
+                        {t('projects.reprocessSource')}
+                      </MenuItem>
+                    )}
                     <MenuItem disabled={!item.available} onSelect={() => open(item)}>
                       <FolderOpen />
                       {t('projects.openSource')}

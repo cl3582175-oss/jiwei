@@ -2,7 +2,7 @@ import { mkdtemp, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, it, vi } from 'vitest'
-import { makeMaskPdf } from '../../e2e/fixtures/makeScanPdf'
+import { makeMaskPdf } from './__tests__/fixtures/maskPdf'
 vi.mock('./pdfTriage', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./pdfTriage')>()),
   drawingSignals: () => {
