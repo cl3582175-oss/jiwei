@@ -320,6 +320,8 @@ export type ChatSend = Omit<ChatSendRequest, 'scope'> & { scope: ChatScope }
 
 export const AiSettingsSchema = z.object({
   ui: UiSettingsSchema.default(UI_DEFAULTS),
+  /** 本地 llama.cpp 计算设备；旧设置未指定时按 auto 处理。 */
+  localCompute: z.enum(['auto', 'cpu']).optional(),
   chat: z.object({ providerId: Id.nullable(), model: z.string().max(200).nullable() }),
   effort: EffortSchema,
   embedding: z.object({

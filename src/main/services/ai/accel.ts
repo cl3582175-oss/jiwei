@@ -19,7 +19,8 @@ const PolicySchema = z.object({
     failures: z.number().int().nonnegative(),
     disabled: z.boolean(),
     preferVulkan: z.boolean(),
-    reason: z.string().nullable()
+    reason: z.string().nullable(),
+    removePending: z.boolean().optional()
   }),
   devices: z.array(
     z.object({

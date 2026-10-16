@@ -68,9 +68,7 @@ export function installLocal(): Promise<void> {
   setStatus({ mode: 'local', state: 'downloading', progress: 0, message: null })
   installing = local
     .install((p) => {
-      // 运行时约占 4%，模型约占 96%
-      const frac = p.received / p.total
-      setStatus({ progress: p.stage === 'runtime' ? frac * 0.04 : 0.04 + frac * 0.96, mirror: p.mirror, speed: p.speed })
+      setStatus({ progress: p.received / p.total, mirror: p.mirror, speed: p.speed })
     })
     .then(async () => {
       setStatus({ state: 'starting', progress: 1, speed: null })

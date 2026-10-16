@@ -1,45 +1,17 @@
-import { app } from 'electron'
 import { spawn, type ChildProcess } from 'child_process'
-import { chmod, mkdir, readdir, rm, writeFile, stat } from 'fs/promises'
+import { stat } from 'fs/promises'
 import { readFileSync, rmSync, writeFileSync } from 'fs'
 import { createServer } from 'net'
 import { join } from 'path'
 import log from 'electron-log/main'
-import { x as untar } from 'tar'
-import JSZip from 'jszip'
-import { readFile } from 'fs/promises'
 import { download, type DownloadProgress } from '../download'
+import { modelsDir } from './accel'
+import { ensureRuntime, llamaSupported, serverBinary } from './llamaRuntime'
+export { modelsDir } from './accel'
+export { ensureRuntime, llamaSupported, runtimeDownloadSize, serverBinary } from './llamaRuntime'
 
 // 内置向量模型：EmbeddingGemma 2（Google DeepMind，Apache 2.0）由 llama.cpp 的 llama-server 在本机运行。
 // 模型与运行时都在首次使用时下载到所有知识库共享的目录，并校验 sha256。
-
-const LLAMA_BUILD = 'b11491'
-const GH = `https://github.com/ggml-org/llama.cpp/releases/download/${LLAMA_BUILD}`
-/** GitHub 在国内较慢：同时尝试加速镜像，按测速择优 */
-const GH_MIRRORS = (path: string): string[] => [`https://gh-proxy.com/${GH}/${path}`, `https://ghfast.top/${GH}/${path}`, `${GH}/${path}`]
-
-const RUNTIMES: Record<string, { file: string; size: number; sha256: string }> = {
-  'darwin-arm64': {
-    file: `llama-${LLAMA_BUILD}-bin-macos-arm64.tar.gz`,
-    size: 12041314,
-    sha256: '5dc61b413298db5e5c547c39b40d1148844eca23f247f8741444837a7cc3626d'
-  },
-  'darwin-x64': {
-    file: `llama-${LLAMA_BUILD}-bin-macos-x64.tar.gz`,
-    size: 11566950,
-    sha256: '8ffd1d12c35f58216188365fc74e7f27a54e870aceaadb646174b93f149ce8b5'
-  },
-  'linux-x64': {
-    file: `llama-${LLAMA_BUILD}-bin-ubuntu-x64.tar.gz`,
-    size: 17788991,
-    sha256: '21af9f5d83e8598a7a426ee43be7e3af480c3f0ebadb8fd0c081569e8da04c21'
-  },
-  'win32-x64': {
-    file: `llama-${LLAMA_BUILD}-bin-win-cpu-x64.zip`,
-    size: 19482775,
-    sha256: 'dd73bb6652216f354a8786970cc50f6d90768cde2a6c47321976f7bd5b02447b'
-  }
-}
 
 const MODEL = {
   file: 'embeddinggemma-2-Q8_0.gguf',
@@ -52,33 +24,7 @@ const MODEL = {
   ]
 }
 
-/** 所有知识库共享的模型目录（模型很大，不随知识库复制） */
-export function modelsDir(): string {
-  return join(app.getPath('appData'), 'jiwei-models')
-}
-
-const runtimeDir = (): string => join(modelsDir(), `llama-${LLAMA_BUILD}`)
 const modelPath = (): string => join(modelsDir(), MODEL.file)
-
-async function findFile(dir: string, name: string): Promise<string | null> {
-  for (const e of await readdir(dir, { withFileTypes: true })) {
-    const p = join(dir, e.name)
-    if (e.isFile() && e.name === name) return p
-    if (e.isDirectory()) {
-      const f = await findFile(p, name)
-      if (f) return f
-    }
-  }
-  return null
-}
-
-export async function serverBinary(): Promise<string | null> {
-  const name = process.platform === 'win32' ? 'llama-server.exe' : 'llama-server'
-  return stat(runtimeDir()).then(
-    () => findFile(runtimeDir(), name),
-    () => null
-  )
-}
 
 export async function isInstalled(): Promise<boolean> {
   const [bin, model] = await Promise.all([
@@ -91,51 +37,16 @@ export async function isInstalled(): Promise<boolean> {
   return !!bin && model
 }
 
-/** 平台是否有 llama.cpp 运行时 */
-export const llamaSupported = (): boolean => `${process.platform}-${process.arch}` in RUNTIMES
-
-/** 运行时（llama-server）的下载大小；已安装时为 0 */
-export async function runtimeDownloadSize(): Promise<number> {
-  return (await serverBinary()) ? 0 : (RUNTIMES[`${process.platform}-${process.arch}`]?.size ?? 0)
-}
-
-/** 下载并安装 llama.cpp 运行时（向量模型与文档识别共用；已安装则跳过） */
-export async function ensureRuntime(onProgress: (p: DownloadProgress) => void): Promise<string> {
-  const key = `${process.platform}-${process.arch}`
-  const rt = RUNTIMES[key]
-  if (!rt) throw new Error(`暂不支持此平台的本地模型：${key}`)
-  if (!(await serverBinary())) {
-    const archive = join(modelsDir(), rt.file)
-    await download({ name: 'llama.cpp', size: rt.size, sha256: rt.sha256, urls: GH_MIRRORS(rt.file), dest: archive }, onProgress)
-    await rm(runtimeDir(), { recursive: true, force: true })
-    await mkdir(runtimeDir(), { recursive: true })
-    if (rt.file.endsWith('.zip')) {
-      const zip = await JSZip.loadAsync(await readFile(archive))
-      for (const [name, entry] of Object.entries(zip.files)) {
-        if (entry.dir) continue
-        const out = join(runtimeDir(), name)
-        await mkdir(join(out, '..'), { recursive: true })
-        await writeFile(out, await entry.async('nodebuffer'))
-      }
-    } else {
-      await untar({ file: archive, cwd: runtimeDir() })
-    }
-    await rm(archive, { force: true })
-    const bin = await serverBinary()
-    if (!bin) throw new Error('运行时解压后未找到 llama-server')
-    if (process.platform !== 'win32') await chmod(bin, 0o755)
-  }
-  const bin = await serverBinary()
-  if (!bin) throw new Error('运行时解压后未找到 llama-server')
-  return bin
-}
-
 /** 下载并安装运行时与模型（已存在且校验通过则跳过） */
 export async function install(onProgress: (p: DownloadProgress & { stage: 'runtime' | 'model' }) => void): Promise<void> {
   if (!llamaSupported()) throw new Error(`暂不支持此平台的本地向量模型：${process.platform}-${process.arch}，请在设置中改用云端向量服务`)
-  await ensureRuntime((p) => onProgress({ ...p, stage: 'runtime' }))
+  let runtimeBytes = 0
+  await ensureRuntime((p) => {
+    runtimeBytes = p.total
+    onProgress({ ...p, total: runtimeBytes + MODEL.size, stage: 'runtime' })
+  })
   await download({ name: 'EmbeddingGemma 2', size: MODEL.size, sha256: MODEL.sha256, urls: MODEL.urls, dest: modelPath() }, (p) =>
-    onProgress({ ...p, stage: 'model' })
+    onProgress({ ...p, received: runtimeBytes + p.received, total: runtimeBytes + p.total, stage: 'model' })
   )
 }
 
