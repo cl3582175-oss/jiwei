@@ -53,6 +53,8 @@ jobs:
         env:
           # 渲染进程包很大，macOS 运行器默认约 2 GB 堆内存会在打包时溢出
           NODE_OPTIONS: --max-old-space-size=6144
+      - name: 准备预览测试的 Electron 运行时
+        run: node -e "require('electron')"
       - name: CCITT 扫描页预览回归（全平台）
         shell: bash
         run: |
