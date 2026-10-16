@@ -1,8 +1,7 @@
 /** 自造 1 bit 图像蒙版，保留与黑白扫描 PDF 相同的绘制分支；不包含用户资料。 */
-export function makeMaskPdf(): Buffer {
+export function makeMaskPdf(content = 'q 595 0 0 842 0 0 cm /Scan Do Q'): Buffer {
   const data = Buffer.alloc(128)
   for (let row = 0; row < 32; row++) data.fill(row % 4 < 2 ? 0x55 : 0xaa, row * 4, row * 4 + 4)
-  const content = 'q 595 0 0 842 0 0 cm /Scan Do Q'
   return serialize(
     [
       '<< /Type /Catalog /Pages 2 0 R >>',

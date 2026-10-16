@@ -53,6 +53,9 @@ export const OPS = {
   eoFillStroke: 25,
   closeFillStroke: 26,
   closeEOFillStroke: 27,
+  endPath: 28,
+  clip: 29,
+  eoClip: 30,
   paintFormXObjectBegin: 74,
   paintFormXObjectEnd: 75,
   paintImageMaskXObject: 83,
@@ -76,6 +79,24 @@ const PATH_PAINT = new Set<number>([
   OPS.closeEOFillStroke
 ])
 
+/** PDF.js 6 的矩形路径编码；其他路径不能用其包围盒冒充可见面积。 */
+function rectangleClip(args: unknown[], ctm: Matrix): Polygon | null {
+  const data = (args?.[1] as [ArrayLike<number>] | undefined)?.[0]
+  const bounds = args?.[2] as ArrayLike<number> | undefined
+  if (bounds?.length === 4 && Array.from(bounds).every(Number.isFinite) && (bounds[0] === bounds[2] || bounds[1] === bounds[3])) return []
+  if (!data || data.length !== 13 || data[0] !== 0 || data[3] !== 1 || data[6] !== 1 || data[9] !== 1 || data[12] !== 4) return null
+  const coordinates = [data[1], data[2], data[4], data[5], data[7], data[8], data[10], data[11]]
+  if (
+    coordinates.some((n) => !Number.isFinite(n)) ||
+    data[1] !== data[10] ||
+    data[2] !== data[5] ||
+    data[4] !== data[7] ||
+    data[8] !== data[11]
+  )
+    return null
+  return transformedBox([data[1], data[2], data[7], data[8]], ctm)
+}
+
 /** 从操作列表统计图片覆盖面积与矢量绘图次数（图片画在当前变换矩阵下的单位方块中） */
 export function drawingSignals(
   fnArray: number[],
@@ -84,28 +105,46 @@ export function drawingSignals(
   bounds?: number[]
 ): { imageCover: number; paths: number } {
   const identity: Matrix = [1, 0, 0, 1, 0, 0]
-  let state: { ctm: Matrix; clips: Polygon[] } = { ctm: identity, clips: bounds ? [transformedBox(bounds, identity)] : [] }
+  let state: { ctm: Matrix; clips: Polygon[]; unsupportedClip: boolean } = {
+    ctm: identity,
+    clips: bounds ? [transformedBox(bounds, identity)] : [],
+    unsupportedClip: false
+  }
   const stack: (typeof state)[] = []
   const image = new PageImageCoverage()
   let paths = 0
+  let pendingClip = false
+  const addImage = (matrix: Matrix): void => {
+    if (state.unsupportedClip) throw new Error('Unsupported PDF clipping path: image coverage is incomplete')
+    image.add(matrix, state.clips)
+  }
   for (let i = 0; i < fnArray.length; i++) {
     const fn = fnArray[i]
     const args = argsArray[i]
     if (fn === OPS.save) stack.push(state)
-    else if (fn === OPS.restore) state = stack.pop() ?? state
-    else if (fn === OPS.transform) state = { ...state, ctm: multiply(state.ctm, args as unknown as Matrix) }
+    else if (fn === OPS.restore) {
+      state = stack.pop() ?? state
+      pendingClip = false
+    } else if (fn === OPS.transform) state = { ...state, ctm: multiply(state.ctm, args as unknown as Matrix) }
     else if (fn === OPS.paintFormXObjectBegin) {
       stack.push(state)
       const m = args?.[0] as Matrix | null | undefined
       const ctm = m?.length === 6 ? multiply(state.ctm, m) : state.ctm
       const box = args?.[1] as number[] | undefined
-      state = { ctm, clips: box?.length === 4 ? [...state.clips, transformedBox(box, ctm)] : state.clips }
-    } else if (fn === OPS.paintFormXObjectEnd) state = stack.pop() ?? state
-    else if (fn === OPS.paintImageXObject || fn === OPS.paintInlineImageXObject || fn === OPS.paintImageMaskXObject)
-      image.add(state.ctm, state.clips)
+      state = { ...state, ctm, clips: box?.length === 4 ? [...state.clips, transformedBox(box, ctm)] : state.clips }
+    } else if (fn === OPS.paintFormXObjectEnd) {
+      state = stack.pop() ?? state
+      pendingClip = false
+    } else if (fn === OPS.clip || fn === OPS.eoClip) pendingClip = true
+    else if (fn === OPS.constructPath && pendingClip) {
+      const clip = rectangleClip(args, state.ctm)
+      state = clip ? { ...state, clips: [...state.clips, clip] } : { ...state, unsupportedClip: true }
+      pendingClip = false
+      paths++
+    } else if (fn === OPS.paintImageXObject || fn === OPS.paintInlineImageXObject || fn === OPS.paintImageMaskXObject) addImage(state.ctm)
     else if (fn === OPS.paintImageMaskXObjectGroup || fn === OPS.paintInlineImageXObjectGroup) {
       const instances = (fn === OPS.paintImageMaskXObjectGroup ? args[0] : args[1]) as { transform: Matrix }[]
-      for (const instance of instances) image.add(multiply(state.ctm, instance.transform), state.clips)
+      for (const instance of instances) addImage(multiply(state.ctm, instance.transform))
     } else if (fn === OPS.paintImageXObjectRepeat || fn === OPS.paintImageMaskXObjectRepeat) {
       const mask = fn === OPS.paintImageMaskXObjectRepeat
       const positions = args[mask ? 5 : 3] as number[]
@@ -113,7 +152,7 @@ export function drawingSignals(
         const m: Matrix = mask
           ? [args[1] as number, args[2] as number, args[3] as number, args[4] as number, positions[j], positions[j + 1]]
           : [args[1] as number, 0, 0, args[2] as number, positions[j], positions[j + 1]]
-        image.add(multiply(state.ctm, m), state.clips)
+        addImage(multiply(state.ctm, m))
       }
     } else if (PATH_PAINT.has(fn) || fn === OPS.constructPath) paths++
   }

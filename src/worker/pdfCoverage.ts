@@ -79,7 +79,10 @@ export class PageImageCoverage {
   add(matrix: Matrix, clips: Polygon[]): void {
     if (matrix.some((n) => !Number.isFinite(n))) throw new Error('Invalid PDF image transform')
     let polygon = transformedBox([0, 0, 1, 1], matrix)
-    for (const clip of clips) polygon = intersection(polygon, clip)
+    for (const clip of clips) {
+      if (clip.length < 3 || Math.abs(signedArea(clip)) < EPSILON) return
+      polygon = intersection(polygon, clip)
+    }
     if (Math.abs(signedArea(polygon)) < EPSILON) return
     let fresh = [polygon]
     for (const previous of this.pieces) {
