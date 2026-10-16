@@ -205,6 +205,7 @@ interface RuntimeIo {
 
 /** One owner for installation, upgrades and leases shared by embedding and OCR. */
 export class LlamaRuntimeManager {
+  private installedListeners = new Set<(runtime: RuntimeInstallation) => void>()
   private installing = new Map<RuntimeVariant, Promise<RuntimeInstallation>>()
   private progressListeners = new Map<RuntimeVariant, Set<(p: DownloadProgress) => void>>()
   private controllers = new Map<RuntimeVariant, AbortController>()
@@ -245,6 +246,12 @@ export class LlamaRuntimeManager {
   }
   snapshot(): LocalComputeStatus['runtime'] {
     return { ...this.state }
+  }
+  onInstalled(listener: (runtime: RuntimeInstallation) => void): () => void {
+    this.installedListeners.add(listener)
+    return () => {
+      this.installedListeners.delete(listener)
+    }
   }
 
   async desired(): Promise<RuntimeVariant> {
@@ -448,7 +455,15 @@ export class LlamaRuntimeManager {
       for (const asset of spec.archives) await rm(join(root, '.llama-downloads', asset.file), { force: true })
       this.state = { ...this.state, downloading: false, receivedBytes: total, variant: spec.variant, speed: null }
       notifyComputeChanged()
-      return { binary: join(target, relative(staging, binary)), directory: target, variant: spec.variant, legacy: false }
+      const installed = { binary: join(target, relative(staging, binary)), directory: target, variant: spec.variant, legacy: false }
+      for (const listener of this.installedListeners) {
+        try {
+          listener(installed)
+        } catch {
+          /* Installation is already committed; notification failure cannot undo it. */
+        }
+      }
+      return installed
     } catch (error) {
       this.state = { ...this.state, downloading: false, error: error instanceof Error ? error.message : String(error), speed: null }
       notifyComputeChanged()
@@ -545,6 +560,23 @@ export class LlamaRuntimeManager {
   }
   async prepareVulkan(): Promise<void> {
     await this.install(this.manifest('vulkan'))
+  }
+  async fallback(excludeDirectory: string): Promise<RuntimeInstallation | null> {
+    for (const variant of ['vulkan', 'cpu'] as const) {
+      const installed = await this.installed(variant)
+      if (installed && installed.directory !== excludeDirectory) return installed
+    }
+    const directory = join(this.environment.directory(), `llama-${LLAMA_BUILD}`)
+    if (directory === excludeDirectory || !(await exists(directory))) return null
+    const binary = await findBinary(directory, this.binaryName())
+    return binary
+      ? {
+          binary,
+          directory,
+          variant: this.environment.platform === 'darwin' && this.environment.arch === 'arm64' ? 'metal' : 'cpu',
+          legacy: true
+        }
+      : null
   }
   async cudaBytes(): Promise<number> {
     const size = async (directory: string): Promise<number> => {

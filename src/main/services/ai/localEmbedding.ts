@@ -1,12 +1,14 @@
-import { spawn, type ChildProcess } from 'child_process'
 import { stat } from 'fs/promises'
 import { readFileSync, rmSync, writeFileSync } from 'fs'
-import { createServer } from 'net'
 import { join } from 'path'
 import log from 'electron-log/main'
 import { download, type DownloadProgress } from '../download'
 import { modelsDir } from './accel'
-import { ensureRuntime, llamaSupported, serverBinary } from './llamaRuntime'
+import { LlamaServer } from './llamaServer'
+import { runEmbeddingBenchmark } from './llamaBenchmark'
+import { getSettings } from '../settings'
+export { freePort } from './llamaServer'
+import { ensureRuntime, llamaSupported, runtimeManager, serverBinary } from './llamaRuntime'
 export { modelsDir } from './accel'
 export { ensureRuntime, llamaSupported, runtimeDownloadSize, serverBinary } from './llamaRuntime'
 
@@ -52,21 +54,6 @@ export async function install(onProgress: (p: DownloadProgress & { stage: 'runti
 
 /* ——— 本地服务进程 ——— */
 
-let proc: ChildProcess | null = null
-let port = 0
-let starting: Promise<void> | null = null
-
-export function freePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const srv = createServer()
-    srv.listen(0, '127.0.0.1', () => {
-      const p = (srv.address() as { port: number }).port
-      srv.close(() => resolve(p))
-    })
-    srv.on('error', reject)
-  })
-}
-
 /** 记录服务进程 PID：上次异常退出遗留的进程在下次启动时清理 */
 const pidFile = (): string => join(modelsDir(), 'llama-server.pid')
 
@@ -81,74 +68,68 @@ function killOrphan(): void {
   rmSync(pidFile(), { force: true })
 }
 
-export async function start(): Promise<void> {
-  if (proc && port) return
-  if (starting) return starting
-  starting = (async () => {
-    const bin = await serverBinary()
-    if (!bin) throw new Error('本地向量模型尚未安装')
-    killOrphan()
-    port = await freePort()
-    const args = [
-      '-m',
-      modelPath(),
-      '--embedding',
-      '--host',
-      '127.0.0.1',
-      '--port',
-      String(port),
-      '-c',
-      // -c 是四个槽的总预算；HTML 表格在1800字内仍可能超过原来每槽2048词元。
-      '32768',
-      '-b',
-      '8192',
-      '-ub',
-      '8192',
-      '-np',
-      '4'
-    ]
-    log.info('[embedding] starting llama-server on', port)
-    proc = spawn(bin, args, { stdio: ['ignore', 'ignore', 'pipe'], windowsHide: true })
-    if (proc.pid) writeFileSync(pidFile(), String(proc.pid))
-    let stderr = ''
-    proc.stderr?.on('data', (d: Buffer) => (stderr = (stderr + d.toString()).slice(-4000)))
-    proc.on('exit', (code) => {
-      log.warn('[embedding] llama-server exited', code, stderr.slice(-500))
-      proc = null
-      port = 0
-    })
-    for (let i = 0; i < 120; i++) {
-      await new Promise((r) => setTimeout(r, 250))
-      if (!proc) throw new Error(`本地向量模型启动失败：${stderr.slice(-300)}`)
-      const ok = await fetch(`http://127.0.0.1:${port}/health`).then(
-        (r) => r.ok,
-        () => false
-      )
-      if (ok) return
-    }
-    stop()
-    throw new Error('本地向量模型启动超时')
-  })().finally(() => {
-    starting = null
-  })
-  return starting
-}
+const serverArgs = (): string[] => [
+  '-m',
+  modelPath(),
+  '--embedding',
+  // -c 是四个槽的总预算；HTML 表格在 1800 字内仍可能超过原来每槽 2048 词元。
+  '-c',
+  '32768',
+  '-b',
+  '8192',
+  '-ub',
+  '8192',
+  '-np',
+  '4'
+]
+const server = new LlamaServer({
+  service: 'embedding',
+  args: serverArgs,
+  healthTimeoutMs: 30_000,
+  beforeSpawn: killOrphan,
+  onSpawn: (child) => {
+    if (child.pid) writeFileSync(pidFile(), String(child.pid))
+  },
+  onExit: () => rmSync(pidFile(), { force: true })
+})
 
+export const start = (): Promise<void> => server.start()
 export function stop(): void {
-  proc?.kill()
-  rmSync(pidFile(), { force: true })
-  proc = null
-  port = 0
+  void server.stop().catch((error) => log.warn('[embedding] stop failed', error))
 }
+export const isRunning = (): boolean => server.isRunning()
 
-export function isRunning(): boolean {
-  return !!proc && !!port
+/** Fixed synthetic health check; OCR-only installs do not implicitly download an embedding model. */
+export async function prepareLocalCompute(): Promise<void> {
+  if (!['win32', 'linux'].includes(process.platform) || getSettings().ai.localCompute === 'cpu' || !(await isInstalled())) return
+  const runtime = await runtimeManager.ensure()
+  if (runtime.variant === 'cpu') return
+  await runEmbeddingBenchmark(runtime.variant, (computeMode) => {
+    const probe = new LlamaServer({
+      service: 'embedding',
+      args: serverArgs,
+      healthTimeoutMs: 30_000,
+      computeMode,
+      recover: false,
+      publishStatus: false
+    })
+    return {
+      start: () => probe.start(),
+      layers: () => probe.snapshot().offloadedLayers,
+      embed: (inputs) => probe.run((url) => requestEmbedding(url, inputs)),
+      dispose: () => probe.dispose()
+    }
+  })
 }
 
 /** 计算向量（原始 768 维，由调用方截断与归一化） */
 export async function embedRaw(inputs: string[]): Promise<number[][]> {
-  await start()
-  const res = await fetch(`http://127.0.0.1:${port}/v1/embeddings`, {
+  await prepareLocalCompute()
+  return server.run((url) => requestEmbedding(url, inputs))
+}
+
+async function requestEmbedding(url: string, inputs: string[]): Promise<number[][]> {
+  const res = await fetch(`${url}/v1/embeddings`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ input: inputs })
@@ -157,6 +138,3 @@ export async function embedRaw(inputs: string[]): Promise<number[][]> {
   const body = (await res.json()) as { data: { index: number; embedding: number[] }[] }
   return body.data.sort((a, b) => a.index - b.index).map((d) => d.embedding)
 }
-
-// 主进程无论以何种方式退出，都结束本地服务进程
-process.on('exit', () => proc?.kill())

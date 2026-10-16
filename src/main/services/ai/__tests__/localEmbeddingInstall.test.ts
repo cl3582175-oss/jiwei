@@ -4,6 +4,7 @@ const fixture = vi.hoisted(() => ({ blockingRuntime: true, runtimeBytes: 5768444
 vi.mock('electron', () => ({ app: { getPath: () => '/isolated-model-test' } }))
 vi.mock('electron-log/main', () => ({ default: { info: vi.fn(), warn: vi.fn() } }))
 vi.mock('../llamaRuntime', () => ({
+  runtimeManager: { onInstalled: () => () => undefined },
   llamaSupported: () => true,
   serverBinary: async () => '/isolated-model-test/llama-server',
   runtimeDownloadSize: async () => fixture.runtimeBytes,

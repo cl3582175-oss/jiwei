@@ -1,4 +1,3 @@
-import { spawn, type ChildProcess } from 'child_process'
 import { createHash } from 'crypto'
 import { existsSync, rmSync } from 'fs'
 import { join } from 'path'
@@ -10,7 +9,8 @@ import { getDb } from '../db'
 import { assets, jobs, jobSteps, sourcePages, sources } from '../db/schema'
 import { FORMATS } from '@shared/formats'
 import { download } from './download'
-import { ensureRuntime, freePort, llamaSupported, modelsDir, runtimeDownloadSize } from './ai/localEmbedding'
+import { ensureRuntime, llamaSupported, modelsDir, runtimeDownloadSize } from './ai/localEmbedding'
+import { LlamaServer } from './ai/llamaServer'
 import { assetPath } from './assets'
 import { emit } from '../events'
 import { enqueue, JobDeferred, PermanentJobError, patchQueuedPayload, registerJobKind, runJobNow, type JobContext } from './jobs'
@@ -150,7 +150,7 @@ export async function recognizerStatus(): Promise<RecognizerStatus> {
   if (status.state !== 'downloading' && status.state !== 'error')
     status = { ...status, state: localRecognizerInstalled(m) ? 'ready' : 'missing' }
   const size = status.state === 'ready' ? 0 : m.model.size + m.mmproj.size + (await runtimeDownloadSize())
-  return { ...status, size, running: !!proc, model: m.name }
+  return { ...status, size, running: localServer.isRunning(), model: m.name }
 }
 
 let installing: Promise<void> | null = null
@@ -205,96 +205,40 @@ export function installRecognizer(): Promise<void> {
 
 /* ——— 本地模型：按需运行 ——— */
 
-let proc: ChildProcess | null = null
-let procModel: string | null = null
-let port = 0
-/** 服务已通过健康检查（进程启动到模型加载完成之间为 false） */
-let ready = false
-let starting: Promise<void> | null = null
-let idleTimer: NodeJS.Timeout | null = null
-/** 进行中的识别请求数：有请求时不计空闲 */
-let inflight = 0
-
-function touchIdle(): void {
-  if (idleTimer) clearTimeout(idleTimer)
-  idleTimer = null
-  if (inflight > 0) return
-  idleTimer = setTimeout(() => {
-    log.info('[ocr] idle, stopping llama-server')
-    stopRecognizer()
-  }, IDLE_MS)
-}
-
-async function startServer(): Promise<void> {
-  const m = localModel()
-  // 换了模型：重启服务
-  if (proc && ready && procModel !== m.name && inflight <= 1) stopRecognizer()
-  if (starting) return starting
-  if (proc && ready) return
-  starting = (async () => {
-    const bin = await ensureRuntime(() => {})
-    port = await freePort()
-    // 上下文：一页图像约 2800 个词元 + 输出最多 4096；按官方要求关闭思考
-    const args = ['-m', filePath(m.model), '--mmproj', filePath(m.mmproj), '--host', '127.0.0.1', '--port', String(port)]
-    args.push('-c', '12288', '-np', '1', '--no-webui', '--jinja', '--chat-template-kwargs', '{"enable_thinking":false}')
-    log.info('[ocr] starting llama-server', m.name, 'on', port)
-    const child = spawn(bin, args, { stdio: ['ignore', 'ignore', 'pipe'], windowsHide: true })
-    proc = child
-    procModel = m.name
-    let stderr = ''
-    child.stderr?.on('data', (d: Buffer) => (stderr = (stderr + d.toString()).slice(-4000)))
-    child.on('exit', (code) => {
-      log.info('[ocr] llama-server exited', code)
-      if (proc === child) {
-        proc = null
-        port = 0
-        ready = false
-        setStatus({ running: false })
-      }
-    })
-    for (let i = 0; i < 240; i++) {
-      await new Promise((r) => setTimeout(r, 250))
-      if (proc !== child) throw new Error(`识别模型启动失败：${stderr.slice(-300)}`)
-      const ok = await fetch(`http://127.0.0.1:${port}/health`).then(
-        (r) => r.ok,
-        () => false
-      )
-      if (ok) {
-        ready = true
-        setStatus({ running: true })
-        return
-      }
-    }
-    stopRecognizer()
-    throw new Error('识别模型启动超时')
-  })().finally(() => {
-    starting = null
-  })
-  return starting
-}
+const localServer = new LlamaServer({
+  service: 'recognition',
+  healthTimeoutMs: 60_000,
+  idleMs: IDLE_MS,
+  args: () => {
+    const m = localModel()
+    // 一页图像约 2800 词元 + 输出最多 4096；维持上下文预算并关闭思考。
+    return [
+      '-m',
+      filePath(m.model),
+      '--mmproj',
+      filePath(m.mmproj),
+      '-c',
+      '12288',
+      '-np',
+      '1',
+      '--no-webui',
+      '--jinja',
+      '--chat-template-kwargs',
+      '{"enable_thinking":false}'
+    ]
+  },
+  onReady: () => setStatus({ running: true }),
+  onExit: () => setStatus({ running: false })
+})
 
 export function stopRecognizer(): void {
-  if (idleTimer) clearTimeout(idleTimer)
-  idleTimer = null
-  proc?.kill()
-  proc = null
-  procModel = null
-  port = 0
-  ready = false
+  void localServer.stop().catch((error) => log.warn('[ocr] stop failed', error))
   setStatus({ running: false })
 }
-process.on('exit', () => proc?.kill())
 
 async function recognizeLocal(jpeg: Uint8Array, signal: AbortSignal, grounding = true): Promise<string> {
-  inflight++
-  touchIdle()
-  try {
-    await startServer()
-    return await requestLocal(jpeg, signal, grounding)
-  } finally {
-    inflight--
-    touchIdle()
-  }
+  if (['win32', 'linux'].includes(process.platform)) await (await import('./ai/localEmbedding')).prepareLocalCompute()
+  return localServer.run((url) => requestLocal(url, jpeg, signal, grounding), signal)
 }
 
 /**
@@ -312,11 +256,11 @@ async function recognizeLocalRobust(jpeg: Uint8Array, signal: AbortSignal): Prom
   return plain
 }
 
-async function requestLocal(jpeg: Uint8Array, signal: AbortSignal, grounding = true): Promise<string> {
+async function requestLocal(baseUrl: string, jpeg: Uint8Array, signal: AbortSignal, grounding = true): Promise<string> {
   // 服务刚启动时 /health 已就绪但视觉模块可能仍在加载（HTTP 503 Loading model）：稍等重试
   for (let i = 0; ; i++) {
     try {
-      return await requestLocalOnce(jpeg, signal, grounding)
+      return await requestLocalOnce(baseUrl, jpeg, signal, grounding)
     } catch (e) {
       if (!(e instanceof LoadingError) || i >= 60 || signal.aborted) throw e
       await new Promise((r) => setTimeout(r, 1000))
@@ -326,10 +270,10 @@ async function requestLocal(jpeg: Uint8Array, signal: AbortSignal, grounding = t
 
 class LoadingError extends Error {}
 
-async function requestLocalOnce(jpeg: Uint8Array, signal: AbortSignal, grounding: boolean): Promise<string> {
+async function requestLocalOnce(baseUrl: string, jpeg: Uint8Array, signal: AbortSignal, grounding: boolean): Promise<string> {
   // grounding 模式（官方的两种用法之一）：每块带类型与坐标；参数按官方建议
   // 单页最长 5 分钟（慢机器 CPU 推理）；服务进程意外退出时请求会立即失败
-  const res = await fetch(`http://127.0.0.1:${port}/v1/chat/completions`, {
+  const res = await fetch(`${baseUrl}/v1/chat/completions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     signal: AbortSignal.any([signal, AbortSignal.timeout(300_000)]),
