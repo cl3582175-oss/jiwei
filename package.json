@@ -1,7 +1,7 @@
 {
   "name": "jiwei",
   "productName": "积微",
-  "version": "0.14.12",
+  "version": "0.14.13",
   "description": "积微 · Jiwei — 懂你的个人智能体",
   "main": "./out/main/index.js",
   "author": "青风铃",
