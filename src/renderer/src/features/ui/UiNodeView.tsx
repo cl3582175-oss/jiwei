@@ -66,7 +66,7 @@ export function UiNodeView(props: ViewProps) {
                 className="cite-chip"
                 aria-label={`[${n}] ${citation.title}`}
                 title={citation.title}
-                onClick={() => openCitation(citation)}
+                onClick={() => openCitation(citation, ctx.conversationId)}
               >
                 {n}
               </button>

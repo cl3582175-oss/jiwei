@@ -60,7 +60,7 @@ test.afterAll(async () => {
 })
 
 test('P2 测试启动前已隔离模型缓存，不读取真实模型目录', async () => {
-  expect(await app.evaluate(({ app }) => app.getPath('appData'))).toBe(process.env.JIWEI_TEST_MODEL_CACHE_ROOT)
+  expect(await app.evaluate(({ app }) => app.getPath('appData'))).toBe(process.env.JIWEI_TEST_MODEL_CACHE_ROOT || join(userDataDir, 'model-appdata'))
   expect((await page.evaluate(() => window.jiwei.embedding.status())).state).not.toBe('ready')
 })
 
@@ -288,7 +288,19 @@ test('P3 pptx第二页引用跳转真实阅读器第2页', async () => {
     .getByRole('button', { name: /^\[2\]/ })
     .first()
     .click()
-  await expect(page.locator('[data-page="2"].is-flash')).toBeVisible()
+  await expect(page.locator('[data-page="2"]').first()).toBeInViewport()
+  const quote = result.messages.at(-1)!.citations.find((c) => c.n === 2)!.selector!.quote!
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        [...(CSS.highlights.get('jw-source-target') ?? [])]
+          .filter((range) => range.startContainer.isConnected && range.getClientRects().length > 0)
+          .map((range) => range.toString())
+          .join(' ')
+          .replace(/\s+/g, ' ')
+      )
+    )
+    .toContain(quote.replace(/\s+/g, ' '))
   model.setAnswer('受控回答')
 })
 

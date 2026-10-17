@@ -10,6 +10,7 @@ import {
 import type { Readiness } from './readiness'
 import type { LocalComputeStatus } from './localCompute'
 import { RELATIONS } from './graphRelations'
+import { SourceSelectorSchema } from './sourceTarget'
 import { AnimationSchema } from './manim'
 import { BACKEND_IDS, BackendSaveSchema, WebModeSchema, type RetrievalStatus, type RetrievalUsage, type WebPageView } from './retrieval'
 import {
@@ -614,6 +615,7 @@ export const capabilities = {
     count: cap<number>()({ description: '未归档附件数量', params: none })
   },
   sources: {
+    readerProject: cap<string | null>()({ description: '读取用户当前打开的私有来源所属项目，不授予 AI 权限', params: [id('sourceId')] }),
     readiness: cap<Record<string, Readiness>>()({
       description: '批量读取允许AI访问的资料处理状态；附件仅所属对话有效',
       params: [
@@ -718,6 +720,7 @@ export const capabilities = {
     exportMarkdown: cap<string | null>()({ description: '导出项目对话为 Markdown 文件夹', params: [id()] })
   },
   chat: {
+    releaseReader: cap<void>()({ description: '撤销当前文件阅读会话的来源权限', params: [id('conversationId')] }),
     search: cap<ChatSearchHit[]>()({ description: '搜索对话标题与消息', params: [['query', z.string().max(200)]] }),
     get: cap<Conversation | null>()({ description: '读取指定对话，包括就地提问，用于重发原问题', params: [id('conversationId')] }),
     conversations: cap<Conversation[]>()({ description: '列出 AI 对话', params: none }),
@@ -967,7 +970,8 @@ export const capabilities = {
         ['toType', z.enum(['note', 'source'])],
         id('toId'),
         ['relation', z.enum(RELATIONS).optional()],
-        ['reverse', z.boolean().optional()]
+        ['reverse', z.boolean().optional()],
+        ['selector', SourceSelectorSchema.optional()]
       ]
     }),
     unrelate: cap<void>()({

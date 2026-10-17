@@ -40,7 +40,13 @@ export function AnnotationsPanel({ sourceId, isPdf, onClose }: { sourceId: strin
 
   const jump = (a: Annotation, el: HTMLElement): void => {
     const app = useApp.getState()
-    app.setHighlight({ type: 'segment', id: a.selector.ownerId ?? '', locator: a.selector.page ? `page=${a.selector.page}` : null })
+    app.setHighlight({
+      type: 'segment',
+      id: a.selector.ownerId ?? '',
+      sourceId,
+      selector: a.selector,
+      locator: a.selector.page ? `page=${a.selector.page}` : null
+    })
     // 跳转后打开卡片（定位到列表项旁）
     const b = el.getBoundingClientRect()
     if (a.body?.trim() || a.motivation !== 'highlighting')

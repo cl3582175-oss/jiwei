@@ -22,6 +22,8 @@ import { useTextHighlights } from '../annotate/textHighlights'
 import { AnnotationsPanel } from '../annotate/AnnotationsPanel'
 import { ReadingControls, useReadingState } from '../reading/ReadingControls'
 import { ReadingSourceText } from '../reading/ReadingText'
+import { paintSourceRange } from './sourceRange'
+import { toast } from 'sonner'
 
 // 工作区左栏：在应用内查看资料，并把“看到哪里 / 选中了什么”同步到工作区上下文。
 
@@ -99,8 +101,11 @@ function ThreadMarks({ threads, segId }: { threads: Conversation[]; segId: strin
 }
 
 function SegmentList({ sourceId, segs }: { sourceId: string; segs: Segment[] }) {
+  const { t } = useTranslation()
   const highlight = useApp((s) => s.highlight)
   const ref = useRef<HTMLElement>(null)
+  const activeRange = useRef<(() => void) | null>(null)
+  useEffect(() => () => activeRange.current?.(), [sourceId])
   const onSelect = useSourceSelection(sourceId)
   const { data: threads = [] } = useQuery({
     queryKey: ['threads', sourceId],
@@ -111,17 +116,27 @@ function SegmentList({ sourceId, segs }: { sourceId: string; segs: Segment[] }) 
   useTextHighlights(`source:${sourceId}`, ref, annotations, segs)
   // AI 引用跳转：定位并高亮片段
   useEffect(() => {
-    if (highlight?.type !== 'segment') return
+    if (highlight?.type !== 'segment' || (highlight.sourceId && highlight.sourceId !== sourceId)) return
     const page = /page=(\d+)/.exec(highlight.locator ?? '')?.[1]
     const el =
       ref.current?.querySelector<HTMLElement>(`[data-segment="${highlight.id}"]`) ??
       (page ? ref.current?.querySelector<HTMLElement>(`[data-page="${page}"]`) : null)
-    if (!el) return
-    el.scrollIntoView({ block: 'center', behavior: 'smooth' })
-    el.classList.add('is-flash')
-    setTimeout(() => el.classList.remove('is-flash'), 2200)
+    const root = ref.current
+    if (!root) return
+    activeRange.current?.()
+    const clear = highlight.selector?.quote ? paintSourceRange(el ?? root, highlight.selector) : null
+    if (clear) activeRange.current = clear
+    else if (highlight.selector?.quote) toast.info(t('annotate.orphan'))
+    if (!el && !clear) return
+    if (clear) {
+      if (useApp.getState().highlight === highlight) useApp.getState().setHighlight(null)
+      return
+    }
+    el!.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    el!.classList.add('is-flash')
+    setTimeout(() => el!.classList.remove('is-flash'), 2200)
     useApp.getState().setHighlight(null)
-  }, [highlight, segs])
+  }, [highlight, segs, sourceId, t])
   return (
     <article ref={ref} className="source-text select-text" onMouseUp={onSelect} onKeyUp={onSelect}>
       {segs.map((s: Segment) =>
@@ -226,10 +241,27 @@ function IndexChip({ sourceId, conversationId = null }: { sourceId: string; conv
 
 export function SourcePane({ sourceId }: { sourceId: string }) {
   const { t } = useTranslation()
+  const qc = useQueryClient()
   const openSource = useApp((s) => s.openSource)
   const conversationId = useApp((s) => s.sourceConversationId)
   const { data: readiness } = useReadinessMany([sourceId], conversationId)
   const { data: source } = useQuery({ queryKey: ['source', sourceId], queryFn: () => api.sources.get(sourceId) })
+  const reader = useQuery({ queryKey: ['readerProject', sourceId], queryFn: () => api.sources.readerProject(sourceId) })
+  useEffect(() => {
+    if (reader.isPending || useApp.getState().sourceId !== sourceId) return
+    useApp.setState({ sourceProjectId: reader.data ?? null, sourceReaderPending: false })
+  }, [reader.data, reader.isPending, sourceId])
+  useEffect(() => {
+    const refresh = () => {
+      void qc.invalidateQueries({ queryKey: ['readerProject', sourceId] })
+    }
+    const project = window.jiweiEvents.on('chatProjects:changed', refresh)
+    const attachments = window.jiweiEvents.on('attachments:changed', refresh)
+    return () => {
+      project()
+      attachments()
+    }
+  }, [qc, sourceId])
   const annotations = useAnnotations('source', sourceId)
   const [showAnnotations, setShowAnnotations] = useState(false)
   if (!source) return <div className="h-full bg-sunken" />

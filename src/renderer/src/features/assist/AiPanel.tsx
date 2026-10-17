@@ -33,7 +33,7 @@ import { collectTabSources, sameContextTab, withTabSources, type SelectedTab } f
 import type { WorkspaceContext } from '@shared/types'
 import { api, cn, modKey } from '@/lib/utils'
 import { useApp } from '@/store/app'
-import { useConversations, useNote } from '@/lib/queries'
+import { useChatProjects, useConversations, useNote } from '@/lib/queries'
 import { Button } from '@/components/ui/button'
 import { Menu, MenuContent, MenuTrigger, Tip } from '@/components/ui/primitives'
 import { MessageItem, REPLY_EVENT, type ReplyDetail } from '../chat/MessageItem'
@@ -57,6 +57,9 @@ function useContextChips(ctx: WorkspaceContext) {
   const browserOpen = useApp((a) => a.browserOpen)
   const web = useBrowser(activeTab)
   const { data: note } = useNote(ctx.noteId)
+  const projectId = useApp((s) => s.sourceProjectId)
+  const { data: projects = [] } = useChatProjects()
+  const project = projects.find((p) => p.id === projectId)
   const { data: source } = useQuery({
     queryKey: ['source', ctx.sourceId],
     queryFn: () => api.sources.get(ctx.sourceId!),
@@ -75,7 +78,11 @@ function useContextChips(ctx: WorkspaceContext) {
       : ctx.sourceLocator?.match(/t=([\d.]+)/)
         ? fmtTime(Number(ctx.sourceLocator.match(/t=([\d.]+)/)![1]))
         : ''
-    chips.push({ id: 'source', icon: <FileText />, label: `${source.title}${loc ? ` · ${loc}` : ''}` })
+    chips.push({
+      id: 'source',
+      icon: <FileText />,
+      label: `${source.title}${loc ? ` · ${loc}` : ''}${project ? ` · ${t('assist.projectContext', { name: project.name })}` : ''}`
+    })
   }
   // 内置浏览器：还没存为资料的当前网页（发送时自动存为资料）
   if (browserOpen && !ctx.sourceId && aiAllowed(web))
@@ -120,6 +127,7 @@ function PanelBody({ pinned, page }: { pinned: boolean; page: string }) {
   const qc = useQueryClient()
   const ctx = useApp((s) => s.context)
   const view = useApp((s) => s.view)
+  const sourceReaderPending = useApp((s) => s.sourceReaderPending)
   const { conversationId, draft, autoSend } = usePanel()
   const { data: conversations = [] } = useConversations()
   const conv = conversations.find((c) => c.id === conversationId)
@@ -133,6 +141,7 @@ function PanelBody({ pinned, page }: { pinned: boolean; page: string }) {
   const { msgs, setMsgs, streaming } = useChatThread(conversationId)
   const chips = useContextChips(ctx)
   const browserOpen = useApp((s) => s.browserOpen)
+  const readerPreparing = view === 'notes' && !browserOpen && !!ctx.sourceId && sourceReaderPending
   const browserState = useBrowser((s) => s.state)
   const availableTabs = browserState.tabs.filter(aiAllowed)
   const [selectedTabs, setSelectedTabs] = useState<(SelectedTab & { title: string })[]>([])
@@ -162,6 +171,7 @@ function PanelBody({ pinned, page }: { pinned: boolean; page: string }) {
   useEffect(() => input.current?.focus(), [])
 
   const send = async (q: string, uiEvent?: UiEvent): Promise<void> => {
+    if (readerPreparing) return
     if ((!q.trim() && !attachments.ids().length) || attachments.adding || streaming || sending.current) return
     if (!choice.providerId || !choice.model) return void toast.error(t('chat.needModel'))
     const attachmentIds = attachments.ids()
@@ -208,6 +218,10 @@ function PanelBody({ pinned, page }: { pinned: boolean; page: string }) {
           toast(t('assist.tabsUnavailable'))
         }
       }
+      const readerSource =
+        app.view === 'notes' && !app.browserOpen && app.sourceProjectId && packet.sourceId === app.sourceId
+          ? { projectId: app.sourceProjectId, sourceId: app.sourceId! }
+          : undefined
       const r = await sendChat({
         conversationId,
         text: quotedMessage(q.trim(), quote),
@@ -220,8 +234,12 @@ function PanelBody({ pinned, page }: { pinned: boolean; page: string }) {
         // 既有会话由模式菜单立即更新；发送不写回旧渲染值，避免待回包的切换被撤销。
         ...(conversationId ? {} : { web }),
         kind: 'workspace',
-        context: await attachmentContext(packet, conversationId, attachmentIds)
+        readerSource,
+        context: await attachmentContext(packet, conversationId, attachmentIds, { readerSource, requireCurrentSource: true })
       })
+      const current = useApp.getState()
+      if (readerSource && (current.sourceId !== readerSource.sourceId || current.sourceProjectId !== readerSource.projectId))
+        await api.chat.releaseReader(r.conversation.id)
       attachments.clear(attachmentIds)
       if (getPanel(page).conversationId !== conversationId) return
       if (conversationId) useAssist.getState().setReplyQuote(conversationId, null)
@@ -240,7 +258,10 @@ function PanelBody({ pinned, page }: { pinned: boolean; page: string }) {
     }
   }
   // 预填的问题（v0.7.6）：资料起始页选好了范围时直接发出，否则放进输入框等用户确认
-  const ready = !!choice.providerId && !!choice.model
+  const ready = !!choice.providerId && !!choice.model && !readerPreparing
+  useEffect(() => {
+    if (conversationId && off.has('source')) void api.chat.releaseReader(conversationId).catch((error) => toast.error(errText(error)))
+  }, [conversationId, off])
   useEffect(() => {
     if (autoSend) {
       if (!draft || !ready) return
@@ -454,7 +475,7 @@ function PanelBody({ pinned, page }: { pinned: boolean; page: string }) {
               ref={input}
               rows={2}
               value={text}
-              disabled={preparing}
+              disabled={preparing || readerPreparing}
               aria-label={t('assist.panelPh')}
               placeholder={t('assist.panelPh')}
               onPaste={attachments.paste}
@@ -493,7 +514,7 @@ function PanelBody({ pinned, page }: { pinned: boolean; page: string }) {
                   size="icon-sm"
                   variant="primary"
                   className="rounded-full"
-                  disabled={(!text.trim() && !attachments.ids().length) || attachments.adding || preparing}
+                  disabled={(!text.trim() && !attachments.ids().length) || attachments.adding || preparing || readerPreparing}
                   aria-busy={preparing}
                   onClick={() => void send(text)}
                   aria-label={t('chat.send')}

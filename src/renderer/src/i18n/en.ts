@@ -1423,6 +1423,9 @@ const en: Messages = {
     panelPh: 'Ask Jiwei, or hand it a task (Enter to send)',
     context: 'Context attached to this message',
     removeContext: "Don't attach: {{label}}",
+    privateSourceUnavailable:
+      'This private source is not authorized for this conversation. Open it from an active project or explicitly attach an available file.',
+    projectContext: 'Project source: {{name}}',
     restoreContext: 'Attach again: {{label}}',
     s1: 'Draw a mind map in my note from the source on the left',
     s2: 'Generate cue questions for this note',
@@ -1735,6 +1738,10 @@ const en: Messages = {
     list: { from: 'Note', relation: 'Relation', to: 'Other', origin: 'Origin', empty: 'No relations in this view.', sentence: 'Meaning' }
   },
   links: {
+    recordRange: 'Record target range: {{title}}',
+    rangeHelp: 'Open this source, select text or navigate to the target page, then record its range.',
+    rangeSaved: 'Connection range recorded',
+    noRange: 'This connection has no recorded range. Select its source content and use the target button beside the connection to add one.',
     title: 'Connections',
     count: '{{count}} items',
     backlinks: 'Linked here',

@@ -6,6 +6,9 @@ import type { WorkspaceContext } from './types'
 
 const Id = z.string().min(1).max(64)
 
+export const ProjectReaderSourceSchema = z.object({ projectId: Id, sourceId: Id })
+export type ProjectReaderSource = z.infer<typeof ProjectReaderSourceSchema>
+
 export const AnchorKindSchema = z.enum([
   /** 资料中选中的文字 */
   'source-text',

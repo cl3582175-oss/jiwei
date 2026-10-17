@@ -24,7 +24,8 @@ import { ScopePicker } from './ScopePicker'
 import { WebModePicker, useWebMode } from '../retrieval/WebModePicker'
 import { MessageItem, REPLY_EVENT, type ReplyDetail } from './MessageItem'
 import type { UiEvent } from '@shared/ui/events'
-import { errText, sendChat, useChatThread, useModelChoice } from './useChat'
+import { errText, sendChat, useChatThread } from './useChat'
+import { useChatModelChoice } from './modelChoice'
 import { ChatSidebar } from './sidebar/ChatSidebar'
 import { ProjectHome } from './ProjectHome'
 import { Composer } from './Composer'
@@ -44,7 +45,7 @@ function ChatPanel() {
   const projectId = conv?.projectId ?? chatNewProjectId
   const project = projects.find((p) => p.id === projectId)
   const { web, setWeb } = useWebMode(conversationId, conv?.web)
-  const { choice, setChoice, effort, setEffort, provider } = useModelChoice()
+  const { choice, setChoice, effort, setEffort, provider, rememberConversation } = useChatModelChoice(conversationId, projectId)
   const [scope, setScope] = useState<ChatScope>({ type: 'all' })
   const scopeExplicit = useRef(false)
   const { msgs, setMsgs, streaming } = useChatThread(conversationId)
@@ -110,6 +111,7 @@ function ChatPanel() {
         ),
         ...(conversationId ? {} : { incognito: incognitoNew })
       })
+      rememberConversation(conversation.id)
       attachments.clear(attachmentIds)
       if (
         useApp.getState().conversationId !== conversationId ||

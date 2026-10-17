@@ -208,7 +208,7 @@ export function DataNodeView({ node, uiKey, ctx }: { node: DataNode; uiKey: stri
           {data?.type === 'excerpt' && (
             <blockquote className="rounded-r-lg border-l-[3px] border-viz-8 bg-sunken py-2.5 pr-3 pl-3.5">
               <p className="whitespace-pre-wrap text-sm leading-relaxed">{data.text}</p>
-              <button className="mt-2 text-xs text-accent" onClick={() => data.citation && openCitation(data.citation)}>
+              <button className="mt-2 text-xs text-accent" onClick={() => data.citation && openCitation(data.citation, ctx.conversationId)}>
                 {data.title}
                 {data.citation?.locator ? ` · ${data.citation.locator}` : ''}
               </button>

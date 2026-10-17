@@ -229,15 +229,15 @@ export function MediaPane({ source }: { source: Source }) {
 
   // 出处链接 / AI 引用：跳到对应时间并播放
   useEffect(() => {
-    if (!highlight || highlight.type !== 'segment') return
+    if (!highlight || highlight.type !== 'segment' || (highlight.sourceId && highlight.sourceId !== source.id)) return
     const tm = highlight.locator?.match(/t=([\d.]+)/)
     const seg = timed.find((x) => x.s.id === highlight.id)
-    const at = tm ? Number(tm[1]) : seg?.t[0]
+    const at = highlight.selector?.t?.[0] ?? (tm ? Number(tm[1]) : seg?.t[0])
     if (at === undefined) return
     seek(at, true)
     follow.current = 0
     useApp.getState().setHighlight(null)
-  }, [highlight, timed])
+  }, [highlight, timed, source.id])
 
   // 跟随播放滚动转写稿
   useEffect(() => {

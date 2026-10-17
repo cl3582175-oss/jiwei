@@ -10,7 +10,7 @@ import { UiEventSchema } from './ui/events'
 import { UiNodeSchema } from './ui/catalog'
 import { ExternalBackupSchema } from './backup'
 import { DomainSchema, NetworkRuleSchema } from './browserSafety'
-import { AnchorSchema, ContextPacketSchema } from './context'
+import { AnchorSchema, ContextPacketSchema, ProjectReaderSourceSchema } from './context'
 import { RecordingFiltersSchema } from './lens'
 import { UpdateSettingsSchema } from './updates'
 import { RetrievalSettingsSchema, WebModeSchema } from './retrieval'
@@ -289,6 +289,7 @@ export const ChatSendSchema = z
     uiEvent: UiEventSchema.optional(),
     conversationId: Id.nullable(),
     projectId: Id.nullable().optional(),
+    readerSource: ProjectReaderSourceSchema.optional(),
     text: z.string().min(0).max(20000),
     attachments: z.array(Id).max(10).optional(),
     providerId: Id,

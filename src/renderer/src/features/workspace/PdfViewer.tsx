@@ -18,6 +18,8 @@ import { useAnnotate, useAnnotations } from '../annotate/store'
 import { useReadingState } from '../reading/ReadingControls'
 import { ReadingSourceText } from '../reading/ReadingText'
 import { originalRangeText } from '@shared/reading'
+import { paintSourceRange } from './sourceRange'
+import { toast } from 'sonner'
 
 // PDF 阅读：pdf.js 自带的查看器（文字层可选中、可定位）。
 //   - 翻页 → 工作区上下文（page=N）；AI 引用 / 出处链接 → 跳到对应页并闪烁
@@ -82,6 +84,8 @@ export function PdfViewer({ source }: { source: Source }) {
   const [drag, setDrag] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null)
   const setContext = useApp((s) => s.setContext)
   const highlight = useApp((s) => s.highlight)
+  const activeRange = useRef<(() => void) | null>(null)
+  useEffect(() => () => activeRange.current?.(), [source.id])
   const qc = useQueryClient()
   const { data: scanPages = [] } = useQuery({ queryKey: ['scan-pages', source.id], queryFn: () => api.recognition.scanPages(source.id) })
   const { data: segs = [] } = useQuery({ queryKey: ['segments', source.id], queryFn: () => api.segments.list(source.id) })
@@ -102,13 +106,17 @@ export function PdfViewer({ source }: { source: Source }) {
     const el = container.current
     if (!el || !source.assetUrl) return
     let destroyed = false
+    setState('loading')
     const eventBus = new EventBus()
     const linkService = new PDFLinkService({ eventBus })
     const viewer = new PDFViewer({ container: el, eventBus, linkService, textLayerMode: 1, removePageBorders: true })
     linkService.setViewer(viewer)
     viewerRef.current = viewer
     eventBus.on('pagesinit', () => {
+      if (destroyed) return
       viewer.currentScaleValue = 'page-width'
+      setState('ready')
+      setContext({ sourceLocator: 'page=1' })
     })
     eventBus.on('pagechanging', (e: { pageNumber: number }) => {
       setPage(e.pageNumber)
@@ -128,8 +136,6 @@ export function PdfViewer({ source }: { source: Source }) {
         viewer.setDocument(doc)
         linkService.setDocument(doc)
         setPages(doc.numPages)
-        setState('ready')
-        setContext({ sourceLocator: 'page=1' })
       } catch (e) {
         if (!destroyed) {
           console.error('[pdf]', e)
@@ -235,18 +241,63 @@ export function PdfViewer({ source }: { source: Source }) {
   // AI 引用 / 出处链接：跳到对应页并闪烁
   useEffect(() => {
     const v = viewerRef.current
-    if (!highlight || highlight.type !== 'segment' || state !== 'ready' || !v) return
-    let p = Number(highlight.locator?.match(/page=(\d+)/)?.[1] ?? 0)
+    if (
+      !highlight ||
+      highlight.type !== 'segment' ||
+      (highlight.sourceId && highlight.sourceId !== source.id) ||
+      state !== 'ready' ||
+      !v?.pagesCount
+    )
+      return
+    let p = highlight.selector?.page ?? Number(highlight.locator?.match(/page=(\d+)/)?.[1] ?? 0)
     if (!p && highlight.id) for (const [n, id] of pageSegments(segs)) if (id === highlight.id) p = n
-    if (!p) return
+    if (!p || p > v.pagesCount) return
+    activeRange.current?.()
+    activeRange.current = null
     v.currentPageNumber = p
-    requestAnimationFrame(() => {
-      const el = container.current?.querySelector<HTMLElement>(`.page[data-page-number="${p}"]`)
-      el?.classList.add('is-flash')
-      setTimeout(() => el?.classList.remove('is-flash'), 2200)
+    let cancelled = false
+    const current = () => !cancelled && useApp.getState().highlight === highlight
+    const consume = () => {
+      if (current()) useApp.getState().setHighlight(null)
+    }
+    const paint = (): boolean => {
+      const root = container.current?.querySelector<HTMLElement>('.pdfViewer')
+      if (!current() || !root) return false
+      if (highlight.selector?.quote) {
+        const clear = paintSourceRange(root, highlight.selector)
+        if (!clear) return false
+        activeRange.current = clear
+      } else {
+        const el = root.querySelector<HTMLElement>(`.page[data-page-number="${p}"]`)
+        if (!el) return false
+        el.classList.add('is-flash')
+        setTimeout(() => el.classList.remove('is-flash'), 2200)
+      }
+      consume()
+      return true
+    }
+    const rendered = (event: { pageNumber: number }) => {
+      if (paint() || !current()) return
+      if (event.pageNumber === (highlight.selector?.pageEnd ?? p)) {
+        toast.info(t('annotate.orphan'))
+        consume()
+      }
+    }
+    v.eventBus.on('textlayerrendered', rendered)
+    const observer = new MutationObserver(() => {
+      paint()
     })
-    useApp.getState().setHighlight(null)
-  }, [highlight, state, segs])
+    if (container.current) observer.observe(container.current, { childList: true, subtree: true })
+    const frame = requestAnimationFrame(() => {
+      paint()
+    })
+    return () => {
+      cancelled = true
+      cancelAnimationFrame(frame)
+      observer.disconnect()
+      v.eventBus.off('textlayerrendered', rendered)
+    }
+  }, [highlight, state, segs, source.id, t])
 
   // 页面边缘的就地提问标记（页面渲染后插入）
   useEffect(() => {

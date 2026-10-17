@@ -506,9 +506,25 @@ export interface NoteConnections {
   backlinks: { noteId: string; title: string; blockId: string | null; text: string }[]
   /** 手动建立的关联（双向） */
   /** relation：关系类型；outgoing 为 true 时读作“本篇 <关系> 对方”，否则“对方 <关系> 本篇” */
-  linked: { linkId: string; type: 'note' | 'source'; id: string; title: string; relation: Relation; outgoing: boolean }[]
+  linked: {
+    linkId: string
+    type: 'note' | 'source'
+    id: string
+    title: string
+    relation: Relation
+    outgoing: boolean
+    selector?: import('./sourceTarget').SourceSelector
+  }[]
   /** 按内容相似度推荐的相关笔记 / 资料（mine：本篇中最相似的段落；theirs：对方的段落） */
-  related: { type: 'note' | 'source'; id: string; title: string; score: number; mine: string; theirs: string }[]
+  related: {
+    type: 'note' | 'source'
+    id: string
+    title: string
+    score: number
+    mine: string
+    theirs: string
+    selector?: import('./sourceTarget').SourceSelector
+  }[]
   /** 正文提到本篇标题、但还没有链接的笔记 */
   mentions: { noteId: string; title: string; blockId: string; text: string }[]
   /** 向量索引是否可用（不可用时没有推荐） */
@@ -789,6 +805,8 @@ export interface AgentStep {
 
 /** 回答引用的知识库片段 */
 export interface Citation {
+  /** Durable source range, shared with note links and annotations. */
+  selector?: import('./sourceTarget').SourceSelector
   /** 本轮属于项目来源的依据，独立于关键词/语义的检索方式。 */
   projectSource?: boolean
   /** 回答中的引用编号 [n] */

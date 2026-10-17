@@ -2,6 +2,7 @@ import { and, eq, isNull, inArray } from 'drizzle-orm'
 import { getDb, getSqlite } from '../db'
 import { memoryProjectId } from './ai/memoryScope'
 import { sources, conversations, decisions, conversationAttachments as conversationAttachmentsTable } from '../db/schema'
+import { readerSourceAccessible } from './projectReader'
 
 export interface ProjectSourceItem {
   itemType: 'note' | 'source'
@@ -79,6 +80,7 @@ export function canReadSource(sourceId: string, conversationId: string | null): 
   return (
     !!conversationId &&
     !!attachmentOwner(conversationId) &&
+    readerSourceAccessible(sourceId, conversationId) &&
     !!getDb()
       .select()
       .from(conversationAttachmentsTable)

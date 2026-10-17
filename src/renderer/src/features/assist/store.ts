@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { useApp } from '../../store/app'
 import type { Anchor } from '@shared/context'
+import { toast } from 'sonner'
 
 // 阅读辅助的界面状态：选区浮条、就地答复卡片、工作区 AI 面板。
 
@@ -48,7 +49,19 @@ type PanelPatch = Partial<{
   panelAutoSend: boolean
 }>
 const EMPTY_PANEL: PanelState = Object.freeze({ open: false, pinned: false, conversationId: null, draft: null, autoSend: false })
-const pageOf = (s: { view: string; browserOpen: boolean }): string => (s.view === 'notes' && s.browserOpen ? 'browser' : s.view)
+const pageOf = (s: {
+  view: string
+  browserOpen: boolean
+  sourceId?: string | null
+  sourceProjectId?: string | null
+  sourceReaderPending?: boolean
+}): string => {
+  if (s.view !== 'notes') return s.view
+  if (s.browserOpen) return 'browser'
+  if (s.sourceId && s.sourceReaderPending) return `notes:reader-pending:${s.sourceId}`
+  if (s.sourceId && s.sourceProjectId) return `notes:reader:${s.sourceProjectId}:${s.sourceId}`
+  return 'notes'
+}
 export const currentPanelPage = (): string => pageOf(useApp.getState())
 export const usePanelPage = (): string => useApp(pageOf)
 function panelPatch(p: PanelPatch): Partial<PanelState> {
@@ -108,7 +121,23 @@ export function usePanel(): PanelState {
 }
 // Includes browser/notes switches and back/forward navigation, without coupling App navigation to overlays.
 useApp.subscribe((next, previous) => {
-  if (pageOf(next) !== pageOf(previous)) useAssist.setState({ toolbar: null, card: null })
+  const before = pageOf(previous),
+    after = pageOf(next)
+  if (before !== after) {
+    const old = getPanel(before)
+    useAssist.setState({ toolbar: null, card: null })
+    // Keep the panel preference, without carrying private history or draft.
+    if (before.startsWith('notes') && after.startsWith('notes') && !useAssist.getState().panels[after])
+      useAssist.getState().setPanel({ panelOpen: old.open, panelPinned: old.pinned }, after)
+  }
+  if (
+    previous.sourceProjectId &&
+    previous.sourceId &&
+    (next.sourceId !== previous.sourceId || next.sourceProjectId !== previous.sourceProjectId)
+  ) {
+    const id = getPanel(`notes:reader:${previous.sourceProjectId}:${previous.sourceId}`).conversationId
+    if (id && typeof window !== 'undefined') void window.jiwei.chat.releaseReader(id).catch((error) => toast.error(String(error)))
+  }
 })
 
 /** 选区（Range）在视口中的位置 */

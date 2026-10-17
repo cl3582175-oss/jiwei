@@ -2,7 +2,8 @@ import { create } from 'zustand'
 import { canonicalUrl } from '@shared/browserUrl'
 import type { NoteSort, WorkspaceContext } from '@shared/types'
 import { toast } from 'sonner'
-import { resolveSourceHighlight } from '../lib/sourceHighlight'
+import { resolveSourceHighlight, type Highlight } from '../lib/sourceHighlight'
+import { selectorFromParams, selectorLocator } from '@shared/sourceTarget'
 
 export type StarterIntent =
   | { kind: 'chat'; text: string; skill?: string }
@@ -128,6 +129,8 @@ interface AppState extends Location {
   openNote: (id: string | null) => void
   /** 在工作区左侧打开资料（null 关闭） */
   sourceConversationId: string | null
+  sourceProjectId: string | null
+  sourceReaderPending: boolean
   openSource: (id: string | null, conversationId?: string | null) => void
 
   /** 内置浏览器是否显示在工作区左栏（v0.6.0；显示时资料栏让位） */
@@ -198,7 +201,7 @@ interface AppState extends Location {
   /** 进入选定的二级导航条目 */
   goNav: (item: NavItem) => void
   /** 打开笔记 / 资料后需要定位并高亮的段落（来自 AI 引用） */
-  highlight: { type: 'block' | 'segment'; id: string; locator?: string | null; conversationId?: string | null } | null
+  highlight: Highlight
   setHighlight: (h: AppState['highlight']) => void
 
   noteFilter: NoteFilter
@@ -241,6 +244,8 @@ export const useApp = create<AppState>((set, get) => {
       chatProjectId: loc.chatProjectId ?? null,
       chatNewProjectId: loc.chatNewProjectId ?? null,
       chatMessageId: null,
+      sourceProjectId: loc.sourceId === s.sourceId ? s.sourceProjectId : null,
+      sourceReaderPending: !!loc.sourceId && (loc.sourceId !== s.sourceId || s.sourceReaderPending),
       context: {
         ...s.context,
         noteId: loc.noteId,
@@ -305,6 +310,8 @@ export const useApp = create<AppState>((set, get) => {
       get().navigate({ view: 'notes', noteId })
     },
     sourceConversationId: null,
+    sourceProjectId: null,
+    sourceReaderPending: false,
     openSource: (sourceId, sourceConversationId = null) => {
       set({ sourceConversationId })
       const s = get()
@@ -451,7 +458,7 @@ export const useApp = create<AppState>((set, get) => {
       const request = ++highlightRequest
       if (highlight?.type === 'segment' && highlight.id) {
         set({ highlight: null })
-        void resolveSourceHighlight(highlight, (id) => window.jiwei.segments.resolve(id, highlight.conversationId)).then((resolved) => {
+        void resolveSourceHighlight(highlight, (id) => window.jiwei.segments.get(id, highlight.conversationId)).then((resolved) => {
           // 等待 IPC 时用户可能跳到另一处；迟到的别名结果不能覆盖新的定位。
           if (highlightRequest === request) set({ highlight: resolved })
         })
@@ -487,8 +494,9 @@ export const getWorkspaceContext = (): WorkspaceContext => useApp.getState().con
  */
 export function openSourceAt(id: string, q: URLSearchParams, conversationId: string | null = null): void {
   const s = useApp.getState()
-  const seg = q.get('seg')
-  const locator = q.get('t') ? `t=${q.get('t')}` : q.get('page') ? `page=${q.get('page')}` : null
+  const selector = selectorFromParams(q)
+  const seg = selector.ownerId
+  const locator = selectorLocator(selector)
   void (async () => {
     const source = await window.jiwei.sources.get(id)
     if (source?.kind === 'web' && source.url && q.has('t')) {
@@ -502,7 +510,8 @@ export function openSourceAt(id: string, q: URLSearchParams, conversationId: str
       await window.jiwei.browser.seek(tabId, at, true)
       return
     }
-    if (seg || locator) s.setHighlight({ type: 'segment', id: seg ?? '', locator, conversationId })
+    if (seg || locator || selector.quote)
+      s.setHighlight({ type: 'segment', id: seg ?? '', sourceId: id, locator, selector, conversationId })
     s.openSource(id, conversationId)
   })().catch((e: Error) => toast.error(e.message))
 }

@@ -1,13 +1,16 @@
 import { and, eq, inArray, isNull, isNotNull, or } from 'drizzle-orm'
 import { asRelation, type Relation } from '@shared/graphRelations'
 import { getDb, getSqlite } from '../db'
-import { assetTexts, noteAssetBlocks, blocks, chunks, links, notes, sources } from '../db/schema'
+import { assetTexts, noteAssetBlocks, blocks, chunks, links, notes, sources, sourceSegments } from '../db/schema'
 import { newId } from '../lib/ids'
 import { emit } from '../events'
 import type { NoteConnections } from '@shared/types'
 import { deviceId } from './device'
 import { isReady } from './ai/embedding'
 import { setTextLink } from './docs'
+import { readSourceSelector, selectorOfSegment, SourceSelectorSchema, type SourceSelector } from '@shared/sourceTarget'
+import { getSegment, resolveSegmentId } from './segments'
+import { tr } from '../lib/messages'
 
 // 双向链接（v0.5.0）：链接到这里（反向链接）、手动关联、相关笔记推荐（本地向量）、未链接的提及。
 // 正文中的 [[链接]] 在派生时写入 links（origin = doc）；“关联”是 origin = manual、relation = related 的链接，双向显示。
@@ -131,6 +134,7 @@ export async function relatedByVectors(noteId: string, exclude: Set<string>): Pr
       const ot = a.theirs.slice(0, at),
         oid = a.theirs.slice(at + 1)
       const mineAt = a.mine.indexOf(':')
+      const segment = a.type === 'source' ? getSegment(oid) : null
       return t.ok
         ? {
             type: a.type,
@@ -138,7 +142,8 @@ export async function relatedByVectors(noteId: string, exclude: Set<string>): Pr
             title: t.title,
             score: Math.round(a.score * 100) / 100,
             mine: clip(ownerText(a.mine.slice(0, mineAt), a.mine.slice(mineAt + 1)), 140),
-            theirs: clip(ownerText(ot, oid), 140)
+            theirs: clip(ownerText(ot, oid), 140),
+            ...(segment ? { selector: selectorOfSegment(segment) } : {})
           }
         : null
     })
@@ -228,7 +233,8 @@ export async function noteConnections(noteId: string): Promise<NoteConnections> 
         id: other.id,
         title: t.title,
         relation: asRelation(l.relation),
-        outgoing: l.fromType === 'note' && l.fromId === noteId
+        outgoing: l.fromType === 'note' && l.fromId === noteId,
+        ...(readSourceSelector(l.toSelector) ? { selector: readSourceSelector(l.toSelector) } : {})
       })
   }
   const exclude = new Set<string>([
@@ -249,7 +255,14 @@ export async function noteConnections(noteId: string): Promise<NoteConnections> 
  * 建立关联（手动、双向可见）。relation 为关系类型（默认“相关”），读作“本篇 <关系> 对方”；
  * reverse 为 true 时读作“对方 <关系> 本篇”（只对笔记之间有效）。同一对节点只保留一条手动关联，再次设置即改类型 / 方向。
  */
-export function relate(noteId: string, toType: 'note' | 'source', toId: string, relation: Relation = 'related', reverse = false): void {
+export function relate(
+  noteId: string,
+  toType: 'note' | 'source',
+  toId: string,
+  relation: Relation = 'related',
+  reverse = false,
+  selector?: SourceSelector
+): void {
   if (toType === 'note' && toId === noteId) return
   const db = getDb()
   const now = Date.now()
@@ -258,12 +271,19 @@ export function relate(noteId: string, toType: 'note' | 'source', toId: string, 
     (l) =>
       (l.fromId === noteId && l.toType === toType && l.toId === toId) || (l.toId === noteId && l.fromType === toType && l.fromId === toId)
   )
+  const target = selector ? SourceSelectorSchema.parse(selector) : undefined
+  if (toType === 'source' && target?.ownerId) {
+    const id = resolveSegmentId(target.ownerId)
+    const segment = id ? db.select({ sourceId: sourceSegments.sourceId }).from(sourceSegments).where(eq(sourceSegments.id, id)).get() : null
+    if (!segment || segment.sourceId !== toId) throw new Error(tr('定位范围不属于这份资料', 'The selected range belongs to another source'))
+  }
+  const toSelector = target ? JSON.stringify(target) : existing && !existing.deletedAt ? existing.toSelector : null
   const ends = flip
     ? { fromType: 'note' as const, fromId: toId, toType: 'note' as const, toId: noteId }
     : { fromType: 'note' as const, fromId: noteId, toType, toId }
   if (existing)
     db.update(links)
-      .set({ ...ends, relation, status: 'confirmed', deletedAt: null, updatedAt: now, updatedBy: deviceId() })
+      .set({ ...ends, toSelector, relation, status: 'confirmed', deletedAt: null, updatedAt: now, updatedBy: deviceId() })
       .where(eq(links.id, existing.id))
       .run()
   else
@@ -271,6 +291,7 @@ export function relate(noteId: string, toType: 'note' | 'source', toId: string, 
       .values({
         id: newId(),
         ...ends,
+        toSelector,
         relation,
         origin: 'manual',
         createdAt: now,

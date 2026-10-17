@@ -73,6 +73,48 @@ describe('deriveDoc', () => {
     expect(r.assetIds).toEqual([sha])
     expect(r.links).toEqual([{ toType: 'note', toId: noteId, fromBlockId: 'l' }])
   })
+
+  it('preserves the source page, segment and selected quotation when deriving a note link', () => {
+    const sourceId = '0190e2c4-7b3a-7c3e-9a1b-2b3c4d5e6f70'
+    const result = deriveDoc(
+      doc(
+        row(
+          'r',
+          [],
+          [
+            {
+              type: 'paragraph',
+              attrs: { id: 'body' },
+              content: [
+                {
+                  type: 'text',
+                  text: '原文范围',
+                  marks: [
+                    {
+                      type: 'link',
+                      attrs: { href: `jiwei://source/${sourceId}?seg=segment&page=5&quote=Exact%20evidence` }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        )
+      )
+    )
+    expect(result.links).toEqual([
+      {
+        toType: 'source',
+        toId: sourceId,
+        fromBlockId: 'body',
+        selector: {
+          ownerId: 'segment',
+          page: 5,
+          quote: 'Exact evidence'
+        }
+      }
+    ])
+  })
 })
 
 describe('diffBlocks', () => {

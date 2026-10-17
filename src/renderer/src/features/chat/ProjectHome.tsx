@@ -22,7 +22,8 @@ import { Composer } from './Composer'
 import { ScopePicker } from './ScopePicker'
 import { ProjectSources } from './ProjectSources'
 import { useAddProjectSources } from './AddProjectSources'
-import { errText, sendChat, useModelChoice } from './useChat'
+import { errText, sendChat } from './useChat'
+import { useChatModelChoice } from './modelChoice'
 import { ConversationRow } from './sidebar/ConversationRow'
 import { ProjectMenuItems, useProjectActions } from './sidebar/ProjectActions'
 
@@ -36,7 +37,7 @@ export function ProjectHome({ id }: { id: string }) {
   const [tab, setTab] = useState<'conversations' | 'sources'>('conversations')
   const [scopeOverride, setScope] = useState<ChatScope | null>(null)
   const scope = scopeOverride ?? { type: project?.libraryScope === 'none' ? 'none' : 'all' }
-  const { choice, setChoice, effort, setEffort, provider } = useModelChoice()
+  const { choice, setChoice, effort, setEffort, provider, rememberConversation } = useChatModelChoice(null, id)
   const { web, setWeb } = useWebMode(null, undefined)
   const attachments = useAttachments({ kind: 'chat', conversationId: null })
   const sourceAdder = useAddProjectSources(id)
@@ -59,6 +60,7 @@ export function ProjectHome({ id }: { id: string }) {
         attachments: attachmentIds,
         context: await attachmentContext(packetFromWorkspace(getWorkspaceContext()), null, attachmentIds)
       })
+      rememberConversation(turn.conversation.id)
       attachments.clear(attachmentIds)
       qc.setQueryData(['messages', turn.conversation.id], [turn.userMessage, turn.assistant])
       qc.setQueryData<Conversation[]>(['conversations'], (items = []) => [

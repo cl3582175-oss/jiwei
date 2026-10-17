@@ -256,6 +256,7 @@ export function derive(noteId: string): void {
           fromBlockId: l.fromBlockId,
           toType: l.toType,
           toId: l.toId,
+          toSelector: l.selector ? JSON.stringify(l.selector) : null,
           origin: 'doc',
           createdAt: now,
           updatedAt: now,

@@ -109,6 +109,9 @@ import { assetPath } from '../../assets'
 import { canReadSource } from '../../attachmentsAccess'
 import { enqueueSegment } from '../../segmentJobs'
 import { setOffPeakPolicy } from '../../jobs'
+import { bindProjectReaderSource, releaseProjectReaderSource, resetProjectReaderSources, sourceReaderProject } from '../../projectReader'
+import { getSegment } from '../../segments'
+import { memoryBlocked } from '../../attachmentsAccess'
 
 beforeEach(() => {
   vi.useFakeTimers()
@@ -151,6 +154,60 @@ function file(name: string, text = 'Synthetic project source evidence'): string 
   return path
 }
 const sourceRows = () => f.sql!.prepare('SELECT id,space,ai_excluded,deleted_at FROM sources').all()
+
+it('reader grants only the explicitly opened file, revoke on close/restart/removal, and keep memory private', async () => {
+  const a = project('Reader A')
+  const [opened] = await projects.addProjectSources(a.id, { origin: 'text', title: 'Opened', text: 'READ-ONLY-OPENED-PRIVATE' })
+  const [other] = await projects.addProjectSources(a.id, { origin: 'text', title: 'Other', text: 'NEVER-OPENED-PRIVATE' })
+  f.sql!.exec("UPDATE conversations SET kind='workspace' WHERE id='ordinary'")
+  const reader = { projectId: a.id, sourceId: opened.itemId }
+  expect(sourceReaderProject(opened.itemId)).toBe(a.id)
+  expect(canReadSource(opened.itemId, 'ordinary')).toBe(false)
+  bindProjectReaderSource('ordinary', reader)
+  expect(canReadSource(opened.itemId, 'ordinary')).toBe(true)
+  expect(canReadSource(other.itemId, 'ordinary')).toBe(false)
+  expect(canReadSource(opened.itemId, 'same-project')).toBe(false)
+  expect(memoryBlocked('ordinary')).toBe(true)
+  expect(getSource(opened.itemId)).toMatchObject({ space: 'attachment', aiExcluded: true })
+  const segment = listSegments(opened.itemId)[0]
+  expect(getSegment(segment.id, 'ordinary')?.text).toBe('READ-ONLY-OPENED-PRIVATE')
+  releaseProjectReaderSource('ordinary')
+  expect(getSegment(segment.id, 'ordinary')).toBeNull()
+  bindProjectReaderSource('ordinary', reader)
+  resetProjectReaderSources()
+  expect(canReadSource(opened.itemId, 'ordinary')).toBe(false)
+  bindProjectReaderSource('ordinary', reader)
+  projects.removeProjectSource(a.id, 'source', opened.itemId)
+  expect(canReadSource(opened.itemId, 'ordinary')).toBe(false)
+  expect(() => bindProjectReaderSource('ordinary', reader)).toThrow()
+})
+
+it('rejects forged project origins and mixed reader histories, and fails closed on malformed provenance', async () => {
+  const a = project('Reader A'),
+    b = project('Reader B')
+  const [first] = await projects.addProjectSources(a.id, { origin: 'text', title: 'A', text: 'A-PRIVATE' })
+  const [second] = await projects.addProjectSources(b.id, { origin: 'text', title: 'B', text: 'B-PRIVATE' })
+  f.sql!.exec("UPDATE conversations SET kind='workspace' WHERE id='ordinary'")
+  expect(() => bindProjectReaderSource('ordinary', { projectId: b.id, sourceId: first.itemId })).toThrow()
+  expect(f.sql!.prepare('SELECT * FROM conversation_attachments').all()).toEqual([])
+  bindProjectReaderSource('ordinary', { projectId: a.id, sourceId: first.itemId })
+  expect(() => bindProjectReaderSource('ordinary', { projectId: b.id, sourceId: second.itemId })).toThrow()
+  expect(canReadSource(first.itemId, 'ordinary')).toBe(true)
+  expect(canReadSource(second.itemId, 'ordinary')).toBe(false)
+  f.sql!.prepare('UPDATE conversations SET meta=? WHERE id=?').run('{invalid', 'ordinary')
+  expect(canReadSource(first.itemId, 'ordinary')).toBe(false)
+})
+
+it('project deletion revokes a live reader attachment rather than leaving its attachment row as authority', async () => {
+  const a = project('Reader deleted')
+  const [file] = await projects.addProjectSources(a.id, { origin: 'text', title: 'Private', text: 'DELETED-PROJECT-PRIVATE' })
+  f.sql!.exec("UPDATE conversations SET kind='workspace' WHERE id='ordinary'")
+  bindProjectReaderSource('ordinary', { projectId: a.id, sourceId: file.itemId })
+  expect(canReadSource(file.itemId, 'ordinary')).toBe(true)
+  await projects.removeProject(a.id, 'recent')
+  expect(canReadSource(file.itemId, 'ordinary')).toBe(false)
+  expect(sourceReaderProject(file.itemId)).toBeNull()
+})
 
 it('promotes an already queued automatic upgrade when the project explicitly reprocesses its source', async () => {
   const a = project('A')

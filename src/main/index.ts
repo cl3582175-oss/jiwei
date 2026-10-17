@@ -15,6 +15,7 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import log from 'electron-log/main'
 import { openDatabase, closeDatabase } from './db'
+import { resetProjectReaderSources } from './services/projectReader'
 import { closeProfileDb } from './db/profile'
 import { registerIpc } from './ipc'
 import { purgeExpired } from './services/trash'
@@ -182,6 +183,7 @@ app
 
     await initializeBackupSafety()
     await openDatabase()
+    resetProjectReaderSources()
     backfillNotePrivacy()
     await cleanupDrafts()
     migrateSearchConnections()

@@ -3,7 +3,7 @@ import { useApp } from '../../../store/app'
 import { currentPanelPage, getPanel, useAssist } from '../store'
 
 beforeEach(() => {
-  useApp.setState({ view: 'notes', browserOpen: false })
+  useApp.setState({ view: 'notes', browserOpen: false, sourceId: null, sourceProjectId: null, sourceReaderPending: false })
   useAssist.setState({ panels: {}, toolbar: null, card: null })
 })
 describe('page workspace panels', () => {
@@ -35,5 +35,16 @@ describe('page workspace panels', () => {
     useAssist.getState().setPanel({ panelConversationId: 'completed' }, page)
     expect(getPanel().conversationId).toBeNull()
     expect(getPanel('notes').conversationId).toBe('completed')
+  })
+  it('keeps reader history separate while carrying only the note panel preference', () => {
+    useAssist.getState().setPanel({ panelOpen: true, panelPinned: true, panelConversationId: 'notes-chat', panelDraft: 'notes draft' })
+    useApp.setState({ sourceId: 'private-file', sourceReaderPending: true })
+    expect(getPanel()).toMatchObject({ open: true, pinned: true, conversationId: null, draft: null })
+    useApp.setState({ sourceProjectId: 'project', sourceReaderPending: false })
+    expect(getPanel()).toMatchObject({ open: true, pinned: true, conversationId: null, draft: null })
+    useApp.setState({ browserOpen: true })
+    expect(getPanel()).toMatchObject({ open: false, pinned: false, conversationId: null, draft: null })
+    useApp.setState({ browserOpen: false, sourceId: null, sourceProjectId: null })
+    expect(getPanel()).toMatchObject({ open: true, pinned: true, conversationId: 'notes-chat', draft: 'notes draft' })
   })
 })

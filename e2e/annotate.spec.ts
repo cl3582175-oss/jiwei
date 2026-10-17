@@ -67,7 +67,15 @@ test('text source: highlight, comment, question', async () => {
   )
   const res = await page.evaluate((p) => window.jiwei.sources.importPaths([p]), join(dir, '学习科学.md'))
   ids.md = res.imported[0].id
-  await expect.poll(() => page.evaluate((id) => window.jiwei.segments.list(id).then((s) => s.length), ids.md)).toBeGreaterThan(2)
+  // Short Markdown can be grouped into one segment; wait for every tested passage.
+  await expect
+    .poll(() =>
+      page.evaluate(async (id) => {
+        const text = (await window.jiwei.segments.list(id)).map((s) => s.text).join('\n')
+        return ['快要遗忘时复习', '合上书，自己回忆', '交错练习'].every((quote) => text.includes(quote))
+      }, ids.md)
+    )
+    .toBe(true)
   await openSource('学习科学')
   await expect(page.locator('.source-text')).toContainText('间隔重复')
 

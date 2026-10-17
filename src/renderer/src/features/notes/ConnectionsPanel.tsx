@@ -1,25 +1,29 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowUpLeft, ChevronDown, FileText, Link2, NotebookText, Sparkles, X, AtSign, Plus } from 'lucide-react'
+import { ArrowUpLeft, ChevronDown, FileText, Link2, NotebookText, Sparkles, X, AtSign, Plus, Crosshair } from 'lucide-react'
 import type { NoteConnections } from '@shared/types'
 import { toast } from 'sonner'
 import { api, cn } from '@/lib/utils'
-import { useApp } from '@/store/app'
+import { openSourceAt, useApp } from '@/store/app'
 import { Button } from '@/components/ui/button'
 import { Tip } from '@/components/ui/primitives'
 import type { Relation } from '@shared/graphRelations'
 import { relationOptions } from '@/features/graph/NodePanel'
+import { SourceSelectorSchema, type SourceSelector } from '@shared/sourceTarget'
+import { locatorFields } from '@shared/context'
+import { textSelectionAnchor } from '../assist/actions'
 
 // 笔记底部的「关联」：链接到这里（反向链接）、已关联、相关推荐（本地向量）、未链接的提及。
 // 关联是双向的：在任意一方建立，两边都能看到。
 
-const open = (type: 'note' | 'source', id: string, blockId?: string | null): void => {
+const open = (type: 'note' | 'source', id: string, blockId?: string | null, selector?: SourceSelector): void => {
   const app = useApp.getState()
   if (type === 'note') {
     app.openNote(id)
     if (blockId) app.setHighlight({ type: 'block', id: blockId })
-  } else app.openSource(id)
+  } else if (selector) openSourceAt(id, new URLSearchParams({ target: JSON.stringify(selector) }))
+  else app.openSource(id)
 }
 
 function Group({ icon, title, count, children }: { icon: React.ReactNode; title: string; count: number; children: React.ReactNode }) {
@@ -40,6 +44,7 @@ export function ConnectionsPanel({ noteId }: { noteId: string }) {
   const { t, i18n } = useTranslation()
   const qc = useQueryClient()
   const [collapsed, setCollapsed] = useState(false)
+  const ctx = useApp((s) => s.context)
   const key = ['connections', noteId]
   const { data: c } = useQuery({ queryKey: key, queryFn: () => api.connections.get(noteId), staleTime: 0 })
   // 正文变化（新增链接）后刷新
@@ -56,8 +61,30 @@ export function ConnectionsPanel({ noteId }: { noteId: string }) {
   }, [qc])
   if (!c) return null
   const refresh = (): void => void qc.invalidateQueries({ queryKey: ['connections'] })
-  const relate = (type: 'note' | 'source', id: string): void => void api.connections.relate(noteId, type, id).then(refresh)
+  const relate = (type: 'note' | 'source', id: string, selector?: SourceSelector): void =>
+    void api.connections
+      .relate(noteId, type, id, undefined, undefined, selector)
+      .then(refresh)
+      .catch((error) => toast.error(String(error)))
   const unrelate = (type: 'note' | 'source', id: string): void => void api.connections.unrelate(noteId, type, id).then(refresh)
+  const recordRange = (sourceId: string): void => {
+    const context = useApp.getState().context
+    if (context.sourceId !== sourceId) return
+    const anchor = textSelectionAnchor(sourceId)?.anchor
+    const parsed = SourceSelectorSchema.safeParse({
+      ownerId: context.sourceSegmentId,
+      ...locatorFields(context.sourceLocator),
+      ...(anchor ?? (context.sourceSelection ? { quote: context.sourceSelection } : {}))
+    })
+    if (!parsed.success) return void toast.error(t('links.rangeHelp'))
+    void api.connections
+      .relate(noteId, 'source', sourceId, undefined, undefined, parsed.data)
+      .then(() => {
+        refresh()
+        toast.success(t('links.rangeSaved'))
+      })
+      .catch((error) => toast.error(String(error)))
+  }
   // 把提及变成链接：直接在那篇笔记中给标题文字加上链接（可撤销）
   const linkMention = async (m: NoteConnections['mentions'][number]): Promise<void> => {
     const ok = await api.connections.linkMention(noteId, m.noteId, m.blockId)
@@ -99,9 +126,28 @@ export function ConnectionsPanel({ noteId }: { noteId: string }) {
             {c.linked.map((l) => (
               <li key={l.linkId} className={row} data-linked={l.title}>
                 <Icon type={l.type} />
-                <button onClick={() => open(l.type, l.id)} className="min-w-0 flex-1 truncate text-left text-sm text-fg hover:text-accent">
+                <button
+                  onClick={() => {
+                    open(l.type, l.id, undefined, l.selector)
+                    if (l.type === 'source' && !l.selector) toast.info(t('links.noRange'))
+                  }}
+                  className="min-w-0 flex-1 truncate text-left text-sm text-fg hover:text-accent"
+                >
                   {l.title || t('common.untitled')}
                 </button>
+                {l.type === 'source' && (
+                  <Tip label={t('links.rangeHelp')}>
+                    <button
+                      aria-label={t('links.recordRange', { title: l.title })}
+                      disabled={ctx.sourceId !== l.id || !(ctx.sourceSelection || ctx.sourceSegmentId || ctx.sourceLocator)}
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => recordRange(l.id)}
+                      className="grid size-5 shrink-0 place-items-center rounded text-subtle opacity-0 group-hover:opacity-100 hover:text-accent focus:opacity-100 disabled:opacity-30 [&_svg]:size-3.5"
+                    >
+                      <Crosshair />
+                    </button>
+                  </Tip>
+                )}
                 {/* 关系类型（v0.14.2）：前置、推出、对比……在知识图谱上会按类型画出来 */}
                 {l.type === 'note' && (
                   <select
@@ -138,7 +184,7 @@ export function ConnectionsPanel({ noteId }: { noteId: string }) {
                 <Icon type={r.type} />
                 <div className="min-w-0 flex-1">
                   <button
-                    onClick={() => open(r.type, r.id)}
+                    onClick={() => open(r.type, r.id, undefined, r.selector)}
                     className="block max-w-full truncate text-left text-sm text-fg hover:text-accent"
                   >
                     {r.title || t('common.untitled')}
@@ -147,7 +193,7 @@ export function ConnectionsPanel({ noteId }: { noteId: string }) {
                   {r.mine && <p className="mt-0.5 line-clamp-1 text-2xs text-subtle">{t('links.similarTo', { text: r.mine })}</p>}
                 </div>
                 <div className="flex shrink-0 gap-1">
-                  <Button size="sm" variant="outline" onClick={() => relate(r.type, r.id)}>
+                  <Button size="sm" variant="outline" onClick={() => relate(r.type, r.id, r.selector)}>
                     <Plus />
                     {t('links.relate')}
                   </Button>

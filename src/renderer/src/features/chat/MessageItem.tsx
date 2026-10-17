@@ -34,8 +34,11 @@ import { UiFence } from '@/features/ui/UiFence'
 import { UiMessageProvider } from '@/features/ui/context'
 import { annotateUiFences, uiAnswerText, mapOutsideFences } from '@shared/ui/fences'
 import type { UiEvent } from '@shared/ui/events'
+import { MermaidFence } from './MermaidFence'
+import { locatorFields } from '@shared/context'
 
-const uiPlugins = { renderers: [{ language: 'jiwei-ui', component: UiFence }] }
+const plainPlugins = { renderers: [{ language: 'mermaid', component: MermaidFence }] }
+const uiPlugins = { renderers: [...plainPlugins.renderers, { language: 'jiwei-ui', component: UiFence }] }
 
 /** 打开引用：知识库定位到段落 / 页码，网页打开快照或原网页。 */
 export function openCitation(c: Citation, conversationId?: string): void {
@@ -46,7 +49,15 @@ export function openCitation(c: Citation, conversationId?: string): void {
     } else useWebSnapshot.getState().open(c.parentId, c.locator, c.url)
     return
   }
-  s.setHighlight({ type: c.parentType === 'note' ? 'block' : 'segment', id: c.ownerId, locator: c.locator, conversationId })
+  s.setHighlight({
+    type: c.parentType === 'note' ? 'block' : 'segment',
+    id: c.ownerId,
+    ...(c.parentType === 'source'
+      ? { sourceId: c.parentId, selector: c.selector ?? { ...locatorFields(c.locator), quote: c.snippet } }
+      : {}),
+    locator: c.locator,
+    conversationId
+  })
   if (c.parentType === 'note') s.openNote(c.parentId)
   else s.openSource(c.parentId, conversationId)
 }
@@ -429,7 +440,7 @@ export function MessageItem({
               isAnimating={streaming}
               components={components as never}
               controls={{ code: true, table: true, mermaid: false }}
-              plugins={plain ? undefined : uiPlugins}
+              plugins={plain ? plainPlugins : uiPlugins}
             >
               {md}
             </Streamdown>

@@ -1420,6 +1420,10 @@
 ::highlight(jw-active) {
   background-color: color-mix(in oklab, var(--accent) 28%, transparent);
 }
+::highlight(jw-source-target) {
+  background-color: color-mix(in oklab, var(--hl-yellow) 60%, transparent);
+  text-decoration: underline color-mix(in oklab, var(--accent) 60%, transparent);
+}
 
 .jw-anno-layer {
   position: absolute;

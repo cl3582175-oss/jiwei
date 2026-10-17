@@ -1,6 +1,7 @@
 import { createHash } from 'crypto'
 import type { DocJSON, DocNode } from '@shared/types'
 import { embedText } from '@shared/embeds'
+import { hasSourceSelector, selectorFromParams, type SourceSelector } from '@shared/sourceTarget'
 
 // 从康奈尔文档 JSON 派生检索与 RAG 所需的结构化数据。纯函数，无 Electron 依赖，便于单元测试。
 //
@@ -48,6 +49,7 @@ export interface DerivedLink {
   toType: 'note' | 'source'
   toId: string
   fromBlockId: string | null
+  selector?: SourceSelector
 }
 
 export interface Derived {
@@ -142,7 +144,15 @@ export function deriveDoc(doc: DocJSON, embeds: EmbedsData = {}): Derived {
         for (const mark of n.marks ?? []) {
           if (mark.type === 'link' && typeof mark.attrs?.href === 'string') {
             const m = LINK_RE.exec(mark.attrs.href)
-            if (m) links.push({ toType: m[1] as 'note' | 'source', toId: m[2], fromBlockId: typeof id === 'string' ? id : null })
+            if (m) {
+              const selector = m[1] === 'source' ? selectorFromParams(new URL(mark.attrs.href).searchParams) : {}
+              links.push({
+                toType: m[1] as 'note' | 'source',
+                toId: m[2],
+                fromBlockId: typeof id === 'string' ? id : null,
+                ...(hasSourceSelector(selector) ? { selector } : {})
+              })
+            }
           }
         }
       })

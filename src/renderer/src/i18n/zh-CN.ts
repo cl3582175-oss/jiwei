@@ -1371,6 +1371,8 @@ const zhCN = {
     panelPh: '问积微，或交代一件事（Enter 发送）',
     context: '本次提问附带的上下文',
     removeContext: '不附带：{{label}}',
+    privateSourceUnavailable: '这份私有资料未授权给当前对话。请从有效项目打开，或显式添加可用附件。',
+    projectContext: '项目来源：{{name}}',
     restoreContext: '恢复附带：{{label}}',
     s1: '根据左边的资料，在笔记里画一张思维导图',
     s2: '给这篇笔记生成线索问题',
@@ -1670,6 +1672,10 @@ const zhCN = {
     list: { from: '笔记', relation: '关系', to: '对方', origin: '来源', empty: '当前范围里没有关系。', sentence: '说明' }
   },
   links: {
+    recordRange: '记录定位范围：{{title}}',
+    rangeHelp: '先打开这份资料，选中文字或切到目标页，再记录定位范围。',
+    rangeSaved: '已记录关联的定位范围',
+    noRange: '此关联尚未记录范围。可在原文选定内容后，点关联旁的定位按钮补充。',
     title: '关联',
     count: '{{count}} 项',
     backlinks: '链接到这里',

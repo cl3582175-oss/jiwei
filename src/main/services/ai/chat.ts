@@ -13,7 +13,9 @@ import {
   memoryBlocked
 } from '../attachmentsAccess'
 import { prepareProjectTurn, type ProjectTurn } from './projectContext'
-import { listSegments, resolveSegmentId } from '../segments'
+import { getSegment, listSegments, resolveSegmentId } from '../segments'
+import { selectorOfSegment } from '@shared/sourceTarget'
+import { bindProjectReaderSource } from '../projectReader'
 import { conversationAttachmentIds } from '../attachmentDerived'
 import { tr } from '../../lib/messages'
 import { detachConversationAttachments } from '../attachments'
@@ -533,6 +535,9 @@ function sendInTransaction(input: ChatSend): SendResult {
     updatedAt: now
   }
   const noteIds = attachmentIds.filter((id) => id.startsWith('note:')).map((id) => id.slice(5))
+  if (input.readerSource && input.context?.sourceId !== input.readerSource.sourceId)
+    throw new Error(tr('阅读来源与当前上下文不一致', 'Reader source does not match the current context'))
+  bindProjectReaderSource(convId, input.readerSource)
   const rawSourceIds = attachmentIds.filter((id) => !id.startsWith('note:'))
   const sourceIds = rawSourceIds.length ? bindAttachments(convId, rawSourceIds, userMsg.id) : []
   if (noteIds.length) bindAttachmentNotes(convId, noteIds)
@@ -1440,6 +1445,9 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
         parentType: h.parentType,
         parentId: h.parentId,
         ownerId: h.ownerId,
+        ...(h.parentType === 'source' && getSegment(h.ownerId, conversationId)
+          ? { selector: selectorOfSegment(getSegment(h.ownerId, conversationId)!) }
+          : {}),
         title: h.title,
         snippet: h.text.slice(0, 280),
         locator: h.locator,

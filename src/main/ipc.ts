@@ -1,5 +1,6 @@
 import * as chatProjects from './services/ai/projects'
 import * as attachments from './services/attachments'
+import * as projectReader from './services/projectReader'
 import * as graphAi from './services/graphAi'
 import * as pluginMarkets from './services/plugins/markets'
 import * as ui from './services/ui'
@@ -430,6 +431,7 @@ const handlers: Handlers = {
     count: () => attachments.unarchivedCount()
   },
   sources: {
+    readerProject: (_, sourceId) => projectReader.sourceReaderProject(sourceId),
     readiness: (_, ids, conversationId) => readinessMany(ids, conversationId),
     retry: (_, id, conversationId) => retrySource(id, conversationId),
     list: (_, q) => sources.listSources(q),
@@ -484,6 +486,7 @@ const handlers: Handlers = {
     exportMarkdown: ({ win }, id) => chatProjects.exportMarkdown(id, win)
   },
   chat: {
+    releaseReader: (_, conversationId) => projectReader.releaseProjectReaderSource(conversationId),
     search: (_, query) => chat.searchConversations(query),
     get: (_, id) => chat.getConversation(id),
     conversations: () => chat.listConversations(),
@@ -616,7 +619,7 @@ const handlers: Handlers = {
   },
   connections: {
     get: (_, noteId) => connections.noteConnections(noteId),
-    relate: (_, noteId, toType, toId, relation, reverse) => connections.relate(noteId, toType, toId, relation, reverse),
+    relate: (_, noteId, toType, toId, relation, reverse, selector) => connections.relate(noteId, toType, toId, relation, reverse, selector),
     unrelate: (_, noteId, toType, toId) => connections.unrelate(noteId, toType, toId),
     linkMention: (_, noteId, mentionNoteId, blockId, undo) => connections.linkMention(noteId, mentionNoteId, blockId, undo)
   },
