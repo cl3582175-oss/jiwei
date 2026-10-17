@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as pdfjs from 'pdfjs-dist'
-import { EventBus, PDFLinkService, PDFViewer } from 'pdfjs-dist/web/pdf_viewer.mjs'
+import { EventBus, PDFLinkService, PDFViewer, RenderingStates } from 'pdfjs-dist/web/pdf_viewer.mjs'
 import 'pdfjs-dist/web/pdf_viewer.css'
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import { Loader2, ZoomIn, ZoomOut, SquareDashedMousePointer } from 'lucide-react'
@@ -20,6 +20,7 @@ import { ReadingSourceText } from '../reading/ReadingText'
 import { originalRangeText } from '@shared/reading'
 import { paintSourceRange } from './sourceRange'
 import { toast } from 'sonner'
+import type { Highlight } from '@/lib/sourceHighlight'
 
 // PDF 阅读：pdf.js 自带的查看器（文字层可选中、可定位）。
 //   - 翻页 → 工作区上下文（page=N）；AI 引用 / 出处链接 → 跳到对应页并闪烁
@@ -84,6 +85,11 @@ export function PdfViewer({ source }: { source: Source }) {
   const [drag, setDrag] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null)
   const setContext = useApp((s) => s.setContext)
   const highlight = useApp((s) => s.highlight)
+  const [activeTarget, setActiveTarget] = useState<{ sourceId: string; request: NonNullable<Highlight> } | null>(null)
+  useEffect(() => {
+    if (highlight?.type === 'segment' && (!highlight.sourceId || highlight.sourceId === source.id))
+      setActiveTarget({ sourceId: source.id, request: highlight })
+  }, [highlight, source.id])
   const activeRange = useRef<(() => void) | null>(null)
   useEffect(() => () => activeRange.current?.(), [source.id])
   const qc = useQueryClient()
@@ -241,53 +247,87 @@ export function PdfViewer({ source }: { source: Source }) {
   // AI 引用 / 出处链接：跳到对应页并闪烁
   useEffect(() => {
     const v = viewerRef.current
-    if (
-      !highlight ||
-      highlight.type !== 'segment' ||
-      (highlight.sourceId && highlight.sourceId !== source.id) ||
-      state !== 'ready' ||
-      !v?.pagesCount
-    )
+    if (!activeTarget || activeTarget.sourceId !== source.id || state !== 'ready' || !v?.pagesCount) return
+    const target = activeTarget.request
+    let p = target.selector?.page ?? Number(target.locator?.match(/page=(\d+)/)?.[1] ?? 0)
+    if (!p && target.id) for (const [n, id] of pageSegments(segs)) if (id === target.id) p = n
+    if (!p) return
+    const end = target.selector?.pageEnd ?? p
+    const consume = () => {
+      if (useApp.getState().highlight === target) useApp.getState().setHighlight(null)
+    }
+    if (p > v.pagesCount || end < p || end > v.pagesCount) {
+      toast.info(t('annotate.orphan'))
+      consume()
       return
-    let p = highlight.selector?.page ?? Number(highlight.locator?.match(/page=(\d+)/)?.[1] ?? 0)
-    if (!p && highlight.id) for (const [n, id] of pageSegments(segs)) if (id === highlight.id) p = n
-    if (!p || p > v.pagesCount) return
+    }
     activeRange.current?.()
     activeRange.current = null
     v.currentPageNumber = p
     let cancelled = false
-    const current = () => !cancelled && useApp.getState().highlight === highlight
-    const consume = () => {
-      if (current()) useApp.getState().setHighlight(null)
-    }
+    let located = false
+    let failed = false
+    const targetPages = Array.from({ length: end - p + 1 }, (_, i) => p + i)
+    const layersReady = () =>
+      targetPages.every((n) => {
+        const layer = v.getPageView(n - 1)?.textLayer?.div
+        // PDF.js appends this marker only after the complete text stream is rendered.
+        return layer?.isConnected && !layer.hidden && !!layer.querySelector(':scope > .endOfContent')
+      })
     const paint = (): boolean => {
       const root = container.current?.querySelector<HTMLElement>('.pdfViewer')
-      if (!current() || !root) return false
-      if (highlight.selector?.quote) {
-        const clear = paintSourceRange(root, highlight.selector)
-        if (!clear) return false
+      if (cancelled || failed || !root) return false
+      if (target.selector?.quote) {
+        if (!layersReady()) return false
+        const clear = paintSourceRange(root, { ...target.selector, page: p, pageEnd: end }, !located)
+        if (!clear) {
+          if (!located) {
+            failed = true
+            toast.info(t('annotate.orphan'))
+            consume()
+          }
+          return false
+        }
         activeRange.current = clear
       } else {
+        if (located) return true
         const el = root.querySelector<HTMLElement>(`.page[data-page-number="${p}"]`)
         if (!el) return false
         el.classList.add('is-flash')
         setTimeout(() => el.classList.remove('is-flash'), 2200)
       }
+      located = true
       consume()
       return true
     }
-    const rendered = (event: { pageNumber: number }) => {
-      if (paint() || !current()) return
-      if (event.pageNumber === (highlight.selector?.pageEnd ?? p)) {
-        toast.info(t('annotate.orphan'))
-        consume()
-      }
+    const rendered = () => {
+      paint()
     }
     v.eventBus.on('textlayerrendered', rendered)
     const observer = new MutationObserver(() => {
       paint()
     })
-    if (container.current) observer.observe(container.current, { childList: true, subtree: true })
+    if (container.current)
+      observer.observe(container.current, { childList: true, subtree: true, attributes: true, attributeFilter: ['hidden'] })
+    // Cross-page targets can include a page outside the visible rendering queue.
+    void (async () => {
+      for (const n of targetPages) {
+        if (cancelled || failed || located) return
+        const view = v.getPageView(n - 1)
+        if (!view.pdfPage) {
+          const pdfPage = await v.pdfDocument!.getPage(n)
+          if (cancelled) return
+          if (!view.pdfPage) view.setPdfPage(pdfPage)
+        }
+        if (view.renderingState === RenderingStates.INITIAL) await view.draw()
+      }
+    })().catch(() => {
+      if (!cancelled && !located && !failed) {
+        failed = true
+        toast.info(t('annotate.orphan'))
+        consume()
+      }
+    })
     const frame = requestAnimationFrame(() => {
       paint()
     })
@@ -297,7 +337,7 @@ export function PdfViewer({ source }: { source: Source }) {
       observer.disconnect()
       v.eventBus.off('textlayerrendered', rendered)
     }
-  }, [highlight, state, segs, source.id, t])
+  }, [activeTarget, state, segs, source.id, t])
 
   // 页面边缘的就地提问标记（页面渲染后插入）
   useEffect(() => {

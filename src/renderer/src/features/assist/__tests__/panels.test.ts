@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useApp } from '../../../store/app'
 import { currentPanelPage, getPanel, useAssist } from '../store'
 
@@ -6,6 +6,7 @@ beforeEach(() => {
   useApp.setState({ view: 'notes', browserOpen: false, sourceId: null, sourceProjectId: null, sourceReaderPending: false })
   useAssist.setState({ panels: {}, toolbar: null, card: null })
 })
+afterEach(() => vi.unstubAllGlobals())
 describe('page workspace panels', () => {
   it('keeps open, pin, conversation and draft independently for each page', () => {
     useAssist.getState().setPanel({ panelOpen: true, panelPinned: true, panelConversationId: 'notes-chat', panelDraft: 'notes draft' })
@@ -46,5 +47,14 @@ describe('page workspace panels', () => {
     expect(getPanel()).toMatchObject({ open: false, pinned: false, conversationId: null, draft: null })
     useApp.setState({ browserOpen: false, sourceId: null, sourceProjectId: null })
     expect(getPanel()).toMatchObject({ open: true, pinned: true, conversationId: 'notes-chat', draft: 'notes draft' })
+  })
+  it('revokes the old reader conversation before a new chat loses its identity', async () => {
+    const releaseReader = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('window', { jiwei: { chat: { releaseReader } } })
+    useApp.setState({ sourceId: 'private-file', sourceProjectId: 'project' })
+    useAssist.getState().setPanel({ panelConversationId: 'old-reader-chat' })
+    useAssist.getState().setPanel({ panelConversationId: null })
+    useApp.getState().openSource(null)
+    expect(releaseReader).toHaveBeenCalledWith('old-reader-chat')
   })
 })

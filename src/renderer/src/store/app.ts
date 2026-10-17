@@ -234,9 +234,12 @@ const same = (a: Location, b: Location): boolean =>
   (a.chatProjectId ?? null) === (b.chatProjectId ?? null) &&
   (a.chatNewProjectId ?? null) === (b.chatNewProjectId ?? null)
 
+let sourceOpenRequest = 0
+
 export const useApp = create<AppState>((set, get) => {
   let highlightRequest = 0
-  const apply = (loc: Location): void =>
+  const apply = (loc: Location): void => {
+    sourceOpenRequest++
     set((s) => ({
       ...loc,
       sourceReturn: loc.sourceReturn ?? null,
@@ -253,6 +256,7 @@ export const useApp = create<AppState>((set, get) => {
         ...(loc.sourceId !== s.sourceId ? { sourceLocator: null, sourceSelection: null, sourceSegmentId: null } : {})
       }
     }))
+  }
 
   return {
     view: 'today',
@@ -348,6 +352,7 @@ export const useApp = create<AppState>((set, get) => {
     },
     browserOpen: false,
     openBrowser: (input, opts) => {
+      sourceOpenRequest++
       set({ browserOpen: true })
       if (get().view !== 'notes') get().navigate({ view: 'notes' })
       if (input !== undefined || opts?.incognito) void window.jiwei.browser.open(input ?? '', { newTab: true, incognito: opts?.incognito })
@@ -357,6 +362,7 @@ export const useApp = create<AppState>((set, get) => {
         })
     },
     closeBrowser: () => {
+      sourceOpenRequest++
       // 下次从「浏览」进入时浏览器独占整页
       set({ browserOpen: false, browserNote: null })
       void window.jiwei.browser.setBounds(null)
@@ -493,25 +499,34 @@ export const getWorkspaceContext = (): WorkspaceContext => useApp.getState().con
  * 定位信息通过 highlight 交给资料面板处理。
  */
 export function openSourceAt(id: string, q: URLSearchParams, conversationId: string | null = null): void {
+  const request = ++sourceOpenRequest
+  const current = () => request === sourceOpenRequest
   const s = useApp.getState()
   const selector = selectorFromParams(q)
   const seg = selector.ownerId
   const locator = selectorLocator(selector)
   void (async () => {
     const source = await window.jiwei.sources.get(id)
+    if (!current()) return
     if (source?.kind === 'web' && source.url && q.has('t')) {
       const at = Number(q.get('t'))
       if (!Number.isFinite(at) || at < 0) return
       const state = await window.jiwei.browser.state()
+      if (!current()) return
       const existing = state.tabs.find((t) => !t.incognito && !t.sensitive && canonicalUrl(t.url) === canonicalUrl(source.url!))
       const tabId = existing?.id ?? (await window.jiwei.browser.open(source.url, { newTab: true }))
+      if (!current()) return
       if (existing) await window.jiwei.browser.activate(tabId)
-      s.openBrowser()
+      if (!current()) return
       await window.jiwei.browser.seek(tabId, at, true)
+      if (!current()) return
+      s.openBrowser()
       return
     }
     if (seg || locator || selector.quote)
       s.setHighlight({ type: 'segment', id: seg ?? '', sourceId: id, locator, selector, conversationId })
     s.openSource(id, conversationId)
-  })().catch((e: Error) => toast.error(e.message))
+  })().catch((e: Error) => {
+    if (current()) toast.error(e.message)
+  })
 }

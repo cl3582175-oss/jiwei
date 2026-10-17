@@ -116,7 +116,7 @@ function SegmentList({ sourceId, segs }: { sourceId: string; segs: Segment[] }) 
   useTextHighlights(`source:${sourceId}`, ref, annotations, segs)
   // AI 引用跳转：定位并高亮片段
   useEffect(() => {
-    if (highlight?.type !== 'segment' || (highlight.sourceId && highlight.sourceId !== sourceId)) return
+    if (highlight?.type !== 'segment' || (highlight.sourceId && highlight.sourceId !== sourceId) || !segs.length) return
     const page = /page=(\d+)/.exec(highlight.locator ?? '')?.[1]
     const el =
       ref.current?.querySelector<HTMLElement>(`[data-segment="${highlight.id}"]`) ??
@@ -124,10 +124,16 @@ function SegmentList({ sourceId, segs }: { sourceId: string; segs: Segment[] }) 
     const root = ref.current
     if (!root) return
     activeRange.current?.()
-    const clear = highlight.selector?.quote ? paintSourceRange(el ?? root, highlight.selector) : null
+    const selector = highlight.selector
+    const clear = selector?.quote
+      ? ((el ? paintSourceRange(el, selector) : null) ?? paintSourceRange(root, { ...selector, start: undefined, end: undefined }))
+      : null
     if (clear) activeRange.current = clear
     else if (highlight.selector?.quote) toast.info(t('annotate.orphan'))
-    if (!el && !clear) return
+    if (!el && !clear) {
+      if (useApp.getState().highlight === highlight) useApp.getState().setHighlight(null)
+      return
+    }
     if (clear) {
       if (useApp.getState().highlight === highlight) useApp.getState().setHighlight(null)
       return

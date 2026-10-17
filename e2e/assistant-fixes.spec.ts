@@ -87,6 +87,206 @@ async function expectRange(page: Page, quote: string) {
     .toContain(quote)
 }
 
+async function rangeNote(
+  page: Page,
+  sourceId: string,
+  title: string,
+  links: { label: string; page?: number; pageEnd?: number; quote: string }[]
+) {
+  await page.evaluate(
+    async ({ sourceId, title, links }) => {
+      const note = await window.jiwei.notes.create({ title })
+      await window.jiwei.proposals.create({
+        noteId: note.id,
+        title,
+        auto: true,
+        ops: [
+          {
+            op: 'insert_row',
+            afterRowId: null,
+            cue: [],
+            body: [
+              {
+                type: 'paragraph',
+                content: links.flatMap(({ label, ...selector }) => [
+                  {
+                    type: 'text',
+                    text: label,
+                    marks: [
+                      { type: 'link', attrs: { href: `jiwei://source/${sourceId}?target=${encodeURIComponent(JSON.stringify(selector))}` } }
+                    ]
+                  },
+                  { type: 'text', text: ' / ' }
+                ])
+              }
+            ]
+          }
+        ]
+      })
+    },
+    { sourceId, title, links }
+  )
+  await navTo(page, /笔记/)
+  await page
+    .getByRole('button', { name: new RegExp(`^${title}`) })
+    .first()
+    .click()
+}
+
+async function pdfPages(page: Page, pages: string[][]) {
+  const path = join(mkdtempSync(join(tmpdir(), 'jiwei-range-edge-')), 'edge.pdf')
+  writeFileSync(path, makePdf(pages))
+  const source = await page.evaluate(async (path) => (await window.jiwei.sources.importPaths([path], null)).imported[0], path)
+  await expect.poll(async () => (await page.evaluate((id) => window.jiwei.segments.list(id), source.id)).length).toBeGreaterThan(0)
+  return source
+}
+
+async function pauseReaderPreparation(app: ElectronApplication) {
+  await app.evaluate(({ ipcMain }) => {
+    const channel = 'attachments:ofConversation'
+    const handlers = (ipcMain as unknown as { _invokeHandlers: Map<string, (...args: unknown[]) => unknown> })._invokeHandlers
+    const original = handlers.get(channel)!
+    const gate = { entered: false, release: () => {} }
+    const wait = new Promise<void>((done) => {
+      gate.release = done
+    })
+    ;(globalThis as unknown as { readerGate: typeof gate }).readerGate = gate
+    ipcMain.removeHandler(channel)
+    ipcMain.handle(channel, async (...args) => {
+      const value = await original(...args)
+      ipcMain.removeHandler(channel)
+      ipcMain.handle(channel, original)
+      gate.entered = true
+      await wait
+      return value
+    })
+  })
+}
+
+async function readerPreparationEntered(app: ElectronApplication) {
+  await expect.poll(() => app.evaluate(() => (globalThis as unknown as { readerGate: { entered: boolean } }).readerGate.entered)).toBe(true)
+}
+
+async function releaseReaderPreparation(app: ElectronApplication) {
+  await app.evaluate(() => (globalThis as unknown as { readerGate: { release: () => void } }).readerGate.release())
+}
+
+test('PDF duplicate quotes stay on the requested page and hot missing ranges report failure', async () => {
+  const { app, page, model } = await setup()
+  try {
+    const quote = 'REPEATED-EVIDENCE exact repeated text'
+    const source = await pdfPages(
+      page,
+      Array.from({ length: 5 }, (_, i) => [quote, `UNIQUE-PAGE-${i + 1}`])
+    )
+    await rangeNote(page, source.id, '重复文字定位', [
+      { label: '第一页', page: 1, quote },
+      { label: '第五页', page: 5, quote },
+      { label: '已失效的范围', page: 1, quote: 'NO-SUCH-EVIDENCE' }
+    ])
+    await page.locator('.cornell-body a', { hasText: '第一页' }).click()
+    await expectRange(page, quote)
+    await page.locator('.cornell-body a', { hasText: '已失效的范围' }).click()
+    await expect(page.getByText('失去定位', { exact: true })).toBeVisible()
+    await page.locator('.cornell-body a', { hasText: '第五页' }).click()
+    await expect(page.locator('.pdfViewer .page[data-page-number="5"]')).toBeInViewport()
+    await expect
+      .poll(() =>
+        page.evaluate(() =>
+          [...(CSS.highlights.get('jw-source-target') ?? [])][0]?.startContainer.parentElement
+            ?.closest('.page')
+            ?.getAttribute('data-page-number')
+        )
+      )
+      .toBe('5')
+    await page.getByRole('button', { name: '放大', exact: true }).click()
+    await expectRange(page, quote)
+  } finally {
+    await close(app, model)
+  }
+})
+
+test('PDF cross-page targets wait for both text layers', async () => {
+  const { app, page, model } = await setup()
+  try {
+    const first = 'CROSS-PAGE-START from page one',
+      second = 'CROSS-PAGE-END on page two'
+    const source = await pdfPages(page, [[first], [second]])
+    await rangeNote(page, source.id, '跨页文字定位', [
+      { label: '第一页', page: 1, quote: first },
+      { label: '第二页', page: 2, quote: second },
+      { label: '跨页范围', page: 1, pageEnd: 2, quote: `${first}\nFigure: retention curve\n${second}` }
+    ])
+    await page.locator('.cornell-body a', { hasText: '第一页' }).click()
+    await expectRange(page, first)
+    await page.locator('.cornell-body a', { hasText: '第二页' }).click()
+    await expectRange(page, second)
+    // A rebuilt first layer may finish after pageEnd; keep the real nodes hidden until ready.
+    await page.locator('.page[data-page-number="1"] .textLayer').evaluate((el) => {
+      ;(el as HTMLElement).hidden = true
+    })
+    await page.locator('.cornell-body a', { hasText: '跨页范围' }).click()
+    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
+    await expect.poll(() => page.evaluate(() => CSS.highlights.get('jw-source-target')?.size ?? 0)).toBe(0)
+    await page.locator('.page[data-page-number="1"] .textLayer').evaluate((el) => {
+      ;(el as HTMLElement).hidden = false
+    })
+    await expectRange(page, first)
+    await expectRange(page, second)
+  } finally {
+    await close(app, model)
+  }
+})
+
+test('PDF active text range returns after actual page recycling', async () => {
+  const { app, page, model } = await setup()
+  try {
+    const first = 'PERSISTENT-PAGE-ONE range'
+    const source = await pdfPages(page, [[first], ...Array.from({ length: 16 }, (_, i) => [`RECYCLE-PAGE-${i + 2}`])])
+    await rangeNote(page, source.id, '保留范围高亮', [{ label: '第一页范围', page: 1, quote: first }])
+    await page.locator('.cornell-body a').click()
+    await expectRange(page, first)
+    for (let n = 3; n <= 17; n++) {
+      const target = page.locator(`.pdfViewer .page[data-page-number="${n}"]`)
+      await target.scrollIntoViewIfNeeded()
+      await expect(target.locator('.textLayer span')).not.toHaveCount(0)
+    }
+    await expect(page.locator('.pdfViewer .page[data-page-number="1"] .textLayer span')).toHaveCount(0)
+    await page.locator('.pdfViewer .page[data-page-number="1"]').scrollIntoViewIfNeeded()
+    await expectRange(page, first)
+  } finally {
+    await close(app, model)
+  }
+})
+
+test('a stale segment owner recovers its saved quote elsewhere in the same source', async () => {
+  const { app, page, model } = await setup()
+  try {
+    const quote = 'ALIAS-RECOVERY-UNIQUE saved selected evidence'
+    const path = join(mkdtempSync(join(tmpdir(), 'jiwei-alias-edge-')), 'resegmented.txt')
+    writeFileSync(path, [...Array.from({ length: 50 }, (_, i) => `Paragraph ${i} ${'source material '.repeat(40)}`), quote].join('\n\n'))
+    const source = await page.evaluate(async (path) => (await window.jiwei.sources.importPaths([path], null)).imported[0], path)
+    await expect.poll(async () => (await page.evaluate((id) => window.jiwei.segments.list(id), source.id)).length).toBeGreaterThan(1)
+    await page.evaluate(
+      async ({ sourceId, quote }) => {
+        const segments = await window.jiwei.segments.list(sourceId)
+        const note = await window.jiwei.notes.create({ title: '重新分段的关联' })
+        await window.jiwei.connections.relate(note.id, 'source', sourceId, 'related', false, { ownerId: segments[0].id, quote })
+      },
+      { sourceId: source.id, quote }
+    )
+    await navTo(page, /笔记/)
+    await page
+      .getByRole('button', { name: /^重新分段的关联/ })
+      .first()
+      .click()
+    await page.getByRole('button', { name: 'resegmented', exact: true }).click()
+    await expectRange(page, quote)
+  } finally {
+    await close(app, model)
+  }
+})
+
 test('model choice survives project first send, navigation and restored history without changing defaults', async () => {
   const { app, page, model } = await setup()
   try {
@@ -388,6 +588,34 @@ test('opened private project files reach only their reader conversation and revo
         conversationId: conversation.id
       })
     ).not.toBeNull()
+    const pendingStart = model.requests.length
+    await pauseReaderPreparation(app)
+    await panel.getByRole('textbox').last().fill('准备中撤销文件上下文。')
+    await panel.getByRole('textbox').last().press('Enter')
+    await readerPreparationEntered(app)
+    await panel.getByRole('button', { name: /^不附带：当前项目文件/ }).click()
+    await releaseReaderPreparation(app)
+    await expect(panel.getByRole('button', { name: '发送', exact: true })).toHaveAttribute('aria-busy', 'false')
+    expect(model.requests.length).toBe(pendingStart)
+    expect(
+      await page.evaluate(({ id, conversationId }) => window.jiwei.segments.get(id, conversationId), {
+        id: segmentId,
+        conversationId: conversation.id
+      })
+    ).toBeNull()
+    await panel.getByRole('button', { name: /^恢复附带：当前项目文件/ }).click()
+    await panel.getByRole('textbox').last().fill('恢复后读取当前文件。')
+    await panel.getByRole('textbox').last().press('Enter')
+    await finish(page, conversation.id, 4)
+    await panel.getByRole('button', { name: '新对话', exact: true }).click()
+    await expect
+      .poll(() =>
+        page.evaluate(({ id, conversationId }) => window.jiwei.segments.get(id, conversationId), {
+          id: segmentId,
+          conversationId: conversation.id
+        })
+      )
+      .toBeNull()
     await page.getByRole('button', { name: '关闭资料', exact: true }).click()
     await expect
       .poll(() =>

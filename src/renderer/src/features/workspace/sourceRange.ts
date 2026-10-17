@@ -9,6 +9,10 @@ export function sourceRange(root: HTMLElement, selector: SourceSelector): Range 
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
     acceptNode(node) {
       if (node instanceof Element) {
+        if (selector.page && node.matches('.page[data-page-number]')) {
+          const page = Number(node.getAttribute('data-page-number'))
+          if (page < selector.page || page > (selector.pageEnd ?? selector.page)) return NodeFilter.FILTER_REJECT
+        }
         if (node.matches('[data-jiwei-ui], button, script, style, .canvasWrapper, .annotationLayer, .annotationEditorLayer'))
           return NodeFilter.FILTER_REJECT
         return node.matches('br, p, h1, h2, h3, pre, .textLayer') ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP
@@ -23,7 +27,7 @@ export function sourceRange(root: HTMLElement, selector: SourceSelector): Range 
       pieces.push({ node, start, end: text.length })
     } else if (text && !text.endsWith('\n')) text += '\n'
   }
-  const found = locateQuote(text, selector)
+  const found = locateQuote(text, selector, true)
   if (!found) return null
   const first = pieces.find((p) => p.end > found.start)
   const last = pieces
@@ -38,12 +42,12 @@ export function sourceRange(root: HTMLElement, selector: SourceSelector): Range 
 }
 
 /** Keep an exact source range visible until another navigation or the reader closes. */
-export function paintSourceRange(root: HTMLElement, selector: SourceSelector): (() => void) | null {
+export function paintSourceRange(root: HTMLElement, selector: SourceSelector, scroll = true): (() => void) | null {
   const range = sourceRange(root, selector)
   if (!range || !range.getClientRects().length) return null
   const highlight = new Highlight(range)
   CSS.highlights.set('jw-source-target', highlight)
-  range.startContainer.parentElement?.scrollIntoView({ block: 'center' })
+  if (scroll) range.startContainer.parentElement?.scrollIntoView({ block: 'center' })
   return () => {
     if (CSS.highlights.get('jw-source-target') === highlight) CSS.highlights.delete('jw-source-target')
   }

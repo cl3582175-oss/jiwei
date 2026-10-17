@@ -89,7 +89,7 @@ interface AssistState {
   setPanel: (patch: PanelPatch, page?: string) => void
 }
 
-export const useAssist = create<AssistState>((set) => ({
+export const useAssist = create<AssistState>((set, get) => ({
   toolbar: null,
   showToolbar: (toolbar) => set({ toolbar }),
   card: null,
@@ -106,11 +106,19 @@ export const useAssist = create<AssistState>((set) => ({
       return { replyQuotes }
     }),
   panels: {},
-  setPanel: (patch, page = currentPanelPage()) =>
+  setPanel: (patch, page = currentPanelPage()) => {
+    const previous = get().panels[page]?.conversationId
+    if (previous && patch.panelConversationId !== undefined && patch.panelConversationId !== previous && page.startsWith('notes:reader:'))
+      revokeReader(previous)
     set((s) => ({
       panels: { ...s.panels, [page]: { ...(s.panels[page] ?? EMPTY_PANEL), ...panelPatch(patch) } }
     }))
+  }
 }))
+
+function revokeReader(id: string): void {
+  if (typeof window !== 'undefined') void window.jiwei.chat.releaseReader(id).catch((error) => toast.error(String(error)))
+}
 
 export function getPanel(page = currentPanelPage()): PanelState {
   return useAssist.getState().panels[page] ?? EMPTY_PANEL
@@ -136,7 +144,7 @@ useApp.subscribe((next, previous) => {
     (next.sourceId !== previous.sourceId || next.sourceProjectId !== previous.sourceProjectId)
   ) {
     const id = getPanel(`notes:reader:${previous.sourceProjectId}:${previous.sourceId}`).conversationId
-    if (id && typeof window !== 'undefined') void window.jiwei.chat.releaseReader(id).catch((error) => toast.error(String(error)))
+    if (id) revokeReader(id)
   }
 })
 

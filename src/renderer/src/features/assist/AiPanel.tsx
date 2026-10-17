@@ -153,6 +153,7 @@ function PanelBody({ pinned, page }: { pinned: boolean; page: string }) {
   }
   const [preparing, setPreparing] = useState(false)
   const sending = useRef(false)
+  const sendGeneration = useRef(0)
   const scroller = useRef<HTMLDivElement>(null)
   const input = useRef<HTMLTextAreaElement>(null)
 
@@ -169,12 +170,19 @@ function PanelBody({ pinned, page }: { pinned: boolean; page: string }) {
     if (el) el.scrollTop = el.scrollHeight
   }, [msgs])
   useEffect(() => input.current?.focus(), [])
+  useEffect(
+    () => () => {
+      sendGeneration.current++
+    },
+    []
+  )
 
   const send = async (q: string, uiEvent?: UiEvent): Promise<void> => {
     if (readerPreparing) return
     if ((!q.trim() && !attachments.ids().length) || attachments.adding || streaming || sending.current) return
     if (!choice.providerId || !choice.model) return void toast.error(t('chat.needModel'))
     const attachmentIds = attachments.ids()
+    const generation = ++sendGeneration.current
     sending.current = true
     setPreparing(true)
     try {
@@ -222,6 +230,12 @@ function PanelBody({ pinned, page }: { pinned: boolean; page: string }) {
         app.view === 'notes' && !app.browserOpen && app.sourceProjectId && packet.sourceId === app.sourceId
           ? { projectId: app.sourceProjectId, sourceId: app.sourceId! }
           : undefined
+      const context = await attachmentContext(packet, conversationId, attachmentIds, { readerSource, requireCurrentSource: true })
+      const currentReader = () => {
+        const current = useApp.getState()
+        return !readerSource || (current.sourceId === readerSource.sourceId && current.sourceProjectId === readerSource.projectId)
+      }
+      if (generation !== sendGeneration.current || !currentReader()) return
       const r = await sendChat({
         conversationId,
         text: quotedMessage(q.trim(), quote),
@@ -235,11 +249,10 @@ function PanelBody({ pinned, page }: { pinned: boolean; page: string }) {
         ...(conversationId ? {} : { web }),
         kind: 'workspace',
         readerSource,
-        context: await attachmentContext(packet, conversationId, attachmentIds, { readerSource, requireCurrentSource: true })
+        context
       })
-      const current = useApp.getState()
-      if (readerSource && (current.sourceId !== readerSource.sourceId || current.sourceProjectId !== readerSource.projectId))
-        await api.chat.releaseReader(r.conversation.id)
+      if (readerSource && (generation !== sendGeneration.current || !currentReader())) await api.chat.releaseReader(r.conversation.id)
+      if (generation !== sendGeneration.current) return
       attachments.clear(attachmentIds)
       if (getPanel(page).conversationId !== conversationId) return
       if (conversationId) useAssist.getState().setReplyQuote(conversationId, null)
@@ -295,6 +308,7 @@ function PanelBody({ pinned, page }: { pinned: boolean; page: string }) {
               variant="ghost"
               aria-label={t('assist.expand')}
               onClick={() => {
+                sendGeneration.current++
                 const id = getPanel(page).conversationId
                 useAssist.getState().setPanel({ panelOpen: false, panelPinned: false })
                 useApp.getState().openConversation(id)
@@ -375,14 +389,15 @@ function PanelBody({ pinned, page }: { pinned: boolean; page: string }) {
                     aria-label={
                       off.has(c.id) ? t('assist.restoreContext', { label: c.label }) : t('assist.removeContext', { label: c.label })
                     }
-                    onClick={() =>
+                    onClick={() => {
+                      sendGeneration.current++
                       setOff((s) => {
                         const n = new Set(s)
                         if (n.has(c.id)) n.delete(c.id)
                         else n.add(c.id)
                         return n
                       })
-                    }
+                    }}
                     className="-mr-0.5 rounded p-0.5 hover:bg-surface-hover hover:text-fg"
                   >
                     <X />

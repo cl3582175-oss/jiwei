@@ -6,19 +6,24 @@ import { normalizeExtracted } from '@shared/textNormalize'
 /** 在 text 中找到选择器指向的位置；找不到返回 null（批注“失去定位”） */
 export function locateQuote(
   text: string,
-  sel: Pick<AnnotationSelector, 'quote' | 'prefix' | 'suffix' | 'start' | 'end'>
+  sel: Pick<AnnotationSelector, 'quote' | 'prefix' | 'suffix' | 'start' | 'end'>,
+  requireUnique = false
 ): { start: number; end: number } | null {
-  const exact = locateExactQuote(text, sel)
+  const exact = locateExactQuote(text, sel, requireUnique)
   if (exact || !sel.quote) return exact
   const mapped = normalizedOffsets(text),
     quote = normalizedOffsets(sel.quote).text
   if (!quote || (mapped.text === text && quote === sel.quote)) return null
-  const found = locateExactQuote(mapped.text, {
-    quote,
-    prefix: sel.prefix ? normalizedOffsets(sel.prefix).text : undefined,
-    suffix: sel.suffix ? normalizedOffsets(sel.suffix).text : undefined,
-    start: sel.start === undefined ? undefined : mapped.starts.findIndex((i) => i >= sel.start!)
-  })
+  const found = locateExactQuote(
+    mapped.text,
+    {
+      quote,
+      prefix: sel.prefix ? normalizedOffsets(sel.prefix).text : undefined,
+      suffix: sel.suffix ? normalizedOffsets(sel.suffix).text : undefined,
+      start: sel.start === undefined ? undefined : mapped.starts.findIndex((i) => i >= sel.start!)
+    },
+    requireUnique
+  )
   return found ? { start: mapped.starts[found.start], end: mapped.ends[found.end - 1] } : null
 }
 
@@ -54,7 +59,8 @@ function normalizedOffsets(source: string): { text: string; starts: number[]; en
 
 function locateExactQuote(
   text: string,
-  sel: Pick<AnnotationSelector, 'quote' | 'prefix' | 'suffix' | 'start' | 'end'>
+  sel: Pick<AnnotationSelector, 'quote' | 'prefix' | 'suffix' | 'start' | 'end'>,
+  requireUnique: boolean
 ): { start: number; end: number } | null {
   const q = sel.quote
   if (!q) return null
@@ -70,9 +76,11 @@ function locateExactQuote(
     if (sel.suffix) s += common(text.slice(i + q.length, i + q.length + sel.suffix.length), sel.suffix, false)
     return s
   }
-  const best = hits
+  const ranked = hits
     .map((i) => ({ i, s: score(i), d: sel.start !== undefined ? Math.abs(i - sel.start) : 0 }))
-    .sort((a, b) => b.s - a.s || a.d - b.d)[0]
+    .sort((a, b) => b.s - a.s || a.d - b.d)
+  const best = ranked[0]
+  if (requireUnique && ranked[1]?.s === best.s && ranked[1].d === best.d) return null
   return { start: best.i, end: best.i + q.length }
 }
 

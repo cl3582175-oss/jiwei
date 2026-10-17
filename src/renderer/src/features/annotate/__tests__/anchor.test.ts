@@ -29,3 +29,8 @@ describe('annotation re-anchoring (TextQuote)', () => {
     expect(locateQuote('前言\u{2F800}风压', { quote: '丽风压' })).toEqual({ start: 2, end: 6 })
   })
 })
+it('rejects ambiguous source quotes unless context or an unchanged offset identifies one occurrence', () => {
+  expect(locateQuote('same first same', { quote: 'same' }, true)).toBeNull()
+  expect(locateQuote('same first same', { quote: 'same', prefix: 'first ' }, true)).toEqual({ start: 11, end: 15 })
+  expect(locateQuote('same first same', { quote: 'same', start: 11 }, true)).toEqual({ start: 11, end: 15 })
+})
