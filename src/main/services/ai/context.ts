@@ -14,6 +14,7 @@ import type { ChatScope } from '@shared/schemas'
 import type { DocNode, SearchHit, Segment } from '@shared/types'
 import { fullSourceFits, sourceContextHits, type ContextSource } from '../../lib/sourceContext'
 import { tablePreview } from '../../lib/attachmentText'
+import { webOriginEvidence } from '@shared/retrieval'
 
 // 上下文包 → 提示词：把用户“指着”的内容连同必要的前后文交给模型。
 // 隐私：标记为“不让 AI 读取”或已删除的笔记 / 资料一律跳过。
@@ -58,12 +59,13 @@ function sourceRow(id: string, conversationId: string | null = null): SourceRow 
       aiExcluded: sources.aiExcluded,
       deletedAt: sources.deletedAt,
       accessedAt: sources.accessedAt,
-      publishedAt: sources.publishedAt
+      publishedAt: sources.publishedAt,
+      webOrigin: sources.webOrigin
     })
     .from(sources)
     .where(eq(sources.id, id))
     .get()
-  return r && canReadSource(id, conversationId) ? { ...r, aiExcluded: false } : null
+  return r && canReadSource(id, conversationId) ? { ...r, webOrigin: r.webOrigin ?? undefined, aiExcluded: false } : null
 }
 
 function noteRow(id: string): NoteRow | null {
@@ -112,6 +114,7 @@ function sourceAnchor(anchor: Anchor, zh: boolean, conversationId: string | null
   const lines = [
     `${kindLabel[a.kind][zh ? 0 : 1]} · ${head}${a.page ? ` · ${zh ? `第 ${a.page} 页` : `p.${a.page}`}` : ''}${a.t ? ` · ${fmtTime(a.t[0])}–${fmtTime(a.t[1])}` : ''}`
   ]
+  if (src.webOrigin) lines.push(webOriginEvidence(src.webOrigin, zh))
 
   if (a.t && segs.some((s) => segTime(s))) {
     // 视频 / 音频：取与时间段重叠的转写稿

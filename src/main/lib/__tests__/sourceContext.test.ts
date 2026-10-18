@@ -20,6 +20,12 @@ const source = (id: string, texts: string[]): ContextSource => ({
 })
 
 describe('explicit multi-source context citations', () => {
+  it('retains cloud origin on later full-source and excerpt evidence', () => {
+    const webOrigin = { provider: 'deepseek' as const, urlVerified: false as const, truncated: false }
+    const saved = { ...source('cloud', ['Saved returned text']), webOrigin }
+    expect(sourceContextHits([saved])[0].webOrigin).toEqual(webOrigin)
+    expect(sourceContextHits([saved], 1000, { full: true })[0].webOrigin).toEqual(webOrigin)
+  })
   it('整篇模式保留全部片段而不是前12段，预算不足时拒绝伪全文', () => {
     const texts = Array.from({ length: 20 }, (_, i) => '第' + i + '段' + '正文'.repeat(100))
     const a = source('a', texts),

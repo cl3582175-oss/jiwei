@@ -459,3 +459,13 @@ describe('buildPreQuery', () => {
     expect(buildPreQuery('请搜一下吗？', '上一条问题')).toBe('上一条问题')
   })
 })
+
+it('reads an explicitly supplied page without a configured search backend', () => {
+  expect(webGate({ ...defaults, text: '总结 https://example.org/article', webAvailable: false, academicEnabled: false })).toMatchObject({ status: 'read-only', preRead: true, preSearch: false, offerTools: true })
+})
+it('does not replace a direct page request with proactive Search even for an unreliable tool model', () => {
+  expect(webGate({ ...defaults, text: 'Read https://example.org/article', toolsReliable: false, coverage: 'none', mode: 'always' })).toMatchObject({ preRead: true, preSearch: false })
+})
+it('keeps the off switch above explicit cloud requests', () => {
+  expect(webGate({ ...defaults, text: '用 DeepSeek 读取 https://example.org/article', mode: 'off' })).toMatchObject({ status: 'off', offerTools: false, preSearch: false })
+})

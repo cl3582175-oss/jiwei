@@ -83,7 +83,8 @@ import { retrievalStatus } from '../retrieval/gateway'
 import { currentRun } from '../agent/context'
 import { asExternalData } from '../agent/wrap'
 import { buildWebTools } from './webTools'
-import { previousWebHits, runPreSearchForTurn } from './chatWeb'
+import { previousWebHits, runPreSearchForTurn, runPreReadForTurn } from './chatWeb'
+import { directReadIntent } from '../retrieval/readIntent'
 import { urlKey } from '../retrieval/backends/normalize'
 
 // AI 对话：检索知识库 → 组织带时间与状态的上下文 → 流式生成 → 记录引用与用量。
@@ -408,6 +409,7 @@ function turnMessage(
       'academic-only': zh
         ? '可用：用户给出的网址可以用 read_url 读取；搜索只能查学术论文（web_search 用 type=academic），网页搜索未配置'
         : 'available: URLs the user gave can be read with read_url; search covers academic papers only (web_search with type=academic); web search is not configured',
+      'read-only': zh ? '仅阅读指定网址；没有配置搜索服务' : 'read the specified URLs only; Search is unconfigured',
       off: zh ? '已关闭' : 'turned off',
       unconfigured: zh ? '未配置搜索服务' : 'no search service configured',
       context: zh ? '本轮不联网：你在问选中或指定的内容' : 'not used this turn: the question is about the selected or chosen content'
@@ -416,7 +418,7 @@ function turnMessage(
     const yesNo = (value: boolean): string => (zh ? (value ? '是' : '否') : value ? 'yes' : 'no')
     const separator = zh ? '：' : ': '
     const report = [
-      `${zh ? '联网' : 'Web'}${separator}${web.failed ? (zh ? '本轮搜索失败' : 'search failed this turn') : state}`,
+      `${zh ? '联网' : 'Web'}${separator}${web.failed ? (web.gate.preRead ? (zh ? '本轮未获得指定网页正文，不要编造页面内容' : 'The requested page could not be read; do not invent its contents') : zh ? '本轮搜索失败' : 'search failed this turn') : state}`,
       `${zh ? '知识库覆盖' : 'Knowledge base coverage'}${separator}${cov}`,
       `${zh ? '时效需求' : 'Needs current info'}${separator}${yesNo(web.gate.timeSensitive)}`,
       `${zh ? '用户明确要求联网' : 'User asked to search'}${separator}${yesNo(web.gate.explicitAsk)}`,
@@ -1037,7 +1039,7 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
     kbHits = kbHits.filter((hit) => !explicitAtStart.some((item) => item.parentId === hit.parentId && item.ownerId === hit.ownerId))
     let webHits: SearchHit[] = []
     const filterCurrentWebHits = (hits: SearchHit[]): SearchHit[] =>
-      filterCloudHits(hits, conversationId).filter((hit) => {
+      filterCloudHits(hits, conversationId, new Set(session.web.pageGuards?.keys())).filter((hit) => {
         try {
           // 未完成回答的快照可被清缓存删除；继续使用读取时捕获的目的网址检查当前权限。
           if (hit.parentType === 'web') session.web.pageGuards?.get(hit.parentId)?.()
@@ -1063,6 +1065,15 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
         cautious: getSettings().retrieval.cautious,
         now: Date.now()
       })
+      session.web.cloudReadUrl = directReadIntent(input.text).cloudUrl
+      session.web.onReadFailure = (url) =>
+        pushStep({
+          id: 'cloud-option-' + urlKey(url),
+          tool: 'cloud_read_option',
+          status: 'done',
+          label: zh ? '可手动云端代读' : 'Manual cloud reading available',
+          cloudRead: { url }
+        })
       for (const value of input.text.match(/https?:\/\/[^\s<>"'`]+/gi) ?? []) {
         const key = urlKey(value.replace(/[，。！？；、）)\]}]+$/, ''))
         if (key) session.web.allowedUrls.add(key)
@@ -1109,7 +1120,12 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
       webHits = result.webHits
       searchFailed = result.failed
     }
-    if (session.web.gate.preSearch) await doPreSearch()
+    if (session.web.gate.preRead) {
+      const result = await runPreReadForTurn(session, directReadIntent(input.text).urls, { kbHits, signal: ctrl.signal, pushStep })
+      kbHits = result.kbHits
+      webHits = result.webHits
+      searchFailed = result.failed
+    } else if (session.web.gate.preSearch) await doPreSearch()
     // 最后一条（本轮）用户消息附上上下文、片段与技能
     const last = msgs.at(-1)
     if (last?.role === 'user' && coach) last.content = coachTurn(coach, input.text, zh)
@@ -1460,7 +1476,8 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
         site: h.site,
         snippetOnly: h.snippetOnly,
         suspicious: h.suspicious,
-        meta: h.meta
+        meta: h.meta,
+        webOrigin: h.webOrigin
       }))
       .filter((c) => used.has(c.n) && visible.has(c.ownerId))
     // 服务商实际使用的模型（可能与请求的名称不同，例如旧名被路由到新模型）

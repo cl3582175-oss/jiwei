@@ -32,7 +32,8 @@ vi.mock('electron', () => ({
       throw new Error('No file access in chatWeb tests')
     }
   },
-  nativeTheme: {}
+  nativeTheme: {},
+  BrowserWindow: { getAllWindows: () => [] }
 }))
 vi.mock('../../settings', () => ({
   getSettings: () => ({
@@ -80,7 +81,8 @@ import { readUrl } from '../reader'
 import { urlKey } from '../backends/normalize'
 import { assertReadableUrl } from '../pagePolicy'
 import * as scoring from '../scoring'
-import { previousWebHits, runPreSearchForTurn } from '../../ai/chatWeb'
+import { previousWebHits, runPreSearchForTurn, runPreReadForTurn } from '../../ai/chatWeb'
+import { decide, denyAll, pendingApprovals } from '../../agent/approval'
 
 const NOW = Date.UTC(2026, 9, 13, 12)
 function session(): AgentSession {
@@ -245,10 +247,56 @@ beforeEach(() => {
   })
 })
 afterEach(() => {
+  denyAll()
   state.sqlite?.close()
   state.sqlite = null
   state.db = null
   vi.restoreAllMocks()
+})
+
+describe('direct page reading before model generation', () => {
+  it('reads at most two supplied pages without Search and keeps knowledge evidence', async () => {
+    const s = session(),
+      knowledge = kb('direct-knowledge'),
+      steps: AgentStep[] = []
+    const found = [result(1), result(2), result(3)]
+    found.forEach((entry) => addRead(entry))
+    s.web.gate = { ...s.web.gate, status: 'read-only', preRead: true, preSearch: false }
+    const output = await run(() =>
+      runPreReadForTurn(
+        s,
+        found.map((entry) => entry.url),
+        { kbHits: [knowledge], pushStep: (step) => steps.push(step) }
+      )
+    )
+    expect(state.search).not.toHaveBeenCalled()
+    expect(state.read).toHaveBeenCalledTimes(2)
+    expect(output.kbHits).toEqual([knowledge])
+    expect(output.webHits.length).toBeGreaterThan(0)
+    expect(output.webHits.every((hit) => hit.locator?.startsWith('chars='))).toBe(true)
+    expect(steps.filter((step) => step.status === 'done')).toHaveLength(2)
+  })
+  it('waits for cautious-mode confirmation and never reads a declined page', async () => {
+    state.cautious = true
+    const s = session(),
+      steps: AgentStep[] = []
+    const done = run(() => runPreReadForTurn(s, [result(1).url], { kbHits: [], pushStep: (step) => steps.push(step) }))
+    expect(state.read).not.toHaveBeenCalled()
+    const approval = pendingApprovals().find((item) => item.messageId === s.messageId)!
+    expect(approval.tool).toBe('read_url')
+    expect(steps[0].approval?.state).toBe('pending')
+    decide(approval.id, false)
+    await done
+    expect(state.read).not.toHaveBeenCalled()
+    expect(steps.at(-1)?.status).toBe('denied')
+  })
+  it('never restores cloud citations, even after their snapshots have been removed', () => {
+    const origin = { provider: 'deepseek' as const, urlVerified: false as const, truncated: false }
+    expect(previousWebHits(session(), [citation({ webOrigin: origin, parentId: 'missing-cloud' })])).toEqual([])
+    persistPage('old-cloud', result(1).url, 'cloud snippet')
+    state.sqlite!.prepare("UPDATE web_pages SET provider='deepseek', final_url=NULL WHERE id='old-cloud'").run()
+    expect(previousWebHits(session(), [citation({ parentId: 'old-cloud', url: result(1).url })])).toEqual([])
+  })
 })
 
 describe('proactive turn search', () => {

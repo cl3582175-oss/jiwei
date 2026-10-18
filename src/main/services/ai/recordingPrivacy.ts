@@ -17,14 +17,15 @@ export function requireRecordingCloudAccess(input: ChatSend, conversationId: str
     if (!source || !canReadSource(id, conversationId)) throw new Error(voiceText('sourceNoCloud'))
   }
 }
-export function filterCloudHits(hits: SearchHit[], conversationId: string | null = null): SearchHit[] {
+export function filterCloudHits(hits: SearchHit[], conversationId: string | null = null, cloudPages?: ReadonlySet<string>): SearchHit[] {
   return hits.filter((hit) => {
     if (hit.parentType === 'web') {
       try {
         if (!hit.url) return false
         assertReadableUrl(hit.url)
         if (hit.meta?.pdfUrl) assertReadableUrl(hit.meta.pdfUrl)
-        if (hit.parentId) assertPageReadable(hit.parentId)
+        if (hit.webOrigin && !cloudPages?.has(hit.parentId)) return false
+        if (hit.parentId) assertPageReadable(hit.parentId, !!cloudPages?.has(hit.parentId))
         return true
       } catch {
         return false

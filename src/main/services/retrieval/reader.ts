@@ -52,7 +52,8 @@ const messages = {
   empty: ['这个网页没有可读的正文（可能需要登录）', 'This page has no readable text (it may require a login)'],
   scanned: ['这是扫描版 PDF，暂时读不出文字', 'This is a scanned PDF; its text cannot be read yet'],
   size: ['网页或文件过大，暂时无法读取', 'This page or file is too large to read'],
-  expired: ['网页快照已失效', 'The page snapshot is no longer available']
+  expired: ['网页快照已失效', 'The page snapshot is no longer available'],
+  restricted: ['该页面存在访问限制，不能使用云端绕过', 'The page has access restrictions; cloud reading cannot bypass them']
 } as const
 class ReadError extends Error {
   constructor(readonly reason: keyof typeof messages) {
@@ -61,6 +62,7 @@ class ReadError extends Error {
     this.name = 'ReadError'
   }
 }
+export const canSupplementRead = (error: unknown): boolean => error instanceof ReadError && ['failed', 'empty'].includes(error.reason)
 const toView = (row: PageRow | (Snapshot & { id: string })): WebPageView => ({
   id: row.id,
   url: row.url,
@@ -299,6 +301,7 @@ export async function readUrl(value: string, opts: ReadOptions = {}): Promise<Re
   let kind: WebPageView['method'] = 'fetch',
     ok = false,
     finalUrl = url
+  let cloudEligible = true
   const fetchOptions = {
     signal: opts.signal,
     maxBytes: 5 * 1024 * 1024,
@@ -320,6 +323,8 @@ export async function readUrl(value: string, opts: ReadOptions = {}): Promise<Re
       })
       finalUrl = validate(rendered.finalUrl)
       const result = extractReadable(rendered.html, finalUrl)
+      if (/(?:sign in to continue|log in to continue|subscribe to continue|请先登录|登录后|付费后)/i.test(result.text))
+        cloudEligible = false
       if (result.text.length < 200) throw new ReadError('empty')
       return result
     }
@@ -372,6 +377,7 @@ export async function readUrl(value: string, opts: ReadOptions = {}): Promise<Re
         if (response.status !== 200) throw new Error('HTTP ' + response.status)
         readable = await parsePdf(response.bytes, finalUrl, opts.signal)
       } else {
+        if (response.status !== 200) cloudEligible = false
         const isHtml = /(?:text\/html|application\/xhtml\+xml)/.test(type)
         if (response.status !== 200 && !([403, 429].includes(response.status) && isHtml)) throw new Error('HTTP ' + response.status)
         if (!isHtml) throw new ReadError('unsupported')
@@ -404,13 +410,15 @@ export async function readUrl(value: string, opts: ReadOptions = {}): Promise<Re
     return result
   } catch (error) {
     if (opts.signal?.aborted) throw new ReadError('canceled')
-    if (error instanceof PagePolicyError || error instanceof ReadError) throw error
+    if (error instanceof PagePolicyError) throw error
     if (error instanceof Error && /^HTTP \d{3}$/.test(error.message)) {
       const status = Number(error.message.slice(5))
       // 原始错误可能包含查询或凭证；对外错误仅保留已验证的HTTP状态码。
       // eslint-disable-next-line preserve-caught-error
       throw new Error(tr('网页打不开（HTTP ' + status + '）', 'Page could not be opened (HTTP ' + status + ')'))
     }
+    if (!cloudEligible) throw new ReadError('restricted')
+    if (error instanceof ReadError || (error instanceof Error && error.name === 'RenderError')) throw error
     throw new ReadError('failed')
   } finally {
     try {

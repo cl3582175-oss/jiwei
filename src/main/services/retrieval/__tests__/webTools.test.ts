@@ -83,6 +83,7 @@ import { urlKey } from '../backends/normalize'
 import { BACKEND_INFO } from '@shared/retrieval'
 import { scoreWeb } from '../scoring'
 import { buildWebTools, passageHit, readForSession, searchForSession, snippetHit } from '../../ai/webTools'
+import { numberHits } from '../../ai/tools'
 
 it('uses a longer search summary for the model while keeping it explicitly snippet-only', () => {
   const hit = snippetHit({
@@ -193,6 +194,19 @@ afterEach(async () => {
 })
 
 describe('web tool availability and public contract', () => {
+  it('offers only reading when no Search service is available', () => {
+    const s = session()
+    s.web.gate.status = 'read-only'
+    expect(Object.keys(buildWebTools(s).tools)).toEqual(['read_url'])
+  })
+  it('keeps unknown cloud origin in numbered page and saved-source evidence', () => {
+    const webOrigin = { provider: 'deepseek' as const, urlVerified: false as const, truncated: true }
+    const pageHit = { ...snippetHit(result()), snippetOnly: false, webOrigin }
+    const text = numberHits(session(), [pageHit, { ...pageHit, parentType: 'source', parentId: 'saved-cloud', ownerId: 'cloud-segment' }])
+    expect(text.match(/DeepSeek 云端读取 · 最终来源未核验/g)).toHaveLength(2)
+    expect(text).toContain('已读取部分正文')
+    expect(text).toContain('不能据此声称官网已确认')
+  })
   it('offers both web tools with KB scope none, and leaves guarding to the shared wrapper', async () => {
     state.cautious = true
     const s = session(),

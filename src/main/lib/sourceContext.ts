@@ -1,6 +1,6 @@
 import type { SearchHit, Segment, Source } from '@shared/types'
 
-export type ContextSource = Pick<Source, 'id' | 'title' | 'accessedAt' | 'publishedAt' | 'aiExcluded' | 'deletedAt'> & {
+export type ContextSource = Pick<Source, 'id' | 'title' | 'accessedAt' | 'publishedAt' | 'aiExcluded' | 'deletedAt' | 'webOrigin'> & {
   segments: Segment[]
 }
 
@@ -55,6 +55,7 @@ export function sourceContextHits(sources: readonly ContextSource[], budget = 12
       hits.push({
         parentType: 'source',
         parentId: source.id,
+        webOrigin: source.webOrigin,
         ownerId: segment.id,
         title: source.title,
         text,

@@ -7,7 +7,7 @@ import { credentialsFor } from '../backends/store'
 import { jsonResponse, request } from '../backends/common'
 import { assertReadableUrl } from '../pagePolicy'
 import { webPolicyOf } from '../policy'
-import { recordCall, reserveCall } from '../calls'
+import { DailyLimitError, recordCall, reserveCall } from '../calls'
 
 export class CloudReadError extends Error {
   constructor(readonly reason: 'configuration' | 'restricted' | 'revoked' | 'failed' | 'empty' | 'canceled' | 'timeout') {
@@ -127,7 +127,7 @@ export async function readDeepSeekPage(
     if (opts.signal?.aborted) throw new CloudReadError('canceled')
     if (revoked.signal.aborted) throw new CloudReadError('revoked')
     if (timeout.aborted) throw new CloudReadError('timeout')
-    if (error instanceof CloudReadError) throw error
+    if (error instanceof CloudReadError || error instanceof DailyLimitError) throw error
     throw new CloudReadError('failed')
   } finally {
     release?.()

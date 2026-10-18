@@ -13,7 +13,10 @@ import { DailyLimitError } from '../retrieval/calls'
 import { PrivacyError } from '../retrieval/privacyGuard'
 import { WebPolicyError } from '../retrieval/policy'
 import { assertReadableUrl, PagePolicyError } from '../retrieval/pagePolicy'
-import { assertPageReadable, readUrl, type Passage, type ReadPage } from '../retrieval/reader'
+import { assertPageReadable, canSupplementRead, readUrl, type Passage, type ReadPage } from '../retrieval/reader'
+import { assertCloudUrl } from '../retrieval/readers/deepseek'
+import { privacyFingerprint } from './privacy'
+import { credentialsFor } from '../retrieval/backends/store'
 import { selectPassages } from '../retrieval/scoring'
 import { numberHits, type AgentSession } from './tools'
 
@@ -67,7 +70,7 @@ class WebToolError extends Error {
   }
 }
 function available(session: AgentSession): void {
-  if (!['available', 'academic-only'].includes(session.web.gate.status)) throw new WebToolError(session.zh, 'unavailable')
+  if (!['available', 'academic-only', 'read-only'].includes(session.web.gate.status)) throw new WebToolError(session.zh, 'unavailable')
 }
 /** 网关/reader已经净化已知错误；未知边界错误不能携带查询、Key或原始取消原因进入工具审计。 */
 function safeError(session: AgentSession, error: unknown, kind: 'search' | 'read', signal?: AbortSignal): Error {
@@ -82,7 +85,7 @@ function safeError(session: AgentSession, error: unknown, kind: 'search' | 'read
     return error
   if (kind === 'read' && error instanceof Error) {
     // 这两个私有错误类只在reader/render内以固定文案构造，transport原始错误不会以它们的名字返回。
-    if (['ReadError', 'RenderError'].includes(error.name)) return error
+    if (['ReadError', 'RenderError', 'CloudReadError'].includes(error.name)) return error
     if (/^(?:网页打不开（HTTP \d{3}）|Page could not be opened \(HTTP \d{3}\))$/.test(error.message)) return new Error(error.message)
   }
   return new WebToolError(session.zh, kind === 'search' ? 'searchFailed' : 'readFailed')
@@ -114,6 +117,7 @@ export async function searchForSession(
   signal?: AbortSignal
 ): Promise<{ results: SessionWebResult[]; backendLabel: string }> {
   available(session)
+  if (session.web.gate.status === 'read-only') throw new WebToolError(session.zh, 'academic')
   if (session.web.searches >= SEARCH_PER_TURN) throw new WebToolError(session.zh, 'searchLimit')
   // 同步预留，避免并发工具调用穿透本轮上限；参数/请求失败也不回退，以免无限重试。
   session.web.searches++
@@ -178,22 +182,46 @@ function validateSessionUrl(session: AgentSession, value: string): void {
   assertReadableUrl(value)
   session.web.allowedUrls.add(key)
 }
-export async function readForSession(
-  session: AgentSession,
-  url: string,
-  focus?: string,
-  signal?: AbortSignal
-): Promise<{ read: ReadPage; selected: SelectedPassage[]; assertReadable: () => void }> {
+export interface SessionRead {
+  read: ReadPage
+  selected: SelectedPassage[]
+  assertReadable: () => void
+}
+export function cloudReadAvailable(url: string): boolean {
+  if (!getSettings().retrieval.cloudReader) return false
+  try {
+    assertCloudUrl(url)
+    return !!credentialsFor('deepseek').key
+  } catch {
+    return false
+  }
+}
+export async function readForSession(session: AgentSession, url: string, focus?: string, signal?: AbortSignal): Promise<SessionRead> {
   available(session)
+  const cached = session.web.readResults?.get(urlKey(url)!)
+  if (cached) {
+    cached.assertReadable()
+    return {
+      ...cached,
+      selected: await selectPassages(cached.read, focus || session.web.userText, {
+        timeSensitive: session.web.gate.timeSensitive,
+        beforeSend: cached.assertReadable
+      })
+    }
+  }
   if (session.web.reads >= READ_PER_TURN) throw new WebToolError(session.zh, 'readLimit')
   session.web.reads++
   try {
     if (signal?.aborted) throw new WebToolError(session.zh, 'canceled')
     validateSessionUrl(session, url)
     let finalUrl = url
+    const cloud = session.web.cloudReadUrl === url
+    const fingerprint = cloud ? privacyFingerprint() : null
+    const key = cloud ? credentialsFor('deepseek').key : null
     const read = await readUrl(url, {
       signal,
       incognito: session.incognito,
+      ...(cloud ? { provider: 'deepseek' as const } : {}),
       // 重定向由已获准网址的服务器决定，不是模型自己拼出的网址（例如 DOI 跳到出版社页面）：
       // 只按网站策略检查目的地，并把它加入本轮可读范围。模型直接给出的网址仍须在白名单里。
       validateUrl: (target) => {
@@ -207,10 +235,18 @@ export async function readForSession(
     const pageId = read.page.id
     const beforeSend = (): void => {
       if (signal?.aborted) throw new WebToolError(session.zh, 'canceled')
+      if (
+        cloud &&
+        (!getSettings().retrieval.cloudReader ||
+          session.web.cloudReadUrl !== url ||
+          privacyFingerprint() !== fingerprint ||
+          credentialsFor('deepseek').key !== key)
+      )
+        throw new WebToolError(session.zh, 'unavailable')
       // 打分可能等待模型；每批发送前与返回前重查，缓存已被清理时也检查捕获的最终URL。
       validateSessionUrl(session, url)
       validateSessionUrl(session, finalUrl)
-      assertPageReadable(pageId)
+      assertPageReadable(pageId, cloud)
     }
     const selected = await selectPassages(read, focus || session.web.userText, {
       timeSensitive: session.web.gate.timeSensitive,
@@ -221,8 +257,12 @@ export async function readForSession(
     session.web.pageGuards ??= new Map()
     session.web.pageGuards.set(pageId, beforeSend)
     // 后续重评分/组装也复用捕获的最终地址；此closure只留在主进程内，不进入IPC或快照视图。
-    return { read, selected, assertReadable: beforeSend }
+    const result = { read, selected, assertReadable: beforeSend }
+    session.web.readResults ??= new Map()
+    session.web.readResults.set(urlKey(url)!, result)
+    return result
   } catch (error) {
+    if (session.web.cloudReadUrl !== url && canSupplementRead(error) && cloudReadAvailable(url)) session.web.onReadFailure?.(url)
     throw safeError(session, error, 'read', signal)
   }
 }
@@ -255,6 +295,7 @@ export function snippetHit(result: WebResult): SearchHit {
 }
 export function passageHit(read: ReadPage, passage: Passage & Partial<{ score: number }>): SearchHit {
   return {
+    webOrigin: read.page.webOrigin,
     parentType: 'web',
     parentId: read.page.id,
     ownerId: read.page.id + ':' + passage.start,
@@ -276,7 +317,7 @@ const date = (value: number): string => new Date(value).toISOString().slice(0, 1
 export function buildWebTools(session: AgentSession): { tools: ToolSet; meta: Record<string, ToolMeta> } {
   if (!session.web.gate.offerTools) return { tools: {}, meta: {} }
   const zh = session.zh
-  return {
+  const built: { tools: ToolSet; meta: Record<string, ToolMeta> } = {
     tools: {
       web_search: tool({
         description: zh
@@ -378,4 +419,9 @@ export function buildWebTools(session: AgentSession): { tools: ToolSet; meta: Re
       }
     }
   }
+  if (session.web.gate.status === 'read-only') {
+    delete built.tools.web_search
+    delete built.meta.web_search
+  }
+  return built
 }

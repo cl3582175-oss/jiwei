@@ -1,5 +1,6 @@
 import type { WebMode } from '@shared/retrieval'
 import type { WebPolicy } from './policy'
+import { directReadIntent } from './readIntent'
 
 export interface WebGateInput {
   text: string
@@ -15,7 +16,8 @@ export interface WebGateInput {
 }
 
 export interface WebGate {
-  status: 'available' | 'academic-only' | 'off' | 'unconfigured' | 'context' | 'not-allowed'
+  status: 'available' | 'read-only' | 'academic-only' | 'off' | 'unconfigured' | 'context' | 'not-allowed'
+  preRead?: boolean
   offerTools: boolean
   preSearch: boolean
   timeSensitive: boolean
@@ -54,6 +56,8 @@ export function webGate(input: WebGateInput): WebGate {
 
   if (input.policy !== 'tool') return result
   if (input.mode === 'off') return { ...result, status: 'off' }
+  if (directReadIntent(input.text).requested)
+    return { ...result, status: input.webAvailable ? 'available' : 'read-only', offerTools: true, preRead: true }
   if (!input.webAvailable && !input.academicEnabled) return { ...result, status: 'unconfigured' }
   if (input.explicitContext && !result.explicitAsk && input.mode !== 'always') return { ...result, status: 'context' }
   if (!input.webAvailable && input.academicEnabled) return { ...result, status: 'academic-only', offerTools: true }

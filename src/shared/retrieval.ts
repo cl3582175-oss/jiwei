@@ -113,6 +113,25 @@ export interface WebOrigin {
   truncated: boolean
 }
 
+export function webOriginLabel(origin: WebOrigin | undefined, zh: boolean): string {
+  if (!origin) return ''
+  return (
+    (zh ? 'DeepSeek 云端读取 · 最终来源未核验' : 'Read by DeepSeek · final origin unverified') +
+    (origin.truncated ? (zh ? ' · 已读取部分正文' : ' · partial text') : '')
+  )
+}
+
+/** Trusted instruction accompanies every cloud excerpt, including saved-library evidence. */
+export function webOriginEvidence(origin: WebOrigin | undefined, zh: boolean): string {
+  const label = webOriginLabel(origin, zh)
+  return label
+    ? label +
+        (zh
+          ? '。仅依据这份云端返回文本进行总结和引用；不能据此声称官网已确认或实际来源已核实。'
+          : '. Summarize and cite this returned text only; it does not confirm the official site or the actual origin.')
+    : ''
+}
+
 export interface RetrievalUsage {
   range: 'today' | 'month'
   total: number

@@ -40,7 +40,9 @@ export function prepareProjectTurn(conversationId: string, zh: boolean, contextL
       if (state.state !== 'ready' && !(state.state === 'preparing' && state.reason === 'indexing')) return turn
       const row = db.select().from(sources).where(eq(sources.id, item.itemId)).get()!
       const segments = tablePreview(listSegments(item.itemId))
-      hits = sourceContextHits([{ ...row, aiExcluded: false, segments }], Number.MAX_SAFE_INTEGER, { full: true }) as KnowledgeHit[]
+      hits = sourceContextHits([{ ...row, webOrigin: row.webOrigin ?? undefined, aiExcluded: false, segments }], Number.MAX_SAFE_INTEGER, {
+        full: true
+      }) as KnowledgeHit[]
     } else {
       const row = db.select().from(notes).where(eq(notes.id, item.itemId)).get()!
       hits = db

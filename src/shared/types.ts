@@ -779,6 +779,8 @@ export interface FeynmanReport {
 
 /** AI 执行过程中的一步（调用工具、加载技能） */
 export interface AgentStep {
+  /** Offered by the local reader only, never by untrusted model content. */
+  cloudRead?: { url: string }
   id: string
   tool: string
   /** 给用户看的简短说明，如“检索知识库：遗忘曲线” */
