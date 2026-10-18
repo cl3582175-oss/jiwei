@@ -5,6 +5,7 @@ import { ChevronDown, ExternalLink, Globe } from 'lucide-react'
 import { toast } from 'sonner'
 import {
   BACKEND_INFO,
+  canReuseSearchKey,
   WEB_BACKENDS,
   type BackendId,
   type BackendSave,
@@ -72,7 +73,8 @@ function BackendCard({
           time: new Intl.DateTimeFormat(i18n.language, { hour: '2-digit', minute: '2-digit', hour12: false }).format(state.pausedUntil)
         })
       : t(state?.enabled ? 'retrieval.state.enabled' : 'retrieval.state.disabled')
-  const zhipuProviders = providers.filter((provider) => provider.kind === 'zhipu')
+  const usesProviderKey = !!info.keyProviderKind
+  const keyProviders = providers.filter((provider) => provider.hasKey && canReuseSearchKey(id, provider))
   const act = async (fn: () => Promise<void>): Promise<void> => {
     if (lock.current) return
     lock.current = true
@@ -103,7 +105,7 @@ function BackendCard({
     // 空输入表示保留已存凭证，清除操作才发送空串；不会读取或回显任何 Key。
     const input: BackendSave = { id, enabled: state?.enabled ?? false }
     if (id === 'searxng') input.baseUrl = url!
-    else if (id === 'zhipu') {
+    else if (usesProviderKey) {
       input.keyProviderId = providerId
       if (!providerId && key.trim()) input.key = key.trim()
       if (!providerId && state?.keyProviderId && !key.trim()) input.enabled = false
@@ -116,10 +118,10 @@ function BackendCard({
   }
   const clearKey = (): void => {
     const input: BackendSave = { id, key: '', enabled: optional ? (state?.enabled ?? true) : false }
-    if (id === 'zhipu') input.keyProviderId = null
+    if (usesProviderKey) input.keyProviderId = null
     void act(async () => {
       await persist(input, true)
-      if (id === 'zhipu') setProviderId(null)
+      if (usesProviderKey) setProviderId(null)
     })
   }
   const test = (): void => {
@@ -168,9 +170,9 @@ function BackendCard({
       </div>
       {open && (
         <div id={`retrieval-backend-${id}`} className="space-y-3 border-t border-border px-3 py-4">
-          {id === 'zhipu' && (
+          {usesProviderKey && (
             <div className="space-y-2 text-xs" role="radiogroup" aria-label={info.name + ' ' + t('retrieval.key')}>
-              {zhipuProviders.map((provider) => (
+              {keyProviders.map((provider) => (
                 <label key={provider.id} className="flex items-start gap-2 break-words">
                   <input
                     type="radio"
@@ -227,7 +229,7 @@ function BackendCard({
               )}
             </label>
           ) : (
-            (!providerId || id !== 'zhipu') && (
+            (!providerId || !usesProviderKey) && (
               <label className="block space-y-2">
                 <span className="flex items-center justify-between gap-2 text-xs text-muted">
                   {t('retrieval.key')}
@@ -257,6 +259,7 @@ function BackendCard({
               </label>
             )
           )}
+          {id === 'deepseek' && <p className="text-xs leading-relaxed text-muted">{t('retrieval.deepseekHelp')}</p>}
           <div className="flex flex-wrap gap-2">
             <Button size="sm" variant="primary" disabled={disabled || busy} onClick={save} data-testid={`backend-${id}-save`}>
               {t('retrieval.save')}

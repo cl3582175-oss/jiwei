@@ -112,6 +112,7 @@ export interface ResultFields {
   url: unknown
   title?: unknown
   snippet?: unknown
+  summary?: unknown
   published?: unknown
   site?: unknown
   content?: unknown
@@ -148,6 +149,7 @@ export function normalizeResults(id: BackendId, values: ResultFields[], count: n
       rank: results.length + 1
     }
     const date = typeof value.published === 'string' ? Date.parse(value.published) : NaN
+    if (typeof value.summary === 'string') result.summary = plainFeedText(value.summary, 1000)
     if (Number.isFinite(date)) result.publishedAt = date
     const site = plainFeedText(value.site, 300)
     if (site) result.site = site

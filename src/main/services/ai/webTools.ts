@@ -232,7 +232,7 @@ export function snippetHit(result: WebResult): SearchHit {
     parentId: '',
     ownerId: 'snip:' + urlKey(result.url),
     title: result.title,
-    text: result.snippet,
+    text: result.summary || result.snippet,
     locator: null,
     score: 0,
     learnedAt: result.publishedAt ?? null,

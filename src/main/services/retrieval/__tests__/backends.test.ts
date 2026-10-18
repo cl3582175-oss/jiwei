@@ -74,7 +74,47 @@ afterEach(() => {
 })
 
 describe('backend request contracts', () => {
-  it('registers ten implementations', () => {
+  it('DeepSeek uses the independent Search API without sending the original question or requesting page bodies', async () => {
+    expect(BACKENDS.deepseek).toBeDefined()
+    respond(fixture('deepseek'))
+    const results = await call('deepseek', { freshness: undefined, site: undefined })
+    const { url, options } = capture()
+    expect(url.href).toBe('https://api.deepseek.com/v1/tools/search')
+    expect(options.headers).toMatchObject({ Authorization: 'Bearer synthetic-test-key', 'Content-Type': 'application/json' })
+    expect(JSON.parse(options.body!)).toEqual({ query: query.q, count: 2, need_content: false })
+    expect(results[0]).toMatchObject({
+      backend: 'deepseek',
+      title: 'Fixture title',
+      snippet: 'Fixture snippet',
+      summary: 'Long fixture summary for model selection.',
+      publishedAt: 1767323045000,
+      site: 'Fixture site'
+    })
+    expect(results[0]).not.toHaveProperty('content')
+  })
+  it('DeepSeek budgets Unicode keywords around intact site and date operators', async () => {
+    expect(BACKENDS.deepseek).toBeDefined()
+    vi.spyOn(Date, 'now').mockReturnValue(Date.UTC(2026, 9, 18, 12))
+    respond(fixture('deepseek'))
+    await call('deepseek', { q: '𠀀'.repeat(100), site: 'example.org', freshness: 'week' })
+    const body = JSON.parse(capture().options.body!)
+    expect(Array.from(body.query)).toHaveLength(128)
+    expect(body.query).toMatch(/ site:example\.org after:2026-10-11$/)
+    expect(body.query).not.toContain('\uFFFD')
+    expect(body).not.toHaveProperty('ori_question')
+    expect(body).not.toHaveProperty('localization')
+  })
+  it('DeepSeek treats news as recent web search and fails closed when filters leave no keyword space', async () => {
+    expect(BACKENDS.deepseek).toBeDefined()
+    vi.spyOn(Date, 'now').mockReturnValue(Date.UTC(2026, 9, 18, 12))
+    respond(fixture('deepseek'))
+    await call('deepseek', { type: 'news', freshness: undefined, site: undefined })
+    expect(JSON.parse(capture().options.body!)).toEqual({ query: query.q + ' after:2026-10-11', count: 2, need_content: false })
+    context.fetch.mockClear()
+    await expect(call('deepseek', { site: 'a'.repeat(128) + '.org' })).rejects.toMatchObject({ retryable: false })
+    expect(context.fetch).not.toHaveBeenCalled()
+  })
+  it('registers every declared implementation', () => {
     expect(Object.keys(BACKENDS)).toEqual([...BACKEND_IDS])
     for (const id of BACKEND_IDS) expect(BACKENDS[id].id).toBe(id)
   })
@@ -524,7 +564,7 @@ describe('backend errors and valid empty responses', () => {
 })
 
 describe('backend credential/redirect/fixture isolation', () => {
-  it.each(['bocha', 'zhipu', 'tavily', 'brave', 'exa', 'serper'] as const)(
+  it.each(['bocha', 'zhipu', 'tavily', 'brave', 'exa', 'serper', 'deepseek'] as const)(
     '%s refuses missing required Key before transport',
     async (id) => {
       await expect(call(id, {}, { key: null, baseUrl: null })).rejects.toMatchObject({ retryable: false })

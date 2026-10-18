@@ -10,6 +10,7 @@ import { searxng } from './searxng'
 import { openalex } from './openalex'
 import { semanticscholar } from './semanticscholar'
 import { arxiv } from './arxiv'
+import { deepseek } from './deepseek'
 export const BACKENDS: Record<BackendId, SearchBackend> = {
   bocha,
   zhipu,
@@ -18,6 +19,7 @@ export const BACKENDS: Record<BackendId, SearchBackend> = {
   exa,
   serper,
   searxng,
+  deepseek,
   openalex,
   semanticscholar,
   arxiv

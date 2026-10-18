@@ -10,16 +10,24 @@ import * as schema from '../../../db/knowledgeSchema'
 const state = vi.hoisted(() => ({
   db: null as DB | null,
   sqlite: null as Database.Database | null,
-  searches: new Map<string, ReturnType<typeof vi.fn>>()
+  searches: new Map<string, ReturnType<typeof vi.fn>>(),
+  providers: new Map<string, { kind: string; baseUrl: string; updatedAt: number; key?: string }>()
 }))
 vi.mock('../../../db', () => ({ getDb: () => state.db, getSqlite: () => state.sqlite }))
 vi.mock('electron', () => ({ app: { getLocale: () => 'zh-CN' }, nativeTheme: {}, BrowserWindow: { getAllWindows: () => [] } }))
 vi.mock('electron-log/main', () => ({ default: { warn: vi.fn() } }))
-vi.mock('../../ai/providers', () => ({ getProviderRow: vi.fn(), decryptKey: () => null }))
+vi.mock('../../ai/providers', () => ({
+  getProviderRow: (id: string) => {
+    const row = state.providers.get(id)
+    if (!row) throw new Error('Not found')
+    return row
+  },
+  decryptKey: (row: { updatedAt: number; key?: string }) => row.key ?? 'synthetic-key-' + row.updatedAt
+}))
 vi.mock('../../mcp/secrets', () => ({ sealJson: () => Buffer.from('sealed-fixture'), openJson: () => 'synthetic-key' }))
 vi.mock('../backends/index', async () => {
   const { BackendError } = await import('../backends/common')
-  const ids = ['bocha', 'zhipu', 'tavily', 'brave', 'exa', 'serper', 'searxng', 'openalex', 'semanticscholar', 'arxiv']
+  const ids = ['bocha', 'zhipu', 'tavily', 'brave', 'exa', 'serper', 'searxng', 'deepseek', 'openalex', 'semanticscholar', 'arxiv']
   const BACKENDS = Object.fromEntries(
     ids.map((id) => {
       const search = vi.fn()
@@ -68,6 +76,7 @@ beforeEach(() => {
   state.db = drizzle(state.sqlite, { schema })
   migrate(state.db, { migrationsFolder: 'resources/migrations' })
   for (const fn of state.searches.values()) fn.mockReset()
+  state.providers.clear()
 })
 afterEach(() => {
   vi.restoreAllMocks()
@@ -78,6 +87,67 @@ afterEach(() => {
 })
 
 describe('retrieval gateway', () => {
+  it('routes DeepSeek as a preferred service and falls back without changing existing language defaults', async () => {
+    const { searchWeb } = await import('../gateway')
+    for (const id of ['bocha', 'deepseek'] as const) {
+      saveBackend({ id, key: 'synthetic', enabled: true })
+      state.searches.get(id)!.mockResolvedValue([result(id)])
+    }
+    expect((await run(() => searchWeb('中文默认次序'))).backend).toBe('bocha')
+    setSettings({ retrieval: { preferZh: 'deepseek', preferEn: 'deepseek' } })
+    expect((await run(() => searchWeb('中文首选搜索'))).backend).toBe('deepseek')
+    expect((await run(() => searchWeb('English preferred search'))).backend).toBe('deepseek')
+    state.searches.get('deepseek')!.mockResolvedValue([])
+    expect((await run(() => searchWeb('中文空结果回退'))).backend).toBe('bocha')
+  })
+  it('cancels a queued DeepSeek request when its referenced provider key changes', async () => {
+    const { searchWeb, retrievalStatus } = await import('../gateway')
+    state.providers.set('official', { kind: 'deepseek', baseUrl: 'https://api.deepseek.com', updatedAt: 1 })
+    saveBackend({ id: 'deepseek', keyProviderId: 'official', enabled: true })
+    let release!: () => void
+    const waiting = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let sent = false
+    state.searches.get('deepseek')!.mockImplementation(async (_query, _credential, signal: AbortSignal) => {
+      await waiting
+      signal.throwIfAborted()
+      sent = true
+      return [result('deepseek')]
+    })
+    const pending = run(() => searchWeb('public key rotation query'))
+    state.providers.set('official', { kind: 'deepseek', baseUrl: 'https://api.deepseek.com', updatedAt: 2 })
+    emit('retrieval:changed', {})
+    release()
+    await expect(pending).rejects.toThrow('联网搜索暂时失败')
+    expect(sent).toBe(false)
+    expect(state.sqlite!.prepare('SELECT COUNT(*) AS n FROM web_search_cache').get()).toEqual({ n: 0 })
+    expect(retrievalStatus().backends.find((s) => s.id === 'deepseek')?.pausedUntil).toBeNull()
+  })
+  it('does not send a fallback to DeepSeek if the user disabled it while the first backend was running', async () => {
+    const { searchWeb } = await import('../gateway')
+    for (const id of ['bocha', 'deepseek'] as const) saveBackend({ id, key: 'synthetic', enabled: true })
+    state.searches.get('bocha')!.mockImplementation(async () => {
+      saveBackend({ id: 'deepseek', enabled: false })
+      throw new Error('controlled failure')
+    })
+    state.searches.get('deepseek')!.mockResolvedValue([result('deepseek')])
+    await expect(run(() => searchWeb('中文等待回退'))).rejects.toThrow('联网搜索暂时失败')
+    expect(state.searches.get('deepseek')).not.toHaveBeenCalled()
+    expect(state.sqlite!.prepare('SELECT COUNT(*) AS n FROM web_search_cache').get()).toEqual({ n: 0 })
+  })
+  it('keeps a valid search running when provider metadata changes without changing its key or official destination', async () => {
+    const { searchWeb } = await import('../gateway')
+    const provider = { kind: 'deepseek', baseUrl: 'https://api.deepseek.com', key: 'stable-synthetic-key', updatedAt: 1 }
+    state.providers.set('official', provider)
+    saveBackend({ id: 'deepseek', keyProviderId: 'official', enabled: true })
+    state.searches.get('deepseek')!.mockImplementation(async () => {
+      state.providers.set('official', { ...provider, updatedAt: 2 })
+      emit('retrieval:changed', {})
+      return [result('deepseek')]
+    })
+    expect((await run(() => searchWeb('public unchanged credential search'))).backend).toBe('deepseek')
+  })
   it('rejects a disallowed purpose before any backend is touched', async () => {
     const { searchWeb } = await import('../gateway')
     await expect(searchWeb('controlled')).rejects.toThrow('这个功能不使用联网')
@@ -307,6 +377,6 @@ describe('retrieval gateway', () => {
     expect(await testBackend('bocha')).toMatchObject({ ok: true })
     expect(state.sqlite!.prepare('SELECT purpose FROM retrieval_calls').get()).toEqual({ purpose: 'search.test' })
     expect(state.sqlite!.prepare('SELECT COUNT(*) AS n FROM web_search_cache').get()).toEqual({ n: 0 })
-    expect(BACKEND_IDS).toHaveLength(10)
+    expect(BACKEND_IDS).toHaveLength(11)
   })
 })

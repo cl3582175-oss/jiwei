@@ -84,6 +84,21 @@ import { BACKEND_INFO } from '@shared/retrieval'
 import { scoreWeb } from '../scoring'
 import { buildWebTools, passageHit, readForSession, searchForSession, snippetHit } from '../../ai/webTools'
 
+it('uses a longer search summary for the model while keeping it explicitly snippet-only', () => {
+  const hit = snippetHit({
+    url: 'https://example.org/article',
+    title: 'Article',
+    backend: 'deepseek',
+    rank: 1,
+    snippet: 'Short display excerpt',
+    summary: 'Longer search summary, not a read page.'
+  })
+  expect(hit.text).toBe('Longer search summary, not a read page.')
+  expect(hit.snippetOnly).toBe(true)
+  expect(hit.parentId).toBe('')
+  expect(hit.locator).toBeNull()
+})
+
 const run = <T>(fn: () => T): T => withRun({ purpose: 'chat', caller: 'assistant' }, fn)
 const paragraph = 'Public fixture facts explain reliable evidence, citations and reproducible article passages. '.repeat(9)
 const html =

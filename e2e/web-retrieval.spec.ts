@@ -14,6 +14,7 @@ let app: ElectronApplication,
   fixture: WebRetrievalFixture,
   providerId = '',
   zhipuProviderId = '',
+  deepseekProviderId = '',
   turnStartedAt = 0
 const userData = mkdtempSync(join(tmpdir(), 'jiwei-web-retrieval-'))
 const processErrors: string[] = [],
@@ -146,6 +147,8 @@ async function noHorizontalOverflow(root: Locator): Promise<void> {
   expect(sizes.document).toBeLessThanOrEqual(sizes.viewport + 1)
 }
 async function createNote(title: string, bodies: string[], excluded = false): Promise<string> {
+  // 在助手页 ⌘N 是新对话；先走真实导航进入笔记页，再使用新建笔记快捷键。
+  await navTo(page, /笔记/)
   await page.keyboard.press('ControlOrMeta+n')
   await page.getByPlaceholder('笔记标题').fill(title)
   await expect.poll(() => page.evaluate((title) => window.jiwei.notes.list({ search: title }).then((notes) => notes.length), title)).toBe(1)
@@ -240,6 +243,20 @@ test.beforeAll(async () => {
       apiKey: 'controlled-provider-key',
       models: ['controlled-zhipu']
     })
+    const deepseek = await window.jiwei.providers.save({
+      kind: 'deepseek',
+      name: '受控官方 DeepSeek Key',
+      baseUrl: 'https://api.deepseek.com',
+      apiKey: 'controlled-deepseek-provider-key',
+      models: ['deepseek-flash']
+    })
+    await window.jiwei.providers.save({
+      kind: 'deepseek',
+      name: '受控第三方 DeepSeek Key',
+      baseUrl: 'https://third-party.example/v1',
+      apiKey: 'controlled-thirdparty-key',
+      models: ['deepseek-flash']
+    })
     const settings = await window.jiwei.settings.get()
     await window.jiwei.settings.set({
       ai: {
@@ -250,10 +267,11 @@ test.beforeAll(async () => {
       },
       theme: 'light'
     })
-    return { providerId: provider.id, zhipuProviderId: zhipu.id }
+    return { providerId: provider.id, zhipuProviderId: zhipu.id, deepseekProviderId: deepseek.id }
   }, fixture.base + '/v1')
   providerId = providers.providerId
   zhipuProviderId = providers.zhipuProviderId
+  deepseekProviderId = providers.deepseekProviderId
   await page.reload()
   await page.waitForSelector('nav')
   await createNote('检索练习稳定事实', [
@@ -288,7 +306,7 @@ test.beforeEach(async ({ browserName: _browserName }, info) => {
             await window.jiwei.retrieval.saveBackend({
               id,
               enabled: id === 'bocha' || id === 'tavily',
-              ...(id === 'zhipu' ? { keyProviderId: null } : {}),
+              ...(['zhipu', 'deepseek'].includes(id) ? { keyProviderId: null } : {}),
               ...(['bocha', 'tavily'].includes(id) ? { key: 'controlled-fixture-key' } : {})
             })
           await window.jiwei.retrieval.testBackend('bocha')
@@ -568,7 +586,7 @@ test('05. 未列入白名单的读取报错，exfil 从未收到请求', async (
 })
 
 test('06. 真实资料选区就地提问没有联网工具，检索情况显示本轮不联网', async ({ browserName: _browserName }, info) => {
-  // 先真实加载资料库，覆盖完整轮已有列表缓存的setup；direct IPC导入不经过UI afterImport失效。
+  // 先加载资料库缓存；导入后的 sources:changed 应让已有列表自动刷新。
   await navTo(page, /资料库/)
   const existing = await page.evaluate(() => window.jiwei.sources.list({}))
   await expect(page.getByTestId('library-scroll')).toContainText(existing[0]?.title ?? '把学习资料放进来')
@@ -579,15 +597,12 @@ test('06. 真实资料选区就地提问没有联网工具，检索情况显示�
   await expect
     .poll(() => page.evaluate((id) => window.jiwei.segments.list(id).then((segments) => segments.length), imported.imported[0].id))
     .toBeGreaterThan(0)
-  await expect(page.getByText('选区联网边界', { exact: true })).toHaveCount(0)
+  await expect(page.getByText('选区联网边界', { exact: true })).toBeVisible()
   writeFileSync(
     info.outputPath('fixture-source-cache.json'),
     JSON.stringify({ imported, cachedLibraryText: await page.getByTestId('library-scroll').innerText() }, null, 2)
   )
-  // 与既有annotate openSource一致，刷新fixture视图，不修改生产导入行为或用延时等待缓存过期。
-  await page.reload()
-  await page.waitForSelector('nav')
-  await navTo(page, /资料库/)
+  // 在同一个列表里直接打开，不用 reload 代替真实的缓存失效行为。
   await page.getByText('选区联网边界', { exact: true }).dblclick()
   await expect(page.locator('.source-text')).toContainText('把复习分散到不同日期')
   await page.evaluate(() => {
@@ -1145,4 +1160,83 @@ test('26. 搜索等待期间改为不给AI会取消请求，保密查询不会�
   } finally {
     paused.release()
   }
+})
+
+test('27. DeepSeek 独立 Key、连接测试和首选服务重载后保留，清除后停用', async () => {
+  test.setTimeout(60_000)
+  fixture.deepseekExpectedKey = 'controlled-deepseek-own-key'
+  await settings()
+  await page.getByTestId('backend-deepseek-expand').click()
+  const key = page.getByTestId('backend-deepseek-key')
+  await key.fill('controlled-deepseek-own-key')
+  await page.getByTestId('backend-deepseek-save').click()
+  await expect(key).toHaveValue('')
+  await expect(page.getByTestId('backend-deepseek-toggle')).toHaveAttribute('aria-checked', 'true')
+  await page.getByTestId('backend-deepseek-test').click()
+  await expect(page.getByTestId('backend-deepseek-result')).toContainText('连接成功')
+  expect(searchRequests().at(-1)?.body).toEqual({ query: 'learning', count: 1, need_content: false })
+  await page.getByTestId('retrieval-prefer-zh').selectOption('deepseek')
+  await page.getByTestId('retrieval-prefer-en').selectOption('deepseek')
+  await closeSettings()
+  await page.reload()
+  await page.waitForSelector('nav')
+  await settings()
+  await expect(page.getByTestId('retrieval-prefer-zh')).toHaveValue('deepseek')
+  await expect(page.getByTestId('retrieval-prefer-en')).toHaveValue('deepseek')
+  await page.getByTestId('backend-deepseek-expand').click()
+  await expect(page.getByTestId('backend-deepseek-key')).toHaveAttribute('placeholder', '已设置')
+  await page.getByTestId('backend-deepseek-clear').click()
+  await expect(page.getByTestId('backend-deepseek-toggle')).toHaveAttribute('aria-checked', 'false')
+  await expect
+    .poll(async () => (await page.evaluate(() => window.jiwei.retrieval.status())).backends.find((s) => s.id === 'deepseek')?.keySet)
+    .toBe(false)
+  await closeSettings()
+})
+
+test('28. DeepSeek 复用官方 Key 完成搜索、原文引用与快照，撤销 Key 后界面立即失效', async ({ browserName: _browserName }, info) => {
+  test.setTimeout(90_000)
+  fixture.deepseekExpectedKey = 'controlled-deepseek-provider-key'
+  await page.evaluate(async () => {
+    for (const id of ['bocha', 'tavily'] as const) await window.jiwei.retrieval.saveBackend({ id, enabled: false })
+  })
+  await settings()
+  await page.getByTestId('backend-deepseek-expand').click()
+  await expect(page.getByRole('radio', { name: '使用模型服务「受控第三方 DeepSeek Key」的 Key', exact: true })).toHaveCount(0)
+  await page.getByRole('radio', { name: '使用模型服务「受控官方 DeepSeek Key」的 Key', exact: true }).check()
+  await page.getByTestId('backend-deepseek-save').click()
+  await expect(page.getByTestId('backend-deepseek-toggle')).toHaveAttribute('aria-checked', 'true')
+  await expect
+    .poll(async () => (await page.evaluate(() => window.jiwei.retrieval.status())).backends.find((s) => s.id === 'deepseek')?.keyProviderId)
+    .toBe(deepseekProviderId)
+  expect(await dbRows('SELECT key_enc FROM search_backends WHERE id=?', ['deepseek'])).toEqual([{ key_enc: null }])
+  await page.getByTestId('retrieval-prefer-zh').selectOption('deepseek')
+  await closeSettings()
+  // 已被旧用例引用的快照会被正确保留；用独立网页验证这次确实执行原文读取。
+  const originalUrl = fixture.base + '/page-deepseek-original'
+  fixture.searchResults = [{ url: originalUrl, title: 'DeepSeek 受控原文', snippet: '公开原文的短摘要。' }]
+  fixture.steps = [
+    { name: 'web_search', args: { query: '公开资料提取练习' } },
+    { name: 'read_url', args: { url: originalUrl } }
+  ]
+  const completed = await ask('请根据资料说明间隔重复的稳定原理')
+  expect(searchRequests().map((r) => r.path)).toEqual(['/search/deepseek'])
+  expect(searchRequests()[0].body).toEqual({ query: '公开资料提取练习', count: 6, need_content: false })
+  expect(toolsText()).toContain('受控长摘要：公开原文说明升级步骤和兼容性。')
+  expect(fixture.requests.some((r) => r.path === '/page-deepseek-original')).toBe(true)
+  const cited = completed.assistant.citations!.find((c) => c.parentType === 'web')!
+  expect(cited.parentId).toBeTruthy()
+  expect(cited.snippetOnly).not.toBe(true)
+  await expect(webChips()).toHaveCount(1)
+  await webChips().click()
+  await expect(page.getByTestId('web-snapshot-body')).toContainText('公开测试版本九的发布说明')
+  await shot(info, 'deepseek-read-citation')
+  await page.keyboard.press('Escape')
+  await page.evaluate((id) => window.jiwei.providers.save({ id, kind: 'deepseek', apiKey: '' }), deepseekProviderId)
+  await expect.poll(() => page.evaluate(() => window.jiwei.retrieval.status().then((s) => s.webAvailable))).toBe(false)
+  await settings()
+  await expect(page.getByTestId('backend-deepseek-toggle')).toBeDisabled()
+  await closeSettings()
+  const status = await page.evaluate(() => window.jiwei.retrieval.status())
+  expect(JSON.stringify(status)).not.toContain('controlled-deepseek-provider-key')
+  expect(status.backends.find((s) => s.id === 'deepseek')).toMatchObject({ keySet: false, keyProviderId: deepseekProviderId })
 })

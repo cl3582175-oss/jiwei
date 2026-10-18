@@ -1,0 +1,16 @@
+{
+  "results": [
+    {
+      "title": "<b>Fixture title</b>",
+      "url": "https://www.example.org/read/?utm_source=fixture&b=2&a=1",
+      "snippet": "<p>Fixture snippet</p>",
+      "summary": "<p>Long fixture summary for model selection.</p><script>remove()</script>",
+      "content": "This must not become a verified page snapshot.",
+      "site_name": "Fixture site",
+      "site_icon": null,
+      "date": "2026-01-02T03:04:05Z",
+      "rerank_score": 2.4,
+      "authority": 3
+    }
+  ]
+}

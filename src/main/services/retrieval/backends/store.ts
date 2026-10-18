@@ -3,6 +3,7 @@ import {
   ACADEMIC_BACKENDS,
   BACKEND_IDS,
   BACKEND_INFO,
+  canReuseSearchKey,
   BackendSaveSchema,
   type BackendId,
   type BackendSave,
@@ -61,10 +62,10 @@ export function migrateSearchConnections(): void {
   })
 }
 
-function providerKey(id: string): string | null {
+function providerKey(id: string, backend: BackendId): string | null {
   try {
     const row = getProviderRow(id)
-    return row.kind === 'zhipu' ? decryptKey(row) : null
+    return canReuseSearchKey(backend, row) ? decryptKey(row) : null
   } catch {
     return null
   }
@@ -72,8 +73,10 @@ function providerKey(id: string): string | null {
 
 export function credentialsFor(id: BackendId): { key: string | null; baseUrl: string | null } {
   const row = getDb().select().from(searchBackends).where(eq(searchBackends.id, id)).get()
+  const reference = BACKEND_INFO[id].keyProviderKind && row?.keyProviderId
+  const provider = reference ? providerKey(reference, id) : null
   return {
-    key: id === 'zhipu' && row?.keyProviderId ? providerKey(row.keyProviderId) : openJson<string | null>(row?.keyEnc, null),
+    key: reference ? provider : openJson<string | null>(row?.keyEnc, null),
     baseUrl: row?.baseUrl ?? null
   }
 }
@@ -85,8 +88,8 @@ export function backendStates(pauses: ReadonlyMap<BackendId, number> = new Map()
     return {
       id,
       kind: academic(id) ? 'academic' : 'web',
-      keySet: id === 'zhipu' && row?.keyProviderId ? !!providerKey(row.keyProviderId) : !!row?.keyEnc,
-      keyProviderId: id === 'zhipu' ? (row?.keyProviderId ?? null) : null,
+      keySet: BACKEND_INFO[id].keyProviderKind && row?.keyProviderId ? !!providerKey(row.keyProviderId, id) : !!row?.keyEnc,
+      keyProviderId: BACKEND_INFO[id].keyProviderKind ? (row?.keyProviderId ?? null) : null,
       baseUrl: id === 'searxng' ? (row?.baseUrl ?? null) : null,
       // 学术库无需配置即可用；显式保存的 enabled 优先于默认值。
       enabled: row?.enabled ?? academic(id),
@@ -100,15 +103,18 @@ export function saveBackend(input: BackendSave): void {
   const value = BackendSaveSchema.parse(input)
   const db = getDb()
   const old = db.select().from(searchBackends).where(eq(searchBackends.id, value.id)).get()
-  const keyProviderId =
-    value.id === 'zhipu' ? (value.keyProviderId === undefined ? (old?.keyProviderId ?? null) : value.keyProviderId) : null
-  if (value.id !== 'zhipu' && value.keyProviderId != null)
-    throw new Error(tr('只有智谱搜索可以使用模型服务的 Key', 'Only Zhipu search can reuse a model provider key'))
+  const keyProviderId = BACKEND_INFO[value.id].keyProviderKind
+    ? value.keyProviderId === undefined
+      ? (old?.keyProviderId ?? null)
+      : value.keyProviderId
+    : null
+  if (!BACKEND_INFO[value.id].keyProviderKind && value.keyProviderId != null)
+    throw new Error(tr('该搜索服务不能使用模型服务的 Key', 'This search service cannot reuse a model provider key'))
   if (keyProviderId) {
     try {
-      if (getProviderRow(keyProviderId).kind !== 'zhipu') throw new Error()
+      if (!canReuseSearchKey(value.id, getProviderRow(keyProviderId))) throw new Error()
     } catch {
-      throw new Error(tr('请选择有效的智谱模型服务', 'Select an existing Zhipu model provider'))
+      throw new Error(tr('请选择匹配的官方模型服务', 'Select a matching official model provider'))
     }
   }
   const keyEnc = keyProviderId
@@ -127,7 +133,7 @@ export function saveBackend(input: BackendSave): void {
           : null
       : null
   if (value.enabled && value.id === 'searxng' && !baseUrl) throw new Error(tr('请先填写实例地址', 'Enter an instance address first'))
-  if (value.enabled && BACKEND_INFO[value.id].needsKey && !(keyProviderId ? providerKey(keyProviderId) : keyEnc))
+  if (value.enabled && BACKEND_INFO[value.id].needsKey && !(keyProviderId ? providerKey(keyProviderId, value.id) : keyEnc))
     throw new Error(tr('请先填写 Key', 'Enter a key first'))
   const row: Row = { id: value.id, keyEnc, keyProviderId, baseUrl, enabled: value.enabled, updatedAt: Date.now() }
   db.insert(searchBackends).values(row).onConflictDoUpdate({ target: searchBackends.id, set: row }).run()

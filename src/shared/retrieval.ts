@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-export const WEB_BACKENDS = ['bocha', 'zhipu', 'tavily', 'brave', 'exa', 'serper', 'searxng'] as const
+export const WEB_BACKENDS = ['bocha', 'zhipu', 'tavily', 'brave', 'exa', 'serper', 'searxng', 'deepseek'] as const
 export const ACADEMIC_BACKENDS = ['openalex', 'semanticscholar', 'arxiv'] as const
 export const BACKEND_IDS = [...WEB_BACKENDS, ...ACADEMIC_BACKENDS] as const
 export type WebBackendId = (typeof WEB_BACKENDS)[number]
@@ -19,6 +19,7 @@ export interface WebResult {
   url: string // 规范化后的网址
   title: string
   snippet: string // 纯文本，最多 600 字
+  summary?: string // 搜索服务的长摘要，最多 1000 字；仍然不是已读取的原文
   publishedAt?: number // 毫秒
   site?: string // 站点名或主机名
   backend: BackendId
@@ -37,7 +38,7 @@ export interface BackendState {
   id: BackendId
   kind: 'web' | 'academic'
   keySet: boolean // 有自己的 Key，或使用了服务商的 Key
-  keyProviderId: string | null // 仅 zhipu
+  keyProviderId: string | null // zhipu / deepseek 可引用已有模型服务的 Key
   baseUrl: string | null // 仅 searxng
   enabled: boolean
   needsKey: boolean
@@ -57,7 +58,7 @@ export const BackendSaveSchema = z.object({
   id: z.enum(BACKEND_IDS),
   /** undefined：不改；空字符串：清除 */
   key: z.string().max(4000).optional(),
-  /** 仅 zhipu：null 表示改用自己的 Key */
+  /** zhipu / deepseek：null 表示改用自己的 Key */
   keyProviderId: z.string().max(64).nullable().optional(),
   /** 仅 searxng */
   baseUrl: z.string().max(500).optional(),
@@ -120,6 +121,7 @@ export const BACKEND_INFO: Record<
     freshness: boolean
     site: boolean
     returnsContent: boolean
+    keyProviderKind?: 'zhipu' | 'deepseek'
   }
 > = {
   bocha: {
@@ -135,6 +137,7 @@ export const BACKEND_INFO: Record<
     name: '智谱 · Zhipu Web Search',
     langs: ['zh'],
     needsKey: true,
+    keyProviderKind: 'zhipu',
     keyUrl: 'https://bigmodel.cn/usercenter/proj-mgmt/apikeys',
     freshness: true,
     site: true,
@@ -169,6 +172,16 @@ export const BACKEND_INFO: Record<
     returnsContent: false
   },
   searxng: { name: 'SearXNG（自建）', langs: ['*'], needsKey: false, freshness: true, site: true, returnsContent: false },
+  deepseek: {
+    name: 'DeepSeek Search',
+    langs: ['zh', 'en'],
+    needsKey: true,
+    keyProviderKind: 'deepseek',
+    keyUrl: 'https://platform.deepseek.com/api_keys',
+    freshness: true,
+    site: true,
+    returnsContent: false
+  },
   openalex: {
     name: 'OpenAlex',
     langs: ['*'],
@@ -188,4 +201,24 @@ export const BACKEND_INFO: Record<
     returnsContent: false
   },
   arxiv: { name: 'arXiv', langs: ['en'], needsKey: false, freshness: false, site: false, returnsContent: false }
+}
+
+/** 兼容平台的 Key 不能自动发给 DeepSeek 官方搜索；UI 与主进程共用同一规则。 */
+export function canReuseSearchKey(id: BackendId, provider: { kind: string; baseUrl?: string }): boolean {
+  const kind = BACKEND_INFO[id].keyProviderKind
+  if (!kind || provider.kind !== kind) return false
+  if (id !== 'deepseek') return true
+  try {
+    const url = new URL(provider.baseUrl ?? '')
+    return (
+      url.origin === 'https://api.deepseek.com' &&
+      !url.username &&
+      !url.password &&
+      !url.search &&
+      !url.hash &&
+      /^\/(?:v1\/?)?$/.test(url.pathname)
+    )
+  } catch {
+    return false
+  }
 }

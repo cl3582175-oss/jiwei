@@ -456,15 +456,17 @@ const handlers: Handlers = {
   providers: {
     list: () => providers.listProviders(),
     save: (_, input) => {
-      const retrievalKeyAffected = input.kind === 'zhipu' || (input.id ? providers.getProviderRow(input.id).kind === 'zhipu' : false)
+      const retrievalKeyAffected =
+        ['zhipu', 'deepseek'].includes(input.kind) ||
+        (input.id ? ['zhipu', 'deepseek'].includes(providers.getProviderRow(input.id).kind) : false)
       const saved = providers.saveProvider(input)
       if (input.modelCaps) usage.backfillUnpriced(saved.id)
-      // 搜索可以复用智谱服务商Key；修改或清除它时已有状态缓存也必须失效。
+      // 搜索可引用智谱/DeepSeek服务商Key；修改或清除时状态和在途请求必须失效。
       if (retrievalKeyAffected) emit('retrieval:changed', {})
       return saved
     },
     remove: (_, id) => {
-      const retrievalKeyAffected = providers.getProviderRow(id).kind === 'zhipu'
+      const retrievalKeyAffected = ['zhipu', 'deepseek'].includes(providers.getProviderRow(id).kind)
       providers.removeProvider(id)
       if (retrievalKeyAffected) emit('retrieval:changed', {})
     },

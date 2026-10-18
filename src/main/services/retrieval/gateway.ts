@@ -55,7 +55,7 @@ function failed(id: BackendId, error: unknown): void {
   const count = (failures.get(id) ?? 0) + 1
   failures.set(id, count)
   const until =
-    error instanceof BackendError && [401, 403].includes(error.status ?? 0)
+    error instanceof BackendError && [401, 402, 403].includes(error.status ?? 0)
       ? Date.now() + 1_800_000
       : count >= 3
         ? Date.now() + 600_000
@@ -85,11 +85,14 @@ function lifetime(type: SearchType, freshness?: Freshness): number {
 async function callBackend(
   id: BackendId,
   query: BackendQuery,
-  opts: { signal?: AbortSignal; guard?: () => void; incognito?: boolean; noCache?: boolean }
+  opts: { signal?: AbortSignal; guard?: () => void; incognito?: boolean; noCache?: boolean; allowDisabled?: boolean }
 ): Promise<WebResult[]> {
   opts.signal?.throwIfAborted()
   // 每次回退与缓存读取都按当前权限重新检查，不能沿用入口时的排除集合。
   cleanQuery(query.q, opts.guard)
+  // 路由是在等待前冻结的；用户可能已停用或撤销尚未开始的回退后端。
+  const state = backendStates(pauses).find((backend) => backend.id === id)
+  if (!opts.allowDisabled && (!state || !available(state))) throw new BackendError({ kind: 'configuration', retryable: false })
   const start = Date.now(),
     key = cacheKey(id, query),
     db = getDb()
@@ -108,32 +111,41 @@ async function callBackend(
   }
   const release = reserveCall()
   const config = db.select().from(searchBackends).where(eq(searchBackends.id, id)).get()
+  const credentials = credentialsFor(id)
+  const configurationCurrent = (): boolean => {
+    const current = db.select().from(searchBackends).where(eq(searchBackends.id, id)).get()
+    const currentCredentials = credentialsFor(id)
+    return (
+      current?.updatedAt === config?.updatedAt &&
+      current?.enabled === config?.enabled &&
+      current?.keyProviderId === config?.keyProviderId &&
+      current?.baseUrl === config?.baseUrl &&
+      !!current?.keyEnc === !!config?.keyEnc &&
+      (!current?.keyEnc || !!config?.keyEnc?.equals(current.keyEnc)) &&
+      currentCredentials.key === credentials.key
+    )
+  }
   const privacyController = new AbortController()
+  const configurationController = new AbortController()
+  const stopConfigurationChecks = onMainEvent('retrieval:changed', () => {
+    if (!configurationCurrent()) configurationController.abort(new BackendError({ kind: 'configuration', retryable: false }))
+  })
   // externalFetch可能等待同域队列；现有取消信号在真正发送前检查，及时撤销排队中的查询。
   const stopPrivacyChecks = (['notes:changed', 'sources:changed'] as const).map((event) =>
     onMainEvent(event, () => {
       if (!privacyGuard.check(query.q)) privacyController.abort(new privacyGuard.PrivacyError())
     })
   )
-  const signal = opts.signal ? AbortSignal.any([opts.signal, privacyController.signal]) : privacyController.signal
+  const signal = AbortSignal.any([privacyController.signal, configurationController.signal, ...(opts.signal ? [opts.signal] : [])])
   let ok = false,
     responded = false
   try {
-    const results = await BACKENDS[id].search(query, credentialsFor(id), signal)
+    const results = await BACKENDS[id].search(query, credentials, signal)
     responded = true
     signal.throwIfAborted()
     cleanQuery(query.q, opts.guard)
     // 搜索过程中用户可能停用或更换凭证；旧请求的结果不再进入后续流程。
-    const current = db.select().from(searchBackends).where(eq(searchBackends.id, id)).get()
-    if (
-      current?.updatedAt !== config?.updatedAt ||
-      current?.enabled !== config?.enabled ||
-      current?.keyProviderId !== config?.keyProviderId ||
-      current?.baseUrl !== config?.baseUrl ||
-      !!current?.keyEnc !== !!config?.keyEnc ||
-      (current?.keyEnc && config?.keyEnc && !current.keyEnc.equals(config.keyEnc))
-    )
-      throw new BackendError({ retryable: false, kind: 'configuration' })
+    if (!configurationCurrent()) throw new BackendError({ retryable: false, kind: 'configuration' })
     ok = true
     succeeded(id)
     if (!opts.noCache && !opts.incognito && results.length)
@@ -154,10 +166,12 @@ async function callBackend(
   } catch (error) {
     // 隐私撤销不是服务故障，不回退、不熔断，也不附带可能含查询的transport原始错误。
     if (privacyController.signal.aborted) throw privacyController.signal.reason
+    if (configurationController.signal.aborted) throw configurationController.signal.reason
     if (!opts.signal?.aborted && !responded) failed(id, error)
     throw error
   } finally {
     for (const stop of stopPrivacyChecks) stop()
+    stopConfigurationChecks()
     try {
       recordCall(id, 'search', ok, false, start)
     } finally {
@@ -185,8 +199,8 @@ function routed(query: BackendQuery, legacyService?: SearchWebOptions['legacySer
   const settings = getSettings().retrieval
   const order =
     query.lang === 'zh'
-      ? [settings.preferZh, 'bocha', 'zhipu', 'searxng', 'tavily', 'serper', 'brave', 'exa']
-      : [settings.preferEn, 'tavily', 'brave', 'exa', 'serper', 'searxng', 'bocha', 'zhipu']
+      ? [settings.preferZh, 'bocha', 'zhipu', 'searxng', 'tavily', 'serper', 'brave', 'exa', 'deepseek']
+      : [settings.preferEn, 'tavily', 'brave', 'exa', 'serper', 'searxng', 'bocha', 'zhipu', 'deepseek']
   const ids = [...new Set(order.filter((id): id is BackendId => !!id))].filter((id) => states.some((s) => s.id === id && available(s)))
   return ids.sort(
     (a, b) =>
@@ -316,7 +330,7 @@ export async function testBackend(id: BackendId): Promise<{ ok: boolean; message
       assertWebAllowed()
       const academic = (ACADEMIC_BACKENDS as readonly string[]).includes(id)
       const q = cleanQuery(academic ? 'machine learning' : 'learning')
-      await callBackend(id, { q, type: academic ? 'academic' : 'web', count: 1, lang: 'en' }, { noCache: true })
+      await callBackend(id, { q, type: academic ? 'academic' : 'web', count: 1, lang: 'en' }, { noCache: true, allowDisabled: true })
       return { ok: true, message: tr('连接成功', 'Connection succeeded') }
     } catch {
       return { ok: false, message: tr('连接失败，请检查 Key 与网络', 'Connection failed; check the key and network') }

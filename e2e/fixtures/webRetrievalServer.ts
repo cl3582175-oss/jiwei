@@ -16,6 +16,7 @@ export interface FixtureRequest {
   path: string
   query: string
   method: string
+  body?: Record<string, unknown>
 }
 export interface FixtureSearchResult {
   url: string
@@ -42,6 +43,7 @@ export class WebRetrievalFixture {
   steps: FixtureStep[] = []
   unsupportedOnce = false
   searchResults: FixtureSearchResult[] | null = null
+  deepseekExpectedKey = ''
   readonly redirects = new Map<string, string>()
   private pauses: Pause[] = []
   private activePauses = new Set<Pause>()
@@ -60,7 +62,13 @@ export class WebRetrievalFixture {
           return
         }
         const query = String(data.query ?? data.search_query ?? data.q ?? url.searchParams.get('q') ?? url.searchParams.get('search') ?? '')
-        const request = { at: Date.now(), path: url.pathname, query, method: req.method ?? 'GET' }
+        const request = {
+          at: Date.now(),
+          path: url.pathname,
+          query,
+          method: req.method ?? 'GET',
+          ...(url.pathname === '/search/deepseek' ? { body: data } : {})
+        }
         this.requests.push(request)
         if (url.pathname === '/control' && req.method === 'POST') {
           for (const [id, status] of Object.entries((data.failures as Record<string, unknown>) ?? {}))
@@ -97,6 +105,10 @@ export class WebRetrievalFixture {
         }
         if (url.pathname.startsWith('/search/')) {
           const backend = url.pathname.split('/')[2]
+          if (backend === 'deepseek' && this.deepseekExpectedKey && req.headers.authorization !== 'Bearer ' + this.deepseekExpectedKey) {
+            this.json(res, { error: 'controlled authentication failure' }, 401)
+            return
+          }
           const status = this.failures.get(backend) ?? 200
           if (status !== 200) {
             this.json(res, { error: 'controlled failure' }, status)
@@ -118,6 +130,19 @@ export class WebRetrievalFixture {
                   value: found.map((r) => ({ name: r.title, url: r.url, snippet: r.snippet, datePublished: '2026-10-12T00:00:00Z' }))
                 }
               }
+            })
+          else if (backend === 'deepseek')
+            this.json(res, {
+              results: found.map((r) => ({
+                ...r,
+                summary: '受控长摘要：公开原文说明升级步骤和兼容性。',
+                content: '',
+                date: '2026-10-12T00:00:00Z',
+                site_name: '受控站点',
+                site_icon: null,
+                rerank_score: 2.4,
+                authority: 3
+              }))
             })
           else if (backend === 'tavily' || backend === 'exa')
             this.json(res, { results: found.map((r) => ({ ...r, content: r.snippet, published_date: '2026-10-12' })) })
@@ -242,6 +267,7 @@ export class WebRetrievalFixture {
     this.steps = steps
     this.unsupportedOnce = false
     this.searchResults = null
+    this.deepseekExpectedKey = ''
     this.failures.clear()
     this.redirects.clear()
   }

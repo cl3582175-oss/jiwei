@@ -9,7 +9,7 @@ import * as schema from '../../../db/knowledgeSchema'
 const context = vi.hoisted(() => ({
   db: null as DB | null,
   sqlite: null as Database.Database | null,
-  providers: new Map<string, { kind: string; usable: boolean }>()
+  providers: new Map<string, { kind: string; usable: boolean; baseUrl?: string; updatedAt?: number }>()
 }))
 vi.mock('../../../db', () => ({ getDb: () => context.db, getSqlite: () => context.sqlite }))
 vi.mock('../../../events', () => ({ emit: vi.fn() }))
@@ -42,6 +42,20 @@ afterEach(() => {
 })
 
 describe('search backend state and upgrade', () => {
+  it('reuses only an official DeepSeek provider key and revokes the reference when its destination changes', async () => {
+    const store = await import('../backends/store')
+    context.providers.set('deepseek-provider', { kind: 'deepseek', baseUrl: 'https://api.deepseek.com/v1', usable: true, updatedAt: 1 })
+    store.saveBackend({ id: 'deepseek', keyProviderId: 'deepseek-provider', enabled: true })
+    expect(store.backendStates().find((s) => s.id === 'deepseek')).toMatchObject({ keySet: true, keyProviderId: 'deepseek-provider' })
+    expect(store.credentialsFor('deepseek').key).toBe('synthetic-provider-key')
+    expect(context.sqlite!.prepare('SELECT key_enc FROM search_backends WHERE id=?').get('deepseek')).toEqual({ key_enc: null })
+    context.providers.set('deepseek-provider', { kind: 'deepseek', baseUrl: 'https://third-party.example/v1', usable: true, updatedAt: 2 })
+    expect(store.credentialsFor('deepseek').key).toBeNull()
+    expect(store.backendStates().find((s) => s.id === 'deepseek')?.keySet).toBe(false)
+    expect(() => store.saveBackend({ id: 'deepseek', keyProviderId: 'deepseek-provider', enabled: true })).toThrow()
+    store.saveBackend({ id: 'deepseek', keyProviderId: null, key: 'synthetic-own-key', enabled: true })
+    expect(store.credentialsFor('deepseek').key).toBe('synthetic-own-key')
+  })
   it('copies legacy encrypted rows exactly once and never overwrites a new configuration', async () => {
     const store = await import('../backends/store')
     context
