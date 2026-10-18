@@ -14,6 +14,7 @@ import { emit, onMainEvent } from '../events'
 import { getStartupUpgrade } from '../db'
 import { download, probeMirrors } from './download'
 import { verifyUpdateSha512 } from '../lib/updateIntegrity'
+import { GitHubMirrorProvider } from '../lib/githubMirrorProvider'
 import { requestRendererFlush } from '../lifecycle'
 import { flushAll } from './docs'
 
@@ -72,6 +73,7 @@ let updater: AppUpdater | null = null
 let generation = 0
 let abort: AbortController | null = null
 let cancellation: CancellationToken | null = null
+let checkAbort: AbortController | null = null
 let downloaded: { path: string; sha512: string } | null = null
 let activeSource: string | undefined
 const hostOf = (url: string): string => {
@@ -124,6 +126,7 @@ function schedule(): void {
 }
 function configure(): void {
   generation++
+  checkAbort?.abort()
   abort?.abort()
   cancellation?.cancel()
   if (updater) {
@@ -164,7 +167,10 @@ function configure(): void {
     instance.allowDowngrade = false
     instance.allowPrerelease = false
     const feed = testFeed() ?? configuredFeed
-    instance.setFeedURL(feed ? { provider: 'generic', url: feed } : { provider: 'github', owner: 'cl3582175-oss', repo: 'jiwei-releases' })
+    checkAbort = new AbortController()
+    instance.setFeedURL(
+      feed ? { provider: 'generic', url: feed } : { provider: 'custom', updateProvider: GitHubMirrorProvider, signal: checkAbort.signal }
+    )
     instance.on('checking-for-update', () => publish({ status: 'checking', error: undefined }, owner))
     instance.on('update-not-available', () => publish({ status: 'current', nextVersion: undefined, error: undefined }, owner))
     instance.on('update-available', (info) => {
@@ -223,6 +229,7 @@ export async function startUpdates(): Promise<void> {
 }
 export function stopUpdates(): void {
   generation++
+  checkAbort?.abort()
   clearSchedule()
   unsubscribe?.()
   unsubscribe = null
@@ -257,7 +264,7 @@ export async function downloadUpdate(): Promise<UpdateState> {
       if (file.url.protocol !== 'https:' && !(testing() && file.url.hostname === '127.0.0.1')) throw new Error('Untrusted update transport')
       const directory = testing() ? process.env.JIWEI_UPDATE_DOWNLOADS! : app.getPath('downloads')
       destination = join(directory, `Jiwei-${state.nextVersion}-mac-${process.arch}-${randomUUID().slice(0, 8)}.dmg`)
-      // 镜像测速选最快的，变慢自动换；4 段并行（GitHub 单连接很慢）。校验值来自 GitHub 上的版本信息。
+      // 镜像测速选最快的，变慢自动换；4 段并行。校验值来自本次选中的版本信息。
       await download(
         { name: 'Jiwei update', urls: mirrorUrls(file.url.href), dest: destination, size, sha512: file.info.sha512, parallel: 4 },
         (progress) =>

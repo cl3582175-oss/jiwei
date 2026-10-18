@@ -14,8 +14,7 @@ export const updatesZh = {
   disabled: '开发版本不检查更新',
   auto: '自动检查更新',
   source: '更新源地址（高级）',
-  sourceHint:
-    '留空使用官方发布渠道：自动从加速镜像和 GitHub 中选最快的下载，校验值始终取自 GitHub。自建更新源须使用不含凭证的 HTTPS 地址。',
+  sourceHint: '留空先从 GitHub 检查更新，连接失败时自动尝试加速镜像；下载继续自动选择来源并校验。自建更新源须使用不含凭证的 HTTPS 地址。',
   sourceInvalid: '请输入不含凭证、查询参数的 HTTPS 更新源地址。',
   save: '保存更新源',
   download: '下载更新',
@@ -64,7 +63,7 @@ export const updatesEn = {
   auto: 'Automatically check for updates',
   source: 'Update feed (advanced)',
   sourceHint:
-    'Leave empty for official releases: the fastest of the download mirrors and GitHub is chosen automatically, and checksums always come from GitHub. Custom feeds must use HTTPS without credentials.',
+    'Leave empty to check GitHub first and try mirrors if it fails. Downloads automatically select a source and verify checksums. Custom feeds must use HTTPS without credentials.',
   sourceInvalid: 'Enter an HTTPS update feed without credentials or query parameters.',
   save: 'Save update feed',
   download: 'Download update',

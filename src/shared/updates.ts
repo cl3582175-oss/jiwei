@@ -42,7 +42,8 @@ export const UpdateSettingsSchema = z.object({
 
 /*
  * 国内直连 GitHub 下载安装包常只有几十 KB/s。安装包走第三方加速镜像，按测速选最快的，
- * 失败或变慢时换下一个；版本信息和 SHA-512 仍从 GitHub 读取，镜像改不了校验值。
+ * 失败或变慢时换下一个；检查更新时 GitHub 不可达也可从镜像读取版本及 SHA-512。
+ * SHA-512 校验包与 metadata 一致，不构成独立发布者签名。
  */
 const RELEASE_ASSET = /^https:\/\/github\.com\/cl3582175-oss\/jiwei-releases\/releases\/download\/[^?#]+$/
 export const UPDATE_MIRRORS = ['https://gh-proxy.com/', 'https://ghfast.top/'] as const

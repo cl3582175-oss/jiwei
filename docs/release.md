@@ -36,7 +36,9 @@ spctl --assess --type execute -vv release/<version>/mac-arm64/积微.app
 2. Claude 完成联合审查与真实下载安装/更新验收，按发版约定修改版本号及 CHANGELOG、打标签。
 3. 在代码仓库 Actions 的 Release 手动输入标签触发。三平台构建，macOS arm64/x64，产生安装包、`latest*.yml`、blockmap；所有目标发布到公开制品仓库草稿。
 4. 检查草稿资产完整、版本一致及 Release 说明里的 SHA-256，复做首次安装与旧版本升级；最后由用户手动发布草稿。更新检查只会发现已发布版本。
-5. 自建镜像可在更新页高级设置填写 generic HTTPS 源；自行同步安装包及 metadata，不内置第三方代理。
+5. 默认更新先检查 GitHub，失败后依次从已有 `gh-proxy.com`、`ghfast.top` 镜像读取版本清单。每次来源尝试最多 8 秒并取消原生请求；镜像的旧版说明可从同镜像 API 补取（最多 1.5 秒），取不到不阻止检查。版本确定后固定到该正式版本的资产路径，复用原下载、校验和安装流程。显式自定义 generic HTTPS 源保持原行为。镜像 metadata 中的 SHA-512 校验包与清单一致，不是独立发布者签名；公共镜像可用性与缓存不构成官方 SLA。
+
+旧版若仍因直连 GitHub 无法发现本次修复，可在「设置 → 关于 → 更新源地址（高级）」临时填写 `https://gh-proxy.com/https://github.com/cl3582175-oss/jiwei-releases/releases/latest/download/`，保存后检查。升级后清空该地址，恢复 GitHub 与双镜像自动切换；镜像暂不可达时可将域名改为 `ghfast.top`。旧客户端无法只靠新版本发布自动获得尚未安装的 fallback 逻辑。
 
 ## 审查仍需实机证据
 
