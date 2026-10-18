@@ -1,6 +1,14 @@
-import { useEffect, type RefObject } from 'react'
+import { createContext, useEffect, type RefObject } from 'react'
 import type { Anchor } from '@shared/context'
 import { useAssist, rangeRect } from './store'
+
+/** The existing reply selection boundary follows a reply surface without widening its permissions. */
+export const ReplySelectionContext = createContext<{
+  messageId?: string
+  conversationId: string
+  streaming: boolean
+  restricted: boolean
+} | null>(null)
 
 export function quotedMessage(text: string, quote: string | null | undefined): string {
   return quote

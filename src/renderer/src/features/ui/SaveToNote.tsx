@@ -1,3 +1,4 @@
+import { useExpandedPresentation } from '@/components/ui/ExpandableSurface'
 import { useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
@@ -10,6 +11,7 @@ import { ConfirmSheet, uiAction } from './ConfirmSheet'
 
 const dataTypes = new Set(['schedule', 'tasks', 'note', 'excerpt', 'mastery', 'decision', 'usage'])
 export function SaveToNote({ node, uiKey, ctx, onClose }: { node: UiNode; uiKey: string; ctx: UiContext; onClose(): void }) {
+  const { runOutside } = useExpandedPresentation()
   const { t } = useTranslation()
   const [search, setSearch] = useState(''),
     [target, setTarget] = useState<{ noteId?: string; newTitle?: string; title: string } | null>(null)
@@ -80,9 +82,9 @@ export function SaveToNote({ node, uiKey, ctx, onClose }: { node: UiNode; uiKey:
               written.current = { noteId: r.noteId, title: target.title }
             }
             await ctx.flushState?.(uiKey)
-            useApp.getState().openNote(written.current.noteId)
+            runOutside(() => useApp.getState().openNote(written.current!.noteId))
             toast.success(t('ui.done.saved', { title: written.current.title }), {
-              action: { label: t('ui.open'), onClick: () => useApp.getState().openNote(written.current!.noteId) }
+              action: { label: t('ui.open'), onClick: () => runOutside(() => useApp.getState().openNote(written.current!.noteId)) }
             })
             onClose()
           }}

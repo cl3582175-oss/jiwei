@@ -136,7 +136,7 @@ export function AnswerCard() {
   useEffect(() => {
     if (!card) return
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') useAssist.getState().closeCard()
+      if (e.key === 'Escape' && !e.defaultPrevented) useAssist.getState().closeCard()
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)

@@ -1,3 +1,4 @@
+import { useExpandedPresentation } from '@/components/ui/ExpandableSurface'
 import { useCallback, useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
@@ -14,6 +15,7 @@ import { readUiData, dataText, type DataNode, type UiData } from '../readData'
 
 type Pending = { kind: 'schedule' | 'create' | 'complete'; items: ConfirmItem[] }
 export function DataNodeView({ node, uiKey, ctx }: { node: DataNode; uiKey: string; ctx: UiContext }) {
+  const { runOutside } = useExpandedPresentation()
   const { t, i18n } = useTranslation()
   const money = useMoney()
   const textOf = useCallback(
@@ -189,7 +191,10 @@ export function DataNodeView({ node, uiKey, ctx }: { node: DataNode; uiKey: stri
           )}
           {data?.type === 'note' && (
             <div>
-              <button className="mb-2 text-sm font-medium text-accent" onClick={() => useApp.getState().openNote(data.note.id)}>
+              <button
+                className="mb-2 text-sm font-medium text-accent"
+                onClick={() => runOutside(() => useApp.getState().openNote(data.note.id))}
+              >
                 {data.note.title}
               </button>
               <div className="space-y-2">
@@ -200,7 +205,7 @@ export function DataNodeView({ node, uiKey, ctx }: { node: DataNode; uiKey: stri
                   </div>
                 ))}
               </div>
-              <button className={uiAction} onClick={() => useApp.getState().openNote(data.note.id)}>
+              <button className={uiAction} onClick={() => runOutside(() => useApp.getState().openNote(data.note.id))}>
                 {t('ui.open')}
               </button>
             </div>
@@ -208,7 +213,14 @@ export function DataNodeView({ node, uiKey, ctx }: { node: DataNode; uiKey: stri
           {data?.type === 'excerpt' && (
             <blockquote className="rounded-r-lg border-l-[3px] border-viz-8 bg-sunken py-2.5 pr-3 pl-3.5">
               <p className="whitespace-pre-wrap text-sm leading-relaxed">{data.text}</p>
-              <button className="mt-2 text-xs text-accent" onClick={() => data.citation && openCitation(data.citation, ctx.conversationId)}>
+              <button
+                className="mt-2 text-xs text-accent"
+                onClick={() =>
+                  runOutside(() => {
+                    if (data.citation) openCitation(data.citation, ctx.conversationId)
+                  })
+                }
+              >
                 {data.title}
                 {data.citation?.locator ? ` · ${data.citation.locator}` : ''}
               </button>
@@ -373,6 +385,7 @@ function Schedule({
   )
 }
 function Mastery({ data }: { data: Extract<UiData, { type: 'mastery' }> }) {
+  const { runOutside } = useExpandedPresentation()
   const { t } = useTranslation()
   // 薄弱前三项只从“薄弱 / 学习中”里挑，已掌握的不该出现在这里
   const weakest = data.notes
@@ -396,7 +409,7 @@ function Mastery({ data }: { data: Extract<UiData, { type: 'mastery' }> }) {
                     ? 'border-viz-6/40 bg-viz-6/10 text-viz-6'
                     : 'border-border bg-sunken text-muted'
             )}
-            onClick={() => useApp.getState().openNote(note.id)}
+            onClick={() => runOutside(() => useApp.getState().openNote(note.id))}
           >
             {note.title} · {t(`mastery.status.${note.status}`)}
           </button>
@@ -405,14 +418,14 @@ function Mastery({ data }: { data: Extract<UiData, { type: 'mastery' }> }) {
       <ol className="my-3 space-y-1 text-xs">
         {weakest.map((n) => (
           <li key={n.id}>
-            <button className="text-accent" onClick={() => useApp.getState().openNote(n.id)}>
+            <button className="text-accent" onClick={() => runOutside(() => useApp.getState().openNote(n.id))}>
               {n.title}
             </button>
             {n.weakConcepts.length > 0 && <span className="ml-2 text-subtle">{n.weakConcepts.slice(0, 3).join('、')}</span>}
           </li>
         ))}
       </ol>
-      <button className={uiAction} onClick={() => useApp.getState().setView('review')}>
+      <button className={uiAction} onClick={() => runOutside(() => useApp.getState().setView('review'))}>
         {t('ui.action.startReview')}
       </button>
     </div>

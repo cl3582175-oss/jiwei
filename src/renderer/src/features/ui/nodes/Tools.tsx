@@ -1,3 +1,4 @@
+import { useExpandedPresentation } from '@/components/ui/ExpandableSurface'
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { UiNode } from '@shared/ui/catalog'
@@ -26,6 +27,7 @@ export function DecisionBox({
   uiKey: string
   disabled: boolean
 }) {
+  const { runOutside } = useExpandedPresentation()
   const { t } = useTranslation(),
     [deciding, setDeciding] = useState(false)
   const matrix = useMemo(
@@ -153,8 +155,10 @@ export function DecisionBox({
           className={uiAction}
           disabled={disabled}
           onClick={() => {
-            setAdvisorDraft({ question: node.question! })
-            useApp.getState().setView('advisor')
+            runOutside(() => {
+              setAdvisorDraft({ question: node.question! })
+              useApp.getState().setView('advisor')
+            })
           }}
         >
           {t('ui.action.toAdvisor')}
@@ -168,6 +172,7 @@ export function DecisionBox({
 }
 
 export function UsageBox({ node, summary }: { node: Extract<UiNode, { type: 'usage' }>; summary: UsageSummary }) {
+  const { runOutside } = useExpandedPresentation()
   const { t } = useTranslation(),
     money = useMoney()
   const days =
@@ -181,11 +186,7 @@ export function UsageBox({ node, summary }: { node: Extract<UiNode, { type: 'usa
           { label: t('ui.today'), value: summary.today },
           { label: t('ui.month'), value: summary.month }
         ].map((item, i) => (
-          <div
-            key={item.label}
-            className="ui-tile rounded-lg py-2.5 pr-3 pl-4"
-            style={{ boxShadow: `inset 3px 0 0 var(--viz-${i + 1})` }}
-          >
+          <div key={item.label} className="ui-tile rounded-lg py-2.5 pr-3 pl-4" style={{ boxShadow: `inset 3px 0 0 var(--viz-${i + 1})` }}>
             <p className="text-xs text-muted">
               {item.label} · {money.currency}
             </p>
@@ -205,7 +206,7 @@ export function UsageBox({ node, summary }: { node: Extract<UiNode, { type: 'usa
           }}
         />
       )}
-      <button className={uiAction} onClick={() => useApp.getState().openUsage()}>
+      <button className={uiAction} onClick={() => runOutside(() => useApp.getState().openUsage())}>
         {t('ui.action.openUsage')}
       </button>
     </div>

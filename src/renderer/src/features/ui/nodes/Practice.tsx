@@ -1,3 +1,4 @@
+import { useExpandedPresentation } from '@/components/ui/ExpandableSurface'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -29,6 +30,7 @@ function PracticeSave({
   disabled: boolean
   label: string
 }) {
+  const { runOutside } = useExpandedPresentation()
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const saved = ctx.states[uiKey]?.practiceNote as { noteId: string; title: string } | undefined
@@ -45,7 +47,7 @@ function PracticeSave({
       {saved ? (
         <p className="text-xs text-muted">
           {t('ui.done.joined', { title: saved.title })}{' '}
-          <button className="text-accent" onClick={() => useApp.getState().openNote(saved.noteId)}>
+          <button className="text-accent" onClick={() => runOutside(() => useApp.getState().openNote(saved.noteId))}>
             {t('ui.open')}
           </button>
         </p>
@@ -63,7 +65,7 @@ function PracticeSave({
             if (saved) {
               await ctx.flushState?.(uiKey)
               setOpen(false)
-              useApp.getState().openNote(saved.noteId)
+              runOutside(() => useApp.getState().openNote(saved.noteId))
               return
             }
             const selected: Practice =
@@ -85,9 +87,9 @@ function PracticeSave({
             await ctx.flushState?.(uiKey)
             setOpen(false)
             // auto 提案在真实编辑器中应用，沿用保存回答的撤销/来源路径。
-            useApp.getState().openNote(r.noteId)
+            runOutside(() => useApp.getState().openNote(r.noteId))
             toast.success(t('ui.done.saved', { title }), {
-              action: { label: t('ui.open'), onClick: () => useApp.getState().openNote(r.noteId) }
+              action: { label: t('ui.open'), onClick: () => runOutside(() => useApp.getState().openNote(r.noteId)) }
             })
           }}
         />

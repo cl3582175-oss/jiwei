@@ -6,9 +6,12 @@ import { cn } from '@/lib/utils'
 import { api } from '@/lib/utils'
 import { ConfirmSheet, type ConfirmItem } from '../ConfirmSheet'
 import { canReply, sendUiReply } from '../reply'
+import { useExpandedPresentation } from '@/components/ui/ExpandableSurface'
 import { toast } from 'sonner'
 
 export function Columns({ children, compact, ratio }: { children: ReactNode; compact: boolean; ratio?: string }) {
+  const { expanded } = useExpandedPresentation()
+  compact = compact && !expanded
   const ref = useRef<HTMLDivElement>(null)
   const [narrow, setNarrow] = useState(compact)
   useEffect(() => {
@@ -100,6 +103,8 @@ export function TableNode({
   disabled: boolean
 }) {
   const { t } = useTranslation()
+  const { expanded } = useExpandedPresentation()
+  const compact = ctx.compact && !expanded
   const state = ctx.states[uiKey] ?? {}
   const sort = state.sort as { key: string; direction: number } | undefined
   type Change = { row: number; col: string; from: string | number | null; to: string | number | null }
@@ -120,7 +125,7 @@ export function TableNode({
     setEditing(null)
   }
   const cols = node.columns ?? [],
-    shown = ctx.compact ? cols.slice(0, 4) : cols
+    shown = compact ? cols.slice(0, 4) : cols
   const rows = (node.rows ?? []).map((original, index) => ({
     row: Object.fromEntries([...Object.entries(original), ...changes.filter((c) => c.row === index).map((c) => [c.col, c.to])]),
     index
@@ -132,7 +137,7 @@ export function TableNode({
       return (typeof l === 'number' && typeof r === 'number' ? l - r : String(l ?? '').localeCompare(String(r ?? ''))) * sort.direction
     })
   return (
-    <div className="max-h-[400px] overflow-auto px-3 py-2">
+    <div className="ui-table-scroll max-h-[400px] overflow-auto px-3 py-2">
       <table className="w-full border-collapse text-xs">
         <thead className="sticky top-0 bg-surface text-muted">
           <tr>
@@ -208,7 +213,7 @@ export function TableNode({
           ))}
         </tbody>
       </table>
-      {ctx.compact && cols.length > 4 && (
+      {compact && cols.length > 4 && (
         <details className="pt-2 text-2xs text-muted">
           <summary>{t('ui.details')}</summary>
           {rows.map(({ row, index }) => (

@@ -1,4 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { ExpandToggle, useExpandedPresentation } from '@/components/ui/ExpandableSurface'
+import { ReplyExpandableSurface } from '@/features/chat/ReplyExpandableSurface'
+import { REPLY_EVENT } from '@/features/chat/MessageItem'
 import { useTranslation } from 'react-i18next'
 import { MoreHorizontal } from 'lucide-react'
 import { toast } from 'sonner'
@@ -18,7 +21,8 @@ export function UiFrame({
   raw,
   children,
   asText,
-  title
+  title,
+  expandable = false
 }: {
   node?: UiNode
   type?: string
@@ -29,6 +33,7 @@ export function UiFrame({
   children: ReactNode
   asText: boolean
   title?: string
+  expandable?: boolean
 }) {
   const { t } = useTranslation()
   const host = useRef<HTMLElement>(null)
@@ -90,7 +95,10 @@ export function UiFrame({
       : []),
     ...(state === 'fallback' ? [{ label: t('ui.menu.raw'), run: () => setShowRaw(true) }] : [])
   ]
-  return (
+  const label =
+    [node?.title, node?.type === 'diagram' ? node.diagramTitle : undefined, title].find((label) => label?.trim()) ?? t('ui.expand.untitled')
+  const available = expandable && (type !== 'diagram' || hasSvg)
+  const frame = (
     <section
       ref={host}
       data-testid="ui-block"
@@ -103,63 +111,100 @@ export function UiFrame({
       <header className="flex min-h-9 items-center justify-between gap-2 border-b border-border/60 px-4 py-2">
         <span className="flex min-w-0 items-center gap-2">
           <UiTypeIcon type={type} />
-          <span className="min-w-0 truncate text-sm font-medium">{node?.title ?? (node?.type === 'diagram' ? node.diagramTitle : undefined) ?? title ?? ''}</span>
+          <span className="min-w-0 truncate text-sm font-medium">
+            {node?.title ?? (node?.type === 'diagram' ? node.diagramTitle : undefined) ?? title ?? ''}
+          </span>
         </span>
-        <button
-          type="button"
-          className="shrink-0 rounded p-1 text-subtle hover:bg-sunken disabled:opacity-40"
-          aria-label={t('ui.menu.label')}
-          aria-haspopup="menu"
-          aria-expanded={menu}
-          disabled={disabled}
-          onClick={() => setMenu(!menu)}
-        >
-          <MoreHorizontal className="size-4" />
-        </button>
-      </header>
-      {menu && (
-        <div
-          role="menu"
-          className="absolute top-10 right-2 z-20 min-w-40 rounded-lg border border-border bg-surface p-1 shadow-card"
-          onKeyDown={(e) => {
-            if (e.key === 'Escape') setMenu(false)
-            if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-              e.preventDefault()
-              const buttons = [...e.currentTarget.querySelectorAll<HTMLButtonElement>('button')]
-              const index = buttons.indexOf(document.activeElement as HTMLButtonElement)
-              buttons[(index + (e.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length]?.focus()
-            }
-          }}
-        >
-          {items.map((item) => (
-            <button
-              type="button"
-              role="menuitem"
-              key={item.label}
-              disabled={disabled || ('disabled' in item && item.disabled === true)}
-              title={'disabled' in item && item.disabled ? t('ui.latestOnly') : undefined}
-              className="block w-full rounded px-3 py-2 text-left text-xs hover:bg-sunken focus:bg-sunken"
-              onClick={() => {
-                void Promise.resolve(item.run())
-                  .then(() => setMenu(false))
-                  .catch((e) => toast.error(String(e)))
-              }}
-            >
-              {item.label}
-            </button>
-          ))}
+        <div className="flex items-center gap-2">
+          <ExpandToggle />
+          <button
+            type="button"
+            className="shrink-0 rounded p-1 text-subtle hover:bg-sunken disabled:opacity-40"
+            aria-label={t('ui.menu.label')}
+            aria-haspopup="menu"
+            aria-expanded={menu}
+            disabled={disabled}
+            onClick={() => setMenu(!menu)}
+          >
+            <MoreHorizontal className="size-4" />
+          </button>
         </div>
-      )}
-      {children}
-      {save && node && <SaveToNote node={node} uiKey={uiKey} ctx={ctx} onClose={() => setSave(false)} />}
-      {ctx.stopped && state === 'streaming' && <p className="px-4 pb-3 text-2xs text-subtle">{t('ui.unfinished')}</p>}
-      {node?.note && <p className="px-4 pb-3 text-2xs text-subtle">{node.note}</p>}
-      {showRaw && (
-        <details open className="border-t border-border px-4 py-3">
-          <summary>{t('ui.menu.raw')}</summary>
-          <pre className="mt-2 overflow-auto whitespace-pre-wrap break-all text-2xs">{raw}</pre>
-        </details>
-      )}
+      </header>
+      <div className="ui-frame-body">
+        <ReplyExit conversationId={ctx.conversationId} />
+        {menu && (
+          <div
+            role="menu"
+            className="absolute top-10 right-2 z-20 min-w-40 rounded-lg border border-border bg-surface p-1 shadow-card"
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') setMenu(false)
+              if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                e.preventDefault()
+                const buttons = [...e.currentTarget.querySelectorAll<HTMLButtonElement>('button')]
+                const index = buttons.indexOf(document.activeElement as HTMLButtonElement)
+                buttons[(index + (e.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length]?.focus()
+              }
+            }}
+          >
+            {items.map((item) => (
+              <button
+                type="button"
+                role="menuitem"
+                key={item.label}
+                disabled={disabled || ('disabled' in item && item.disabled === true)}
+                title={'disabled' in item && item.disabled ? t('ui.latestOnly') : undefined}
+                className="block w-full rounded px-3 py-2 text-left text-xs hover:bg-sunken focus:bg-sunken"
+                onClick={() => {
+                  void Promise.resolve(item.run())
+                    .then(() => setMenu(false))
+                    .catch((e) => toast.error(String(e)))
+                }}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        )}
+        {children}
+        {save && node && <SaveToNote node={node} uiKey={uiKey} ctx={ctx} onClose={() => setSave(false)} />}
+        {ctx.stopped && state === 'streaming' && <p className="px-4 pb-3 text-2xs text-subtle">{t('ui.unfinished')}</p>}
+        {node?.note && <p className="px-4 pb-3 text-2xs text-subtle">{node.note}</p>}
+        {showRaw && (
+          <details open className="border-t border-border px-4 py-3">
+            <summary>{t('ui.menu.raw')}</summary>
+            <pre className="mt-2 overflow-auto whitespace-pre-wrap break-all text-2xs">{raw}</pre>
+          </details>
+        )}
+      </div>
     </section>
   )
+  return ctx.context === 'chat' ? (
+    <ReplyExpandableSurface
+      title={label}
+      available={available}
+      onEscapeKeyDown={(event) => {
+        if (menu) {
+          event.preventDefault()
+          setMenu(false)
+        }
+      }}
+    >
+      {frame}
+    </ReplyExpandableSurface>
+  ) : (
+    frame
+  )
+}
+
+function ReplyExit({ conversationId }: { conversationId: string }) {
+  const { expanded, close } = useExpandedPresentation()
+  useEffect(() => {
+    if (!expanded) return
+    const exit = (event: Event): void => {
+      if ((event as CustomEvent<{ conversationId: string }>).detail?.conversationId === conversationId) close('outside-action')
+    }
+    window.addEventListener(REPLY_EVENT, exit, true)
+    return () => window.removeEventListener(REPLY_EVENT, exit, true)
+  }, [expanded, close, conversationId])
+  return null
 }

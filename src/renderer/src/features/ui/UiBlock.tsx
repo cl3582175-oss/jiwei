@@ -140,6 +140,16 @@ export function UiBlock({ raw, incomplete, index, ctx }: { raw: string; incomple
         ctx={ctx}
         raw={code}
         asText={asText}
+        expandable={
+          !!node &&
+          !incomplete &&
+          !error &&
+          !diagramFailed &&
+          (!diagramCode || validation?.code === diagramCode) &&
+          !asText &&
+          index < max &&
+          !(ctx.compact && !ctx.settings.inline)
+        }
       >
         {content}
         {limited && <p className="px-4 pb-3 text-2xs text-subtle">{t('ui.rowsLimited')}</p>}

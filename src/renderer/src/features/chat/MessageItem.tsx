@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { useReplySelection } from '../assist/replySelection'
+import { ReplySelectionContext, useReplySelection } from '../assist/replySelection'
 import { elementRect, useAssist } from '../assist/store'
 import { MessageReadiness } from './MessageReadiness'
 import { MessageAttachments } from '../attachments/ConversationAttachments'
@@ -482,18 +482,22 @@ export function MessageItem({
           data-streaming={streaming ? 'true' : undefined}
           data-reply-restricted={replyRestricted ? 'true' : undefined}
         >
-          <UiMessageProvider message={m} isLatest={!!last} compact={!!compact}>
-            <Streamdown
-              // 两种模式采用不同的块树；组件回答保持流式树，结束只停止动画，保留组件实例。
-              mode={plain && !streaming ? 'static' : 'streaming'}
-              isAnimating={streaming}
-              components={components as never}
-              controls={{ code: true, table: true, mermaid: false }}
-              plugins={plain ? plainPlugins : uiPlugins}
-            >
-              {md}
-            </Streamdown>
-          </UiMessageProvider>
+          <ReplySelectionContext.Provider
+            value={{ messageId: plain ? undefined : m.id, conversationId: m.conversationId, streaming, restricted: !!replyRestricted }}
+          >
+            <UiMessageProvider message={m} isLatest={!!last} compact={!!compact}>
+              <Streamdown
+                // 两种模式采用不同的块树；组件回答保持流式树，结束只停止动画，保留组件实例。
+                mode={plain && !streaming ? 'static' : 'streaming'}
+                isAnimating={streaming}
+                components={components as never}
+                controls={{ code: true, table: true, mermaid: false }}
+                plugins={plain ? plainPlugins : uiPlugins}
+              >
+                {md}
+              </Streamdown>
+            </UiMessageProvider>
+          </ReplySelectionContext.Provider>
         </div>
       ) : (
         streaming && !m.reasoning && !m.steps.length && <div className="h-5 w-16 animate-pulse rounded bg-sunken" />

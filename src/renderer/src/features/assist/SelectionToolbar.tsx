@@ -1,4 +1,5 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, type RefObject } from 'react'
+import { useExpandedPresentation } from '@/components/ui/ExpandableSurface'
 import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
 import {
@@ -28,14 +29,17 @@ const ACTIONS: { id: AskAction; icon: React.ReactNode }[] = [
   { id: 'ask', icon: <MessageCircleQuestion /> }
 ]
 
-export function SelectionToolbar() {
+export function SelectionToolbar({ scope }: { scope?: RefObject<HTMLElement | null> } = {}) {
+  const { runOutside } = useExpandedPresentation()
   const { t } = useTranslation()
   const toolbar = useAssist((s) => s.toolbar)
   const ref = useRef<HTMLDivElement>(null)
+  const expandedRoot = document.querySelector<HTMLElement>('[data-expanded-reply]')
+  const active = !!toolbar && (scope ? expandedRoot === scope.current : !expandedRoot)
 
   // 点在别处、滚动、Esc：收起
   useEffect(() => {
-    if (!toolbar) return
+    if (!active) return
     const hide = (): void => useAssist.getState().showToolbar(null)
     const onDown = (e: MouseEvent): void => {
       if (!ref.current?.contains(e.target as Node)) hide()
@@ -51,9 +55,9 @@ export function SelectionToolbar() {
       document.removeEventListener('scroll', hide, true)
       document.removeEventListener('keydown', onKey)
     }
-  }, [toolbar])
+  }, [toolbar, active])
 
-  if (!toolbar) return null
+  if (!toolbar || !active) return null
   const { rect, anchor } = toolbar
   const reply = anchor.parentType === 'message'
   const restricted = !!toolbar.restricted
@@ -64,9 +68,11 @@ export function SelectionToolbar() {
   const top = above ? rect.y - 44 : rect.y + rect.h + 8
 
   const run = (a: AskAction): void => {
-    if (a === 'ask') useAssist.getState().openCard({ anchor, rect, action: 'ask', conversationId: null, question: '' })
-    else void askInline(a, anchor, rect)
-    window.getSelection()?.removeAllRanges()
+    runOutside(() => {
+      if (a === 'ask') useAssist.getState().openCard({ anchor, rect, action: 'ask', conversationId: null, question: '' })
+      else void askInline(a, anchor, rect)
+      window.getSelection()?.removeAllRanges()
+    })
   }
 
   return (
@@ -97,9 +103,11 @@ export function SelectionToolbar() {
             onMouseDown={(e) => e.preventDefault()}
             className="inline-flex h-8 items-center gap-1 rounded-lg px-2 text-xs hover:bg-surface-hover"
             onClick={() => {
-              if (anchor.ownerId) useAssist.getState().setReplyQuote(anchor.ownerId, toolbar.text ?? anchor.quote ?? '')
-              useAssist.getState().showToolbar(null)
-              window.getSelection()?.removeAllRanges()
+              runOutside(() => {
+                if (anchor.ownerId) useAssist.getState().setReplyQuote(anchor.ownerId, toolbar.text ?? anchor.quote ?? '')
+                useAssist.getState().showToolbar(null)
+                window.getSelection()?.removeAllRanges()
+              })
             }}
           >
             <Quote className="size-3.5" />

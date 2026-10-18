@@ -1,3 +1,4 @@
+import { useExpandedPresentation } from '@/components/ui/ExpandableSurface'
 import { useTranslation } from 'react-i18next'
 import { Streamdown } from 'streamdown'
 import { toChartData, uiToText, type UiNode } from '@shared/ui/catalog'
@@ -44,6 +45,7 @@ export function UiSkeleton({ type, value }: { type?: string; value?: Record<stri
 }
 type ViewProps = { node: UiNode; uiKey: string; ctx: UiContext; partial?: boolean }
 export function UiNodeView(props: ViewProps) {
+  const { runOutside } = useExpandedPresentation()
   const { node, ctx, uiKey } = props
   const refs = Array.isArray(node.cite) ? [...node.cite] : typeof node.cite === 'number' ? [node.cite] : []
   if (node.type === 'list') refs.push(...(node.items ?? []).flatMap((item) => item.cite ?? []))
@@ -66,7 +68,7 @@ export function UiNodeView(props: ViewProps) {
                 className="cite-chip"
                 aria-label={`[${n}] ${citation.title}`}
                 title={citation.title}
-                onClick={() => openCitation(citation, ctx.conversationId)}
+                onClick={() => runOutside(() => openCitation(citation, ctx.conversationId))}
               >
                 {n}
               </button>

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { DiagramData } from '@shared/embeds/visuals'
 import { useTokens, type Tokens } from './tokens'
+import { useExpandedPresentation } from '@/components/ui/ExpandableSurface'
 import { decorateDiagram, mermaidThemeVariables } from './mermaidTheme'
 let mermaidSeq = 0
 async function loadMermaid(c?: Tokens) {
@@ -29,20 +30,24 @@ export async function validateMermaid(code: string): Promise<string | null> {
   }
 }
 
-export function DiagramBox({ data: d }: { data: DiagramData }) {
+export function DiagramBox({ data: d, onReadyChange }: { data: DiagramData; onReadyChange?(ready: boolean): void }) {
+  const { expanded } = useExpandedPresentation()
+  const code = d.code
+  const originalSize = useRef<{ node: SVGSVGElement; width: string; maxWidth: string } | null>(null)
   const c = useTokens()
   const host = useRef<HTMLDivElement>(null)
   const [svg, setSvg] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   useEffect(() => {
-    if (!d) return
+    setSvg(null)
+    setError(null)
     let alive = true
     void (async () => {
       try {
         const m = await loadMermaid(c)
-        const code = await decorateDiagram(d.code, m, c)
+        const decorated = await decorateDiagram(code, m, c)
         // 补上的配色语句万一和模型写的冲突，退回原文渲染，保证图能出来
-        const { svg } = await m.render(`mmd-${++mermaidSeq}`, code).catch(() => m.render(`mmd-${++mermaidSeq}`, d.code))
+        const { svg } = await m.render(`mmd-${++mermaidSeq}`, decorated).catch(() => m.render(`mmd-${++mermaidSeq}`, code))
         if (alive) {
           setSvg(svg)
           setError(null)
@@ -54,7 +59,7 @@ export function DiagramBox({ data: d }: { data: DiagramData }) {
     return () => {
       alive = false
     }
-  }, [d, c])
+  }, [code, c])
   useEffect(() => {
     if (!svg || !host.current) return
     // Mermaid 严格清理后的 SVG 仍去除可执行节点/属性，不将模型字符串作为 HTML 注入。
@@ -67,6 +72,22 @@ export function DiagramBox({ data: d }: { data: DiagramData }) {
       }
     if (doc.documentElement.tagName.toLowerCase() === 'svg') host.current.replaceChildren(document.importNode(doc.documentElement, true))
   }, [svg])
+  useEffect(() => {
+    onReadyChange?.(!!svg && !error)
+  }, [svg, error, onReadyChange])
+  useEffect(() => {
+    const node = host.current?.querySelector('svg')
+    if (!node) return
+    if (originalSize.current?.node !== node) originalSize.current = { node, width: node.style.width, maxWidth: node.style.maxWidth }
+    const width = node.viewBox.baseVal.width
+    if (expanded && Number.isFinite(width) && width > 0) {
+      node.style.width = `${width}px`
+      node.style.maxWidth = 'none'
+    } else {
+      node.style.width = originalSize.current.width
+      node.style.maxWidth = originalSize.current.maxWidth
+    }
+  }, [expanded, svg])
   if (error)
     return (
       <div>

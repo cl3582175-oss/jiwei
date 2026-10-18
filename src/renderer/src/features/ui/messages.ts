@@ -1,4 +1,5 @@
 export const uiZh = {
+  expand: { open: '放大', exit: '退出放大', untitled: '交互内容', hint: '按 Escape 退出放大', failed: '暂时无法放大，已返回原内容' },
   criterion: '准则',
   weight: '权重',
   total: '加权得分',
@@ -98,6 +99,13 @@ export const uiZh = {
   details: '更多信息'
 }
 export const uiEn: typeof uiZh = {
+  expand: {
+    open: 'Expand',
+    exit: 'Exit expanded view',
+    untitled: 'Interactive content',
+    hint: 'Press Escape to exit expanded view',
+    failed: 'Could not expand. The original content is still available.'
+  },
   criterion: 'Criterion',
   weight: 'Weight',
   total: 'Weighted score',
