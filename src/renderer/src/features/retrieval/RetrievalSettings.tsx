@@ -557,6 +557,20 @@ export function RetrievalSettings() {
         )}
       </Section>
       <Section title={t('retrieval.privacyTitle')} help={t('retrieval.privacyHelp')}>
+        <label className="flex items-start justify-between gap-3">
+          <div>
+            <span>{t('retrieval.cloud.setting')}</span>
+            <p className="mt-1 text-xs leading-relaxed text-muted">{t('retrieval.cloud.help')}</p>
+            <p className="mt-1 text-xs leading-relaxed text-muted">{t('retrieval.cloud.notice')}</p>
+          </div>
+          <Switch
+            checked={settings.cloudReader}
+            disabled={update.isPending}
+            aria-label={t('retrieval.cloud.setting')}
+            data-testid="retrieval-cloud-reader"
+            onCheckedChange={(cloudReader) => change({ cloudReader })}
+          />
+        </label>
         <label className="flex items-center justify-between gap-3">
           <div>
             <span>{t('retrieval.cautious')}</span>

@@ -194,6 +194,17 @@ afterEach(async () => {
 })
 
 describe('web tool availability and public contract', () => {
+  it('reuses an already approved same-turn page without a second confirmation or read attempt', async () => {
+    state.cautious = true
+    const s = session()
+    s.web.userText = '请读 ' + result().url
+    await run(() => readForSession(s, result().url))
+    const built = buildWebTools(s)
+    expect(built.meta.read_url.dynamic?.({ url: result().url }).confirm).toBe(false)
+    await call(built.tools, 'read_url', { url: result().url })
+    expect(s.web.reads).toBe(1)
+    expect(state.fetch).toHaveBeenCalledTimes(1)
+  })
   it('offers only reading when no Search service is available', () => {
     const s = session()
     s.web.gate.status = 'read-only'

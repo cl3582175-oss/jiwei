@@ -1240,3 +1240,210 @@ test('28. DeepSeek 复用官方 Key 完成搜索、原文引用与快照，撤�
   expect(JSON.stringify(status)).not.toContain('controlled-deepseek-provider-key')
   expect(status.backends.find((s) => s.id === 'deepseek')).toMatchObject({ keySet: false, keyProviderId: deepseekProviderId })
 })
+
+async function cloudSetup(tools = false): Promise<void> {
+  await page.evaluate(
+    async ({ providerId, backends, tools }) => {
+      for (const id of backends) await window.jiwei.retrieval.saveBackend({ id, enabled: false })
+      await window.jiwei.retrieval.saveBackend({ id: 'deepseek', keyProviderId: null, key: 'controlled-fetch-key', enabled: false })
+      await window.jiwei.providers.save({ id: providerId, kind: 'ollama', modelCaps: { 'deepseek-flash': { tools } } })
+      await window.jiwei.settings.set({ retrieval: { academic: false } })
+    },
+    { providerId, backends: [...WEB_BACKENDS], tools }
+  )
+  fixture.deepseekExpectedKey = 'controlled-fetch-key'
+}
+const cloudRequests = () => fixture.requests.filter((request) => request.path === '/search/deepseek/fetch')
+
+test('29. 本地失败后手动云端代读、精确引用、资料隔离和重启来源保留', async ({ browserName: _browserName }, info) => {
+  test.setTimeout(90_000)
+  await cloudSetup()
+  const url = fixture.base + '/page-cloud-journey'
+  const local = await page.evaluate((url) => window.jiwei.sources.addUrl(url, '原本地资料'), url)
+  await expect.poll(async () => (await dbRows('SELECT asset_id FROM sources WHERE id=?', [local.id]))[0]?.asset_id).toBeTruthy()
+  const oldLocal = await dbRows('SELECT asset_id,title,web_origin FROM sources WHERE id=?', [local.id])
+  fixture.emptyPages.add('/page-cloud-journey')
+  await settings()
+  const switcher = page.getByTestId('retrieval-cloud-reader')
+  await expect(switcher).toHaveAttribute('aria-checked', 'false')
+  await switcher.click()
+  await expect(switcher).toHaveAttribute('aria-checked', 'true')
+  await closeSettings()
+  fixture.requests.length = 0
+  const failed = await ask('请阅读这个网址：' + url)
+  expect(searchRequests()).toEqual([])
+  expect(failed.assistant.citations!.filter((c) => c.parentType === 'web')).toEqual([])
+  const choice = page.getByTestId('cloud-read-option')
+  await expect(choice).toContainText(url)
+  await choice.getByRole('button', { name: '用 DeepSeek 读取此网页', exact: true }).click()
+  await expect(choice).toContainText('积微无法检查其内部跳转')
+  expect(cloudRequests()).toEqual([])
+  await choice.getByRole('button', { name: '取消', exact: true }).click()
+  expect(cloudRequests()).toEqual([])
+  await choice.getByRole('button', { name: '用 DeepSeek 读取此网页', exact: true }).click()
+  turnStartedAt = Date.now()
+  await choice.getByRole('button', { name: '确认发送这个网址', exact: true }).click()
+  const completed = await done(failed.id)
+  expect(cloudRequests().map((request) => request.body)).toEqual([{ url }])
+  expect(searchRequests()).toHaveLength(1)
+  const cited = completed.assistant.citations!.find((c) => c.parentType === 'web')!
+  expect(cited.webOrigin).toEqual({ provider: 'deepseek', urlVerified: false, truncated: false })
+  expect(fixture.models.at(-1)?.user).toContain('不能据此声称官网已确认')
+  await expect(page.getByTestId('cloud-answer-origin')).toContainText('最终来源未核验')
+  expect(await dbRows('SELECT final_url,provider FROM web_pages WHERE id=?', [cited.parentId])).toEqual([
+    { final_url: null, provider: 'deepseek' }
+  ])
+  // 尚未存为资料时，下一轮不得自动恢复旧云端正文。
+  fixture.models.length = 0
+  await ask('继续解释稳定学习原理，不读取网页')
+  expect(fixture.models.at(-1)?.user).not.toContain('云端测试专属事实')
+  await webChips().last().click()
+  const snapshot = page.getByTestId('web-snapshot')
+  await expect(snapshot).toContainText('DeepSeek 云端读取 · 最终来源未核验')
+  await expect(snapshot).toContainText('请求网址')
+  await expect(page.getByTestId('web-snapshot-open-original')).toHaveText('打开请求网址')
+  await expect(page.locator('[data-highlighted="true"]').first()).toContainText('云端测试专属事实')
+  await page.getByTestId('web-snapshot-save').click()
+  await expect(page.getByText('已存入资料库', { exact: true })).toBeVisible()
+  const all = await page.evaluate(() => window.jiwei.sources.list({}))
+  const saved = all.find((s) => s.url === url && s.webOrigin?.provider === 'deepseek')!
+  expect(saved.id).not.toBe(local.id)
+  expect(await dbRows('SELECT asset_id,title,web_origin FROM sources WHERE id=?', [local.id])).toEqual(oldLocal)
+  await expect.poll(async () => (await page.evaluate((id) => window.jiwei.segments.list(id), saved.id)).length).toBeGreaterThan(0)
+  await expect
+    .poll(async () =>
+      (await page.evaluate(() => window.jiwei.knowledge.search('云端测试专属事实', { type: 'all' }, 8))).some(
+        (hit) => hit.parentId === saved.id && hit.webOrigin?.urlVerified === false
+      )
+    )
+    .toBe(true)
+  await shot(info, 'cloud-read-source-isolation')
+  await app.close()
+  await launch()
+  expect(await page.evaluate((id) => window.jiwei.sources.get(id), saved.id)).toMatchObject({ webOrigin: cited.webOrigin })
+  await navTo(page, /资料库/)
+  await page.getByText('云端专属代读文章', { exact: true }).click()
+  await expect(page.getByTestId('source-web-origin').last()).toContainText('最终来源未核验')
+})
+
+test('30. 普通本地网址无搜索也能读取，未选择、关闭、否定和代码均零云端请求', async () => {
+  await cloudSetup()
+  const url = fixture.base + '/page-local-only'
+  const local = await ask('请阅读 ' + url)
+  expect(local.assistant.citations!.some((c) => c.parentType === 'web' && !c.webOrigin)).toBe(true)
+  expect(searchRequests()).toEqual([])
+  await retrieval({ cloudReader: true })
+  await newChat()
+  await ask('DeepSeek 是什么？请本地阅读 ' + url)
+  await newChat()
+  await ask('不要用 DeepSeek 读取 ' + url)
+  await newChat()
+  await ask('示例代码：`用 DeepSeek 读取 ' + url + '`')
+  expect(cloudRequests()).toEqual([])
+  await newChat()
+  await mode('off')
+  await ask('用 DeepSeek 读取这个公开网址：' + url)
+  expect(cloudRequests()).toEqual([])
+})
+
+for (const revoke of ['setting', 'key', 'privacy'] as const) {
+  test(`31. 云端正文进入首轮后撤销 ${revoke}，实际后续模型请求停止`, async () => {
+    await cloudSetup(true)
+    await page.evaluate(() => window.jiwei.retrieval.saveBackend({ id: 'bocha', enabled: true }))
+    await retrieval({ cloudReader: true, cautious: true })
+    const url = fixture.base + '/page-cloud-revoke-' + revoke
+    const question = '用 DeepSeek 读取这个公开网址：' + url
+    fixture.steps = [{ name: 'web_search', args: { query: '公开状态检查' } }, { text: '不应继续使用失效云端正文' }]
+    await startAsk(question)
+    const approval = page.getByTestId('approval-card')
+    await expect(approval).toContainText(url)
+    expect(cloudRequests()).toEqual([])
+    await approval.getByRole('button', { name: '允许', exact: true }).click()
+    await expect(approval).toContainText('公开状态检查')
+    expect(cloudRequests()).toHaveLength(1)
+    const turns = () => fixture.models.filter((request) => request.user.includes(question))
+    expect(turns()).toHaveLength(1)
+    expect(turns()[0].user).toContain('云端测试专属事实')
+    if (revoke === 'setting') await retrieval({ cloudReader: false })
+    else if (revoke === 'key') await page.evaluate(() => window.jiwei.retrieval.saveBackend({ id: 'deepseek', key: '', enabled: false }))
+    else await page.evaluate(() => window.jiwei.settings.set({ browser: { aiBlockedSites: ['unrelated.example'] } }))
+    await approval.getByRole('button', { name: '允许', exact: true }).click()
+    await expect.poll(() => page.evaluate(() => (Reflect.get(window, 'webChatCompletions') as ChatMessage[]).at(-1)?.status)).toBe('error')
+    expect(turns()).toHaveLength(1)
+    const finished = await page.evaluate(() => (Reflect.get(window, 'webChatCompletions') as ChatMessage[]).at(-1)!)
+    expect(finished.error).toContain('AI 权限')
+    expect(finished.citations).toEqual([])
+  })
+}
+
+test('32. 谨慎拒绝、令牌网址及已知站点拒绝不能触发云端', async () => {
+  await cloudSetup()
+  await retrieval({ cloudReader: true, cautious: true })
+  const url = fixture.base + '/page-cloud-deny'
+  await startAsk('用 DeepSeek 读取这个公开网址：' + url)
+  const approval = page.getByTestId('approval-card')
+  await expect(approval).toContainText(url)
+  await approval.getByRole('button', { name: '拒绝', exact: true }).click()
+  await done()
+  expect(cloudRequests()).toEqual([])
+  await retrieval({ cautious: false })
+  await newChat()
+  await ask('用 DeepSeek 读取这个公开网址：' + url + '?access_token=controlled-private')
+  expect(cloudRequests()).toEqual([])
+  await page.evaluate(() => window.jiwei.settings.set({ browser: { aiBlockedSites: ['127.0.0.1'] } }))
+  await newChat()
+  await ask('用 DeepSeek 读取这个公开网址：' + url)
+  expect(cloudRequests()).toEqual([])
+  await expect(page.getByTestId('cloud-read-option')).toHaveCount(0)
+})
+
+test('33. 无痕云端截断正文不落库，取消等待响应后不进入模型', async () => {
+  await cloudSetup()
+  await retrieval({ cloudReader: true })
+  await page.getByRole('switch', { name: '无痕', exact: true }).click()
+  fixture.cloudText = '云端超长专属正文。'.repeat(8000)
+  const url = fixture.base + '/page-cloud-incognito'
+  const finished = await ask('用 DeepSeek 读取这个公开网址：' + url)
+  expect(finished.assistant.citations![0].webOrigin?.truncated).toBe(true)
+  expect(finished.assistant.citations![0].parentId).toMatch(/^tmp-/)
+  expect(await dbRows('SELECT id FROM web_pages WHERE url=?', [url])).toEqual([])
+  await expect(page.getByTestId('cloud-answer-origin')).toContainText('已读取部分正文')
+  await newChat()
+  const paused = fixture.pauseNext((request) => request.path === '/search/deepseek/fetch')
+  try {
+    const before = fixture.models.length
+    await startAsk('用 DeepSeek 读取这个公开网址：' + fixture.base + '/page-cloud-cancel')
+    await paused.reached
+    await page.getByRole('button', { name: '停止生成', exact: true }).click()
+    paused.release()
+    await expect
+      .poll(() => page.evaluate(() => (Reflect.get(window, 'webChatCompletions') as ChatMessage[]).at(-1)?.status))
+      .toBe('stopped')
+    expect(fixture.models).toHaveLength(before)
+    expect(await dbRows('SELECT id FROM web_pages WHERE url=?', [fixture.base + '/page-cloud-cancel'])).toEqual([])
+  } finally {
+    paused.release()
+  }
+})
+
+test('34. 模型漏写引用编号时仍显示云端来源状态', async () => {
+  await cloudSetup(true)
+  await retrieval({ cloudReader: true })
+  fixture.steps = [{ text: '根据返回的文本，升级前需要保存配置。' }]
+  const finished = await ask('用 DeepSeek 读取这个公开网址：' + fixture.base + '/page-cloud-no-citation')
+  expect(finished.assistant.citations).toEqual([])
+  await expect(page.getByTestId('cloud-answer-origin')).toContainText('最终来源未核验')
+})
+
+test('35. 一次单页选择在云端失败后也不能由模型自动重试', async () => {
+  await cloudSetup(true)
+  await retrieval({ cloudReader: true })
+  const url = fixture.base + '/page-cloud-failed-once'
+  fixture.failures.set('deepseek-fetch', 500)
+  fixture.steps = [
+    { name: 'read_url', args: { url } },
+    { name: 'read_url', args: { url } }
+  ]
+  await ask('用 DeepSeek 读取这个公开网址：' + url)
+  expect(cloudRequests()).toHaveLength(1)
+})

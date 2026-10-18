@@ -1,10 +1,11 @@
 /** Only current user text can express this choice; page content/tool args never call this parser. */
 export function directReadIntent(text: string): { urls: string[]; requested: boolean; cloudUrl?: string } {
   const plain = text
-    .replace(/```[\s\S]*?```/g, '')
+    .replace(/(?:```|~~~)[\s\S]*?(?:(?:```|~~~)|$)/g, '')
     .replace(/`[^`\n]*`/g, '')
     .replace(/^\s*>.*$/gm, '')
-    .replace(/“[^”]*”|「[^」]*」|"[^"\n]*"/g, '')
+    .replace(/^(?: {4}|\t).*$/gm, '')
+    .replace(/“[^”]*”|「[^」]*」|"[^"\n]*"|'[^'\n]*'/g, '')
   const urls = [
     ...new Set(
       (plain.match(/https?:\/\/[^\s<>"'`]+/gi) ?? []).map((value) => {

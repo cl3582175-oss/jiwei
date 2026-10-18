@@ -528,14 +528,45 @@ describe('explicit DeepSeek reading preserves unverified origin', () => {
     expect((await run(() => readUrl('https://example.org/article'))).page.id).toBe(local.page.id)
   })
 
-  it.each(['https://example.org/a?token=secret', 'https://example.org/a?X-Amz-Signature=secret', 'https://example.org/login'])(
-    'refuses credential or login URL %s before transmission',
-    async (url) => {
-      state.cloud = true
-      await expect(run(() => readUrl(url, { provider: 'deepseek' }))).rejects.toThrow()
-      expect(state.fetch).not.toHaveBeenCalled()
-    }
-  )
+  it.each([
+    'https://example.org/a?token=secret',
+    'https://example.org/a?X-Amz-Signature=secret',
+    'https://example.org/a#access_token=secret',
+    'https://example.org/login'
+  ])('refuses credential or login URL %s before transmission', async (url) => {
+    state.cloud = true
+    await expect(run(() => readUrl(url, { provider: 'deepseek' }))).rejects.toThrow()
+    expect(state.fetch).not.toHaveBeenCalled()
+  })
+
+  it('allows an ordinary author filter without mistaking it for authorization', async () => {
+    state.cloud = true
+    state.fetch.mockResolvedValue(response(JSON.stringify({ title: 'Public article', content: paragraph }), 'application/json'))
+    const read = await run(() => readUrl('https://example.org/articles?author=public', { provider: 'deepseek' }))
+    expect(read.page.text).toBe(paragraph)
+    expect(state.fetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('holds a third cloud request in the queue and cancels it without transmission or quota use', async () => {
+    state.cloud = true
+    const pending: (() => void)[] = []
+    state.fetch.mockImplementation(async () => {
+      await new Promise<void>((resolve) => pending.push(resolve))
+      return response(JSON.stringify({ title: 'Concurrent article', content: paragraph }), 'application/json')
+    })
+    const first = run(() => readUrl('https://example.org/concurrent-1', { provider: 'deepseek' }))
+    const second = run(() => readUrl('https://example.org/concurrent-2', { provider: 'deepseek' }))
+    await vi.waitFor(() => expect(pending).toHaveLength(2))
+    const controller = new AbortController()
+    const third = run(() => readUrl('https://example.org/concurrent-3', { provider: 'deepseek', signal: controller.signal }))
+    const canceled = expect(third).rejects.toThrow(/cancel/i)
+    controller.abort()
+    await canceled
+    expect(state.fetch).toHaveBeenCalledTimes(2)
+    pending.forEach((resolve) => resolve())
+    await Promise.all([first, second])
+    expect(calls()).toHaveLength(2)
+  })
 
   it('discards a response if the selected page is blocked while awaiting the service', async () => {
     state.cloud = true

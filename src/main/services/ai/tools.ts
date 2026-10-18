@@ -103,6 +103,7 @@ export interface AgentSession {
     /** 仅本轮内存：快照清理后仍保留读取时的最终网址权限检查，不持久化闭包。 */
     pageGuards?: Map<string, () => void>
     cloudReadUrl?: string
+    cloudReadStarted?: boolean
     onReadFailure?: (url: string) => void
     readResults?: Map<string, import('./webTools').SessionRead>
   }

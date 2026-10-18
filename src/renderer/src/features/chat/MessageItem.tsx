@@ -25,6 +25,9 @@ import {
   Globe
 } from 'lucide-react'
 import type { AgentStep, ChatMessage, Citation } from '@shared/types'
+import { webOriginLabel } from '@shared/retrieval'
+import { useSettings } from '@/lib/queries'
+import { Button } from '@/components/ui/button'
 import { api, cn, formatDate } from '@/lib/utils'
 import { useApp } from '@/store/app'
 import { Tip } from '@/components/ui/primitives'
@@ -46,7 +49,7 @@ export function openCitation(c: Citation, conversationId?: string): void {
   if (c.parentType === 'web') {
     if (c.snippetOnly || !c.parentId || c.parentId.startsWith('tmp-')) {
       if (c.url) s.openBrowser(c.url)
-    } else useWebSnapshot.getState().open(c.parentId, c.locator, c.url)
+    } else useWebSnapshot.getState().open(c.parentId, c.locator, c.url, c.webOrigin)
     return
   }
   s.setHighlight({
@@ -217,6 +220,9 @@ function CitationCard({ c, conversationId }: { c: Citation; conversationId: stri
     >
       <span className="mt-0.5 grid size-5 shrink-0 place-items-center rounded bg-accent-soft font-mono text-2xs text-accent">{c.n}</span>
       <span className="min-w-0 flex-1">
+        {c.webOrigin && (
+          <span className="mb-1 block text-2xs text-muted">{webOriginLabel(c.webOrigin, i18n.language.startsWith('zh'))}</span>
+        )}
         <span className={cn('flex items-center gap-1.5 text-xs text-fg', web && 'flex-wrap')}>
           {c.parentType === 'note' ? (
             <NotebookText className="size-3.5 shrink-0 text-subtle" />
@@ -277,6 +283,48 @@ export const REPLY_EVENT = 'jiwei:reply'
 export type ReplyDetail = { conversationId: string; text: string; uiEvent?: UiEvent }
 export function replyInConversation(conversationId: string, text: string, uiEvent?: UiEvent): void {
   window.dispatchEvent(new CustomEvent<ReplyDetail>(REPLY_EVENT, { detail: { conversationId, text, uiEvent } }))
+}
+
+function CloudReadOption({ url, conversationId }: { url: string; conversationId: string }) {
+  const { t, i18n } = useTranslation()
+  const { data: settings } = useSettings()
+  const [reviewing, setReviewing] = useState(false)
+  const [sent, setSent] = useState(false)
+  if (!settings?.retrieval.cloudReader || sent) return null
+  return (
+    <div className="mt-3 space-y-2 rounded-lg border border-border p-3 text-xs" data-testid="cloud-read-option">
+      <p className="break-all text-muted">
+        {t('retrieval.cloud.requestUrl')}：{url}
+      </p>
+      {reviewing ? (
+        <>
+          <p className="leading-relaxed text-muted">{t('retrieval.cloud.notice')}</p>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              variant="primary"
+              onClick={() => {
+                setSent(true)
+                replyInConversation(
+                  conversationId,
+                  i18n.language.startsWith('zh') ? '用 DeepSeek 读取这个公开网址：' + url : 'Use DeepSeek to read this public URL: ' + url
+                )
+              }}
+            >
+              {t('retrieval.cloud.confirm')}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setReviewing(false)}>
+              {t('common.cancel')}
+            </Button>
+          </div>
+        </>
+      ) : (
+        <Button size="sm" variant="outline" onClick={() => setReviewing(true)}>
+          {t('retrieval.cloud.action')}
+        </Button>
+      )}
+    </div>
+  )
 }
 
 /** AI 的选择题（ask_user）：只有最新一条回答上的可以点 */
@@ -373,7 +421,7 @@ export function MessageItem({
   /** 最新一条：其中的选择题可以点 */
   last?: boolean
 }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const money = useMoney()
   const [copied, setCopied] = useState(false)
   const bodyRef = useRef<HTMLDivElement>(null)
@@ -414,6 +462,7 @@ export function MessageItem({
     }
   }
   const seconds = m.usage ? Math.round(m.usage.durationMs / 1000) : null
+  const cloudOrigin = m.citations.find((citation) => citation.webOrigin)?.webOrigin ?? m.steps.find((step) => step.webOrigin)?.webOrigin
   const copy = (): void => {
     void navigator.clipboard.writeText(uiAnswerText(m.content).replace(/\[(\d{1,2})\]/g, ''))
     setCopied(true)
@@ -462,6 +511,19 @@ export function MessageItem({
         </div>
       )}
       {m.status === 'stopped' && <p className="mt-2 text-2xs text-subtle">{t('chat.stopped')}</p>}
+
+      {!!last &&
+        !streaming &&
+        m.status !== 'stopped' &&
+        !replyRestricted &&
+        m.steps
+          .filter((step) => step.cloudRead)
+          .map((step) => <CloudReadOption key={step.id} url={step.cloudRead!.url} conversationId={m.conversationId} />)}
+      {cloudOrigin && (
+        <p className="mt-3 text-xs text-muted" data-testid="cloud-answer-origin">
+          {webOriginLabel(cloudOrigin, i18n.language.startsWith('zh'))}
+        </p>
+      )}
 
       <MessageReadiness message={m} />
       {m.citations.length > 0 && <Basis conversationId={m.conversationId} citations={m.citations} />}

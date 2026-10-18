@@ -239,8 +239,10 @@ export async function readUrl(value: string, opts: ReadOptions = {}): Promise<Re
   assertWebAllowed()
   checkBudget()
   if (opts.signal?.aborted) throw new ReadError('canceled')
-  const url = canonicalUrl(value)
-  if (!url) throw new ReadError('invalid')
+  const canonical = canonicalUrl(value)
+  if (!canonical) throw new ReadError('invalid')
+  // Cloud consent is for the exact input. Validate credentials before any normalization can strip them.
+  const url = opts.provider === 'deepseek' ? value : canonical
   const validate = (target: string): string => {
     const clean = canonicalUrl(target)
     if (!clean) throw new ReadError('invalid')

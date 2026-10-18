@@ -1,6 +1,19 @@
 import { expect, it } from 'vitest'
 import { f, settle, source, start } from './digestFixture'
 
+it('保存的云端资料在分批整理和最终总结中保留来源限制', async () => {
+  await source()
+  f.sql!.prepare('UPDATE sources SET web_origin=? WHERE id=?').run(
+    JSON.stringify({ provider: 'deepseek', urlVerified: false, truncated: true }),
+    'source'
+  )
+  const { jobId } = await start()
+  const result = await settle(jobId)
+  expect(result.status, result.error ?? '').toBe('done')
+  expect(f.calls.length).toBeGreaterThanOrEqual(2)
+  expect(f.calls.every((prompt) => prompt.includes('DeepSeek 云端读取') && prompt.includes('不能据此声称官网已确认'))).toBe(true)
+})
+
 it('所属对话的附件总结完成并持久化提案', async () => {
   await source()
   const { jobId, noteId } = await start()

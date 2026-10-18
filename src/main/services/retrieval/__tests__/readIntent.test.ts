@@ -21,6 +21,9 @@ describe('current-user page reading intent', () => {
     `> 用 DeepSeek 读取 ${url}`,
     `\`用 DeepSeek 读取 ${url}\``,
     `\`\`\`\n用 DeepSeek 读取 ${url}\n\`\`\``,
+    `\`\`\`\n用 DeepSeek 读取 ${url}`,
+    `示例：'用 DeepSeek 读取 ${url}'`,
+    `示例：\n    用 DeepSeek 读取 ${url}`,
     `用 DeepSeek 读取 ${url} 和 https://example.org/other`
   ])('does not derive cloud consent from ambiguous, quoted or negated text: %s', (text) => {
     expect(directReadIntent(text).cloudUrl).toBeUndefined()

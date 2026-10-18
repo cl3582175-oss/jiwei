@@ -61,7 +61,11 @@ const messages = {
     '联网搜索暂时失败，请稍后再试或检查设置中的搜索服务',
     'Web search failed temporarily. Try again later or check the search services in settings.'
   ],
-  readFailed: ['网页读取失败，请稍后再试', 'Page reading failed. Try again later']
+  readFailed: ['网页读取失败，请稍后再试', 'Page reading failed. Try again later'],
+  cloudUsed: [
+    '本次单页云端选择已经使用；如需重试，请重新发起明确的阅读请求。',
+    'This single-page cloud choice has been used. Make a new explicit reading request to retry.'
+  ]
 } as const
 class WebToolError extends Error {
   constructor(zh: boolean, reason: keyof typeof messages) {
@@ -216,6 +220,8 @@ export async function readForSession(session: AgentSession, url: string, focus?:
     validateSessionUrl(session, url)
     let finalUrl = url
     const cloud = session.web.cloudReadUrl === url
+    if (cloud && session.web.cloudReadStarted) throw new WebToolError(session.zh, 'cloudUsed')
+    if (cloud) session.web.cloudReadStarted = true
     const fingerprint = cloud ? privacyFingerprint() : null
     const key = cloud ? credentialsFor('deepseek').key : null
     const read = await readUrl(url, {
@@ -419,6 +425,12 @@ export function buildWebTools(session: AgentSession): { tools: ToolSet; meta: Re
       }
     }
   }
+  const readMeta = built.meta.read_url
+  readMeta.dynamic = (input) => ({
+    ...readMeta,
+    // A same-turn result has already passed confirmation; its guard still runs on every reuse.
+    confirm: getSettings().retrieval.cautious && !session.web.readResults?.has(urlKey(String(input.url ?? '')) ?? '')
+  })
   if (session.web.gate.status === 'read-only') {
     delete built.tools.web_search
     delete built.meta.web_search

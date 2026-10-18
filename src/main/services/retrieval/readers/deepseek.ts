@@ -35,9 +35,15 @@ export class CloudReadError extends Error {
 export function assertCloudUrl(value: string): void {
   assertReadableUrl(value)
   const url = new URL(value)
-  const credential = /(?:token|secret|password|passwd|api.?key|signature|credential|authorization|access.?key|auth|session|ticket|jwt|sig)/i
+  const credential = (key: string): boolean => {
+    const name = key.replace(/[^a-z0-9]/gi, '').toLowerCase()
+    return (
+      /token|secret|password|passwd|apikey|signature|credential|authorization|accesskey|session|ticket|jwt/.test(name) ||
+      /^(?:auth|sig)$/.test(name)
+    )
+  }
   if (
-    [...url.searchParams.keys()].some((key) => credential.test(key)) ||
+    [...url.searchParams.keys(), ...new URLSearchParams(url.hash.slice(1)).keys()].some(credential) ||
     /\/(?:login|signin|sign-in|oauth|sso|authorize)(?:\/|$)/i.test(url.pathname)
   )
     throw new CloudReadError('restricted')

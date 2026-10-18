@@ -779,6 +779,7 @@ export interface FeynmanReport {
 
 /** AI 执行过程中的一步（调用工具、加载技能） */
 export interface AgentStep {
+  webOrigin?: import('./retrieval').WebOrigin
   /** Offered by the local reader only, never by untrusted model content. */
   cloudRead?: { url: string }
   id: string

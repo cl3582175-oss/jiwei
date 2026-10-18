@@ -25,7 +25,10 @@ export function filterCloudHits(hits: SearchHit[], conversationId: string | null
         assertReadableUrl(hit.url)
         if (hit.meta?.pdfUrl) assertReadableUrl(hit.meta.pdfUrl)
         if (hit.webOrigin && !cloudPages?.has(hit.parentId)) return false
-        if (hit.parentId) assertPageReadable(hit.parentId, !!cloudPages?.has(hit.parentId))
+        if (hit.parentId) {
+          if (cloudPages?.has(hit.parentId)) assertPageReadable(hit.parentId, true)
+          else assertPageReadable(hit.parentId)
+        }
         return true
       } catch {
         return false

@@ -89,6 +89,7 @@ export async function runPreReadForTurn(session: AgentSession, urls: string[], o
       options.pushStep({
         ...step,
         status: 'done',
+        webOrigin: response.read.page.webOrigin,
         detail: messages.passageSelection
           .replace('{{total}}', String(response.read.passages.length))
           .replace('{{k}}', String(response.selected.length))

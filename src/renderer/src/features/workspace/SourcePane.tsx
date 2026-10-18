@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { X, ExternalLink, Loader2, FileQuestion, Highlighter, Globe } from 'lucide-react'
 import type { Conversation, Segment, Source } from '@shared/types'
+import { webOriginLabel } from '@shared/retrieval'
 import { api, cn, formatBytes } from '@/lib/utils'
 import { useApp } from '@/store/app'
 import { Button } from '@/components/ui/button'
@@ -246,7 +247,7 @@ function IndexChip({ sourceId, conversationId = null }: { sourceId: string; conv
 }
 
 export function SourcePane({ sourceId }: { sourceId: string }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const qc = useQueryClient()
   const openSource = useApp((s) => s.openSource)
   const conversationId = useApp((s) => s.sourceConversationId)
@@ -287,17 +288,22 @@ export function SourcePane({ sourceId }: { sourceId: string }) {
             {source.author ? ` · ${source.author}` : ''}
             <IndexChip sourceId={source.id} conversationId={conversationId} />
           </p>
+          {source.webOrigin && (
+            <p className="text-2xs text-muted" data-testid="source-web-origin">
+              {webOriginLabel(source.webOrigin, i18n.language.startsWith('zh'))}
+            </p>
+          )}
         </div>
         <div className="no-drag flex items-center gap-0.5">
           {!source.aiExcluded && ['pdf', 'web', 'book', 'document', 'other'].includes(source.kind) && (
             <ReadingControls target={{ kind: 'source', id: source.id }} />
           )}
           {source.kind === 'web' && source.url && (
-            <Tip label={t('browser.openOriginal')} side="bottom">
+            <Tip label={t(source.webOrigin ? 'retrieval.cloud.openRequest' : 'browser.openOriginal')} side="bottom">
               <Button
                 variant="ghost"
                 size="icon-sm"
-                aria-label={t('browser.openOriginal')}
+                aria-label={t(source.webOrigin ? 'retrieval.cloud.openRequest' : 'browser.openOriginal')}
                 onClick={() => useApp.getState().openBrowser(source.url!)}
               >
                 <Globe />
