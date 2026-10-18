@@ -1767,9 +1767,48 @@
 }
 .expanded-mount[data-display-mode="expanded"] .reply-surface-content > :is(section, .mermaid-surface) > header { flex-shrink: 0; }
 .expanded-mount[data-display-mode="expanded"] .ui-frame-body {
-  flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain;
+  display: flex; flex: 1; min-width: 0; min-height: 0;
+  overflow: auto; padding: 16px; overscroll-behavior: contain;
+}
+.expanded-mount[data-display-mode="expanded"] :is(.ui-frame-content, .ui-visible-group) {
+  display: flex; flex-direction: column;
+  flex: none; width: fit-content; max-width: min(100%, 56rem);
+  height: auto; min-height: 0; margin: auto; overflow-wrap: anywhere;
+}
+.expanded-mount[data-display-mode="expanded"] :is(.ui-frame-content, .ui-visible-group)[data-expanded-layout="reading"] {
+  width: min(100%, 56rem);
+}
+.expanded-mount[data-display-mode="expanded"] :is(.ui-frame-content, .ui-visible-group)[data-expanded-layout="wide"] {
+  width: min(100%, 80rem); max-width: min(100%, 80rem);
+}
+.expanded-mount[data-display-mode="expanded"] :is(.ui-frame-content, .ui-visible-group):is([data-expanded-layout="table"], [data-expanded-layout="diagram"]) {
+  max-width: 100%;
+}
+.expanded-mount[data-display-mode="expanded"] .ui-frame-content:has(> details:not([open])),
+.expanded-mount[data-display-mode="expanded"] .ui-visible-group:has(> [data-layout-type="details"]:only-child > details:not([open])) {
+  width: fit-content;
+}
+.expanded-mount[data-display-mode="expanded"] [role="tablist"] {
+  width: fit-content; max-width: 100%; margin-inline: auto;
 }
 .expanded-mount[data-display-mode="expanded"] .chart-canvas { height: max(320px, calc(70dvh - 80px)); }
 .expanded-mount[data-display-mode="expanded"] .ui-table-scroll { max-height: calc(100dvh - 140px); }
-.expanded-mount[data-display-mode="expanded"] .diagram-svg { justify-content: flex-start; overflow: auto; }
-.expanded-mount[data-display-mode="expanded"] .diagram-svg > div { width: max-content; flex-shrink: 0; }
+.expanded-mount[data-display-mode="expanded"] :is(table, .diagram-svg) { overflow-wrap: normal; }
+.expanded-mount[data-display-mode="expanded"] .diagram-svg { justify-content: normal; overflow: auto; }
+.expanded-mount[data-display-mode="expanded"] .diagram-svg > div { width: max-content; flex-shrink: 0; margin-inline: auto; }
+
+/* Streamdown ordinary tables own a separate portal; keep it below native window controls. */
+[data-streamdown="table-fullscreen"] {
+  inset: 44px 0 0;
+  background: var(--surface);
+  color: var(--fg);
+  -webkit-app-region: no-drag;
+}
+[data-streamdown="table-fullscreen"] > [data-streamdown="table-wrapper"] { min-height: 0; }
+[data-streamdown="table-fullscreen"] > [data-streamdown="table-wrapper"] > div:first-child { flex-shrink: 0; }
+[data-streamdown="table-fullscreen"] > [data-streamdown="table-wrapper"] > div:has(> table[data-streamdown="table"]) {
+  display: flex; min-height: 0; padding: 16px; overscroll-behavior: contain;
+}
+[data-streamdown="table-fullscreen"] > [data-streamdown="table-wrapper"] > div:has(> table[data-streamdown="table"]) > table {
+  flex: none; width: auto; max-width: 100%; margin: auto;
+}

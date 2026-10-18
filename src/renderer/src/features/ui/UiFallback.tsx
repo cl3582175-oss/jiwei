@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next'
-import { Streamdown } from 'streamdown'
+import { UiMarkdown } from './UiMarkdown'
 import { uiFallbackMarkdown } from '@shared/ui/catalog'
 
 export function UiFallback({ raw, value, unknown }: { raw: string; value?: unknown; unknown?: boolean }) {
@@ -14,7 +14,7 @@ export function UiFallback({ raw, value, unknown }: { raw: string; value?: unkno
   return (
     <div className="px-4 py-3">
       <p className="mb-2 text-2xs text-subtle">{t('ui.fellBack')}</p>
-      <Streamdown mode="static">{uiFallbackMarkdown(value, raw)}</Streamdown>
+      <UiMarkdown mode="static">{uiFallbackMarkdown(value, raw)}</UiMarkdown>
     </div>
   )
 }

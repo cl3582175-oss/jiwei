@@ -24,7 +24,9 @@ export function MermaidFence({ code, isIncomplete }: CustomRendererProps) {
           <ExpandToggle />
         </header>
         <div className="ui-frame-body">
-          <DiagramBox data={data} onReadyChange={setReady} />
+          <div className="ui-frame-content" data-expanded-layout="diagram">
+            <DiagramBox data={data} onReadyChange={setReady} />
+          </div>
         </div>
       </div>
     </ReplyExpandableSurface>

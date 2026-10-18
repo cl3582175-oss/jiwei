@@ -11,6 +11,7 @@ import { canReply, restyle } from './reply'
 import { SaveToNote } from './SaveToNote'
 import { UiTypeIcon } from './typeIcon'
 import { collectSvgImage, EMBED_SVG_SELECTOR } from '@/features/notes/exportNote'
+import { expandedLayout } from './presentation'
 
 export function UiFrame({
   node,
@@ -165,16 +166,18 @@ export function UiFrame({
             ))}
           </div>
         )}
-        {children}
-        {save && node && <SaveToNote node={node} uiKey={uiKey} ctx={ctx} onClose={() => setSave(false)} />}
-        {ctx.stopped && state === 'streaming' && <p className="px-4 pb-3 text-2xs text-subtle">{t('ui.unfinished')}</p>}
-        {node?.note && <p className="px-4 pb-3 text-2xs text-subtle">{node.note}</p>}
-        {showRaw && (
-          <details open className="border-t border-border px-4 py-3">
-            <summary>{t('ui.menu.raw')}</summary>
-            <pre className="mt-2 overflow-auto whitespace-pre-wrap break-all text-2xs">{raw}</pre>
-          </details>
-        )}
+        <div className="ui-frame-content" data-expanded-layout={expandedLayout(node)}>
+          {children}
+          {save && node && <SaveToNote node={node} uiKey={uiKey} ctx={ctx} onClose={() => setSave(false)} />}
+          {ctx.stopped && state === 'streaming' && <p className="px-4 pb-3 text-2xs text-subtle">{t('ui.unfinished')}</p>}
+          {node?.note && <p className="px-4 pb-3 text-2xs text-subtle">{node.note}</p>}
+          {showRaw && (
+            <details open className="border-t border-border px-4 py-3">
+              <summary>{t('ui.menu.raw')}</summary>
+              <pre className="mt-2 overflow-auto whitespace-pre-wrap break-all text-2xs">{raw}</pre>
+            </details>
+          )}
+        </div>
       </div>
     </section>
   )

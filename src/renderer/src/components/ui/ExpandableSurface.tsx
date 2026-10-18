@@ -3,10 +3,12 @@ import { createPortal } from 'react-dom'
 import { Dialog as D } from 'radix-ui'
 import { Maximize2, Minimize2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { ScrollAxisMemory } from './scrollMemory'
 
 type ExitReason = 'user' | 'escape' | 'outside-action' | 'unavailable' | 'unmount' | 'error'
 type Mode = 'inline' | 'opening' | 'expanded' | 'closing'
 type ScrollPosition = { element: HTMLElement; top: number; left: number }
+type InnerScrollMemory = Map<HTMLElement, { x: ScrollAxisMemory; y: ScrollAxisMemory }>
 interface Presentation {
   expanded: boolean
   available: boolean
@@ -23,16 +25,52 @@ const PresentationContext = createContext<Presentation>({
 })
 export const useExpandedPresentation = (): Presentation => useContext(PresentationContext)
 
-function scrollPositions(root: HTMLElement): ScrollPosition[] {
-  return [root, ...root.querySelectorAll<HTMLElement>('*')]
-    .filter((element) => element instanceof HTMLElement && (element.scrollTop || element.scrollLeft))
-    .map((element) => ({ element, top: element.scrollTop, left: element.scrollLeft }))
-}
 function restoreScroll(positions: ScrollPosition[]): void {
   for (const { element, top, left } of positions) {
     if (!element.isConnected) continue
     element.scrollTop = top
     element.scrollLeft = left
+  }
+}
+
+function scrollMemory(element: HTMLElement) {
+  return {
+    x: new ScrollAxisMemory(element.scrollLeft, Math.max(0, element.scrollWidth - element.clientWidth)),
+    y: new ScrollAxisMemory(element.scrollTop, Math.max(0, element.scrollHeight - element.clientHeight))
+  }
+}
+
+function captureInnerScroll(root: HTMLElement): InnerScrollMemory {
+  const result: InnerScrollMemory = new Map()
+  for (const element of [root, ...root.querySelectorAll<HTMLElement>('*')]) {
+    if (!(element instanceof HTMLElement)) continue
+    const style = getComputedStyle(element)
+    if (
+      element.classList.contains('ui-frame-body') ||
+      element.scrollTop ||
+      element.scrollLeft ||
+      /auto|scroll/.test(style.overflowX + style.overflowY)
+    )
+      result.set(element, scrollMemory(element))
+  }
+  return result
+}
+
+function observeInnerScroll(memory: InnerScrollMemory): void {
+  for (const [element, axis] of memory) {
+    if (!element.isConnected) continue
+    axis.x.observe(element.scrollLeft, Math.max(0, element.scrollWidth - element.clientWidth))
+    axis.y.observe(element.scrollTop, Math.max(0, element.scrollHeight - element.clientHeight))
+  }
+}
+
+function restoreInnerScroll(memory: InnerScrollMemory): void {
+  for (const [element, axis] of memory) {
+    if (!element.isConnected) continue
+    element.scrollLeft = axis.x.target
+    element.scrollTop = axis.y.target
+    axis.x.settle(element.scrollLeft, Math.max(0, element.scrollWidth - element.clientWidth))
+    axis.y.settle(element.scrollTop, Math.max(0, element.scrollHeight - element.clientHeight))
   }
 }
 
@@ -61,7 +99,7 @@ export function ExpandableSurface({
   const mounted = useRef(false)
   const reason = useRef<ExitReason>('user')
   const trigger = useRef<HTMLElement | null>(null)
-  const innerScroll = useRef<ScrollPosition[]>([])
+  const innerScroll = useRef<InnerScrollMemory>(new Map())
   const readingScroll = useRef<ScrollPosition[]>([])
   const pendingAction = useRef<(() => void) | null>(null)
   const frames = useRef<number[]>([])
@@ -74,7 +112,7 @@ export function ExpandableSurface({
   const settleScroll = useCallback(() => {
     cancelFrames()
     // Restore content once after reparenting; delayed restores must not undo a new user scroll.
-    restoreScroll(innerScroll.current)
+    restoreInnerScroll(innerScroll.current)
     const restore = (): void => restoreScroll(readingScroll.current)
     restore()
     frames.current.push(
@@ -101,16 +139,22 @@ export function ExpandableSurface({
       if (mode.current === 'inline' || mode.current === 'closing') return
       reason.current = exit
       mode.current = 'closing'
-      if (mount.dataset.displayMode === 'expanded') innerScroll.current = scrollPositions(mount)
+      if (mount.dataset.displayMode === 'expanded') observeInnerScroll(innerScroll.current)
       returnInline()
       setExpanded(false)
     },
     [mount, returnInline]
   )
   const open = useCallback(() => {
-    if (!available || mode.current !== 'inline' || !anchor.current || document.querySelector('[data-testid="expanded-surface"]')) return
+    if (
+      !available ||
+      mode.current !== 'inline' ||
+      !anchor.current ||
+      document.querySelector('[data-testid="expanded-surface"], [data-streamdown="table-fullscreen"]')
+    )
+      return
     trigger.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    innerScroll.current = scrollPositions(mount)
+    innerScroll.current = captureInnerScroll(mount)
     readingScroll.current = []
     for (let parent = anchor.current.parentElement; parent; parent = parent.parentElement) {
       readingScroll.current.push({ element: parent, top: parent.scrollTop, left: parent.scrollLeft })
@@ -155,11 +199,19 @@ export function ExpandableSurface({
   useLayoutEffect(() => {
     mounted.current = true
     ;(modal.current ?? anchor.current)?.appendChild(mount)
+    const onScroll = (event: Event): void => {
+      if (mode.current !== 'expanded' || !(event.target instanceof HTMLElement)) return
+      const element = event.target
+      if (!innerScroll.current.has(element)) innerScroll.current.set(element, scrollMemory(element))
+      observeInnerScroll(innerScroll.current)
+    }
+    mount.addEventListener('scroll', onScroll, true)
     return () => {
       mounted.current = false
       reason.current = 'unmount'
       pendingAction.current = null
       cancelFrames()
+      mount.removeEventListener('scroll', onScroll, true)
       mount.remove()
     }
   }, [mount, cancelFrames])
@@ -167,7 +219,7 @@ export function ExpandableSurface({
     if (!available) close('unavailable')
   }, [available, close])
   useLayoutEffect(() => {
-    restoreScroll(innerScroll.current)
+    restoreInnerScroll(innerScroll.current)
   }, [expanded])
   useEffect(() => {
     if (expanded || !mounted.current) return

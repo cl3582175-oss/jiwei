@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Streamdown } from 'streamdown'
+import { UiMarkdown } from './UiMarkdown'
 import { parseUiJson, parseUiNode, partialUiNode, uiFallbackMarkdown, UI_TYPES, UI_LIMITS, type UiNode } from '@shared/ui/catalog'
 import { parsePartialJson } from '@shared/ui/partialJson'
 import type { UiContext } from './context'
@@ -108,14 +108,14 @@ export function UiBlock({ raw, incomplete, index, ctx }: { raw: string; incomple
   if ((ctx.compact && !ctx.settings.inline) || asText)
     content = (
       <div className="px-4 py-3">
-        <Streamdown mode="static">{uiFallbackMarkdown(node ?? partial.node, code)}</Streamdown>
+        <UiMarkdown mode="static">{uiFallbackMarkdown(node ?? partial.node, code)}</UiMarkdown>
       </div>
     )
   else if (!incomplete && index >= max)
     content = (
       <details className="px-4 py-3 text-xs">
         <summary>{t('ui.tooMany', { n: index - max + 1 })}</summary>
-        <Streamdown mode="static">{uiFallbackMarkdown(node ?? value, code)}</Streamdown>
+        <UiMarkdown mode="static">{uiFallbackMarkdown(node ?? value, code)}</UiMarkdown>
       </details>
     )
   else if (incomplete)

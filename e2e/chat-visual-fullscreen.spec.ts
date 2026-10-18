@@ -1,6 +1,6 @@
 import { test, expect, type ElectronApplication, type Page, type Locator } from '@playwright/test'
 import { createServer, type Server } from 'node:http'
-import { mkdtempSync, readFileSync, readdirSync } from 'node:fs'
+import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { isolatedElectron } from './fixtures/isolateElectron'
@@ -11,6 +11,7 @@ test.describe.configure({ mode: 'serial' })
 let app: ElectronApplication, page: Page, server: Server, providerId: string
 let answer = '',
   requests = 0
+const requestLog: { at: number; url: string; system: string }[] = []
 const userData = mkdtempSync(join(tmpdir(), 'jiwei-expanded-'))
 const fence = (node: unknown): string => `\`\`\`jiwei-ui\n${JSON.stringify(node)}\n\`\`\``
 const block = (): Locator => page.getByTestId('ui-block').last()
@@ -55,7 +56,12 @@ test.beforeAll(async () => {
       body += part
     })
     req.on('end', () => {
-      JSON.parse(body)
+      const input = JSON.parse(body) as { messages?: { role: string; content: unknown }[] }
+      requestLog.push({
+        at: Date.now(),
+        url: req.url ?? '',
+        system: String(input.messages?.find((message) => message.role === 'system')?.content ?? '').slice(0, 100)
+      })
       requests++
       res.writeHead(200, { 'content-type': 'text/event-stream' })
       const content = answer
@@ -63,7 +69,7 @@ test.beforeAll(async () => {
       const timer = setInterval(() => {
         const finished = offset >= content.length
         res.write(
-          `data: ${JSON.stringify({ id: 'expanded', object: 'chat.completion.chunk', created: 1, model: 'test-expanded', choices: [{ index: 0, delta: finished ? {} : { content: content.slice(offset, offset + 15) }, finish_reason: finished ? 'stop' : null }] })}\n\n`
+          `data: ${JSON.stringify({ id: 'expanded', object: 'chat.completion.chunk', created: 1, model: 'test-expanded', choices: [{ index: 0, delta: finished ? {} : { content: content.slice(offset, offset + 15) }, finish_reason: finished ? 'stop' : null }], ...(finished ? { usage: { prompt_tokens: 50, completion_tokens: 100, total_tokens: 150 } } : {}) })}\n\n`
         )
         offset += 15
         if (finished) {
@@ -89,10 +95,28 @@ test.beforeAll(async () => {
   page = await app.firstWindow()
   await page.waitForSelector('nav')
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1440, 900))
+  await app.evaluate(({ BrowserWindow }) => {
+    const events = { close: 0, closed: 0, hide: 0 }
+    const window = BrowserWindow.getAllWindows()[0]
+    for (const name of ['close', 'closed', 'hide'] as const)
+      window.on(name, () => {
+        events[name]++
+      })
+    ;(globalThis as unknown as { fullscreenWindowEvents: typeof events }).fullscreenWindowEvents = events
+  })
   providerId = await page.evaluate(
     async (baseUrl) => {
-      const provider = await window.jiwei.providers.save({ kind: 'ollama', name: '受控放大验证', baseUrl, models: ['test-expanded'] })
+      const provider = await window.jiwei.providers.save({
+        kind: 'ollama',
+        name: '受控放大验证',
+        baseUrl,
+        models: ['test-expanded'],
+        modelCaps: { 'test-expanded': { price: { currency: 'USD', input: 1, output: 1 } } }
+      })
       const settings = await window.jiwei.settings.get()
+      // Delayed memory extraction is independent of fullscreen and otherwise races
+      // the strict zero-new-request assertion after this catalogue suite exceeds 2 minutes.
+      await window.jiwei.memory.setSettings({ autoLearn: false, learnSkills: false })
       await window.jiwei.settings.set({
         ai: {
           ...settings.ai,
@@ -111,10 +135,14 @@ test.afterAll(async () => {
   await app?.close()
   await new Promise<void>((resolve) => server?.close(() => resolve()))
 })
+test.afterEach(async () => {
+  if (test.info().status !== test.info().expectedStatus)
+    writeFileSync(test.info().outputPath('request-log.json'), JSON.stringify(requestLog, null, 2))
+})
 
 async function startAnswer(response: string): Promise<void> {
   answer = response
-  await page.getByRole('button', { name: '新对话', exact: true }).click()
+  await page.keyboard.press('ControlOrMeta+n')
   await page.evaluate(async (id) => {
     const s = await window.jiwei.settings.get()
     await window.jiwei.settings.set({ ai: { ...s.ai, chat: { providerId: id, model: 'test-expanded' } } })
@@ -128,6 +156,446 @@ async function ask(response: string): Promise<void> {
   await expect(page.getByRole('button', { name: '停止生成', exact: true })).toHaveCount(0, { timeout: 20000 })
   await expect(page.locator('.chat-md').last()).toContainText(/./)
 }
+
+async function expectCentered(viewport: Locator, content: Locator): Promise<void> {
+  const center = await viewport.evaluate((el) => {
+    const r = el.getBoundingClientRect(),
+      s = getComputedStyle(el)
+    const left = parseFloat(s.paddingLeft),
+      right = parseFloat(s.paddingRight)
+    const top = parseFloat(s.paddingTop),
+      bottom = parseFloat(s.paddingBottom)
+    return {
+      x: r.x + el.clientLeft + left + (el.clientWidth - left - right) / 2,
+      y: r.y + el.clientTop + top + (el.clientHeight - top - bottom) / 2
+    }
+  })
+  const actual = await content.boundingBox()
+  expect(actual).not.toBeNull()
+  expect(Math.abs(actual!.x + actual!.width / 2 - center.x), '正文水平中心').toBeLessThanOrEqual(1)
+  expect(Math.abs(actual!.y + actual!.height / 2 - center.y), '正文垂直中心').toBeLessThanOrEqual(1)
+}
+
+async function expectSafeAlignment(viewport: Locator, content: Locator): Promise<void> {
+  const handle = await content.elementHandle()
+  const metrics = await viewport.evaluate((el, child) => {
+    const r = el.getBoundingClientRect(),
+      c = child!.getBoundingClientRect(),
+      s = getComputedStyle(el)
+    const x = r.x + el.clientLeft + parseFloat(s.paddingLeft),
+      y = r.y + el.clientTop + parseFloat(s.paddingTop)
+    const width = el.clientWidth - parseFloat(s.paddingLeft) - parseFloat(s.paddingRight)
+    const height = el.clientHeight - parseFloat(s.paddingTop) - parseFloat(s.paddingBottom)
+    const flow = [...child!.children]
+      .map((node) => {
+        const rect = node.getBoundingClientRect(),
+          style = getComputedStyle(node)
+        return { rect, style }
+      })
+      .filter(({ rect, style }) => rect.height > 0 && !['absolute', 'fixed'].includes(style.position))
+    const flowHeight =
+      Math.max(...flow.map(({ rect, style }) => rect.bottom + parseFloat(style.marginBottom))) -
+      Math.min(...flow.map(({ rect, style }) => rect.top - parseFloat(style.marginTop)))
+    return { x, y, width, height, content: c.toJSON(), flowHeight }
+  }, handle)
+  // An actual natural-height group must be accounted for by its visible flow children.
+  expect(Math.abs(metrics.content.height - metrics.flowHeight)).toBeLessThanOrEqual(1)
+  if (metrics.content.width <= metrics.width + 1)
+    expect(Math.abs(metrics.content.x + metrics.content.width / 2 - metrics.x - metrics.width / 2)).toBeLessThanOrEqual(1)
+  else expect(Math.abs(metrics.content.x - metrics.x)).toBeLessThanOrEqual(1)
+  if (metrics.content.height <= metrics.height + 1)
+    expect(Math.abs(metrics.content.y + metrics.content.height / 2 - metrics.y - metrics.height / 2)).toBeLessThanOrEqual(1)
+  else {
+    expect(Math.abs(metrics.content.y - metrics.y)).toBeLessThanOrEqual(1)
+    await viewport.evaluate((el) => {
+      el.scrollTop = el.scrollHeight
+    })
+    const end = await content.boundingBox(),
+      box = await viewport.boundingBox()
+    expect(end!.y + end!.height).toBeLessThanOrEqual(box!.y + box!.height + 1)
+    await viewport.evaluate((el) => {
+      el.scrollTop = 0
+    })
+  }
+}
+
+test('FIX shared short content centers in the actual body viewport', async () => {
+  await ask(fence(samples.list))
+  await block().getByRole('button', { name: '放大', exact: true }).click()
+  await expectCentered(expanded().locator('.ui-frame-body'), expanded().locator('.ui-frame-body > div').first())
+  await expanded().getByRole('button', { name: '退出放大', exact: true }).click()
+})
+
+test('FIX ordinary Markdown table has an opaque safe centered fullscreen', async () => {
+  await ask('| 项目 | RNN / LSTM | Transformer |\n| --- | --- | --- |\n| 计算 | 按顺序计算 | 并行计算 |\n| 依赖 | 逐步传递 | 一步直达 |')
+  await page.getByRole('button', { name: 'View fullscreen', exact: true }).last().click()
+  const surface = page.locator('[data-streamdown="table-fullscreen"]')
+  expect(await surface.evaluate((el) => getComputedStyle(el).backgroundColor)).not.toBe('rgba(0, 0, 0, 0)')
+  expect((await surface.boundingBox())!.y).toBeGreaterThanOrEqual(44)
+  await expectCentered(surface.locator('div:has(> table)').last(), surface.locator('table'))
+  await surface.getByRole('button', { name: 'Exit fullscreen', exact: true }).click()
+  await expect(surface).toHaveCount(0)
+})
+
+test('FIX expanded chart data table cannot create a second fullscreen', async () => {
+  await ask(fence(samples.chart))
+  await expect(block().locator('.chart-canvas svg')).toBeVisible()
+  await block().getByRole('button', { name: '放大', exact: true }).click()
+  await expanded().locator('details > summary').first().click()
+  await expect(expanded().getByRole('button', { name: 'View fullscreen', exact: true })).toHaveCount(0)
+  await expect(expanded().getByRole('button', { name: 'Copy table', exact: true })).toBeVisible()
+  await expect(expanded().getByRole('button', { name: 'Download table', exact: true })).toBeVisible()
+  await expect(page.locator('[data-streamdown="table-fullscreen"]')).toHaveCount(0)
+  await expanded().getByRole('button', { name: '退出放大', exact: true }).click()
+  await expect(block().getByRole('button', { name: 'View fullscreen', exact: true })).toBeVisible()
+})
+
+test('FIX layout clamp does not overwrite the inline scroll position', async () => {
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1440, 900))
+  await ask(
+    fence({ type: 'table', columns: [{ key: 'n', label: '内容' }], rows: Array.from({ length: 18 }, (_, i) => ({ n: `第${i}行` })) })
+  )
+  const scroll = block().locator('.ui-table-scroll')
+  await scroll.evaluate((el) => {
+    el.scrollTop = 80
+  })
+  expect(await scroll.evaluate((el) => el.scrollTop)).toBe(80)
+  await block().getByRole('button', { name: '放大', exact: true }).click()
+  expect(
+    await expanded()
+      .locator('.ui-table-scroll')
+      .evaluate((el) => el.scrollHeight <= el.clientHeight + 1)
+  ).toBe(true)
+  await expanded().getByRole('button', { name: '退出放大', exact: true }).click()
+  await expect.poll(() => scroll.evaluate((el) => el.scrollTop)).toBe(80)
+})
+
+test('FIX all 24 types center real content in both themes and three windows', async () => {
+  test.setTimeout(180000)
+  await navTo(page, /笔记/)
+  await page.keyboard.press('ControlOrMeta+n')
+  await page.getByPlaceholder('笔记标题').fill('居中验收的真实笔记')
+  await page.keyboard.press('Enter')
+  await page.keyboard.type('检查真实正文、交互状态和滚动位置。')
+  await expect
+    .poll(() => page.evaluate(() => window.jiwei.notes.list({ search: '居中验收的真实笔记' }).then((notes) => notes.length)))
+    .toBe(1)
+  const noteId = await page.evaluate(async () => {
+    const note = (await window.jiwei.notes.list({ search: '居中验收的真实笔记' }))[0]
+    await window.jiwei.proposals.create({
+      noteId: note.id,
+      title: '居中验收正文',
+      auto: true,
+      ops: [
+        {
+          op: 'insert_row',
+          afterRowId: null,
+          cue: [{ type: 'paragraph', content: [{ type: 'text', text: '验收问题' }] }],
+          body: [{ type: 'paragraph', content: [{ type: 'text', text: '检查真实正文、交互状态和滚动位置。' }] }]
+        }
+      ]
+    })
+    await window.jiwei.actions.create('布局验收行动项', null)
+    return note.id
+  })
+  await expect.poll(() => page.evaluate((id) => window.jiwei.notes.blocks(id).then((rows) => rows.length), noteId)).toBeGreaterThan(0)
+  const sourcePath = join(mkdtempSync(join(tmpdir(), 'jiwei-layout-source-')), '原文.md')
+  writeFileSync(sourcePath, '# 居中验收原文\n\n有效原文供真实数据组件读取。')
+  const sourceId = await page.evaluate(async (file) => (await window.jiwei.sources.importPaths([file])).imported[0].id, sourcePath)
+  await expect.poll(() => page.evaluate((id) => window.jiwei.segments.list(id).then((rows) => rows.length), sourceId)).toBeGreaterThan(0)
+  const segmentId = await page.evaluate((id) => window.jiwei.segments.list(id).then((rows) => rows[0].id), sourceId)
+  const nodes: Record<string, unknown> = {
+    ...samples,
+    note: { type: 'note', noteId },
+    excerpt: { type: 'excerpt', segmentId },
+    mastery: { type: 'mastery', scope: { kind: 'note', id: noteId } },
+    tasks: { type: 'tasks', filter: { scope: 'open' } },
+    details: { ...samples.details, open: true }
+  }
+  await navTo(page, /AI 对话/)
+  const metrics: unknown[] = []
+  for (const [type, sample] of Object.entries(nodes)) {
+    await ask(fence(sample))
+    await expect(block()).toHaveAttribute('data-ui-state', 'ready')
+    if (['note', 'excerpt', 'mastery', 'tasks', 'usage'].includes(type)) {
+      await expect(block()).not.toContainText('正在读取…')
+      await expect(block()).not.toContainText('已关闭数据访问')
+    }
+    if (type === 'note') await expect(block()).toContainText('检查真实正文')
+    if (type === 'excerpt') await expect(block()).toContainText('有效原文')
+    if (type === 'usage' || type === 'chart') await expect(block().locator('.chart-canvas svg')).toBeVisible()
+    if (type === 'diagram') await expect(block().locator('.diagram-svg svg')).toBeVisible()
+    for (const theme of ['light', 'dark']) {
+      await page.evaluate((theme) => {
+        document.documentElement.dataset.theme = theme
+      }, theme)
+      for (const [width, height] of [
+        [1000, 640],
+        [1280, 800],
+        [1440, 900]
+      ]) {
+        await app.evaluate(({ BrowserWindow }, size) => BrowserWindow.getAllWindows()[0].setSize(size[0], size[1]), [width, height])
+        await block().getByRole('button', { name: '放大', exact: true }).click()
+        const content = expanded().locator('.ui-frame-content')
+        await expect(content).toBeVisible()
+        expect((await expanded().getByRole('button', { name: '退出放大', exact: true }).boundingBox())!.y).toBeGreaterThanOrEqual(44)
+        await expectSafeAlignment(expanded().locator('.ui-frame-body'), content)
+        if (type === 'usage' || type === 'chart') {
+          const canvas = expanded().locator('.chart-canvas')
+          expect((await canvas.boundingBox())!.width).toBeGreaterThan(700)
+          expect((await canvas.boundingBox())!.height).toBeGreaterThan(300)
+          await expect(canvas.locator('svg')).toBeVisible()
+        }
+        if (type === 'diagram') await expectCentered(expanded().locator('.ui-frame-body'), expanded().locator('.diagram-svg svg'))
+        metrics.push({ type, theme, width, height, content: await content.boundingBox() })
+        if (width === 1000 && ['list', 'usage', 'diagram', 'form', 'table'].includes(type))
+          await expanded().screenshot({ path: test.info().outputPath(`${type}-${theme}.png`) })
+        await expanded().getByRole('button', { name: '退出放大', exact: true }).click()
+      }
+    }
+  }
+  writeFileSync(test.info().outputPath('layout-matrix.json'), JSON.stringify(metrics, null, 2))
+  await page.evaluate(() => {
+    document.documentElement.dataset.theme = 'light'
+  })
+})
+
+test('FIX visible composition stays grouped when switching and collapsing', async () => {
+  const tabNode = {
+    type: 'tabs',
+    note: '组合说明随正文一起居中',
+    tabs: [
+      { label: '宽图', children: [{ ...samples.chart, cite: 1 }, samples.form] },
+      { label: '短选项', children: [samples.choice] }
+    ]
+  }
+  await ask(fence(tabNode))
+  await block().getByRole('button', { name: '放大', exact: true }).click()
+  await expect(expanded().locator('.ui-visible-group')).toContainText('[1]')
+  await expect(expanded().locator('.ui-frame-content')).toContainText('组合说明随正文一起居中')
+  await expectSafeAlignment(expanded().locator('.ui-frame-body'), expanded().locator('.ui-frame-content'))
+  await expanded().getByRole('tab', { name: '短选项', exact: true }).click()
+  await expectCentered(expanded().getByRole('tabpanel'), expanded().locator('[data-layout-type="choice"]'))
+  await expanded().getByRole('button', { name: '退出放大', exact: true }).click()
+  await ask(fence({ type: 'details', summary: '含宽图的折叠区', children: [samples.chart] }))
+  await block().getByRole('button', { name: '放大', exact: true }).click()
+  const summary = expanded().getByText('含宽图的折叠区', { exact: true })
+  await expectCentered(expanded().locator('.ui-frame-body'), summary)
+  await summary.click()
+  await expect(expanded().locator('.chart-canvas svg')).toBeVisible()
+  await expectCentered(expanded().locator('.ui-frame-body'), expanded().locator('.ui-frame-content'))
+  await expanded().getByRole('button', { name: '退出放大', exact: true }).click()
+})
+
+test('FIX ordinary tables preserve both-axis reachability and real copy/download', async () => {
+  test.setTimeout(90000)
+  for (const [columns, rows] of [
+    [3, 3],
+    [20, 3],
+    [3, 60],
+    [20, 60]
+  ]) {
+    const headers = Array.from({ length: columns }, (_, i) => `Column${String(i + 1).padStart(2, '0')}-LongHeading`)
+    const markdown = [
+      '| ' + headers.join(' | ') + ' |',
+      '| ' + headers.map(() => '---').join(' | ') + ' |',
+      ...Array.from({ length: rows }, (_, r) => '| ' + headers.map((_, c) => `R${r + 1}-C${c + 1}`).join(' | ') + ' |')
+    ].join('\n')
+    await ask(markdown)
+    const before = requests
+    for (const theme of ['light', 'dark']) {
+      await page.evaluate((theme) => {
+        document.documentElement.dataset.theme = theme
+      }, theme)
+      for (const [width, height] of [
+        [1000, 640],
+        [1280, 800],
+        [1440, 900]
+      ]) {
+        await app.evaluate(({ BrowserWindow }, size) => BrowserWindow.getAllWindows()[0].setSize(size[0], size[1]), [width, height])
+        await page.getByRole('button', { name: 'View fullscreen', exact: true }).last().click()
+        const surface = page.locator('[data-streamdown="table-fullscreen"]')
+        const stage = surface.locator('div:has(> table)').last()
+        const metrics = await stage.evaluate((el) => {
+          const r = el.getBoundingClientRect(),
+            table = el.querySelector('table')!.getBoundingClientRect(),
+            s = getComputedStyle(el)
+          const x = r.x + el.clientLeft + parseFloat(s.paddingLeft),
+            y = r.y + el.clientTop + parseFloat(s.paddingTop)
+          const width = el.clientWidth - parseFloat(s.paddingLeft) - parseFloat(s.paddingRight)
+          const height = el.clientHeight - parseFloat(s.paddingTop) - parseFloat(s.paddingBottom)
+          return { x, y, width, height, table: table.toJSON(), overflowX: table.width > width + 1, overflowY: table.height > height + 1 }
+        })
+        expect(metrics.overflowX).toBe(columns === 20)
+        expect(metrics.overflowY).toBe(rows === 60)
+        if (metrics.overflowX) expect(metrics.table.x).toBeGreaterThanOrEqual(metrics.x - 1)
+        else expect(Math.abs(metrics.table.x + metrics.table.width / 2 - metrics.x - metrics.width / 2)).toBeLessThanOrEqual(1)
+        if (metrics.overflowY) expect(metrics.table.y).toBeGreaterThanOrEqual(metrics.y - 1)
+        else expect(Math.abs(metrics.table.y + metrics.table.height / 2 - metrics.y - metrics.height / 2)).toBeLessThanOrEqual(1)
+        expect(await surface.evaluate((el) => getComputedStyle(el).backgroundColor)).not.toBe('rgba(0, 0, 0, 0)')
+        expect((await surface.getByRole('button', { name: 'Exit fullscreen', exact: true }).boundingBox())!.y).toBeGreaterThanOrEqual(44)
+        await stage.evaluate((el) => {
+          el.scrollTop = el.scrollHeight
+          el.scrollLeft = el.scrollWidth
+        })
+        const last = await surface.locator('tbody tr').last().locator('td').last().boundingBox()
+        const viewport = await stage.boundingBox()
+        expect(last!.x).toBeGreaterThanOrEqual(viewport!.x)
+        expect(last!.y).toBeGreaterThanOrEqual(viewport!.y)
+        expect(last!.x + last!.width).toBeLessThanOrEqual(viewport!.x + viewport!.width + 1)
+        expect(last!.y + last!.height).toBeLessThanOrEqual(viewport!.y + viewport!.height + 1)
+        if (columns === 20 && rows === 60 && theme === 'dark' && width === 1000) {
+          await surface.getByRole('button', { name: 'Copy table', exact: true }).click()
+          await surface.getByRole('button', { name: 'Markdown', exact: true }).click()
+          await expect.poll(() => app.evaluate(({ clipboard }) => clipboard.readText())).toMatch(/^\| Column01-/)
+          const copied = await app.evaluate(({ clipboard }) => clipboard.readText())
+          expect(copied).toContain('R60-C20')
+          const dir = mkdtempSync(join(tmpdir(), 'jiwei-layout-csv-'))
+          await app.evaluate(({ BrowserWindow }, dir) => {
+            BrowserWindow.getAllWindows()[0].webContents.session.once('will-download', (_event, item) =>
+              item.setSavePath(dir + '/' + item.getFilename())
+            )
+          }, dir)
+          await surface.getByRole('button', { name: 'Download table', exact: true }).click()
+          await surface.getByRole('button', { name: 'CSV', exact: true }).click()
+          await expect.poll(() => readdirSync(dir).filter((name) => name.endsWith('.csv')).length).toBe(1)
+          await expect
+            .poll(() =>
+              readFileSync(
+                join(
+                  dir,
+                  readdirSync(dir).find((name) => name.endsWith('.csv'))!
+                ),
+                'utf8'
+              )
+            )
+            .toContain('R60-C20')
+        }
+        await page.keyboard.press('Escape')
+        await expect(surface).toHaveCount(0)
+      }
+    }
+    expect(requests).toBe(before)
+  }
+  await page.evaluate(() => {
+    document.documentElement.dataset.theme = 'light'
+  })
+})
+
+test('FIX user zero and layout-clamped other axis retain separate intent', async () => {
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1000, 640))
+  const node = {
+    type: 'table',
+    columns: Array.from({ length: 6 }, (_, i) => ({ key: `c${i}`, label: `UnbreakableColumnHeading${i}` })),
+    rows: Array.from({ length: 40 }, (_, r) => Object.fromEntries(Array.from({ length: 6 }, (_, c) => [`c${c}`, `R${r}ValueInColumn${c}`])))
+  }
+  await ask(fence(node))
+  const scroll = block().locator('.ui-table-scroll')
+  const entryX = await scroll.evaluate((el) => {
+    el.scrollLeft = el.scrollWidth - el.clientWidth - 10
+    el.scrollTop = 150
+    return el.scrollLeft
+  })
+  expect(entryX).toBeGreaterThan(100)
+  await block().getByRole('button', { name: '放大', exact: true }).click()
+  const expandedScroll = expanded().locator('.ui-table-scroll')
+  await expandedScroll.hover()
+  await page.mouse.wheel(0, -3000)
+  await expect.poll(() => expandedScroll.evaluate((el) => el.scrollTop)).toBe(0)
+  await expanded().getByRole('button', { name: '退出放大', exact: true }).click()
+  await expect.poll(() => scroll.evaluate((el) => el.scrollTop)).toBe(0)
+  await expect.poll(() => scroll.evaluate((el) => el.scrollLeft)).toBe(entryX)
+})
+
+test('FIX standalone table blocks a second shared surface and restores the entry', async () => {
+  await ask('| 标题 | 内容 |\n| --- | --- |\n| 示例 | 短内容 |\n\n' + fence(samples.list))
+  await page.getByRole('button', { name: 'View fullscreen', exact: true }).last().click()
+  await block().getByRole('button', { name: '放大', exact: true }).dispatchEvent('click')
+  await expect(expanded()).toHaveCount(0)
+  await expect(page.locator('[data-streamdown="table-fullscreen"]')).toHaveCount(1)
+  await page.keyboard.press('Escape')
+  await block().getByRole('button', { name: '放大', exact: true }).click()
+  await expect(expanded()).toBeVisible()
+  await expanded().getByRole('button', { name: '退出放大', exact: true }).click()
+})
+
+test('FIX fallback and text Markdown keep their permitted standalone controls', async () => {
+  await ask(fence(samples.table))
+  await block().getByRole('button', { name: '放大', exact: true }).click()
+  await expanded().getByRole('button', { name: '组件菜单' }).click()
+  await expanded().getByRole('menuitem', { name: '改成文字', exact: true }).click()
+  await expect(expanded()).toHaveCount(0)
+  await expect(block()).toHaveAttribute('data-ui-display', 'text')
+  const verifyStandalone = async (): Promise<void> => {
+    await expect(block().getByRole('button', { name: 'Copy table', exact: true })).toBeVisible()
+    await expect(block().getByRole('button', { name: 'Download table', exact: true })).toBeVisible()
+    await block().getByRole('button', { name: 'View fullscreen', exact: true }).click()
+    const native = page.locator('[data-streamdown="table-fullscreen"]')
+    await expectCentered(native.locator('div:has(> table)').last(), native.locator('table'))
+    await page.keyboard.press('Escape')
+    await expect(native).toHaveCount(0)
+  }
+  await verifyStandalone()
+  await ask(fence({ ...samples.chart, kind: 'invalid-chart-kind' }))
+  await expect(block()).toHaveAttribute('data-ui-state', 'fallback')
+  await verifyStandalone()
+  await ask(Array.from({ length: 4 }, () => fence(samples.table)).join('\n\n'))
+  await block().locator('summary').click()
+  await expect(block().getByRole('button', { name: '放大', exact: true })).toHaveCount(0)
+  await verifyStandalone()
+})
+
+test('FIX async loading, empty note and unavailable data stay aligned', async () => {
+  await navTo(page, /笔记/)
+  await page.keyboard.press('ControlOrMeta+n')
+  await page.getByPlaceholder('笔记标题').fill('异步空笔记布局验收')
+  await expect
+    .poll(() => page.evaluate(() => window.jiwei.notes.list({ search: '异步空笔记布局验收' }).then((notes) => notes.length)))
+    .toBe(1)
+  const noteId = await page.evaluate(async () => (await window.jiwei.notes.list({ search: '异步空笔记布局验收' }))[0].id)
+  await navTo(page, /AI 对话/)
+  await app.evaluate(({ ipcMain }, id) => {
+    type Handler = (...args: unknown[]) => unknown
+    const handlers = (ipcMain as unknown as { _invokeHandlers: Map<string, Handler> })._invokeHandlers
+    const original = handlers.get('notes:get')!
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    ipcMain.removeHandler('notes:get')
+    ipcMain.handle('notes:get', async (...args) => {
+      if (args[1] === id) await gate
+      return original(...args)
+    })
+    ;(globalThis as unknown as { layoutDataGate: { release(): void; restore(): void } }).layoutDataGate = {
+      release,
+      restore() {
+        release()
+        ipcMain.removeHandler('notes:get')
+        ipcMain.handle('notes:get', original)
+      }
+    }
+  }, noteId)
+  try {
+    await ask(fence({ type: 'note', noteId }))
+    await expect(block()).toContainText('正在读取…')
+    await block().getByRole('button', { name: '放大', exact: true }).click()
+    await expectCentered(expanded().locator('.ui-frame-body'), expanded().locator('.ui-frame-content'))
+    await app.evaluate(() => (globalThis as unknown as { layoutDataGate: { release(): void } }).layoutDataGate.release())
+    await expect(expanded()).toContainText('异步空笔记布局验收')
+    await expect(expanded()).not.toContainText('正在读取…')
+    await expectCentered(expanded().locator('.ui-frame-body'), expanded().locator('.ui-frame-content'))
+    await page.keyboard.press('Escape')
+  } finally {
+    await app.evaluate(() => (globalThis as unknown as { layoutDataGate: { restore(): void } }).layoutDataGate.restore())
+  }
+  await ask(fence({ type: 'note', noteId: 'missing-layout-note' }))
+  await expect(block().getByRole('status')).toBeVisible()
+  await block().getByRole('button', { name: '放大', exact: true }).click()
+  await expect(expanded().getByRole('status')).toBeVisible()
+  await expectCentered(expanded().locator('.ui-frame-body'), expanded().locator('.ui-frame-content'))
+  await page.keyboard.press('Escape')
+})
 
 test('US1 图表放大实际扩大绘图区并保留同一图表', async () => {
   await ask(fence({ ...samples.chart, title: '放大图表' }))
@@ -786,4 +1254,33 @@ test('US1 代表性视觉材料覆盖浅深主题和最小窗口', async () => {
   }
   await page.evaluate(() => window.jiwei.settings.set({ theme: 'system' }))
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1440, 900))
+})
+
+test('FIX long unbroken reading content remains within its centered group', async () => {
+  const list = { type: 'list', items: [{ text: 'W'.repeat(200) }] }
+  for (const node of [
+    list,
+    {
+      type: 'tabs',
+      tabs: [
+        { label: '图文组合', children: [samples.chart, list] },
+        { label: '短选项', children: [samples.choice] }
+      ]
+    }
+  ]) {
+    await ask(fence(node))
+    await expect(block()).toHaveAttribute('data-ui-state', 'ready')
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1000, 640))
+    await block().getByRole('button', { name: '放大', exact: true }).click()
+    const content = expanded().locator('.ui-frame-content')
+    await expectSafeAlignment(expanded().locator('.ui-frame-body'), content)
+    const text = await expanded().locator('li div span').boundingBox()
+    const group = await content.boundingBox()
+    expect(text!.x).toBeGreaterThanOrEqual(group!.x)
+    expect(text!.x + text!.width).toBeLessThanOrEqual(group!.x + group!.width + 1)
+    await page.keyboard.press('Escape')
+  }
+  expect(
+    await app.evaluate(() => (globalThis as unknown as { fullscreenWindowEvents: Record<string, number> }).fullscreenWindowEvents)
+  ).toEqual({ close: 0, closed: 0, hide: 0 })
 })

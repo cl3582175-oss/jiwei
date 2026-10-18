@@ -1,6 +1,7 @@
 import { useExpandedPresentation } from '@/components/ui/ExpandableSurface'
 import { useTranslation } from 'react-i18next'
-import { Streamdown } from 'streamdown'
+import { UiMarkdown } from './UiMarkdown'
+import { expandedGroupLayout } from './presentation'
 import { toChartData, uiToText, type UiNode } from '@shared/ui/catalog'
 import { ChartBox } from '@/features/visuals/ChartBox'
 import { DiagramBox } from '@/features/visuals/DiagramBox'
@@ -87,7 +88,7 @@ function UiContent({ node, uiKey, ctx, partial = false }: ViewProps) {
   const { t } = useTranslation()
   const disabled = partial || ctx.stopped
   const child = (n: UiNode, i: string | number) => (
-    <div key={`${uiKey}.${i}`} className="min-w-0">
+    <div key={`${uiKey}.${i}`} className="min-w-0" data-layout-type={n.type}>
       {n.title && (
         <p className="flex items-center gap-2 px-4 pt-3 text-sm font-medium">
           <UiTypeIcon type={n.type} />
@@ -129,14 +130,20 @@ function UiContent({ node, uiKey, ctx, partial = false }: ViewProps) {
     case 'tabs':
       return (
         <Tabs node={node} uiKey={uiKey} ctx={ctx} disabled={disabled}>
-          {(i) => (node.tabs?.[i]?.children ?? []).map((n, k) => child(n, `${i}.${k}`))}
+          {(i) => (
+            <div className="ui-visible-group" data-expanded-layout={expandedGroupLayout(node.tabs?.[i]?.children ?? [])}>
+              {(node.tabs?.[i]?.children ?? []).map((n, k) => child(n, `${i}.${k}`))}
+            </div>
+          )}
         </Tabs>
       )
     case 'details':
       return (
         <details className="px-4 py-3" open={node.open}>
           <summary className="text-sm">{node.summary}</summary>
-          {node.children.map((n, i) => child(n, i))}
+          <div className="ui-visible-group" data-expanded-layout={expandedGroupLayout(node.children)}>
+            {node.children.map((n, i) => child(n, i))}
+          </div>
         </details>
       )
     case 'stat':
@@ -216,7 +223,7 @@ function UiContent({ node, uiKey, ctx, partial = false }: ViewProps) {
           <ChartBox data={{ ...toChartData(node), note: undefined }} showTitle={false} />
           <details className="px-4 pb-3 text-xs text-muted">
             <summary>{t('ui.dataTable')}</summary>
-            <Streamdown mode="static">
+            <UiMarkdown mode="static">
               {uiToText({
                 type: 'table',
                 columns: [{ key: 'label', label: '' }, ...node.series.map((s, i) => ({ key: `s${i}`, label: s.name }))],
@@ -227,7 +234,7 @@ function UiContent({ node, uiKey, ctx, partial = false }: ViewProps) {
                   ])
                 )
               })}
-            </Streamdown>
+            </UiMarkdown>
           </details>
         </div>
       )
@@ -251,7 +258,7 @@ function UiContent({ node, uiKey, ctx, partial = false }: ViewProps) {
     default:
       return (
         <div className="px-4 py-3">
-          <Streamdown mode="static">{uiToText(node)}</Streamdown>
+          <UiMarkdown mode="static">{uiToText(node)}</UiMarkdown>
         </div>
       )
   }
