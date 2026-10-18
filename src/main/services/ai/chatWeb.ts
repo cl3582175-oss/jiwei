@@ -67,7 +67,7 @@ function taint(hits: SearchHit[]): void {
 /** Application-owned reading works even when the model cannot call tools or Search is unconfigured. */
 export async function runPreReadForTurn(session: AgentSession, urls: string[], options: PreSearchOptions): Promise<PreSearchResult> {
   const messages = session.zh ? retrievalZh : retrievalEn
-  const webHits: SearchHit[] = []
+  const pageHits: SearchHit[][] = []
   let failed = false
   for (const [index, url] of [...new Set(urls)].slice(0, 2).entries()) {
     if (options.signal?.aborted) break
@@ -85,7 +85,7 @@ export async function runPreReadForTurn(session: AgentSession, urls: string[], o
     try {
       const response = await readForSession(session, url, session.web.userText, options.signal)
       response.assertReadable()
-      webHits.push(...response.selected.map((passage) => passageHit(response.read, passage)))
+      pageHits.push(response.selected.map((passage) => passageHit(response.read, passage)))
       options.pushStep({
         ...step,
         status: 'done',
@@ -100,8 +100,8 @@ export async function runPreReadForTurn(session: AgentSession, urls: string[], o
     }
   }
   const allowedPages = new Set(session.web.pageGuards?.keys())
-  const current = filterCloudHits(webHits, session.conversationId, allowedPages)
-    .filter((hit) => {
+  const readable = pageHits.map((hits) =>
+    filterCloudHits(hits, session.conversationId, allowedPages).filter((hit) => {
       try {
         session.web.pageGuards?.get(hit.parentId)?.()
         return true
@@ -109,7 +109,15 @@ export async function runPreReadForTurn(session: AgentSession, urls: string[], o
         return false
       }
     })
-    .slice(0, 6)
+  )
+  const current: SearchHit[] = []
+  // Share the six excerpts across successful pages so a comparison cannot lose its second source.
+  for (let index = 0; current.length < 6 && readable.some((hits) => index < hits.length); index++) {
+    for (const hits of readable) {
+      if (hits[index]) current.push(hits[index])
+      if (current.length === 6) break
+    }
+  }
   taint(current)
   return { kbHits: filterCloudHits(options.kbHits, session.conversationId), webHits: current, failed }
 }

@@ -1447,3 +1447,70 @@ test('35. 一次单页选择在云端失败后也不能由模型自动重试', a
   await ask('用 DeepSeek 读取这个公开网址：' + url)
   expect(cloudRequests()).toHaveLength(1)
 })
+
+test('36. 中英文否定及转述文字不能把网址发送给云端', async () => {
+  await cloudSetup()
+  await retrieval({ cloudReader: true })
+  const url = fixture.base + '/page-cloud-negative'
+  for (const text of [
+    '不使用 DeepSeek 读取 ',
+    '禁止用 DeepSeek 总结 ',
+    'Never use DeepSeek to summarize ',
+    'Do not use cloud to explain ',
+    '请解释这句话是什么意思：用 DeepSeek 读取 ',
+    'The page says: use DeepSeek to read '
+  ]) {
+    await newChat()
+    await ask(text + url)
+    expect(cloudRequests()).toEqual([])
+  }
+})
+
+test('37. 网址已预读后模型拒绝工具，复用证据无工具回答且不搜索', async () => {
+  fixture.unsupportedOnce = true
+  const url = fixture.base + '/page-pre-read-unsupported'
+  const completed = await ask('请阅读最新说明：' + url)
+  expect(fixture.models).toHaveLength(2)
+  expect(fixture.models[0].tools).toContain('read_url')
+  expect(fixture.models[1].tools).toEqual([])
+  expect(fixture.models[1].user).toContain('公开测试版本九')
+  expect(completed.assistant.citations!.some((c) => c.url === url)).toBe(true)
+  expect(searchRequests()).toEqual([])
+  expect(fixture.requests.filter((r) => r.path === '/page-pre-read-unsupported')).toHaveLength(1)
+})
+
+test('38. 两个长网址的比较在首次实际模型消息中都提供正文', async () => {
+  await cloudSetup()
+  fixture.pageTexts.set('/page-comparison-one', '第一个网址独有事实：方案甲的成本为十二，优势是部署简单。'.repeat(100))
+  fixture.pageTexts.set('/page-comparison-two', '第二个网址独有事实：方案乙的成本为九，优势是维护方便。'.repeat(100))
+  await ask('请比较这两个网址：' + fixture.base + '/page-comparison-one ' + fixture.base + '/page-comparison-two')
+  expect(fixture.models[0].user).toContain('第一个网址独有事实')
+  expect(fixture.models[0].user).toContain('第二个网址独有事实')
+  expect(searchRequests()).toEqual([])
+})
+
+test('39. 公开网页503失败提供手动补充，未点击时云端零请求', async () => {
+  await cloudSetup()
+  await retrieval({ cloudReader: true })
+  fixture.failures.set('/page-cloud-server-error', 503)
+  await ask('请阅读 ' + fixture.base + '/page-cloud-server-error')
+  await expect(page.getByTestId('cloud-read-option')).toBeVisible()
+  expect(cloudRequests()).toEqual([])
+})
+
+test('40. 公开JS网页真实渲染超时后提供手动补充', async () => {
+  await cloudSetup()
+  await retrieval({ cloudReader: true })
+  const path = '/page-cloud-render-timeout'
+  fixture.emptyPages.add(path)
+  const paused = fixture.pauseNext((request) => request.path === path && fixture.requests.filter((r) => r.path === path).length >= 2)
+  try {
+    await startAsk('请阅读 ' + fixture.base + path)
+    await paused.reached
+    await done()
+    await expect(page.getByTestId('cloud-read-option')).toBeVisible()
+    expect(cloudRequests()).toEqual([])
+  } finally {
+    paused.release()
+  }
+})

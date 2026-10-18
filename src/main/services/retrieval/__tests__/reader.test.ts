@@ -40,7 +40,7 @@ vi.mock('../../jobs', () => ({ runInWorker: state.worker }))
 vi.mock('../../sources', () => ({ saveWebPage: state.save }))
 vi.mock('../render', () => ({ renderPage: state.render }))
 import { withRun } from '../../agent/context'
-import { readUrl, getPage, savePage } from '../reader'
+import { readUrl, getPage, savePage, canSupplementRead } from '../reader'
 
 const paragraph =
   'This public fixture paragraph contains enough visible information for article extraction and reproducible passage positions. '.repeat(6)
@@ -493,6 +493,36 @@ describe('PDF worker and temporary-file lifetime', () => {
 })
 
 describe('explicit DeepSeek reading preserves unverified origin', () => {
+  it('keeps immutable completeness metadata when identical capped bodies came from different response lengths', async () => {
+    state.cloud = true
+    const content = 'facts '.repeat(10000)
+    state.fetch.mockResolvedValue(response(JSON.stringify({ title: 'Full', content }), 'application/json'))
+    const full = await run(() => readUrl('https://example.org/completeness', { provider: 'deepseek' }))
+    state.fetch.mockResolvedValue(response(JSON.stringify({ title: 'Partial', content: content + 'additional facts' }), 'application/json'))
+    const partial = await run(() => readUrl('https://example.org/completeness', { provider: 'deepseek' }))
+    expect(partial.page.id).not.toBe(full.page.id)
+    expect(partial.page.webOrigin?.truncated).toBe(true)
+    expect(getPage(full.page.id)?.webOrigin?.truncated).toBe(false)
+    expect(pages()).toHaveLength(2)
+  })
+  it.each(['failed', 'timeout'])('offers supplementation for a public page render %s', async (reason) => {
+    state.fetch.mockResolvedValue(response('<html><body><main>Loading</main></body></html>', 'text/html'))
+    state.render.mockRejectedValue(Object.assign(new Error('Controlled public render failure'), { name: 'RenderError', reason }))
+    const error = await run(() => readUrl('https://example.org/public-js')).catch((e: unknown) => e)
+    expect(canSupplementRead(error)).toBe(true)
+  })
+  it.each(['scope', 'cleanup', 'canceled'])('never offers cloud to bypass a render %s restriction', async (reason) => {
+    state.fetch.mockResolvedValue(response('<html><body><main>Loading</main></body></html>', 'text/html'))
+    state.render.mockRejectedValue(Object.assign(new Error('Controlled restricted render'), { name: 'RenderError', reason }))
+    const error = await run(() => readUrl('https://example.org/public-js')).catch((e: unknown) => e)
+    expect(canSupplementRead(error)).toBe(false)
+  })
+  it('offers manual supplementation after a public server error but not an authentication failure', async () => {
+    state.fetch.mockResolvedValue(response('Unavailable', 'text/html', 503))
+    expect(canSupplementRead(await run(() => readUrl('https://example.org/server')).catch((e: unknown) => e))).toBe(true)
+    state.fetch.mockResolvedValue(response('Sign in', 'text/html', 401))
+    expect(canSupplementRead(await run(() => readUrl('https://example.org/login-required')).catch((e: unknown) => e))).toBe(false)
+  })
   it('does not transmit a cloud request while the independent reader setting is off', async () => {
     await expect(run(() => readUrl('https://example.org/article', { provider: 'deepseek' }))).rejects.toThrow()
     expect(state.fetch).not.toHaveBeenCalled()

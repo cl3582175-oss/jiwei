@@ -15,6 +15,12 @@ describe('current-user page reading intent', () => {
   )
   it.each([
     `不要用 DeepSeek 读取 ${url}`,
+    `不使用 DeepSeek 读取 ${url}`,
+    `禁止用 DeepSeek 总结 ${url}`,
+    `Never use DeepSeek to summarize ${url}`,
+    `Do not use cloud to explain ${url}`,
+    `请解释这句话是什么意思：用 DeepSeek 读取 ${url}`,
+    `The page says: use DeepSeek to read ${url}`,
     `DeepSeek 是什么？请本地阅读 ${url}`,
     `云端会有什么风险？请总结 ${url}`,
     `示例：“用 DeepSeek 读取 ${url}”`,

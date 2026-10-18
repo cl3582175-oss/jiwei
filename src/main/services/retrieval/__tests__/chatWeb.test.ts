@@ -255,6 +255,25 @@ afterEach(() => {
 })
 
 describe('direct page reading before model generation', () => {
+  it('keeps evidence from each requested page when both pages have six selected passages', async () => {
+    const s = session(),
+      found = [result(1), result(2)]
+    found.forEach((entry) =>
+      addRead(
+        entry,
+        Array.from({ length: 6 }, (_, i) => `Page ${entry.rank} meaningful evidence ${i}`)
+      )
+    )
+    const output = await run(() =>
+      runPreReadForTurn(
+        s,
+        found.map((entry) => entry.url),
+        { kbHits: [], pushStep: () => {} }
+      )
+    )
+    expect(output.webHits.length).toBeLessThanOrEqual(6)
+    expect(new Set(output.webHits.map((hit) => hit.url))).toEqual(new Set(found.map((entry) => entry.url)))
+  })
   it('reads at most two supplied pages without Search and keeps knowledge evidence', async () => {
     const s = session(),
       knowledge = kb('direct-knowledge'),

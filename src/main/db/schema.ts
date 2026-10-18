@@ -1375,7 +1375,10 @@ export const webPages = sqliteTable(
     text: text('text').notNull(),
     textHash: text('text_hash').notNull()
   },
-  (t) => [index('web_pages_url_idx').on(t.url), uniqueIndex('web_pages_url_hash_provider_uq').on(t.url, t.textHash, t.provider)]
+  (t) => [
+    index('web_pages_url_idx').on(t.url),
+    uniqueIndex('web_pages_url_hash_provider_truncated_uq').on(t.url, t.textHash, t.provider, t.truncated)
+  ]
 )
 
 export const webPageRefs = sqliteTable(

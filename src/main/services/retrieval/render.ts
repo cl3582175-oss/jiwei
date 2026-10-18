@@ -7,7 +7,7 @@ export interface RenderOptions {
   validateUrl?: (url: string) => void
 }
 class RenderError extends Error {
-  constructor(kind: 'failed' | 'canceled' | 'timeout' | 'scope' | 'cleanup') {
+  constructor(readonly reason: 'failed' | 'canceled' | 'timeout' | 'scope' | 'cleanup') {
     const words = {
       failed: ['网页渲染失败', 'Page rendering failed'],
       canceled: ['读取已取消', 'Reading canceled'],
@@ -15,7 +15,7 @@ class RenderError extends Error {
       scope: ['这个网址不在允许读取的范围内', 'This address is outside the allowed reading scope'],
       cleanup: ['网页临时会话清理失败', 'Temporary page session cleanup failed']
     } as const
-    const message = words[kind]
+    const message = words[reason]
     super(tr(message[0], message[1]))
     this.name = 'RenderError'
   }

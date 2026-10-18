@@ -1423,12 +1423,20 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
           } catch (e) {
             // 少数模型 / 接口不支持工具调用：去掉工具重试一次
             const msg = e instanceof Error ? e.message : String(e)
-            if (!retried && !content && !steps.length && !ctrl.signal.aborted && !contextLimitFromError(e) && /tool|function/i.test(msg)) {
+            if (
+              !retried &&
+              !content &&
+              !modelToolStarted &&
+              !ctrl.signal.aborted &&
+              !contextLimitFromError(e) &&
+              /tool|function/i.test(msg)
+            ) {
               log.warn('[chat] tools unsupported, retrying without tools:', msg)
               retried = true
               const gate = session.web.gate
               if (
                 gate.status === 'available' &&
+                !gate.preRead &&
                 !preSearchAttempted &&
                 !getSettings().retrieval.cautious &&
                 (gate.explicitAsk || gate.timeSensitive || gate.coverage === 'none')

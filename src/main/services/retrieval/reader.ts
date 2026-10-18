@@ -56,13 +56,18 @@ const messages = {
   restricted: ['该页面存在访问限制，不能使用云端绕过', 'The page has access restrictions; cloud reading cannot bypass them']
 } as const
 class ReadError extends Error {
-  constructor(readonly reason: keyof typeof messages) {
+  constructor(
+    readonly reason: keyof typeof messages,
+    status?: number
+  ) {
     const m = messages[reason]
-    super(tr(m[0], m[1]))
+    super(status === undefined ? tr(m[0], m[1]) : tr('网页打不开（HTTP ' + status + '）', 'Page could not be opened (HTTP ' + status + ')'))
     this.name = 'ReadError'
   }
 }
-export const canSupplementRead = (error: unknown): boolean => error instanceof ReadError && ['failed', 'empty'].includes(error.reason)
+export const canSupplementRead = (error: unknown): boolean =>
+  (error instanceof ReadError && ['failed', 'empty'].includes(error.reason)) ||
+  (error instanceof Error && error.name === 'RenderError' && 'reason' in error && ['failed', 'timeout'].includes(String(error.reason)))
 const toView = (row: PageRow | (Snapshot & { id: string })): WebPageView => ({
   id: row.id,
   url: row.url,
@@ -185,7 +190,8 @@ function persist(snapshot: Snapshot): WebPageView {
     const condition = and(
       eq(webPages.url, snapshot.url),
       eq(webPages.textHash, snapshot.textHash),
-      eq(webPages.provider, snapshot.provider)
+      eq(webPages.provider, snapshot.provider),
+      eq(webPages.truncated, snapshot.truncated)
     )
     const existing = db.select().from(webPages).where(condition).get()
     if (existing) {
@@ -415,6 +421,7 @@ export async function readUrl(value: string, opts: ReadOptions = {}): Promise<Re
     if (error instanceof PagePolicyError) throw error
     if (error instanceof Error && /^HTTP \d{3}$/.test(error.message)) {
       const status = Number(error.message.slice(5))
+      if (status >= 500) throw new ReadError('failed', status)
       // 原始错误可能包含查询或凭证；对外错误仅保留已验证的HTTP状态码。
       // eslint-disable-next-line preserve-caught-error
       throw new Error(tr('网页打不开（HTTP ' + status + '）', 'Page could not be opened (HTTP ' + status + ')'))

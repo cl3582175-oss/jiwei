@@ -16,16 +16,21 @@ export function directReadIntent(text: string): { urls: string[]; requested: boo
     )
   ]
   const words = plain.replace(/https?:\/\/[^\s<>"'`]+/gi, '').trim()
-  const negated = /(?:不要|不用|别|不想|禁止|do not|don't|never)[^\n。！？.!?]{0,40}(?:读|打开|访问|read|fetch|open)/i.test(words)
+  const negated =
+    /(?:不要|不用|不使用|不需要|不允许|不得|切勿|别|不想|禁止|避免|do not|don't|never|must not|should not)[^\n。！？.!?]{0,60}(?:读|打开|访问|总结|概括|解释|分析|比较|read|fetch|open|summari[sz]e|explain|analy[sz]e|compare)/i.test(
+      words
+    )
   const requested =
     !!urls.length &&
     !negated &&
     (/(?:读|阅读|总结|概括|解释|分析|比较|对比|read|summari[sz]e|explain|analy[sz]e|compare|fetch)/i.test(words) ||
       /^[\s<>()[\]，。！？；：,.!?;:]*$/u.test(words))
   const cloudChoice =
-    /(?:用|使用|通过|交给|让)\s*(?:deepseek|云端)(?:[^。！？\n]{0,20})(?:读|阅读|总结|抓取)/i.test(words) ||
-    /\buse\s+(?:deepseek|cloud)\s+to\s+(?:read|fetch|summari[sz]e)\b/i.test(words) ||
-    /\b(?:read|fetch|summari[sz]e)\b[^.!?\n]{0,40}\b(?:using|with|via)\s+(?:deepseek|cloud)\b/i.test(words)
+    /^(?:请|请你|帮我|请帮我|麻烦你|你能|能否)?\s*(?:用|使用|通过|交给|让)\s*(?:deepseek|云端)(?:[^。！？\n]{0,20})(?:读|阅读|总结|抓取)/i.test(
+      words
+    ) ||
+    /^(?:(?:please|can you|could you)\s+)?use\s+(?:deepseek|cloud)\s+to\s+(?:read|fetch|summari[sz]e)\b/i.test(words) ||
+    /^(?:please\s+)?(?:read|fetch|summari[sz]e)\b[^.!?\n]{0,40}\b(?:using|with|via)\s+(?:deepseek|cloud)\b/i.test(words)
   const cloud =
     requested &&
     urls.length === 1 &&

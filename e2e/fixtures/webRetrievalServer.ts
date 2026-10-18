@@ -46,6 +46,7 @@ export class WebRetrievalFixture {
   deepseekExpectedKey = ''
   cloudText = '云端测试专属事实：自写公开文章的版本为九，升级前保存配置。\n\n'.repeat(20)
   readonly emptyPages = new Set<string>()
+  readonly pageTexts = new Map<string, string>()
   readonly redirects = new Map<string, string>()
   private pauses: Pause[] = []
   private activePauses = new Set<Pause>()
@@ -235,6 +236,11 @@ export class WebRetrievalFixture {
             )
           return
         }
+        const pageFailure = this.failures.get(url.pathname)
+        if (pageFailure && pageFailure !== 200) {
+          res.writeHead(pageFailure, { 'content-type': 'text/html; charset=utf-8' }).end(this.article('Controlled server error'))
+          return
+        }
         if (this.emptyPages.has(url.pathname)) {
           res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }).end('<html><body><main>正文暂未加载</main></body></html>')
           return
@@ -247,7 +253,8 @@ export class WebRetrievalFixture {
             .writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
             .end(
               this.article(
-                '公开测试版本九的发布说明，原有版本八进入维护阶段。升级前先保存配置，升级后检查项目兼容性和检索结果。'.repeat(14),
+                this.pageTexts.get(url.pathname) ??
+                  '公开测试版本九的发布说明，原有版本八进入维护阶段。升级前先保存配置，升级后检查项目兼容性和检索结果。'.repeat(14),
                 hidden + injection + literal
               )
             )
@@ -289,6 +296,7 @@ export class WebRetrievalFixture {
     this.deepseekExpectedKey = ''
     this.cloudText = '云端测试专属事实：自写公开文章的版本为九，升级前保存配置。\n\n'.repeat(20)
     this.emptyPages.clear()
+    this.pageTexts.clear()
     this.failures.clear()
     this.redirects.clear()
   }
