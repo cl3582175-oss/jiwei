@@ -7,14 +7,15 @@ import { sources } from '../../db/schema'
 import type { ToolMeta } from '../agent/wrap'
 import { describeDigest, sourceOutline, sourceSize, startDigest, type DigestInput } from '../digest'
 import { digestWaiting } from '../recognize'
+import { webOriginEvidence, type WebOrigin } from '@shared/retrieval'
 
 // 范围（v0.7.6）：用户没说清楚要整理哪部分时先问；整份资料交给后台分批整理，而不是读开头几页就当作全书。
 
 export const ASK_USER = 'ask_user'
 
-function readable(id: string, zh: boolean, conversationId: string | null = null): { title: string } {
+function readable(id: string, zh: boolean, conversationId: string | null = null): { title: string; webOrigin: WebOrigin | null } {
   const r = getDb()
-    .select({ title: sources.title, aiExcluded: sources.aiExcluded, deletedAt: sources.deletedAt })
+    .select({ title: sources.title, aiExcluded: sources.aiExcluded, deletedAt: sources.deletedAt, webOrigin: sources.webOrigin })
     .from(sources)
     .where(eq(sources.id, id))
     .get()
@@ -65,6 +66,7 @@ export function buildScopeTools(
         const size = sourceSize(sourceId)
         const outline = sourceOutline(sourceId)
         return [
+          ...(src.webOrigin ? [webOriginEvidence(src.webOrigin, zh)] : []),
           zh
             ? `《${src.title}》共 ${size.segments} 段、约 ${Math.round(size.chars / 1000)} 千字${size.pages ? `、${size.pages} 页` : ''}。一次对话最多能读几十段；超过约 40 段的范围请用 source_digest 交给后台分批整理。`
             : `"${src.title}": ${size.segments} segments, ~${Math.round(size.chars / 1000)}k chars${size.pages ? `, ${size.pages} pages` : ''}. Use source_digest for ranges beyond ~40 segments.`,

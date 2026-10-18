@@ -17,6 +17,8 @@ const state = vi.hoisted(() => ({
   temp: '',
   blocked: [] as string[],
   limit: 300,
+  cloud: false,
+  key: 'controlled-fetch-key',
   fetch: vi.fn<typeof externalFetch>(),
   render: vi.fn(),
   worker: vi.fn(),
@@ -30,14 +32,15 @@ vi.mock('../../externalFetch', async (original) => ({
   externalFetch: state.fetch
 }))
 vi.mock('../../settings', () => ({
-  getSettings: () => ({ browser: { aiBlockedSites: state.blocked }, retrieval: { dailyLimit: state.limit } })
+  getSettings: () => ({ browser: { aiBlockedSites: state.blocked }, retrieval: { dailyLimit: state.limit, cloudReader: state.cloud } })
 }))
+vi.mock('../backends/store', () => ({ credentialsFor: () => ({ key: state.key, baseUrl: null }) }))
 vi.mock('../../agent/usage', () => ({ checkBudget: state.budget }))
 vi.mock('../../jobs', () => ({ runInWorker: state.worker }))
 vi.mock('../../sources', () => ({ saveWebPage: state.save }))
 vi.mock('../render', () => ({ renderPage: state.render }))
 import { withRun } from '../../agent/context'
-import { readUrl, getPage, savePage } from '../reader'
+import { readUrl, getPage, savePage, canSupplementRead } from '../reader'
 
 const paragraph =
   'This public fixture paragraph contains enough visible information for article extraction and reproducible passage positions. '.repeat(6)
@@ -65,6 +68,8 @@ beforeEach(async () => {
   state.temp = await mkdtemp(join(tmpdir(), 'jiwei-reader-test-'))
   state.blocked = []
   state.limit = 300
+  state.cloud = false
+  state.key = 'controlled-fetch-key'
   state.fetch.mockReset()
   state.render.mockReset()
   state.worker.mockReset()
@@ -483,6 +488,133 @@ describe('PDF worker and temporary-file lifetime', () => {
     const error = await run(() => readUrl('https://example.org/file.pdf', { signal: controller.signal })).catch((e: unknown) => e)
     expect(String(error)).not.toMatch(/private-query|synthetic-key/)
     await expect(access(path)).rejects.toThrow()
+    expect(pages()).toHaveLength(0)
+  })
+})
+
+describe('explicit DeepSeek reading preserves unverified origin', () => {
+  it('keeps immutable completeness metadata when identical capped bodies came from different response lengths', async () => {
+    state.cloud = true
+    const content = 'facts '.repeat(10000)
+    state.fetch.mockResolvedValue(response(JSON.stringify({ title: 'Full', content }), 'application/json'))
+    const full = await run(() => readUrl('https://example.org/completeness', { provider: 'deepseek' }))
+    state.fetch.mockResolvedValue(response(JSON.stringify({ title: 'Partial', content: content + 'additional facts' }), 'application/json'))
+    const partial = await run(() => readUrl('https://example.org/completeness', { provider: 'deepseek' }))
+    expect(partial.page.id).not.toBe(full.page.id)
+    expect(partial.page.webOrigin?.truncated).toBe(true)
+    expect(getPage(full.page.id)?.webOrigin?.truncated).toBe(false)
+    expect(pages()).toHaveLength(2)
+  })
+  it.each(['failed', 'timeout'])('offers supplementation for a public page render %s', async (reason) => {
+    state.fetch.mockResolvedValue(response('<html><body><main>Loading</main></body></html>', 'text/html'))
+    state.render.mockRejectedValue(Object.assign(new Error('Controlled public render failure'), { name: 'RenderError', reason }))
+    const error = await run(() => readUrl('https://example.org/public-js')).catch((e: unknown) => e)
+    expect(canSupplementRead(error)).toBe(true)
+  })
+  it.each(['scope', 'cleanup', 'canceled'])('never offers cloud to bypass a render %s restriction', async (reason) => {
+    state.fetch.mockResolvedValue(response('<html><body><main>Loading</main></body></html>', 'text/html'))
+    state.render.mockRejectedValue(Object.assign(new Error('Controlled restricted render'), { name: 'RenderError', reason }))
+    const error = await run(() => readUrl('https://example.org/public-js')).catch((e: unknown) => e)
+    expect(canSupplementRead(error)).toBe(false)
+  })
+  it('offers manual supplementation after a public server error but not an authentication failure', async () => {
+    state.fetch.mockResolvedValue(response('Unavailable', 'text/html', 503))
+    expect(canSupplementRead(await run(() => readUrl('https://example.org/server')).catch((e: unknown) => e))).toBe(true)
+    state.fetch.mockResolvedValue(response('Sign in', 'text/html', 401))
+    expect(canSupplementRead(await run(() => readUrl('https://example.org/login-required')).catch((e: unknown) => e))).toBe(false)
+  })
+  it('does not transmit a cloud request while the independent reader setting is off', async () => {
+    await expect(run(() => readUrl('https://example.org/article', { provider: 'deepseek' }))).rejects.toThrow()
+    expect(state.fetch).not.toHaveBeenCalled()
+    expect(pages()).toHaveLength(0)
+    expect(calls()).toHaveLength(0)
+  })
+
+  it('sends only the selected URL, records an unknown final URL and keeps exact citable text', async () => {
+    state.cloud = true
+    const content = '# Public facts\n\nPrices are 12 units. <script>untrusted()</script>\n\n' + paragraph
+    state.fetch.mockResolvedValue(response(JSON.stringify({ title: 'Cloud page', content }), 'application/json'))
+    const read = await run(() => readUrl('https://example.org/article', { provider: 'deepseek' }))
+    expect(state.fetch).toHaveBeenCalledTimes(1)
+    const [endpoint, options] = state.fetch.mock.calls[0]
+    expect(endpoint).toBe('https://api.deepseek.com/v1/tools/fetch')
+    expect(JSON.parse(String(options?.body))).toEqual({ url: 'https://example.org/article' })
+    expect(read.page.webOrigin).toEqual({ provider: 'deepseek', urlVerified: false, truncated: false })
+    expect(read.page.text).toBe(content)
+    expect(pages()[0]).toMatchObject({ final_url: null, provider: 'deepseek' })
+    for (const p of read.passages) expect(read.page.text.slice(p.start, p.end)).toBe(p.text)
+    await savePage(read.page.id)
+    expect(state.save.mock.calls[0][0].webOrigin).toEqual(read.page.webOrigin)
+  })
+
+  it('isolates identical local and cloud bodies and never uses cloud snapshots as the local cache', async () => {
+    const local = await run(() => readUrl('https://example.org/article'))
+    state.cloud = true
+    state.fetch.mockResolvedValue(response(JSON.stringify({ title: local.page.title, content: local.page.text }), 'application/json'))
+    const cloud = await run(() => readUrl('https://example.org/article', { provider: 'deepseek' }))
+    expect(cloud.page.id).not.toBe(local.page.id)
+    expect(cloud.page.webOrigin?.urlVerified).toBe(false)
+    expect(pages()).toHaveLength(2)
+    expect((await run(() => readUrl('https://example.org/article'))).page.id).toBe(local.page.id)
+  })
+
+  it.each([
+    'https://example.org/a?token=secret',
+    'https://example.org/a?X-Amz-Signature=secret',
+    'https://example.org/a#access_token=secret',
+    'https://example.org/login'
+  ])('refuses credential or login URL %s before transmission', async (url) => {
+    state.cloud = true
+    await expect(run(() => readUrl(url, { provider: 'deepseek' }))).rejects.toThrow()
+    expect(state.fetch).not.toHaveBeenCalled()
+  })
+
+  it('allows an ordinary author filter without mistaking it for authorization', async () => {
+    state.cloud = true
+    state.fetch.mockResolvedValue(response(JSON.stringify({ title: 'Public article', content: paragraph }), 'application/json'))
+    const read = await run(() => readUrl('https://example.org/articles?author=public', { provider: 'deepseek' }))
+    expect(read.page.text).toBe(paragraph)
+    expect(state.fetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('holds a third cloud request in the queue and cancels it without transmission or quota use', async () => {
+    state.cloud = true
+    const pending: (() => void)[] = []
+    state.fetch.mockImplementation(async () => {
+      await new Promise<void>((resolve) => pending.push(resolve))
+      return response(JSON.stringify({ title: 'Concurrent article', content: paragraph }), 'application/json')
+    })
+    const first = run(() => readUrl('https://example.org/concurrent-1', { provider: 'deepseek' }))
+    const second = run(() => readUrl('https://example.org/concurrent-2', { provider: 'deepseek' }))
+    await vi.waitFor(() => expect(pending).toHaveLength(2))
+    const controller = new AbortController()
+    const third = run(() => readUrl('https://example.org/concurrent-3', { provider: 'deepseek', signal: controller.signal }))
+    const canceled = expect(third).rejects.toThrow(/cancel/i)
+    controller.abort()
+    await canceled
+    expect(state.fetch).toHaveBeenCalledTimes(2)
+    pending.forEach((resolve) => resolve())
+    await Promise.all([first, second])
+    expect(calls()).toHaveLength(2)
+  })
+
+  it('discards a response if the selected page is blocked while awaiting the service', async () => {
+    state.cloud = true
+    state.fetch.mockImplementation(async () => {
+      state.blocked = ['example.org']
+      return response(JSON.stringify({ title: 'Revoked', content: paragraph }), 'application/json')
+    })
+    await expect(run(() => readUrl('https://example.org/article', { provider: 'deepseek' }))).rejects.toThrow()
+    expect(pages()).toHaveLength(0)
+  })
+
+  it('marks truncation and keeps incognito cloud text out of the database', async () => {
+    state.cloud = true
+    state.fetch.mockResolvedValue(response(JSON.stringify({ title: 'Long', content: 'facts '.repeat(15000) }), 'application/json'))
+    const result = await run(() => readUrl('https://example.org/article', { provider: 'deepseek', incognito: true }))
+    expect(result.page.text).toHaveLength(60000)
+    expect(result.page.webOrigin?.truncated).toBe(true)
+    expect(result.page.id).toMatch(/^tmp-/)
     expect(pages()).toHaveLength(0)
   })
 })

@@ -137,6 +137,7 @@ export type NoteSort = NonNullable<NoteQuery['sort']>
 export type SourceKind = 'book' | 'pdf' | 'video' | 'audio' | 'recording' | 'image' | 'document' | 'web' | 'other'
 
 export interface Source {
+  webOrigin?: import('./retrieval').WebOrigin
   space?: 'library' | 'attachment'
   recordingScene?: import('./recording').Scene
   id: string
@@ -778,6 +779,9 @@ export interface FeynmanReport {
 
 /** AI 执行过程中的一步（调用工具、加载技能） */
 export interface AgentStep {
+  webOrigin?: import('./retrieval').WebOrigin
+  /** Offered by the local reader only, never by untrusted model content. */
+  cloudRead?: { url: string }
   id: string
   tool: string
   /** 给用户看的简短说明，如“检索知识库：遗忘曲线” */
@@ -805,6 +809,7 @@ export interface AgentStep {
 
 /** 回答引用的知识库片段 */
 export interface Citation {
+  webOrigin?: import('./retrieval').WebOrigin
   /** Durable source range, shared with note links and annotations. */
   selector?: import('./sourceTarget').SourceSelector
   /** 本轮属于项目来源的依据，独立于关键词/语义的检索方式。 */
@@ -1035,6 +1040,7 @@ export interface EmbeddingStatus {
 }
 
 export interface SearchHit {
+  webOrigin?: import('./retrieval').WebOrigin
   projectSource?: boolean
   parentType: 'note' | 'source' | 'web'
   parentId: string

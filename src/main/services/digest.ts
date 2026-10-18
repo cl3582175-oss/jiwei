@@ -10,6 +10,7 @@ import { eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { getDb, getSqlite } from '../db'
 import { jobs, sources } from '../db/schema'
+import { webOriginEvidence } from '@shared/retrieval'
 import { emit } from '../events'
 import { markdownToNodes } from '../lib/markdown'
 import type { ProposalOp, Segment } from '@shared/types'
@@ -283,7 +284,8 @@ async function digestSource(input: DigestJobInput, ctx: JobContext): Promise<{ n
   const missing = unrecognizedPages(input.sourceId, input.fromPage, input.toPage)
   if (!parts.length) throw new PermanentJobError('No text in this range')
   const quick = quickModel(input.providerId, input.model)
-  const keys = parts.map((part) => stepKey(quick, ['map', zh, part.ids, part.text]))
+  const provenance = webOriginEvidence(src.webOrigin ?? undefined, zh)
+  const keys = parts.map((part) => stepKey(quick, ['map', zh, part.ids, part.text, provenance]))
   const mapped: Points[] = []
   const request = (model: string, system: string, prompt: string) => ({
     guard,
@@ -291,7 +293,7 @@ async function digestSource(input: DigestJobInput, ctx: JobContext): Promise<{ n
     providerId: input.providerId,
     model,
     system,
-    prompt,
+    prompt: provenance ? provenance + '\n\n' + prompt : prompt,
     signal: ctx.signal,
     sensitive: true
   })

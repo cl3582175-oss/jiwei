@@ -67,6 +67,7 @@ export const BackendSaveSchema = z.object({
 export type BackendSave = z.infer<typeof BackendSaveSchema>
 
 export const RetrievalSettingsSchema = z.object({
+  cloudReader: z.boolean(),
   autoUpgrade: z.boolean(),
   mode: WebModeSchema,
   preferZh: z.enum(WEB_BACKENDS).nullable(),
@@ -80,6 +81,7 @@ export const RetrievalSettingsSchema = z.object({
 export type RetrievalSettings = z.infer<typeof RetrievalSettingsSchema>
 
 export const RETRIEVAL_DEFAULTS: RetrievalSettings = {
+  cloudReader: false,
   autoUpgrade: true,
   mode: 'auto',
   preferZh: null,
@@ -93,6 +95,7 @@ export const RETRIEVAL_DEFAULTS: RetrievalSettings = {
 
 /** 网页快照（引用卡片打开时用） */
 export interface WebPageView {
+  webOrigin?: WebOrigin
   id: string
   url: string
   title: string
@@ -101,6 +104,32 @@ export interface WebPageView {
   fetchedAt: number
   method: 'fetch' | 'render' | 'pdf'
   text: string
+}
+
+/** Only cloud reads carry this marker; it never claims actual URL or factual verification. */
+export interface WebOrigin {
+  provider: 'deepseek'
+  urlVerified: false
+  truncated: boolean
+}
+
+export function webOriginLabel(origin: WebOrigin | undefined, zh: boolean): string {
+  if (!origin) return ''
+  return (
+    (zh ? 'DeepSeek 云端读取 · 最终来源未核验' : 'Read by DeepSeek · final origin unverified') +
+    (origin.truncated ? (zh ? ' · 已读取部分正文' : ' · partial text') : '')
+  )
+}
+
+/** Trusted instruction accompanies every cloud excerpt, including saved-library evidence. */
+export function webOriginEvidence(origin: WebOrigin | undefined, zh: boolean): string {
+  const label = webOriginLabel(origin, zh)
+  return label
+    ? label +
+        (zh
+          ? '。仅依据这份云端返回文本进行总结和引用；不能据此声称官网已确认或实际来源已核实。'
+          : '. Summarize and cite this returned text only; it does not confirm the official site or the actual origin.')
+    : ''
 }
 
 export interface RetrievalUsage {

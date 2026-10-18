@@ -38,6 +38,16 @@ export const retrievalZh = {
   privacyHelp: '决定联网前如何确认，以及不同网站在结果排序中的优先级。',
   cautious: '谨慎模式',
   cautiousHelp: '每次联网搜索或读取网页前，先让你确认要发出的内容。',
+  cloud: {
+    setting: '允许手动云端代读',
+    help: '默认本地读取。仅在你单独选择一个公开网址后交给 DeepSeek；使用上方 DeepSeek 的官方凭证，搜索开关可保持关闭，按服务实际用量计费。',
+    action: '用 DeepSeek 读取此网页',
+    notice:
+      '将把这个网址发送给 DeepSeek。积微不会附加你的笔记或登录信息。DeepSeek 未提供最终来源及跳转信息，积微无法检查其内部跳转；需要严格站点限制或涉及私密链接时，请使用本地读取。已经发出的内容无法撤回。',
+    confirm: '确认发送这个网址',
+    requestUrl: '请求网址',
+    openRequest: '打开请求网址'
+  },
   trusted: '可信网站（每行一个域名，排序时优先）',
   lowTrust: '低可信网站（每行一个域名，排序时降权）',
   sitesDropped: '有 {{count}} 行不是有效的域名，已忽略',
@@ -116,6 +126,16 @@ export const retrievalZh = {
 }
 
 export const retrievalEn = {
+  cloud: {
+    setting: 'Allow manual cloud reading',
+    help: 'Read locally by default. Only a public URL you individually choose is sent to DeepSeek, using its official key above. Search may stay off. Service usage is billed separately.',
+    action: 'Read this page with DeepSeek',
+    notice:
+      'This URL will be sent to DeepSeek. Jiwei adds no notes or login information. DeepSeek does not report the final origin or redirects, so Jiwei cannot check its internal redirects. Use local reading for private links or strict site restrictions. Data already sent cannot be recalled.',
+    confirm: 'Confirm sending this URL',
+    requestUrl: 'Requested URL',
+    openRequest: 'Open requested URL'
+  },
   title: 'Web search',
   intro:
     'Let Jiwei check public web pages and academic papers when needed. Search terms go to the services you enable; content marked “Keep from AI” stays out of search terms.',

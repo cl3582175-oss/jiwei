@@ -20,6 +20,7 @@ import { recordCall, reserveCall } from './calls'
 import { assertReadableUrl, PagePolicyError } from './pagePolicy'
 import { extractReadable, isSuspicious, type ReadablePage } from './readable'
 import { renderPage } from './render'
+import { readDeepSeekPage } from './readers/deepseek'
 
 export interface Passage {
   index: number
@@ -33,6 +34,7 @@ export interface ReadPage {
   passages: Passage[]
 }
 export interface ReadOptions {
+  provider?: 'deepseek'
   signal?: AbortSignal
   incognito?: boolean
   validateUrl?: (url: string) => void
@@ -40,7 +42,7 @@ export interface ReadOptions {
 type PageRow = typeof webPages.$inferSelect
 type Snapshot = Omit<PageRow, 'id'>
 // 最终地址仅供AI策略重查；不暴露到公共快照视图，也不让无痕快照落库。
-const temporary = new Map<string, { page: WebPageView; finalUrl: string }>()
+const temporary = new Map<string, { page: WebPageView; finalUrl: string | null }>()
 const messages = {
   invalid: ['网址无效', 'Invalid address'],
   canceled: ['读取已取消', 'Reading canceled'],
@@ -50,15 +52,22 @@ const messages = {
   empty: ['这个网页没有可读的正文（可能需要登录）', 'This page has no readable text (it may require a login)'],
   scanned: ['这是扫描版 PDF，暂时读不出文字', 'This is a scanned PDF; its text cannot be read yet'],
   size: ['网页或文件过大，暂时无法读取', 'This page or file is too large to read'],
-  expired: ['网页快照已失效', 'The page snapshot is no longer available']
+  expired: ['网页快照已失效', 'The page snapshot is no longer available'],
+  restricted: ['该页面存在访问限制，不能使用云端绕过', 'The page has access restrictions; cloud reading cannot bypass them']
 } as const
 class ReadError extends Error {
-  constructor(reason: keyof typeof messages) {
+  constructor(
+    readonly reason: keyof typeof messages,
+    status?: number
+  ) {
     const m = messages[reason]
-    super(tr(m[0], m[1]))
+    super(status === undefined ? tr(m[0], m[1]) : tr('网页打不开（HTTP ' + status + '）', 'Page could not be opened (HTTP ' + status + ')'))
     this.name = 'ReadError'
   }
 }
+export const canSupplementRead = (error: unknown): boolean =>
+  (error instanceof ReadError && ['failed', 'empty'].includes(error.reason)) ||
+  (error instanceof Error && error.name === 'RenderError' && 'reason' in error && ['failed', 'timeout'].includes(String(error.reason)))
 const toView = (row: PageRow | (Snapshot & { id: string })): WebPageView => ({
   id: row.id,
   url: row.url,
@@ -67,9 +76,12 @@ const toView = (row: PageRow | (Snapshot & { id: string })): WebPageView => ({
   publishedAt: row.publishedAt,
   fetchedAt: row.fetchedAt,
   method: row.method,
+  ...(row.provider === 'deepseek'
+    ? { webOrigin: { provider: 'deepseek' as const, urlVerified: false as const, truncated: row.truncated } }
+    : {}),
   text: row.text
 })
-function remember(page: WebPageView, finalUrl: string): WebPageView {
+function remember(page: WebPageView, finalUrl: string | null): WebPageView {
   const copy = { ...page, id: 'tmp-' + newId() }
   temporary.set(copy.id, { page: { ...copy }, finalUrl })
   while (temporary.size > 50) {
@@ -87,14 +99,19 @@ export function getPage(id: string): WebPageView | null {
   return row ? toView(row) : null
 }
 /** 恢复旧引用/发送给模型前按当前策略检查两端地址；用户查看快照的合同不变。 */
-export function assertPageReadable(id: string): void {
+export function assertPageReadable(id: string, allowCloud = false): void {
   const memory = id.startsWith('tmp-') ? temporary.get(id) : undefined
   const snapshot = id.startsWith('tmp-')
-    ? memory && { url: memory.page.url, finalUrl: memory.finalUrl }
-    : getDb().select({ url: webPages.url, finalUrl: webPages.finalUrl }).from(webPages).where(eq(webPages.id, id)).get()
+    ? memory && { url: memory.page.url, finalUrl: memory.finalUrl, cloud: !!memory.page.webOrigin }
+    : (() => {
+        const row = getDb().select().from(webPages).where(eq(webPages.id, id)).get()
+        return row && { ...row, cloud: row.provider === 'deepseek' }
+      })()
   if (!snapshot) return
   assertReadableUrl(snapshot.url)
-  assertReadableUrl(snapshot.finalUrl)
+  if (snapshot.cloud && !allowCloud) throw new ReadError('scope')
+  if (snapshot.finalUrl) assertReadableUrl(snapshot.finalUrl)
+  else if (!snapshot.cloud) throw new ReadError('invalid')
 }
 const escapeHtml = (text: string): string =>
   text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
@@ -110,7 +127,7 @@ export async function savePage(id: string): Promise<{ sourceId: string }> {
       .map((text) => '<p>' + escapeHtml(text).replace(/\n/g, '<br>') + '</p>')
       .join('') +
     '</body></html>'
-  const source = await saveWebPage({ url: page.url, title: page.title, html })
+  const source = await saveWebPage({ url: page.url, title: page.title, html, webOrigin: page.webOrigin })
   return { sourceId: source.id }
 }
 const PASSAGE_TARGET = 400,
@@ -170,10 +187,15 @@ function withAbort<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
 function persist(snapshot: Snapshot): WebPageView {
   const db = getDb()
   return db.transaction(() => {
-    const condition = and(eq(webPages.url, snapshot.url), eq(webPages.textHash, snapshot.textHash))
+    const condition = and(
+      eq(webPages.url, snapshot.url),
+      eq(webPages.textHash, snapshot.textHash),
+      eq(webPages.provider, snapshot.provider),
+      eq(webPages.truncated, snapshot.truncated)
+    )
     const existing = db.select().from(webPages).where(condition).get()
     if (existing) {
-      assertReadableUrl(existing.finalUrl)
+      if (existing.finalUrl) assertReadableUrl(existing.finalUrl)
       db.update(webPages).set({ fetchedAt: snapshot.fetchedAt }).where(eq(webPages.id, existing.id)).run()
       return toView({ ...existing, fetchedAt: snapshot.fetchedAt })
     }
@@ -223,8 +245,10 @@ export async function readUrl(value: string, opts: ReadOptions = {}): Promise<Re
   assertWebAllowed()
   checkBudget()
   if (opts.signal?.aborted) throw new ReadError('canceled')
-  const url = canonicalUrl(value)
-  if (!url) throw new ReadError('invalid')
+  const canonical = canonicalUrl(value)
+  if (!canonical) throw new ReadError('invalid')
+  // Cloud consent is for the exact input. Validate credentials before any normalization can strip them.
+  const url = opts.provider === 'deepseek' ? value : canonical
   const validate = (target: string): string => {
     const clean = canonicalUrl(target)
     if (!clean) throw new ReadError('invalid')
@@ -239,14 +263,43 @@ export async function readUrl(value: string, opts: ReadOptions = {}): Promise<Re
   validate(url)
   const start = Date.now(),
     db = getDb()
+  if (opts.provider === 'deepseek') {
+    const result = await readDeepSeekPage(url, {
+      signal: opts.signal,
+      guard: () => {
+        checkBudget()
+        validate(url)
+      }
+    })
+    validate(url)
+    const snapshot: Snapshot = {
+      url,
+      finalUrl: null,
+      title: result.title,
+      siteName: null,
+      publishedAt: null,
+      fetchedAt: Date.now(),
+      method: 'fetch',
+      provider: 'deepseek',
+      truncated: result.truncated,
+      lang: null,
+      text: result.text,
+      textHash: createHash('sha256').update(result.text).digest('hex')
+    }
+    const page = opts.incognito ? remember(toView({ ...snapshot, id: '' }), null) : persist(snapshot)
+    return { page, passages: passages(page.text) }
+  }
   const cached = db
     .select()
     .from(webPages)
-    .where(and(eq(webPages.url, url), gte(webPages.fetchedAt, start - 86400000), lte(webPages.fetchedAt, start)))
+    .where(
+      and(eq(webPages.url, url), eq(webPages.provider, 'local'), gte(webPages.fetchedAt, start - 86400000), lte(webPages.fetchedAt, start))
+    )
     .orderBy(desc(webPages.fetchedAt))
     .limit(1)
     .get()
   if (cached) {
+    if (!cached.finalUrl) throw new ReadError('invalid')
     validate(cached.finalUrl)
     const page = opts.incognito ? remember(toView(cached), cached.finalUrl) : toView(cached)
     recordCall('reader', cached.method, true, true, start)
@@ -256,6 +309,7 @@ export async function readUrl(value: string, opts: ReadOptions = {}): Promise<Re
   let kind: WebPageView['method'] = 'fetch',
     ok = false,
     finalUrl = url
+  let cloudEligible = true
   const fetchOptions = {
     signal: opts.signal,
     maxBytes: 5 * 1024 * 1024,
@@ -277,6 +331,8 @@ export async function readUrl(value: string, opts: ReadOptions = {}): Promise<Re
       })
       finalUrl = validate(rendered.finalUrl)
       const result = extractReadable(rendered.html, finalUrl)
+      if (/(?:sign in to continue|log in to continue|subscribe to continue|请先登录|登录后|付费后)/i.test(result.text))
+        cloudEligible = false
       if (result.text.length < 200) throw new ReadError('empty')
       return result
     }
@@ -329,6 +385,7 @@ export async function readUrl(value: string, opts: ReadOptions = {}): Promise<Re
         if (response.status !== 200) throw new Error('HTTP ' + response.status)
         readable = await parsePdf(response.bytes, finalUrl, opts.signal)
       } else {
+        if (response.status !== 200) cloudEligible = false
         const isHtml = /(?:text\/html|application\/xhtml\+xml)/.test(type)
         if (response.status !== 200 && !([403, 429].includes(response.status) && isHtml)) throw new Error('HTTP ' + response.status)
         if (!isHtml) throw new ReadError('unsupported')
@@ -349,6 +406,8 @@ export async function readUrl(value: string, opts: ReadOptions = {}): Promise<Re
       publishedAt: readable.publishedAt,
       fetchedAt: Date.now(),
       method: kind,
+      provider: 'local',
+      truncated: readable.text.length > 60000,
       lang: readable.lang,
       text,
       textHash: createHash('sha256').update(text).digest('hex')
@@ -359,13 +418,16 @@ export async function readUrl(value: string, opts: ReadOptions = {}): Promise<Re
     return result
   } catch (error) {
     if (opts.signal?.aborted) throw new ReadError('canceled')
-    if (error instanceof PagePolicyError || error instanceof ReadError) throw error
+    if (error instanceof PagePolicyError) throw error
     if (error instanceof Error && /^HTTP \d{3}$/.test(error.message)) {
       const status = Number(error.message.slice(5))
+      if (status >= 500) throw new ReadError('failed', status)
       // 原始错误可能包含查询或凭证；对外错误仅保留已验证的HTTP状态码。
       // eslint-disable-next-line preserve-caught-error
       throw new Error(tr('网页打不开（HTTP ' + status + '）', 'Page could not be opened (HTTP ' + status + ')'))
     }
+    if (!cloudEligible) throw new ReadError('restricted')
+    if (error instanceof ReadError || (error instanceof Error && error.name === 'RenderError')) throw error
     throw new ReadError('failed')
   } finally {
     try {

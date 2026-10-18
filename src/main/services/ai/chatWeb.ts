@@ -2,6 +2,8 @@ import type { BackendId } from '@shared/retrieval'
 import { retrievalZh, retrievalEn } from '../../../renderer/src/features/retrieval/messages'
 import type { AgentStep, Citation, SearchHit } from '@shared/types'
 import { currentRun } from '../agent/context'
+import { requestApproval } from '../agent/approval'
+import { newId } from '../../lib/ids'
 import { getSettings } from '../settings'
 import { urlKey } from '../retrieval/backends/normalize'
 import { assertPageReadable, getPage } from '../retrieval/reader'
@@ -60,6 +62,64 @@ function candidateEntry(hit: SearchHit, backend: BackendId, assertReadable?: () 
 function taint(hits: SearchHit[]): void {
   const run = currentRun()
   if (hits.length && run) run.state.tainted = true
+}
+
+/** Application-owned reading works even when the model cannot call tools or Search is unconfigured. */
+export async function runPreReadForTurn(session: AgentSession, urls: string[], options: PreSearchOptions): Promise<PreSearchResult> {
+  const messages = session.zh ? retrievalZh : retrievalEn
+  const pageHits: SearchHit[][] = []
+  let failed = false
+  for (const [index, url] of [...new Set(urls)].slice(0, 2).entries()) {
+    if (options.signal?.aborted) break
+    const step = { id: 'direct-read-' + index, tool: 'read_url', ...stepLabel('read_url', { url }, session.zh) }
+    if (getSettings().retrieval.cautious) {
+      const approval = { id: newId(), title: step.label, detail: url, level: 'read' as const, tainted: false }
+      options.pushStep({ ...step, status: 'waiting', approval: { ...approval, state: 'pending' } })
+      const outcome = await requestApproval(
+        { ...approval, messageId: session.messageId, conversationId: session.conversationId, tool: 'read_url' },
+        options.signal
+      )
+      options.pushStep({ ...step, status: outcome === 'allowed' ? 'running' : 'denied', approval: { ...approval, state: outcome } })
+      if (outcome !== 'allowed') continue
+    } else options.pushStep({ ...step, status: 'running' })
+    try {
+      const response = await readForSession(session, url, session.web.userText, options.signal)
+      response.assertReadable()
+      pageHits.push(response.selected.map((passage) => passageHit(response.read, passage)))
+      options.pushStep({
+        ...step,
+        status: 'done',
+        webOrigin: response.read.page.webOrigin,
+        detail: messages.passageSelection
+          .replace('{{total}}', String(response.read.passages.length))
+          .replace('{{k}}', String(response.selected.length))
+      })
+    } catch {
+      failed = true
+      options.pushStep({ ...step, status: 'error', detail: messages.proactiveReadFailed })
+    }
+  }
+  const allowedPages = new Set(session.web.pageGuards?.keys())
+  const readable = pageHits.map((hits) =>
+    filterCloudHits(hits, session.conversationId, allowedPages).filter((hit) => {
+      try {
+        session.web.pageGuards?.get(hit.parentId)?.()
+        return true
+      } catch {
+        return false
+      }
+    })
+  )
+  const current: SearchHit[] = []
+  // Share the six excerpts across successful pages so a comparison cannot lose its second source.
+  for (let index = 0; current.length < 6 && readable.some((hits) => index < hits.length); index++) {
+    for (const hits of readable) {
+      if (hits[index]) current.push(hits[index])
+      if (current.length === 6) break
+    }
+  }
+  taint(current)
+  return { kbHits: filterCloudHits(options.kbHits, session.conversationId), webHits: current, failed }
 }
 
 export async function runPreSearchForTurn(session: AgentSession, options: PreSearchOptions): Promise<PreSearchResult> {
@@ -163,7 +223,7 @@ export async function runPreSearchForTurn(session: AgentSession, options: PreSea
 
 export function previousWebHits(session: AgentSession, previousCitations: Citation[]): SearchHit[] {
   const candidates: SearchHit[] = previousCitations
-    .filter((citation) => citation.parentType === 'web')
+    .filter((citation) => citation.parentType === 'web' && !citation.webOrigin)
     .map(({ n: _n, snippet, ...citation }) => ({
       ...citation,
       text: snippet,
@@ -177,6 +237,7 @@ export function previousWebHits(session: AgentSession, previousCitations: Citati
     let hit = { ...candidate, locator: null as string | null }
     try {
       if (candidate.parentId) assertPageReadable(candidate.parentId)
+      if (candidate.parentId && getPage(candidate.parentId)?.webOrigin) continue
       const range = charsRange(candidate.locator)
       if (range && candidate.parentId && !candidate.parentId.startsWith('tmp-')) {
         // 安全失败丢弃整条；只有不存在的快照或无效定位才可回退到旧 snippet。

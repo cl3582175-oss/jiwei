@@ -35,6 +35,7 @@ import { findInPage, pageLinks, readPage } from '../browser/pages'
 import type { ChatScope, ProposalOp } from '@shared/schemas'
 import type { AgentStep, DocNode, SearchHit } from '@shared/types'
 import type { WebGate } from '../retrieval/webGate'
+import { webOriginEvidence, type WebOrigin } from '@shared/retrieval'
 
 /** Tool calls may complete after a project move or deletion; never reinterpret old private input as global memory. */
 function currentMemoryScope(session: AgentSession): { projectId: string | null } {
@@ -101,6 +102,10 @@ export interface AgentSession {
     userText: string
     /** 仅本轮内存：快照清理后仍保留读取时的最终网址权限检查，不持久化闭包。 */
     pageGuards?: Map<string, () => void>
+    cloudReadUrl?: string
+    cloudReadStarted?: boolean
+    onReadFailure?: (url: string) => void
+    readResults?: Map<string, import('./webTools').SessionRead>
   }
 }
 
@@ -113,9 +118,19 @@ function readableNote(id: string): NoteCheck {
     .get()
   return n && !n.aiExcluded && !n.deletedAt ? { title: n.title } : null
 }
-function readableSource(id: string, zh: boolean, conversationId: string | null = null): { title: string; space: 'library' | 'attachment' } {
+function readableSource(
+  id: string,
+  zh: boolean,
+  conversationId: string | null = null
+): { title: string; space: 'library' | 'attachment'; webOrigin?: WebOrigin } {
   const s = getDb()
-    .select({ title: sources.title, space: sources.space, aiExcluded: sources.aiExcluded, deletedAt: sources.deletedAt })
+    .select({
+      title: sources.title,
+      space: sources.space,
+      aiExcluded: sources.aiExcluded,
+      deletedAt: sources.deletedAt,
+      webOrigin: sources.webOrigin
+    })
     .from(sources)
     .where(eq(sources.id, id))
     .get()
@@ -127,7 +142,7 @@ function readableSource(id: string, zh: boolean, conversationId: string | null =
     )
   if (!canReadSource(id, conversationId))
     throw new Error(zh ? '用户设置了这份资料不给 AI 读取。' : 'The user excluded this source from AI.')
-  return { title: s.title, space: s.space }
+  return { title: s.title, space: s.space, webOrigin: s.webOrigin ?? undefined }
 }
 
 const fmtDate = (ts: number | null): string =>
@@ -177,6 +192,7 @@ export function numberHits(session: AgentSession, hits: SearchHit[]): string {
           const lines = [
             `[${n}] ${header} · ${h.site || webHost(h.url)} · ${published} · ${zh ? '获取于' : 'fetched'} ${fmtDate(h.updatedAt)} · ${h.url || '—'}${h.snippetOnly ? (zh ? ' · 仅搜索摘要' : ' · search snippet only') : ''}`
           ]
+          if (h.webOrigin) lines.push(webOriginEvidence(h.webOrigin, zh))
           const meta = h.meta
           if (meta) {
             const academic = [
@@ -207,7 +223,7 @@ export function numberHits(session: AgentSession, hits: SearchHit[]): string {
             ? `\n另见：${h.alsoIn.map((t) => `《${t}》`).join('、')}`
             : `\nAlso in: ${h.alsoIn.map((t) => `"${t}"`).join(', ')}`
           : ''
-        return `[${n}] ${h.projectSource ? (zh ? '项目来源 · ' : 'Project source · ') : ''}${meta}\n${h.text}${also}`
+        return `[${n}] ${h.projectSource ? (zh ? '项目来源 · ' : 'Project source · ') : ''}${meta}\n${h.webOrigin ? webOriginEvidence(h.webOrigin, zh) + '\n' : ''}${h.text}${also}`
       })
       .join('\n\n')
   )
@@ -514,6 +530,7 @@ export function buildTools(s: AgentSession): ToolSet {
               s,
               part.map((g) => ({
                 parentType: 'source',
+                webOrigin: src.webOrigin,
                 parentId: sourceId,
                 ownerId: g.id,
                 title: src.title,
@@ -532,6 +549,7 @@ export function buildTools(s: AgentSession): ToolSet {
           return [
             ...(metadata ? [JSON.stringify({ ...metadata, totalSegments: segs.length, from, count: part.length })] : []),
             `《${src.title}》${zh ? `共 ${segs.length} 段，当前 ${from}–${from + part.length - 1}` : ` ${segs.length} segments`}`,
+            ...(src.webOrigin ? [webOriginEvidence(src.webOrigin, zh)] : []),
             ...part.map((g) => `[${g.id}${loc(g.locator)}] ${g.text}`)
           ].join('\n')
         }

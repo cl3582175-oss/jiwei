@@ -128,6 +128,7 @@ function hydrate(keys: Key[], scope: ChatScope, allow?: { sourceIds: string[] })
       out.set(`segment:${g.id}`, {
         parentType: 'source',
         parentId: s.id,
+        webOrigin: s.webOrigin ?? undefined,
         ownerId: g.id,
         title: s.title,
         text,

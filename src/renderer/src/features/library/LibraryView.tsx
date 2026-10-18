@@ -1,5 +1,6 @@
 import type { Readiness } from '@shared/readiness'
 import { ReadinessLabel } from './ReadinessNotice'
+import { webOriginLabel } from '@shared/retrieval'
 import { useReadinessMany } from './useReadiness'
 import { Paperclip } from 'lucide-react'
 import { AttachmentSpaceView } from '../attachments/AttachmentSpaceView'
@@ -170,6 +171,7 @@ function SourceInfoDialog({ source: s, open, onOpenChange }: { source: Source; o
             {field(t('library.publishedAt'), <Input type="date" value={published} onChange={(e) => setPublished(e.target.value)} />)}
           </div>
           {field(t('tags.title'), <TagEditor entityType="source" entityId={s.id} tagIds={s.tagIds} />)}
+          {s.webOrigin && <p className="text-xs text-muted">{webOriginLabel(s.webOrigin, i18n.language.startsWith('zh'))}</p>}
           <p className="text-2xs text-subtle">
             {t('library.accessedAt')} {formatDate(s.accessedAt, i18n.language)}
             {s.originalName && <> · {s.originalName}</>}
@@ -313,6 +315,11 @@ function SourceCard({ s, readiness }: { s: Source; readiness?: Readiness }) {
         {s.kind === 'web' ? new URL(s.url!).hostname : formatBytes(s.size)} · {formatRelative(s.createdAt, i18n.language)}
       </p>
       <ReadinessLabel sourceId={s.id} readiness={readiness} />
+      {s.webOrigin && (
+        <p className="mt-1 text-2xs text-muted" data-testid="source-web-origin">
+          {webOriginLabel(s.webOrigin, i18n.language.startsWith('zh'))}
+        </p>
+      )}
       <SourceInfoDialog source={s} open={infoOpen} onOpenChange={setInfoOpen} />
     </div>
   )

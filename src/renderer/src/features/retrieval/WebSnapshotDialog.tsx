@@ -10,8 +10,19 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent } from '@/components/ui/primitives'
 import { snapshotParagraphs } from './snapshot'
 import { useWebSnapshot } from './store'
+import { webOriginLabel, type WebOrigin } from '@shared/retrieval'
 
-function SnapshotContent({ pageId, locator, originalUrl }: { pageId: string; locator: string | null; originalUrl: string | null }) {
+function SnapshotContent({
+  pageId,
+  locator,
+  originalUrl,
+  webOrigin
+}: {
+  pageId: string
+  locator: string | null
+  originalUrl: string | null
+  webOrigin?: WebOrigin
+}) {
   const { t, i18n } = useTranslation()
   const qc = useQueryClient()
   const body = useRef<HTMLDivElement>(null)
@@ -103,6 +114,12 @@ function SnapshotContent({ pageId, locator, originalUrl }: { pageId: string; loc
           </p>
         ) : page ? (
           <>
+            {page.webOrigin && <p className="mb-2 text-xs text-muted">{webOriginLabel(page.webOrigin, i18n.language.startsWith('zh'))}</p>}
+            {page.webOrigin && (
+              <p className="mb-3 text-xs break-all text-muted">
+                {t('retrieval.cloud.requestUrl')}：{page.url}
+              </p>
+            )}
             <p className="mb-4 flex shrink-0 flex-wrap gap-x-2 gap-y-1 text-2xs text-subtle" data-testid="web-snapshot-meta">
               <span>{site}</span>
               {page.publishedAt !== null && (
@@ -132,7 +149,7 @@ function SnapshotContent({ pageId, locator, originalUrl }: { pageId: string; loc
         <div className="mt-4 flex shrink-0 flex-wrap justify-end gap-2 border-t border-border pt-3">
           <Button size="sm" variant="ghost" onClick={openOriginal} disabled={!url} data-testid="web-snapshot-open-original">
             <ExternalLink />
-            {t('retrieval.snapshot.openOriginal')}
+            {t(page?.webOrigin || webOrigin ? 'retrieval.cloud.openRequest' : 'retrieval.snapshot.openOriginal')}
           </Button>
           {page && !isError && (
             <>
@@ -159,10 +176,10 @@ function SnapshotContent({ pageId, locator, originalUrl }: { pageId: string; loc
 }
 
 export function WebSnapshotDialog() {
-  const { pageId, locator, url, close } = useWebSnapshot()
+  const { pageId, locator, url, webOrigin, close } = useWebSnapshot()
   return (
     <Dialog open={!!pageId} onOpenChange={(open) => !open && close()}>
-      {pageId && <SnapshotContent key={pageId} pageId={pageId} locator={locator} originalUrl={url} />}
+      {pageId && <SnapshotContent key={pageId} pageId={pageId} locator={locator} originalUrl={url} webOrigin={webOrigin} />}
     </Dialog>
   )
 }
