@@ -222,6 +222,7 @@ export const sources = sqliteTable(
     id: text('id').primaryKey(),
     title: text('title').notNull(),
     kind: text('kind').notNull(),
+    webOrigin: text('web_origin', { mode: 'json' }).$type<import('@shared/retrieval').WebOrigin>(),
     assetId: text('asset_id'),
     originalName: text('original_name'),
     space: text('space', { enum: ['library', 'attachment'] })
@@ -1360,7 +1361,11 @@ export const webPages = sqliteTable(
   {
     id: text('id').primaryKey(),
     url: text('url').notNull(),
-    finalUrl: text('final_url').notNull(),
+    finalUrl: text('final_url'),
+    provider: text('provider', { enum: ['local', 'deepseek'] })
+      .notNull()
+      .default('local'),
+    truncated: integer('truncated', { mode: 'boolean' }).notNull().default(false),
     title: text('title').notNull().default(''),
     siteName: text('site_name'),
     publishedAt: integer('published_at'),
@@ -1370,7 +1375,7 @@ export const webPages = sqliteTable(
     text: text('text').notNull(),
     textHash: text('text_hash').notNull()
   },
-  (t) => [index('web_pages_url_idx').on(t.url), uniqueIndex('web_pages_url_hash_uq').on(t.url, t.textHash)]
+  (t) => [index('web_pages_url_idx').on(t.url), uniqueIndex('web_pages_url_hash_provider_uq').on(t.url, t.textHash, t.provider)]
 )
 
 export const webPageRefs = sqliteTable(

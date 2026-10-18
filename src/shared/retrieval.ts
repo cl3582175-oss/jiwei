@@ -67,6 +67,7 @@ export const BackendSaveSchema = z.object({
 export type BackendSave = z.infer<typeof BackendSaveSchema>
 
 export const RetrievalSettingsSchema = z.object({
+  cloudReader: z.boolean(),
   autoUpgrade: z.boolean(),
   mode: WebModeSchema,
   preferZh: z.enum(WEB_BACKENDS).nullable(),
@@ -80,6 +81,7 @@ export const RetrievalSettingsSchema = z.object({
 export type RetrievalSettings = z.infer<typeof RetrievalSettingsSchema>
 
 export const RETRIEVAL_DEFAULTS: RetrievalSettings = {
+  cloudReader: false,
   autoUpgrade: true,
   mode: 'auto',
   preferZh: null,
@@ -93,6 +95,7 @@ export const RETRIEVAL_DEFAULTS: RetrievalSettings = {
 
 /** 网页快照（引用卡片打开时用） */
 export interface WebPageView {
+  webOrigin?: WebOrigin
   id: string
   url: string
   title: string
@@ -101,6 +104,13 @@ export interface WebPageView {
   fetchedAt: number
   method: 'fetch' | 'render' | 'pdf'
   text: string
+}
+
+/** Only cloud reads carry this marker; it never claims actual URL or factual verification. */
+export interface WebOrigin {
+  provider: 'deepseek'
+  urlVerified: false
+  truncated: boolean
 }
 
 export interface RetrievalUsage {

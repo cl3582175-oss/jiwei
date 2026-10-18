@@ -20,6 +20,7 @@ import { recordCall, reserveCall } from './calls'
 import { assertReadableUrl, PagePolicyError } from './pagePolicy'
 import { extractReadable, isSuspicious, type ReadablePage } from './readable'
 import { renderPage } from './render'
+import { readDeepSeekPage } from './readers/deepseek'
 
 export interface Passage {
   index: number
@@ -33,6 +34,7 @@ export interface ReadPage {
   passages: Passage[]
 }
 export interface ReadOptions {
+  provider?: 'deepseek'
   signal?: AbortSignal
   incognito?: boolean
   validateUrl?: (url: string) => void
@@ -40,7 +42,7 @@ export interface ReadOptions {
 type PageRow = typeof webPages.$inferSelect
 type Snapshot = Omit<PageRow, 'id'>
 // 最终地址仅供AI策略重查；不暴露到公共快照视图，也不让无痕快照落库。
-const temporary = new Map<string, { page: WebPageView; finalUrl: string }>()
+const temporary = new Map<string, { page: WebPageView; finalUrl: string | null }>()
 const messages = {
   invalid: ['网址无效', 'Invalid address'],
   canceled: ['读取已取消', 'Reading canceled'],
@@ -53,7 +55,7 @@ const messages = {
   expired: ['网页快照已失效', 'The page snapshot is no longer available']
 } as const
 class ReadError extends Error {
-  constructor(reason: keyof typeof messages) {
+  constructor(readonly reason: keyof typeof messages) {
     const m = messages[reason]
     super(tr(m[0], m[1]))
     this.name = 'ReadError'
@@ -67,9 +69,12 @@ const toView = (row: PageRow | (Snapshot & { id: string })): WebPageView => ({
   publishedAt: row.publishedAt,
   fetchedAt: row.fetchedAt,
   method: row.method,
+  ...(row.provider === 'deepseek'
+    ? { webOrigin: { provider: 'deepseek' as const, urlVerified: false as const, truncated: row.truncated } }
+    : {}),
   text: row.text
 })
-function remember(page: WebPageView, finalUrl: string): WebPageView {
+function remember(page: WebPageView, finalUrl: string | null): WebPageView {
   const copy = { ...page, id: 'tmp-' + newId() }
   temporary.set(copy.id, { page: { ...copy }, finalUrl })
   while (temporary.size > 50) {
@@ -87,14 +92,19 @@ export function getPage(id: string): WebPageView | null {
   return row ? toView(row) : null
 }
 /** 恢复旧引用/发送给模型前按当前策略检查两端地址；用户查看快照的合同不变。 */
-export function assertPageReadable(id: string): void {
+export function assertPageReadable(id: string, allowCloud = false): void {
   const memory = id.startsWith('tmp-') ? temporary.get(id) : undefined
   const snapshot = id.startsWith('tmp-')
-    ? memory && { url: memory.page.url, finalUrl: memory.finalUrl }
-    : getDb().select({ url: webPages.url, finalUrl: webPages.finalUrl }).from(webPages).where(eq(webPages.id, id)).get()
+    ? memory && { url: memory.page.url, finalUrl: memory.finalUrl, cloud: !!memory.page.webOrigin }
+    : (() => {
+        const row = getDb().select().from(webPages).where(eq(webPages.id, id)).get()
+        return row && { ...row, cloud: row.provider === 'deepseek' }
+      })()
   if (!snapshot) return
   assertReadableUrl(snapshot.url)
-  assertReadableUrl(snapshot.finalUrl)
+  if (snapshot.cloud && !allowCloud) throw new ReadError('scope')
+  if (snapshot.finalUrl) assertReadableUrl(snapshot.finalUrl)
+  else if (!snapshot.cloud) throw new ReadError('invalid')
 }
 const escapeHtml = (text: string): string =>
   text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
@@ -110,7 +120,7 @@ export async function savePage(id: string): Promise<{ sourceId: string }> {
       .map((text) => '<p>' + escapeHtml(text).replace(/\n/g, '<br>') + '</p>')
       .join('') +
     '</body></html>'
-  const source = await saveWebPage({ url: page.url, title: page.title, html })
+  const source = await saveWebPage({ url: page.url, title: page.title, html, webOrigin: page.webOrigin })
   return { sourceId: source.id }
 }
 const PASSAGE_TARGET = 400,
@@ -170,10 +180,14 @@ function withAbort<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
 function persist(snapshot: Snapshot): WebPageView {
   const db = getDb()
   return db.transaction(() => {
-    const condition = and(eq(webPages.url, snapshot.url), eq(webPages.textHash, snapshot.textHash))
+    const condition = and(
+      eq(webPages.url, snapshot.url),
+      eq(webPages.textHash, snapshot.textHash),
+      eq(webPages.provider, snapshot.provider)
+    )
     const existing = db.select().from(webPages).where(condition).get()
     if (existing) {
-      assertReadableUrl(existing.finalUrl)
+      if (existing.finalUrl) assertReadableUrl(existing.finalUrl)
       db.update(webPages).set({ fetchedAt: snapshot.fetchedAt }).where(eq(webPages.id, existing.id)).run()
       return toView({ ...existing, fetchedAt: snapshot.fetchedAt })
     }
@@ -239,14 +253,43 @@ export async function readUrl(value: string, opts: ReadOptions = {}): Promise<Re
   validate(url)
   const start = Date.now(),
     db = getDb()
+  if (opts.provider === 'deepseek') {
+    const result = await readDeepSeekPage(url, {
+      signal: opts.signal,
+      guard: () => {
+        checkBudget()
+        validate(url)
+      }
+    })
+    validate(url)
+    const snapshot: Snapshot = {
+      url,
+      finalUrl: null,
+      title: result.title,
+      siteName: null,
+      publishedAt: null,
+      fetchedAt: Date.now(),
+      method: 'fetch',
+      provider: 'deepseek',
+      truncated: result.truncated,
+      lang: null,
+      text: result.text,
+      textHash: createHash('sha256').update(result.text).digest('hex')
+    }
+    const page = opts.incognito ? remember(toView({ ...snapshot, id: '' }), null) : persist(snapshot)
+    return { page, passages: passages(page.text) }
+  }
   const cached = db
     .select()
     .from(webPages)
-    .where(and(eq(webPages.url, url), gte(webPages.fetchedAt, start - 86400000), lte(webPages.fetchedAt, start)))
+    .where(
+      and(eq(webPages.url, url), eq(webPages.provider, 'local'), gte(webPages.fetchedAt, start - 86400000), lte(webPages.fetchedAt, start))
+    )
     .orderBy(desc(webPages.fetchedAt))
     .limit(1)
     .get()
   if (cached) {
+    if (!cached.finalUrl) throw new ReadError('invalid')
     validate(cached.finalUrl)
     const page = opts.incognito ? remember(toView(cached), cached.finalUrl) : toView(cached)
     recordCall('reader', cached.method, true, true, start)
@@ -349,6 +392,8 @@ export async function readUrl(value: string, opts: ReadOptions = {}): Promise<Re
       publishedAt: readable.publishedAt,
       fetchedAt: Date.now(),
       method: kind,
+      provider: 'local',
+      truncated: readable.text.length > 60000,
       lang: readable.lang,
       text,
       textHash: createHash('sha256').update(text).digest('hex')

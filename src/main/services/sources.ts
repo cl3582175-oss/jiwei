@@ -54,6 +54,7 @@ function query(conds: SQL[]): Source[] {
     id: s.id,
     title: s.title,
     kind: s.kind as SourceKind,
+    ...(s.webOrigin ? { webOrigin: s.webOrigin } : {}),
     assetUrl: s.kind === 'recording' ? (recordingAudio(s.id) ? `jiwei://recording/${s.id}` : null) : a ? assetUrl(a.id, a.ext) : null,
     recordingScene: s.kind === 'recording' ? recordingForSource(s.id)?.scene : undefined,
     originalName: s.originalName,
@@ -185,18 +186,22 @@ export async function importDialog(win: BrowserWindow | null, categoryId?: strin
  * 内置浏览器：把正在看的网页存为资料（v0.6.0）。直接使用网页中已加载的内容（登录后才能看的页面也能存），
  * 同一网址复用已有资料；内容有变化时更新快照，重新分段（片段 ID 按内容沿用，批注与引用不失效）。
  */
-export async function saveWebPage(input: { url: string; title: string; html: string }, valid?: () => boolean): Promise<Source> {
+export async function saveWebPage(
+  input: { url: string; title: string; html: string; webOrigin?: import('@shared/retrieval').WebOrigin },
+  valid?: () => boolean
+): Promise<Source> {
   const db = getDb()
   const ref = await importBytes('snapshot.html', 'text/html', new TextEncoder().encode(input.html))
   if (valid && !valid()) throw new Error('Page changed')
   const now = Date.now()
-  const existing = db
+  const candidates = db
     .select()
     .from(sources)
     .where(and(eq(sources.url, input.url), eq(sources.kind, 'web'), eq(sources.space, 'library'), isNull(sources.deletedAt)))
-    .get()
+    .all()
+  const existing = candidates.find((s) => (s.webOrigin?.provider ?? 'local') === (input.webOrigin?.provider ?? 'local'))
   if (existing) {
-    const set: Partial<typeof sources.$inferInsert> = { accessedAt: now }
+    const set: Partial<typeof sources.$inferInsert> = { accessedAt: now, webOrigin: input.webOrigin ?? null }
     if (existing.assetId !== ref.id) {
       set.assetId = ref.id
       set.updatedAt = now
@@ -213,6 +218,7 @@ export async function saveWebPage(input: { url: string; title: string; html: str
       id,
       title: input.title.trim().slice(0, 500) || new URL(input.url).hostname,
       kind: 'web',
+      webOrigin: input.webOrigin ?? null,
       url: input.url,
       assetId: ref.id,
       accessedAt: now,
