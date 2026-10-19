@@ -564,7 +564,7 @@ test('opened private project files reach only their reader conversation and revo
         conversationId: conversation.id
       })
     ).not.toBeNull()
-    await panel.getByRole('button', { name: /^不附带：当前项目文件/ }).click()
+    await panel.getByRole('button', { name: /^不附带：当前项目文件(?: ·|$)/ }).click()
     await expect
       .poll(() =>
         page.evaluate(({ id, conversationId }) => window.jiwei.segments.get(id, conversationId), {
@@ -578,7 +578,7 @@ test('opened private project files reach only their reader conversation and revo
     await panel.getByRole('textbox').last().press('Enter')
     await finish(page, conversation.id, 2)
     expect(JSON.stringify(model.requests.slice(offStart))).not.toContain(marker)
-    await panel.getByRole('button', { name: /^恢复附带：当前项目文件/ }).click()
+    await panel.getByRole('button', { name: /^恢复附带：当前项目文件(?: ·|$)/ }).click()
     await panel.getByRole('textbox').last().fill('再次读取当前打开文件。')
     await panel.getByRole('textbox').last().press('Enter')
     await finish(page, conversation.id, 3)
@@ -593,7 +593,7 @@ test('opened private project files reach only their reader conversation and revo
     await panel.getByRole('textbox').last().fill('准备中撤销文件上下文。')
     await panel.getByRole('textbox').last().press('Enter')
     await readerPreparationEntered(app)
-    await panel.getByRole('button', { name: /^不附带：当前项目文件/ }).click()
+    await panel.getByRole('button', { name: /^不附带：当前项目文件(?: ·|$)/ }).click()
     await releaseReaderPreparation(app)
     await expect(panel.getByRole('button', { name: '发送', exact: true })).toHaveAttribute('aria-busy', 'false')
     expect(model.requests.length).toBe(pendingStart)
@@ -603,7 +603,7 @@ test('opened private project files reach only their reader conversation and revo
         conversationId: conversation.id
       })
     ).toBeNull()
-    await panel.getByRole('button', { name: /^恢复附带：当前项目文件/ }).click()
+    await panel.getByRole('button', { name: /^恢复附带：当前项目文件(?: ·|$)/ }).click()
     await panel.getByRole('textbox').last().fill('恢复后读取当前文件。')
     await panel.getByRole('textbox').last().press('Enter')
     await finish(page, conversation.id, 4)

@@ -123,6 +123,7 @@ const en: Messages = {
     noProjects: 'Create a project to organize related chats',
     noConversations: 'No conversations in this project yet',
     conversations: 'Conversations',
+    expandConversations: 'Show all chats',
     noMemories: 'No matching memories in this project',
     search: 'Search conversations',
     searchHint: 'Search conversation titles and messages',

@@ -1,4 +1,4 @@
-import { useState, type KeyboardEvent } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ChevronDown, Folder, FolderPlus, MoreHorizontal, Plus, Search, SquarePen } from 'lucide-react'
 import type { ChatProject } from '@shared/chatProjects'
@@ -22,17 +22,38 @@ export function startProjectChat(id: string): void {
 
 function ProjectRow({
   project,
-  current,
+  active,
+  conversations,
+  expanded,
+  expand,
+  loading,
+  error,
+  retry,
   actions,
   projects
 }: {
   project: ChatProject
-  current?: Conversation
+  active: boolean
+  conversations: Conversation[]
+  expanded: boolean
+  expand: () => void
+  loading: boolean
+  error: boolean
+  retry: () => void
   actions: ReturnType<typeof useProjectActions>
   projects: ChatProject[]
 }) {
   const { t } = useTranslation()
-  const active = useApp((s) => s.chatProjectId === project.id || s.chatNewProjectId === project.id) || !!current
+  const listRef = useRef<HTMLDivElement>(null)
+  const focusExpanded = useRef(false)
+  const listId = `sidebar-project-conversations-${project.id}`
+  const visible = expanded ? conversations : conversations.slice(0, 5)
+  useEffect(() => {
+    if (!expanded || !focusExpanded.current) return
+    focusExpanded.current = false
+    const rows = listRef.current?.querySelectorAll<HTMLButtonElement>('[data-sidebar-row]')
+    ;(rows?.[5] ?? rows?.[0])?.focus()
+  }, [expanded])
   return (
     <div data-project-id={project.id}>
       <div
@@ -86,7 +107,47 @@ function ProjectRow({
           </MenuContent>
         </Menu>
       </div>
-      {current && <ConversationRow compact conversation={current} projects={projects} createProject={actions.create} />}
+      {active && (
+        <div id={listId} ref={listRef}>
+          {loading ? (
+            <p role="status" className="ml-5 px-3 py-2 text-xs text-subtle">
+              {t('projects.loading')}
+            </p>
+          ) : error ? (
+            <div className="ml-5 px-3 py-2 text-xs text-subtle">
+              <p role="alert">{t('projects.loadFailed')}</p>
+              <button
+                type="button"
+                data-sidebar-row
+                onClick={retry}
+                className="mt-1 rounded hover:text-fg focus-visible:ring-2 focus-visible:ring-accent/50"
+              >
+                {t('projects.retry')}
+              </button>
+            </div>
+          ) : conversations.length === 0 ? (
+            <p className="ml-5 px-3 py-2 text-xs text-subtle">{t('projects.noConversations')}</p>
+          ) : null}
+          {visible.map((conversation) => (
+            <ConversationRow key={conversation.id} compact conversation={conversation} projects={projects} createProject={actions.create} />
+          ))}
+          {!loading && !error && !expanded && conversations.length > 5 && (
+            <button
+              type="button"
+              data-sidebar-row
+              aria-expanded={expanded}
+              aria-controls={listId}
+              onClick={() => {
+                focusExpanded.current = true
+                expand()
+              }}
+              className="ml-5 rounded-lg px-3 py-2 text-xs text-subtle outline-none hover:text-fg focus-visible:ring-2 focus-visible:ring-accent/50"
+            >
+              {t('projects.expandConversations')}
+            </button>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -94,13 +155,19 @@ function ProjectRow({
 export function ChatSidebar() {
   const { t } = useTranslation()
   const conversationId = useApp((s) => s.conversationId)
-  const { data: list = [] } = useConversations()
+  const chatProjectId = useApp((s) => s.chatProjectId)
+  const chatNewProjectId = useApp((s) => s.chatNewProjectId)
+  const { data: list = [], isPending: loadingConversations, isError: conversationsError, refetch } = useConversations()
   const { data: projects = [], isError } = useChatProjects()
   const actions = useProjectActions()
   const [collapsed, setCollapsed] = useState(false)
   const [search, setSearch] = useState(false)
+  const [expandedProjects, setExpandedProjects] = useState(() => new Set<string>())
   const conversations = list.filter((c) => c.kind === 'chat' || c.kind === 'workspace')
   const current = conversations.find((c) => c.id === conversationId)
+  const activeProjectId = chatProjectId ?? chatNewProjectId ?? current?.projectId
+  // Filtering preserves the main process's message-activity order, including pinned chats.
+  const projectConversations = conversations.filter((c) => c.projectId === activeProjectId)
   const pinned = conversations.filter((c) => c.pinned)
   const pinnedProjects = projects.filter((p) => p.pinned)
   const recent = conversations.filter((c) => !c.projectId && !c.pinned)
@@ -108,7 +175,13 @@ export function ChatSidebar() {
     <ProjectRow
       key={project.id}
       project={project}
-      current={current?.projectId === project.id ? current : undefined}
+      active={activeProjectId === project.id}
+      conversations={activeProjectId === project.id ? projectConversations : []}
+      expanded={expandedProjects.has(project.id)}
+      expand={() => setExpandedProjects((previous) => new Set(previous).add(project.id))}
+      loading={loadingConversations}
+      error={conversationsError}
+      retry={() => void refetch()}
       projects={projects}
       actions={actions}
     />

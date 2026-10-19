@@ -117,6 +117,7 @@ const zhCN = {
     noProjects: '创建项目，整理相关对话',
     noConversations: '项目中还没有对话',
     conversations: '对话',
+    expandConversations: '展开显示',
     noMemories: '此项目暂无符合条件的记忆',
     search: '搜索对话',
     searchHint: '搜索对话标题和消息内容',

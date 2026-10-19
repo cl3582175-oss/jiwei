@@ -1,6 +1,6 @@
 import { navTo } from './fixtures/nav'
 import { attachmentModel, textOf } from './fixtures/attachment-model'
-import { test, expect } from '@playwright/test'
+import { test, expect, type ElectronApplication } from '@playwright/test'
 import { isolatedElectron as electron } from './fixtures/isolateElectron'
 import { mkdtempSync, writeFileSync, readFileSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -978,5 +978,289 @@ test('P5 project URL runs the existing fetch job privately and is readable at sc
     await app.close()
     await new Promise<void>((resolve) => model.server.close(() => resolve()))
     await new Promise<void>((resolve) => website.close(() => resolve()))
+  }
+})
+
+// These regressions exercise the real sidebar/IPC/history against an isolated SQLite vault.
+async function projectSidebarFixture() {
+  const app = await electron.launch({
+    args: ['.', '--use-mock-keychain', `--user-data-dir=${mkdtempSync(join(tmpdir(), 'jiwei-sidebar-five-'))}`],
+    env: { ...process.env, JIWEI_LANG: 'zh-CN', JIWEI_SKIP_ONBOARDING: '1', JIWEI_MEMORY_DELAY_MS: '3600000' }
+  })
+  try {
+    const page = await app.firstWindow()
+    await page.waitForSelector('nav')
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1440, 950))
+    const ids = await page.evaluate(async () => {
+      const ids: Record<string, string> = {}
+      for (const name of ['empty', 'one', 'five', 'seven'])
+        ids[name] = (await window.jiwei.chatProjects.create({ name: `侧栏 ${name}`, libraryScope: 'none' })).id
+      return ids
+    })
+    await app.evaluate(({ app }, ids) => {
+      const path = process.getBuiltinModule('path')
+      const load = process.getBuiltinModule('module').createRequire(path.join(app.getAppPath(), 'package.json'))
+      const Database = load('better-sqlite3') as typeof import('better-sqlite3')
+      const db = new Database(path.join(app.getPath('userData'), 'data', 'jiwei.db'))
+      try {
+        const base = Date.now() - 60_000
+        const insert = db.prepare('INSERT INTO conversations(id,title,project_id,kind,pinned,created_at,updated_at) VALUES(?,?,?,?,?,?,?)')
+        for (const [key, count] of [
+          ['one', 1],
+          ['five', 5],
+          ['seven', 7]
+        ] as const) {
+          for (let i = 1; i <= count; i++)
+            insert.run(
+              `${key}-${i}`,
+              `${key} 聊天 ${i}`,
+              ids[key],
+              key === 'seven' && i === 7 ? 'workspace' : 'chat',
+              i === 2 ? 1 : 0,
+              base + i * 1000,
+              base + i * 1000
+            )
+        }
+        db.prepare('INSERT INTO messages(id,conversation_id,role,content,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?)').run(
+          'seven-latest',
+          'seven-1',
+          'user',
+          '旧聊天收到最新消息',
+          'done',
+          base + 20_000,
+          base + 20_000
+        )
+        for (const kind of ['inline', 'feynman', 'reflection'])
+          insert.run(`excluded-${kind}`, `排除 ${kind}`, ids.seven, kind, 0, base + 30_000, base + 30_000)
+        db.prepare('INSERT INTO conversations(id,title,project_id,deleted_at,created_at,updated_at) VALUES(?,?,?,?,?,?)').run(
+          'excluded-deleted',
+          '排除已删除',
+          ids.seven,
+          base,
+          base + 30_000,
+          base + 30_000
+        )
+        insert.run('outside', '未分组聊天', null, 'chat', 0, base + 30_000, base + 30_000)
+      } finally {
+        db.close()
+      }
+    }, ids)
+    await page.reload()
+    await page.waitForSelector('nav')
+    await navTo(page, /积微助手/)
+    const sidebar = page.locator('aside').filter({ has: page.getByRole('button', { name: '搜索对话', exact: true }) })
+    const project = (name: string) => sidebar.locator(`[data-project-id="${ids[name]}"]`)
+    return { app, page, ids, sidebar, project }
+  } catch (error) {
+    await app.close()
+    throw error
+  }
+}
+
+async function sidebarDataSnapshot(app: ElectronApplication) {
+  return app.evaluate(({ app }) => {
+    const path = process.getBuiltinModule('path')
+    const load = process.getBuiltinModule('module').createRequire(path.join(app.getAppPath(), 'package.json'))
+    const Database = load('better-sqlite3') as typeof import('better-sqlite3')
+    const db = new Database(path.join(app.getPath('userData'), 'data', 'jiwei.db'), { readonly: true })
+    try {
+      return ['chat_projects', 'conversations', 'messages'].map((table) => db.prepare(`SELECT * FROM ${table} ORDER BY id`).all())
+    } finally {
+      db.close()
+    }
+  })
+}
+
+test('project sidebar latest five: counts, activity order, full expansion and independent navigation state', async ({ browserName: _browserName }, testInfo) => {
+  const { app, page, ids, sidebar, project } = await projectSidebarFixture()
+  try {
+    const before = await sidebarDataSnapshot(app)
+    const home = page.getByTestId('project-home')
+    const open = async (name: string) => {
+      await project(name).locator('[data-sidebar-row]').first().click()
+      await expect(home).toBeVisible()
+    }
+    await open('empty')
+    await expect(project('empty')).toContainText('项目中还没有对话')
+    await expect(project('empty').locator('[data-conversation-id]')).toHaveCount(0)
+    await expect(project('empty').getByRole('button', { name: '展开显示', exact: true })).toHaveCount(0)
+    await open('one')
+    await expect(project('one').locator('[data-conversation-id]')).toHaveCount(1)
+    await expect(project('one').getByRole('button', { name: '展开显示', exact: true })).toHaveCount(0)
+    await open('five')
+    await expect(project('five').locator('[data-conversation-id]')).toHaveCount(5)
+    await expect(project('five').getByRole('button', { name: '展开显示', exact: true })).toHaveCount(0)
+    await open('seven')
+    const seven = project('seven')
+    const rows = seven.locator('[data-conversation-id]')
+    await expect(rows).toHaveCount(5)
+    await expect
+      .poll(() => rows.evaluateAll((els) => els.map((el) => el.getAttribute('data-conversation-id'))))
+      .toEqual(['seven-1', 'seven-7', 'seven-6', 'seven-5', 'seven-4'])
+    await expect(home.locator('[data-conversation-id]')).toHaveCount(7)
+    await expect(project('five').locator('[data-conversation-id]')).toHaveCount(0)
+    const expand = seven.getByRole('button', { name: '展开显示', exact: true })
+    await expect(expand).toHaveAttribute('aria-expanded', 'false')
+    expect(await expand.getAttribute('aria-controls')).toBeTruthy()
+    await expand.focus()
+    await expand.press('ArrowUp')
+    await expect(rows.nth(4).locator('[data-sidebar-row]')).toBeFocused()
+    await page.keyboard.press('ArrowDown')
+    await expect(expand).toBeFocused()
+    await expand.press('Enter')
+    await expect(rows).toHaveCount(7)
+    await expect(expand).toHaveCount(0)
+    await expect(rows.nth(5).locator('[data-sidebar-row]')).toBeFocused()
+    await expect
+      .poll(() => rows.evaluateAll((els) => els.map((el) => el.getAttribute('data-conversation-id'))))
+      .toEqual(['seven-1', 'seven-7', 'seven-6', 'seven-5', 'seven-4', 'seven-3', 'seven-2'])
+    await expect(home).toBeVisible()
+    await seven.locator('[data-conversation-id="seven-3"] [data-sidebar-row]').click()
+    await expect(home).toHaveCount(0)
+    await expect(seven.locator('[data-conversation-id="seven-3"] [data-sidebar-row]')).toHaveAttribute('aria-current', 'page')
+    await expect(rows).toHaveCount(7)
+    await open('one')
+    await expect(project('one').locator('[data-conversation-id]')).toHaveCount(1)
+    await open('seven')
+    await expect(rows).toHaveCount(7)
+    const category = sidebar.getByRole('button', { name: '项目', exact: true })
+    await category.click()
+    await expect(seven).toHaveCount(0)
+    await category.click()
+    await expect(rows).toHaveCount(7)
+    expect(await sidebarDataSnapshot(app)).toEqual(before)
+    await seven.hover()
+    await seven.getByRole('button', { name: '项目菜单', exact: true }).click()
+    await page.getByRole('menuitem', { name: '置顶', exact: true }).click()
+    await expect(sidebar.getByRole('region', { name: '置顶', exact: true }).locator(`[data-project-id="${ids.seven}"]`)).toBeVisible()
+    await expect(rows).toHaveCount(7)
+    await page.mouse.move(1200, 700)
+    await page.screenshot({ path: testInfo.outputPath('project-expanded.png') })
+    await page.reload()
+    await page.waitForSelector('nav')
+    await navTo(page, /积微助手/)
+    await open('seven')
+    await expect(rows).toHaveCount(5)
+    // Opening a previously hidden old chat must not add a sixth preview row.
+    await home.locator('[data-conversation-id="seven-2"] [data-sidebar-row]').click()
+    await expect(rows).toHaveCount(5)
+    await expect(seven.locator('[data-conversation-id="seven-2"]')).toHaveCount(0)
+    await seven.getByRole('button', { name: '在此项目中新对话', exact: true }).click()
+    await expect(rows).toHaveCount(5)
+    await expect(seven.getByRole('button', { name: '展开显示', exact: true })).toBeVisible()
+  } finally {
+    await app.close()
+  }
+})
+
+test('project sidebar latest five: menu changes and new messages refresh counts across the five-chat boundary', async () => {
+  const model = await attachmentModel()
+  const { app, page, ids, project } = await projectSidebarFixture()
+  try {
+    const five = project('five')
+    await five.locator('[data-sidebar-row]').first().click()
+    const rows = five.locator('[data-conversation-id]')
+    await expect(rows).toHaveCount(5)
+    const menu = async (id: string) => {
+      const row = five.locator(`[data-conversation-id="${id}"]`)
+      await row.hover()
+      await row.getByRole('button', { name: '对话菜单', exact: true }).click()
+      return row
+    }
+    const oldest = await menu('five-1')
+    await page.getByRole('menuitem', { name: '重命名', exact: true }).click()
+    const rename = oldest.getByRole('textbox', { name: '重命名对话', exact: true })
+    await rename.fill('较早聊天改名')
+    await rename.press('Enter')
+    await expect(oldest).toContainText('较早聊天改名')
+    await menu('five-1')
+    await page.getByRole('menuitem', { name: '置顶', exact: true }).click()
+    await expect
+      .poll(() => rows.evaluateAll((els) => els.map((el) => el.getAttribute('data-conversation-id'))))
+      .toEqual(['five-5', 'five-4', 'five-3', 'five-2', 'five-1'])
+    await page.evaluate(({ id }) => window.jiwei.chat.update('one-1', { projectId: id }), { id: ids.five })
+    const expand = five.getByRole('button', { name: '展开显示', exact: true })
+    await expect(expand).toBeVisible()
+    await expect(rows).toHaveCount(5)
+    await expand.click()
+    await expect(rows).toHaveCount(6)
+    await menu('one-1')
+    await page.getByRole('menuitem', { name: '移到项目', exact: true }).hover()
+    await page.getByRole('menuitem', { name: '移出项目', exact: true }).click()
+    await expect(rows).toHaveCount(5)
+    await expect(expand).toHaveCount(0)
+    await menu('five-1')
+    await page.getByRole('menuitem', { name: '删除', exact: true }).click()
+    await page.getByRole('alertdialog').getByRole('button', { name: '删除', exact: true }).click()
+    await expect(rows).toHaveCount(4)
+    await page.evaluate(async (url) => {
+      const provider = await window.jiwei.providers.save({
+        kind: 'openai',
+        name: 'Sidebar local fixture',
+        baseUrl: url,
+        apiKey: 'test-key',
+        models: ['controlled']
+      })
+      const settings = await window.jiwei.settings.get()
+      await window.jiwei.settings.set({ ai: { ...settings.ai, chat: { providerId: provider.id, model: 'controlled' }, effort: 'off' } })
+    }, model.url)
+    const input = page.getByTestId('project-home').getByRole('textbox', { name: '在“侧栏 five”中新对话', exact: true })
+    await input.fill('新增项目聊天')
+    await input.press('Enter')
+    await expect(page.getByTestId('project-home')).toHaveCount(0)
+    await expect(rows).toHaveCount(5)
+    await expect(rows.first()).toContainText('新增项目聊天')
+    await expect.poll(async () => (await page.evaluate((id) => window.jiwei.chatProjects.conversations(id), ids.five)).length).toBe(5)
+    await page.evaluate(({ id }) => window.jiwei.chat.update('one-1', { projectId: id }), { id: ids.five })
+    // This project was explicitly expanded already: new arrivals remain visible.
+    await expect(rows).toHaveCount(6)
+    await expect(expand).toHaveCount(0)
+  } finally {
+    await app.close()
+    await new Promise<void>((resolve) => model.server.close(() => resolve()))
+  }
+})
+
+test('project sidebar latest five: loading and failed history are distinct from empty and can retry', async () => {
+  test.setTimeout(45_000)
+  const { app, page, project } = await projectSidebarFixture()
+  try {
+    await app.evaluate(({ ipcMain }) => {
+      const handlers = (ipcMain as unknown as { _invokeHandlers: Map<string, (...args: unknown[]) => unknown> })._invokeHandlers
+      const original = handlers.get('chat:conversations')!
+      let release = () => {}
+      const wait = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      const gate = {
+        release,
+        restore: () => {
+          ipcMain.removeHandler('chat:conversations')
+          ipcMain.handle('chat:conversations', original)
+        }
+      }
+      ;(globalThis as unknown as { sidebarHistoryGate: typeof gate }).sidebarHistoryGate = gate
+      ipcMain.removeHandler('chat:conversations')
+      ipcMain.handle('chat:conversations', async () => {
+        await wait
+        throw new Error('controlled history failure')
+      })
+    })
+    await page.reload()
+    await page.waitForSelector('nav')
+    await navTo(page, /积微助手/)
+    const seven = project('seven')
+    await seven.locator('[data-sidebar-row]').first().click()
+    await expect(seven.getByText('正在加载…', { exact: true })).toBeVisible()
+    await expect(seven.getByText('项目中还没有对话', { exact: true })).toHaveCount(0)
+    await app.evaluate(() => (globalThis as unknown as { sidebarHistoryGate: { release: () => void } }).sidebarHistoryGate.release())
+    await expect(seven.getByText('加载失败，请稍后重试', { exact: true })).toBeVisible({ timeout: 15_000 })
+    await expect(seven.getByText('项目中还没有对话', { exact: true })).toHaveCount(0)
+    await app.evaluate(() => (globalThis as unknown as { sidebarHistoryGate: { restore: () => void } }).sidebarHistoryGate.restore())
+    await seven.getByRole('button', { name: '重试', exact: true }).click()
+    await expect(seven.locator('[data-conversation-id]')).toHaveCount(5)
+    await expect(seven.getByRole('button', { name: '展开显示', exact: true })).toBeVisible()
+  } finally {
+    await app.close()
   }
 })
