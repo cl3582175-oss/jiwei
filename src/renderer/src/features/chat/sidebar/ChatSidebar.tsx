@@ -51,8 +51,9 @@ function ProjectRow({
   useEffect(() => {
     if (!expanded || !focusExpanded.current) return
     focusExpanded.current = false
-    const rows = listRef.current?.querySelectorAll<HTMLButtonElement>('[data-sidebar-row]')
-    ;(rows?.[5] ?? rows?.[0])?.focus()
+    const rows = listRef.current?.querySelectorAll('[data-conversation-id]')
+    const firstNewRow = rows?.[5] ?? rows?.[0]
+    firstNewRow?.querySelector<HTMLButtonElement>('[data-sidebar-row]')?.focus()
   }, [expanded])
   return (
     <div data-project-id={project.id}>

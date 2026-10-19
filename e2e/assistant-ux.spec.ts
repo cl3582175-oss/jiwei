@@ -1102,6 +1102,9 @@ test('project sidebar latest five: counts, activity order, full expansion and in
     const expand = seven.getByRole('button', { name: '展开显示', exact: true })
     await expect(expand).toHaveAttribute('aria-expanded', 'false')
     expect(await expand.getAttribute('aria-controls')).toBeTruthy()
+    // Renaming removes a row button; the first newly revealed chat must still receive focus.
+    await rows.first().locator('[data-sidebar-row]').press('F2')
+    await expect(rows.first().getByRole('textbox', { name: '重命名对话', exact: true })).toBeFocused()
     await expand.focus()
     await expand.press('ArrowUp')
     await expect(rows.nth(4).locator('[data-sidebar-row]')).toBeFocused()
