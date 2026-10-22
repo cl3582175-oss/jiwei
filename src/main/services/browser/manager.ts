@@ -18,7 +18,7 @@ import type { ReadingState } from '@shared/reading'
 //   - 内容脚本（preload/browser.ts）运行在隔离环境中：选区浮条、高亮、读取正文；网页本身拿不到任何积微接口
 //   - 敏感页面（网银、支付、邮箱、密码输入）自动关闭 AI
 
-const PARTITION = 'persist:jiwei-browser'
+export const PARTITION = 'persist:jiwei-browser'
 const HOME = 'about:blank'
 
 interface Tab {
@@ -481,6 +481,18 @@ export function dismissLogin(id: string): void {
     t.loginBlocked = null
     changed()
   }
+}
+/** 借 Chrome 登录完成后：被登录拦住的标签回到原页面，其余标签刷新以带上登录状态 */
+export function afterGoogleLogin(): void {
+  for (const t of tabs.values()) {
+    if (t.incognito || t.view.webContents.isDestroyed()) continue
+    const blocked = t.loginBlocked
+    t.loginBlocked = null
+    t.dismissedLogin = null
+    if (blocked?.reason === 'google' && /^https?:/.test(blocked.url)) void t.view.webContents.loadURL(blocked.url).catch(() => {})
+    else if (/^https?:/.test(tabUrl(t))) t.view.webContents.reload()
+  }
+  changed()
 }
 export function setExternalSite(site: string, enabled: boolean): void {
   const s = getSettings().browser ?? {},

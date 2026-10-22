@@ -324,6 +324,20 @@ export interface BrowserTab {
   externalNotice?: { site: string; url: string } | null
 }
 
+/** 借系统 Chrome 登录 Google（设计见 docs/specs/browser-google-login-via-chrome.md） */
+export interface GoogleLoginState {
+  status: 'idle' | 'waiting' | 'injecting' | 'done' | 'failed'
+  /** failed 时的原因 */
+  reason?: 'no-chrome' | 'timeout' | 'closed' | 'cancelled' | 'error'
+  message?: string
+}
+
+export interface GoogleLoginInfo {
+  /** 积微浏览器会话中是否已有 Google 登录 */
+  loggedIn: boolean
+  state: GoogleLoginState
+}
+
 export interface BrowserState {
   tabs: BrowserTab[]
   activeId: string | null
@@ -1167,6 +1181,8 @@ export interface JiweiEvents {
   'recognition:status': RecognizerStatus
   /** 内置浏览器：标签页状态 */
   'browser:state': BrowserState
+  /** 内置浏览器：借 Chrome 登录 Google 的进度 */
+  'browser:google-login': GoogleLoginState
   /** 内置浏览器：网页中选区浮条的操作 */
   'browser:action': BrowserAction
   /** 内置浏览器：打开网页时找到的相关笔记 */

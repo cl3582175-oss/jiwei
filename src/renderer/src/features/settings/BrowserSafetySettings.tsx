@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Globe } from 'lucide-react'
+import { Globe, LogIn } from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '@/lib/utils'
 import { useTranslation } from 'react-i18next'
@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/primitives'
 import { useSettings } from '@/lib/queries'
 import { safetyMessage } from './SafetyProgress'
 import { DomainSchema } from '@shared/browserSafety'
+import { useGoogleLogin } from '../browser/useGoogleLogin'
 
 export function BrowserSafetySettings() {
   const { t } = useTranslation()
@@ -16,7 +17,8 @@ export function BrowserSafetySettings() {
     [domain, setDomain] = useState(''),
     [mode, setMode] = useState<'direct' | 'proxy'>('direct'),
     [busy, setBusy] = useState(false),
-    { data: settings } = useSettings()
+    { data: settings } = useSettings(),
+    google = useGoogleLogin()
   const { data: network } = useQuery({ queryKey: ['browser-network'], queryFn: () => api.browser.networkStatus() })
   const act = async (fn: () => Promise<unknown>): Promise<void> => {
     setBusy(true)
@@ -32,6 +34,26 @@ export function BrowserSafetySettings() {
   }
   return (
     <section className="safety-ui space-y-5 py-5 text-sm" data-testid="browser-safety-settings">
+      <div className="space-y-3 border-b border-border pb-5" data-testid="google-login-settings">
+        <h3 className="flex items-center gap-2 text-base font-semibold">
+          <LogIn className="size-5 text-accent" />
+          {t('safety.browser.googleTitle')}
+          <span className="text-xs font-normal text-muted">· {t(google.loggedIn ? 'safety.browser.googleOn' : 'safety.browser.googleOff')}</span>
+        </h3>
+        <p className="leading-relaxed text-muted">{t('safety.browser.googleDesc')}</p>
+        <p className="text-xs text-muted">{t('safety.browser.googleAiNote')}</p>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="primary" onClick={google.busy ? google.cancel : google.start} disabled={google.status === 'injecting'}>
+            {t(google.busy ? 'safety.browser.googleCancel' : google.loggedIn ? 'safety.browser.googleRelogin' : 'safety.browser.googleLogin')}
+          </Button>
+          {google.loggedIn && !google.busy && (
+            <Button variant="ghost" onClick={() => void google.logout().catch((e) => toast.error(safetyMessage(e)))}>
+              {t('safety.browser.googleLogout')}
+            </Button>
+          )}
+        </div>
+        {google.busy && <p className="text-xs text-muted">{t(google.status === 'injecting' ? 'safety.browser.googleInjecting' : 'safety.browser.googleWaiting')}</p>}
+      </div>
       <h3 className="flex items-center gap-2 text-base font-semibold">
         <Globe className="size-5 text-accent" />
         {t('safety.browser.networkTitle')}

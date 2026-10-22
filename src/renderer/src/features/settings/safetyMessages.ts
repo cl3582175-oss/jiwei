@@ -136,7 +136,22 @@ export const safetyZh = {
     externalTitle: '始终用系统浏览器打开',
     externalDesc: '登录受阻时可以记住网站。在这里撤销后，网站会继续用内置浏览器打开。',
     revoke: '撤销',
-    noExternal: '还没有记住的网站。'
+    noExternal: '还没有记住的网站。',
+    googleLogin: '用 Chrome 登录 Google',
+    googleBlocked: 'Google 不允许在内置浏览器中输入账号。可以用 Chrome 登录一次，积微会把登录状态带回来。',
+    googleWaiting: '请在刚打开的 Chrome 窗口中登录 Google。登录完成后会自动回到积微。',
+    googleInjecting: '正在把登录状态带回积微……',
+    googleDone: '已登录 Google。',
+    googleCancel: '取消登录',
+    googleTitle: 'Google 账号',
+    googleDesc:
+      '在积微的浏览器里使用 Google 账号（YouTube、Google 文档，以及“使用 Google 登录”的网站）。积微会打开一个独立的 Chrome 窗口，你在里面登录；密码只在 Chrome 中输入，积微不会看到。登录后只搬运 Google 和 YouTube 的登录状态，随后自动关闭窗口并删除临时数据。',
+    googleOn: '已登录',
+    googleOff: '未登录',
+    googleRelogin: '重新登录',
+    googleLogout: '退出 Google 登录',
+    googleLoggedOut: '已退出 Google 登录。',
+    googleAiNote: 'Google 账号页和 Gmail 默认不会发送给 AI。'
   }
 }
 
@@ -278,6 +293,21 @@ export const safetyEn: typeof safetyZh = {
     externalTitle: 'Always open in system browser',
     externalDesc: 'Sites remembered when sign-in was blocked. Revoke to open them in the built-in browser again.',
     revoke: 'Revoke',
-    noExternal: 'No remembered sites.'
+    noExternal: 'No remembered sites.',
+    googleLogin: 'Sign in to Google with Chrome',
+    googleBlocked: 'Google does not allow entering an account in the built-in browser. Sign in once with Chrome and the sign-in is brought back here.',
+    googleWaiting: 'Sign in to Google in the Chrome window that just opened. You will return here automatically.',
+    googleInjecting: 'Bringing the sign-in back…',
+    googleDone: 'Signed in to Google.',
+    googleCancel: 'Cancel sign-in',
+    googleTitle: 'Google account',
+    googleDesc:
+      'Use your Google account in the built-in browser (YouTube, Google Docs, and “Sign in with Google” sites). A separate Chrome window opens for you to sign in; your password is typed only into Chrome and never seen by the app. Only the Google and YouTube sign-in is carried over, then the window closes and the temporary data is deleted.',
+    googleOn: 'Signed in',
+    googleOff: 'Not signed in',
+    googleRelogin: 'Sign in again',
+    googleLogout: 'Sign out of Google',
+    googleLoggedOut: 'Signed out of Google.',
+    googleAiNote: 'Google account pages and Gmail are never sent to AI by default.'
   }
 }

@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { Cable, Check, ExternalLink, X } from 'lucide-react'
+import { Cable, Check, ExternalLink, LogIn, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Menu, MenuContent, MenuItem, MenuLabel, MenuTrigger, Tip } from '@/components/ui/primitives'
@@ -8,10 +8,13 @@ import { api, cn } from '@/lib/utils'
 import { websiteDomain } from '@shared/browserSafety'
 import type { BrowserTab } from '@shared/types'
 import { safetyMessage } from '../settings/SafetyProgress'
+import { useGoogleLogin } from './useGoogleLogin'
 
 export function LoginSafetyBar({ tab }: { tab: BrowserTab }) {
   const { t } = useTranslation()
   const blocked = tab.loginBlocked
+  const google = useGoogleLogin()
+  const isGoogle = blocked?.reason === 'google' && !tab.incognito
   if (!blocked && !tab.externalNotice) return null
   return (
     <div
@@ -19,12 +22,26 @@ export function LoginSafetyBar({ tab }: { tab: BrowserTab }) {
       data-testid="browser-login-warning"
     >
       <p className="min-w-0 flex-[1_1_16rem] text-fg">
-        {t(blocked ? (blocked.reason === 'google' ? 'safety.browser.google' : 'safety.browser.youtube') : 'safety.browser.opened')}
+        {isGoogle && google.busy
+          ? t(google.status === 'injecting' ? 'safety.browser.googleInjecting' : 'safety.browser.googleWaiting')
+          : t(blocked ? (isGoogle ? 'safety.browser.googleBlocked' : blocked.reason === 'google' ? 'safety.browser.google' : 'safety.browser.youtube') : 'safety.browser.opened')}
       </p>
       <div className="flex flex-wrap items-center gap-1.5">
         {blocked ? (
           <>
-            <Button size="sm" variant="primary" onClick={() => void api.browser.openExternal(tab.id).catch((e) => toast.error(safetyMessage(e)))}>
+            {isGoogle && (
+              <Button
+                size="sm"
+                variant="primary"
+                disabled={google.busy && google.status === 'injecting'}
+                onClick={google.busy ? google.cancel : google.start}
+                data-testid="google-login-button"
+              >
+                <LogIn />
+                {t(google.busy ? 'safety.browser.googleCancel' : 'safety.browser.googleLogin')}
+              </Button>
+            )}
+            <Button size="sm" variant={isGoogle ? 'ghost' : 'primary'} onClick={() => void api.browser.openExternal(tab.id).catch((e) => toast.error(safetyMessage(e)))}>
               <ExternalLink />
               {t('safety.browser.openExternal')}
             </Button>

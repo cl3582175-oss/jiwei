@@ -41,6 +41,7 @@ const BUILTIN_HOSTS = [
   'mail.sina.com.cn',
   // 账户与登录
   'accounts.google.com',
+  'myaccount.google.com',
   'login.microsoftonline.com',
   'login.live.com',
   'appleid.apple.com',

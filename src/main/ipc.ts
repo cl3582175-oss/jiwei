@@ -62,6 +62,7 @@ import { writeFile } from 'fs/promises'
 import * as fullBackup from './services/fullBackup'
 import * as recordingFiles from './services/recordingFiles'
 import * as browserNetwork from './services/browser/network'
+import * as googleLogin from './services/browser/googleLogin'
 import log from 'electron-log/main'
 import { backupsDir } from './db'
 import * as notes from './services/notes'
@@ -713,6 +714,10 @@ const handlers: Handlers = {
     openExternal: (_, id) => browser.openExternalTab(id),
     externalSite: (_, site, enabled) => browser.setExternalSite(site, enabled),
     dismissLogin: (_, id) => browser.dismissLogin(id),
+    googleLoginStatus: () => googleLogin.googleLoginInfo(),
+    googleLoginStart: () => googleLogin.startGoogleLogin(),
+    googleLoginCancel: () => googleLogin.cancelGoogleLogin(),
+    googleLogout: () => googleLogin.googleLogout(),
     state: () => browser.browserState(),
     seek: (_, id, t, play) => browser.seek(id, t, play),
     playback: (_, id, play) => browser.playback(id, play),

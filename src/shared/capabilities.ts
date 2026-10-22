@@ -148,6 +148,7 @@ import type {
   Annotation,
   AnnotationWithTarget,
   BrowserState,
+  GoogleLoginInfo,
   CourseQuiz,
   SourceRecognition,
   RegionRecognition,
@@ -1111,6 +1112,10 @@ export const capabilities = {
       ]
     }),
     dismissLogin: cap<void>()({ description: '关闭登录受阻提示', params: [id('tabId')] }),
+    googleLoginStatus: cap<GoogleLoginInfo>()({ description: 'Google 登录状态', params: none }),
+    googleLoginStart: cap<void>()({ description: '用系统 Chrome 登录 Google，并把登录状态带回内置浏览器', params: none }),
+    googleLoginCancel: cap<void>()({ description: '取消 Google 登录', params: none }),
+    googleLogout: cap<void>()({ description: '退出内置浏览器中的 Google 登录', params: none }),
     state: cap<BrowserState>()({ description: '内置浏览器的标签页状态', params: none }),
     seek: cap<void>()({
       description: '网页视频跳到时间点，视频就绪后执行',
