@@ -1,6 +1,6 @@
 /* global process */
 import { readdir } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { join, resolve, normalize } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import asar from '@electron/asar'
 
@@ -17,7 +17,7 @@ const contentRules = [
 export function inspectArchive(archive) {
   const entries = asar.listPackage(archive).map((name) => name.replaceAll('\\', '/').replace(/^\//, ''))
   const findings = entries
-    .filter((name) => forbiddenEntry.test(name) && !asar.statFile(archive, name).files)
+    .filter((name) => forbiddenEntry.test(name) && !asar.statFile(archive, normalize(name)).files)
     .map((name) => ({ rule: 'private-development-file', file: name }))
   for (const required of ['package.json', 'out/main/index.js', 'out/renderer/index.html']) {
     if (!entries.includes(required)) throw new Error(`Incomplete application archive: missing ${required}`)
@@ -26,7 +26,7 @@ export function inspectArchive(archive) {
     (name) => name === 'package.json' || (name.startsWith('out/') && /\.(?:[cm]?js|json|html|css|map)$/.test(name))
   )
   for (const name of applicationFiles) {
-    const text = asar.extractFile(archive, name).toString('utf8')
+    const text = asar.extractFile(archive, normalize(name)).toString('utf8')
     for (const [rule, pattern] of contentRules) if (pattern.test(text)) findings.push({ rule, file: name })
   }
   // Report only rule names and relative entries, never the matched credential or text.
