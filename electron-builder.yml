@@ -10,10 +10,17 @@ directories:
   output: release/${version}
 files:
   - '!**/.vscode/*'
-  - '!src/*'
-  - '!docs/*'
+  - '!src/**'
+  - '!docs/**'
   - '!design/**'
   - '!.superpowers/**'
+  - '!.github/**'
+  - '!.agents/**'
+  - '!.specify/**'
+  - '!.claude/**'
+  - '!.codex/**'
+  - '!**/.env'
+  - '!**/.env.*'
   - '!e2e/**'
   - '!test-results/**'
   - '!scripts/**'
@@ -30,6 +37,8 @@ asarUnpack:
   - resources/**
   - node_modules/sqlite-vec*/**
 extraResources:
+  - from: src/renderer/src/components/ai-elements/LICENSE
+    to: third-party-notices/shadcn-ai-elements-LICENSE.txt
   - from: resources/migrations
     to: migrations
   - from: resources/profile-migrations

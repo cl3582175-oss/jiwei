@@ -119,6 +119,8 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
           WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+      - name: 检查实际打包内容不含开发资料和凭证
+        run: node scripts/release-privacy.mjs release
       - name: Windows 静默安装和启动烟测
         if: runner.os == 'Windows'
         shell: pwsh
