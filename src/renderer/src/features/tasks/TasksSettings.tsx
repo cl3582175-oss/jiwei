@@ -15,6 +15,8 @@ import { useApp } from '@/store/app'
 import { Button } from '@/components/ui/button'
 import { confirm } from '@/components/ui/confirm'
 import { NotePicker } from '../notes/NotePicker'
+import { Task } from '@/components/ai-elements/plan'
+import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ai-elements/input-group'
 
 const field =
   'mt-1 block w-full min-w-0 rounded-lg border border-border bg-surface px-2 py-2 text-sm text-fg outline-none focus:border-accent'
@@ -471,10 +473,10 @@ export function TasksSettings() {
     <div className="space-y-6 py-3" data-testid="tasks-settings">
       <p className="text-xs leading-relaxed text-muted">{t('tasks.intro')}</p>
       {/* 一句话创建 */}
-      <div className="rounded-2xl border border-border bg-surface p-1.5 shadow-[var(--shadow-1)] focus-within:border-accent/60">
-        <div className="flex items-center gap-2">
+      <InputGroup>
+        <InputGroupAddon align="block-start">
           <Sparkles className="ml-2 size-4 shrink-0 text-accent" />
-          <input
+          <InputGroupInput
             className="h-9 min-w-0 flex-1 bg-transparent text-sm text-fg outline-none placeholder:text-subtle"
             aria-label={t('tasks.describe')}
             placeholder={t('tasks.describePh')}
@@ -489,19 +491,21 @@ export function TasksSettings() {
             {parsing && <Loader2 className="animate-spin" />}
             {parsing ? t('tasks.parsing') : t('tasks.parse')}
           </Button>
-        </div>
-      </div>
+        </InputGroupAddon>
+      </InputGroup>
       <div>
         <p className="mb-2 text-xs text-muted">{t('tasks.fromRecipe')}</p>
         <div className="flex flex-wrap gap-1.5">
           {recipes.map((r) => (
             <span key={r.id} className="inline-flex items-center gap-1">
-              <button
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={() => setEditing({ ...r.task })}
                 className="rounded-full border border-border bg-surface px-3 py-1 text-xs text-fg transition-colors hover:border-accent/50 hover:bg-accent-soft/40"
               >
                 {i18n.language.startsWith('zh') ? r.name.zh : r.name.en}
-              </button>
+              </Button>
               <PluginSourceLabel pluginId={r.pluginId} />
             </span>
           ))}
@@ -535,116 +539,119 @@ export function TasksSettings() {
           {list.map((task) => {
             const status = task.lastResult?.status
             return (
-              <article
-                key={task.id}
-                className={cn('rounded-xl border border-border/80 bg-surface px-4 py-3', !task.enabled && 'opacity-70')}
-                data-task-id={task.id}
-              >
-                <div className="flex items-start gap-3">
-                  <PluginSourceLabel pluginId={task.pluginId} />
-                  <span
-                    className={cn(
-                      'mt-1.5 size-2 shrink-0 rounded-full',
-                      !task.enabled
-                        ? 'bg-subtle'
-                        : status === 'error' || status === 'budget'
-                          ? 'bg-danger'
-                          : status === 'running'
-                            ? 'animate-pulse bg-accent'
-                            : 'bg-accent'
-                    )}
-                  />
-                  <div className="min-w-0 flex-1">
-                    <button
-                      className="block max-w-full truncate text-left text-sm font-medium text-fg hover:text-accent"
-                      onClick={() => setSelected(selected === task.id ? null : task.id)}
-                    >
-                      {task.name}
-                    </button>
-                    <p className="mt-0.5 text-xs text-muted">
-                      {triggerLabel(task.trigger, t)}
-                      {task.enabled && task.nextRunAt
-                        ? ` · ${t('tasks.next')} ${new Date(task.nextRunAt).toLocaleString(i18n.language, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`
-                        : ''}
-                      {` · ${t('tasks.month')} ${money.format(task.monthCost)}`}
-                    </p>
-                    {task.lastResult?.summary && (
-                      <p className="mt-1.5 line-clamp-2 text-xs leading-relaxed break-words text-fg/85">
-                        <span className="text-subtle">{t(`tasks.status.${task.lastResult.status}`)} · </span>
-                        {task.lastResult.summary}
+              <Task key={task.id} asChild state={status === 'error' || status === 'budget' ? 'failed' : status}>
+                <article
+                  className={cn('rounded-xl border border-border/80 bg-surface px-4 py-3', !task.enabled && 'opacity-70')}
+                  data-task-id={task.id}
+                >
+                  <div className="flex items-start gap-3">
+                    <PluginSourceLabel pluginId={task.pluginId} />
+                    <span
+                      className={cn(
+                        'mt-1.5 size-2 shrink-0 rounded-full',
+                        !task.enabled
+                          ? 'bg-subtle'
+                          : status === 'error' || status === 'budget'
+                            ? 'bg-danger'
+                            : status === 'running'
+                              ? 'animate-pulse bg-accent'
+                              : 'bg-accent'
+                      )}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <button
+                        className="block max-w-full truncate text-left text-sm font-medium text-fg hover:text-accent"
+                        onClick={() => setSelected(selected === task.id ? null : task.id)}
+                      >
+                        {task.name}
+                      </button>
+                      <p className="mt-0.5 text-xs text-muted">
+                        {triggerLabel(task.trigger, t)}
+                        {task.enabled && task.nextRunAt
+                          ? ` · ${t('tasks.next')} ${new Date(task.nextRunAt).toLocaleString(i18n.language, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`
+                          : ''}
+                        {` · ${t('tasks.month')} ${money.format(task.monthCost)}`}
                       </p>
-                    )}
-                  </div>
-                  <Switch checked={task.enabled} aria-label={task.name} onCheckedChange={() => void toggle(task)} />
-                </div>
-                <div className="mt-2 flex flex-wrap items-center gap-1 pl-5">
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    disabled={!task.enabled || settings?.tasks.paused || status === 'running'}
-                    onClick={() =>
-                      void api.tasks
-                        .run(task.id)
-                        .then(() => setSelected(task.id))
-                        .catch((e) => toast.error(String(e)))
-                    }
-                  >
-                    <Play />
-                    {t('tasks.run')}
-                  </Button>
-                  <Button size="sm" variant="ghost" onClick={() => setEditing(task)}>
-                    <Pencil />
-                    {t('tasks.edit')}
-                  </Button>
-                  <Button size="sm" variant="ghost" onClick={() => setSelected(selected === task.id ? null : task.id)}>
-                    <History />
-                    {t('tasks.records')}
-                  </Button>
-                  <Tip label={t('common.delete')}>
-                    <Button
-                      size="icon-sm"
-                      variant="ghost"
-                      className="ml-auto"
-                      aria-label={t('common.delete')}
-                      onClick={() => void remove(task)}
-                    >
-                      <Trash2 />
-                    </Button>
-                  </Tip>
-                </div>
-                {selected === task.id && (
-                  <ol className="mt-3 space-y-2.5 border-t border-border/70 pt-3" data-testid="task-runs">
-                    {runs.length === 0 && <li className="text-xs text-muted">{t('tasks.noRuns')}</li>}
-                    {runs.map((r) => (
-                      <li key={r.id} className="text-xs text-fg">
-                        <p className="text-muted tabular-nums">
-                          {new Date(r.startedAt).toLocaleString(i18n.language)} · {r.delayed && `${t('tasks.delayed')} · `}
-                          {t(`tasks.status.${r.status}`)} · {money.format(r.cost)}
+                      {task.lastResult?.summary && (
+                        <p className="mt-1.5 line-clamp-2 text-xs leading-relaxed break-words text-fg/85">
+                          <span className="text-subtle">{t(`tasks.status.${task.lastResult.status}`)} · </span>
+                          {task.lastResult.summary}
                         </p>
-                        {r.summary && <p className="mt-1 leading-relaxed break-words">{r.summary}</p>}
-                        {r.error && <p className="mt-1 text-danger">{r.error}</p>}
-                        {r.resultRefs.length > 0 && (
-                          <div className="mt-1.5 flex flex-wrap gap-2">
-                            {r.resultRefs.map((ref, i) => (
-                              <button
-                                key={i}
-                                className="text-accent hover:underline"
-                                onClick={() => {
-                                  useApp.getState().setSettingsOpen(false)
-                                  if (ref.type === 'proposal' || ref.type === 'note') useApp.getState().openNote(ref.noteId ?? ref.id)
-                                  else useApp.getState().goNav(ref.type === 'inbox' ? 'inbox' : 'today')
-                                }}
-                              >
-                                {t(`tasks.output.${ref.type === 'proposal' ? 'note' : ref.type === 'action' ? 'actions' : ref.type}`)}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </li>
-                    ))}
-                  </ol>
-                )}
-              </article>
+                      )}
+                    </div>
+                    <Switch checked={task.enabled} aria-label={task.name} onCheckedChange={() => void toggle(task)} />
+                  </div>
+                  <div className="mt-2 flex flex-wrap items-center gap-1 pl-5">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={!task.enabled || settings?.tasks.paused || status === 'running'}
+                      onClick={() =>
+                        void api.tasks
+                          .run(task.id)
+                          .then(() => setSelected(task.id))
+                          .catch((e) => toast.error(String(e)))
+                      }
+                    >
+                      <Play />
+                      {t('tasks.run')}
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => setEditing(task)}>
+                      <Pencil />
+                      {t('tasks.edit')}
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => setSelected(selected === task.id ? null : task.id)}>
+                      <History />
+                      {t('tasks.records')}
+                    </Button>
+                    <Tip label={t('common.delete')}>
+                      <Button
+                        size="icon-sm"
+                        variant="ghost"
+                        className="ml-auto"
+                        aria-label={t('common.delete')}
+                        onClick={() => void remove(task)}
+                      >
+                        <Trash2 />
+                      </Button>
+                    </Tip>
+                  </div>
+                  {selected === task.id && (
+                    <ol className="mt-3 space-y-2.5 border-t border-border/70 pt-3" data-testid="task-runs">
+                      {runs.length === 0 && <li className="text-xs text-muted">{t('tasks.noRuns')}</li>}
+                      {runs.map((r) => (
+                        <Task key={r.id} asChild state={r.status === 'error' ? 'failed' : r.status}>
+                          <li className="text-xs text-fg">
+                            <p className="text-muted tabular-nums">
+                              {new Date(r.startedAt).toLocaleString(i18n.language)} · {r.delayed && `${t('tasks.delayed')} · `}
+                              {t(`tasks.status.${r.status}`)} · {money.format(r.cost)}
+                            </p>
+                            {r.summary && <p className="mt-1 leading-relaxed break-words">{r.summary}</p>}
+                            {r.error && <p className="mt-1 text-danger">{r.error}</p>}
+                            {r.resultRefs.length > 0 && (
+                              <div className="mt-1.5 flex flex-wrap gap-2">
+                                {r.resultRefs.map((ref, i) => (
+                                  <button
+                                    key={i}
+                                    className="text-accent hover:underline"
+                                    onClick={() => {
+                                      useApp.getState().setSettingsOpen(false)
+                                      if (ref.type === 'proposal' || ref.type === 'note') useApp.getState().openNote(ref.noteId ?? ref.id)
+                                      else useApp.getState().goNav(ref.type === 'inbox' ? 'inbox' : 'today')
+                                    }}
+                                  >
+                                    {t(`tasks.output.${ref.type === 'proposal' ? 'note' : ref.type === 'action' ? 'actions' : ref.type}`)}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </li>
+                        </Task>
+                      ))}
+                    </ol>
+                  )}
+                </article>
+              </Task>
             )
           })}
         </div>

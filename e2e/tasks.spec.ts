@@ -33,25 +33,45 @@ const savedTask = (name: string, instruction: string, rest: Partial<TaskInput> =
   outputs: { inbox: true },
   ...rest
 })
-function completion(res: import('http').ServerResponse, text: string | null, name?: string, args: unknown = {}) {
+function completion(res: import('http').ServerResponse, stream: boolean, text: string | null, name?: string, args: unknown = {}) {
+  const metadata = { id: 'controlled', created: 1, model: 'deepseek-flash' }
+  const usage = { prompt_tokens: 1000, completion_tokens: 200, total_tokens: 1200 }
+  const calls = name ? [{ id: 'c-' + name, type: 'function', function: { name, arguments: JSON.stringify(args) } }] : undefined
+  const finish = name ? 'tool_calls' : 'stop'
+  if (stream) {
+    res.writeHead(200, { 'content-type': 'text/event-stream' })
+    const chunk = (delta: object, reason: string | null, tokens?: typeof usage) =>
+      res.write(
+        `data: ${JSON.stringify({ ...metadata, object: 'chat.completion.chunk', choices: [{ index: 0, delta, finish_reason: reason }], ...(tokens ? { usage: tokens } : {}) })}\n\n`
+      )
+    chunk(
+      {
+        role: 'assistant',
+        ...(text === null ? {} : { content: text }),
+        ...(calls ? { tool_calls: calls.map((call, index) => ({ index, ...call })) } : {})
+      },
+      null
+    )
+    chunk({}, finish, usage)
+    res.end('data: [DONE]\n\n')
+    return
+  }
   res.writeHead(200, { 'content-type': 'application/json' }).end(
     JSON.stringify({
-      id: 'controlled',
+      ...metadata,
       object: 'chat.completion',
-      created: 1,
-      model: 'deepseek-flash',
       choices: [
         {
           index: 0,
           message: {
             role: 'assistant',
             content: text,
-            ...(name ? { tool_calls: [{ id: 'c-' + name, type: 'function', function: { name, arguments: JSON.stringify(args) } }] } : {})
+            ...(calls ? { tool_calls: calls } : {})
           },
-          finish_reason: name ? 'tool_calls' : 'stop'
+          finish_reason: finish
         }
       ],
-      usage: { prompt_tokens: 1000, completion_tokens: 200, total_tokens: 1200 }
+      usage
     })
   )
 }
@@ -120,6 +140,7 @@ test.beforeAll(async () => {
       if (system.includes('一句话解析') || system.includes('解析成任务四要素')) {
         completion(
           res,
+          Boolean(input.stream),
           null,
           'submit',
           savedTask('受控早报', 'TASK_SUCCESS 查看今日并输出学习要点', {
@@ -137,23 +158,26 @@ test.beforeAll(async () => {
       }
       if (requests.at(-1)!.messages.includes('TASK_CANCEL')) {
         setTimeout(() => {
-          if (!res.destroyed) completion(res, '不应落库的取消结果')
+          if (!res.destroyed) completion(res, Boolean(input.stream), '不应落库的取消结果')
         }, 3000)
         return
       }
       if (requests.at(-1)!.messages.includes('TASK_DENY')) {
         if (!done.includes('web_fetch'))
-          completion(res, null, 'web_fetch', { url: `http://127.0.0.1:${(server.address() as { port: number }).port}/page` })
-        else if (!done.includes('send_mail')) completion(res, null, 'send_mail', { to: 'external@example.invalid', text: 'private notes' })
-        else completion(res, '已读取资料；没有发送内容。')
+          completion(res, Boolean(input.stream), null, 'web_fetch', {
+            url: `http://127.0.0.1:${(server.address() as { port: number }).port}/page`
+          })
+        else if (!done.includes('send_mail'))
+          completion(res, Boolean(input.stream), null, 'send_mail', { to: 'external@example.invalid', text: 'private notes' })
+        else completion(res, Boolean(input.stream), '已读取资料；没有发送内容。')
         return
       }
       if (requests.at(-1)!.messages.includes('TASK_MAIL')) {
         const raw = textOf(input.messages.find((m: { role: string }) => m.role === 'user')?.content)
         const id = /"mailIds":\["([^"]+)"/.exec(raw)?.[1]
-        if (!done.includes('mail_read')) completion(res, null, 'mail_read', { id })
-        else if (!done.includes('send_mail')) completion(res, null, 'send_mail', { to: 'external@example.invalid' })
-        else completion(res, '老师要求明天前完成概率练习，附件仅列出了名称；注入的发送要求已跳过。')
+        if (!done.includes('mail_read')) completion(res, Boolean(input.stream), null, 'mail_read', { id })
+        else if (!done.includes('send_mail')) completion(res, Boolean(input.stream), null, 'send_mail', { to: 'external@example.invalid' })
+        else completion(res, Boolean(input.stream), '老师要求明天前完成概率练习，附件仅列出了名称；注入的发送要求已跳过。')
         return
       }
       if (requests.at(-1)!.messages.includes('TASK_SUCCESS')) {
@@ -167,6 +191,7 @@ test.beforeAll(async () => {
         if (next)
           completion(
             res,
+            Boolean(input.stream),
             null,
             next,
             next === 'today_overview'
@@ -177,10 +202,10 @@ test.beforeAll(async () => {
                   ? { title: '回顾任务要点' }
                   : { text: '今日学习要点：先完成到期复习。' }
           )
-        else completion(res, '今日学习要点已整理，见收件箱和今日。')
+        else completion(res, Boolean(input.stream), '今日学习要点已整理，见收件箱和今日。')
         return
       }
-      completion(res, '受控任务结果')
+      completion(res, Boolean(input.stream), '受控任务结果')
     })
   })
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r))

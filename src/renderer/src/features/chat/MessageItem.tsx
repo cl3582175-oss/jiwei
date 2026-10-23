@@ -9,7 +9,6 @@ import { useTranslation } from 'react-i18next'
 import { Streamdown } from 'streamdown'
 import {
   Brain,
-  ChevronRight,
   NotebookText,
   FileText,
   CircleAlert,
@@ -39,6 +38,12 @@ import { annotateUiFences, uiAnswerText, mapOutsideFences } from '@shared/ui/fen
 import type { UiEvent } from '@shared/ui/events'
 import { MermaidFence } from './MermaidFence'
 import { locatorFields } from '@shared/context'
+import { Message, MessageContent, MessageFooter } from '@/components/ai-elements/message'
+import { Bubble, BubbleContent } from '@/components/ai-elements/bubble'
+import { Marker, MarkerContent, MarkerIcon } from '@/components/ai-elements/marker'
+import { Trace, TraceContent, TraceTrigger, TraceLine } from '@/components/ai-elements/trace'
+import { InlineCitation, Source } from '@/components/ai-elements/inline-citation'
+import { ContextUsage } from '@/components/ai-elements/context'
 
 const plainPlugins = { renderers: [{ language: 'mermaid', component: MermaidFence }] }
 const uiPlugins = { renderers: [...plainPlugins.renderers, { language: 'jiwei-ui', component: UiFence }] }
@@ -79,19 +84,16 @@ function CiteChip({ n, citation, conversationId }: { n: number; citation?: Citat
   const web = citation.parentType === 'web'
   const site = web ? citationSite(citation) : ''
   return (
-    <Tip
-      label={web ? [site, citation.title].filter(Boolean).join(' · ') : `${citation.title} · ${citation.snippet.slice(0, 60)}…`}
-      side="top"
+    <InlineCitation
+      title={web ? [site, citation.title].filter(Boolean).join(' · ') : citation.title}
+      preview={citation.snippet}
+      onClick={() => openCitation(citation, conversationId)}
+      className={cn('cite-chip', web && 'cite-chip-web')}
+      aria-label={`[${n}] ${citation.title}`}
+      data-testid={web ? 'web-cite-chip' : undefined}
     >
-      <button
-        onClick={() => openCitation(citation, conversationId)}
-        className={cn('cite-chip', web && 'cite-chip-web')}
-        aria-label={`[${n}] ${citation.title}`}
-        data-testid={web ? 'web-cite-chip' : undefined}
-      >
-        {n}
-      </button>
-    </Tip>
+      {n}
+    </InlineCitation>
   )
 }
 
@@ -103,17 +105,12 @@ function Reasoning({ text, streaming, seconds }: { text: string; streaming: bool
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   return (
-    <div className="mb-3">
-      <button
-        onClick={() => setOpen(!open)}
-        className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs text-subtle transition-colors hover:bg-surface-hover hover:text-fg"
-      >
-        <Brain className={cn('size-3.5', streaming && 'animate-pulse text-accent')} />
+    <Trace open={open} onOpenChange={setOpen} className="mb-3">
+      <TraceTrigger icon={<Brain className={cn(streaming && 'animate-pulse text-accent')} />}>
         {streaming ? t('chat.thinking') : seconds ? t('chat.thoughtFor', { s: seconds }) : t('chat.thought')}
-        <ChevronRight className={cn('size-3 transition-transform', open && 'rotate-90')} />
-      </button>
-      {open && <div className="mt-2 border-l-2 border-border pl-3 text-xs leading-relaxed whitespace-pre-wrap text-muted">{text}</div>}
-    </div>
+      </TraceTrigger>
+      <TraceContent className="whitespace-pre-wrap">{text}</TraceContent>
+    </Trace>
   )
 }
 
@@ -130,28 +127,30 @@ function StepRow({ s }: { s: AgentStep }) {
   }
   return (
     <li className="flex items-start gap-2 text-xs">
-      {s.status === 'running' || s.status === 'waiting' ? (
-        <LoaderCircle className="mt-px size-3.5 shrink-0 animate-spin text-accent" />
-      ) : s.status === 'denied' ? (
-        <CircleX className="mt-px size-3.5 shrink-0 text-subtle" />
-      ) : s.status === 'error' ? (
-        <CircleX className="mt-px size-3.5 shrink-0 text-danger" />
-      ) : (
-        <Check className="mt-px size-3.5 shrink-0 text-accent" />
-      )}
-      <span className="min-w-0 flex-1">
-        <span className={cn('text-muted', s.status === 'error' && 'text-danger')}>{s.label}</span>
-        {s.detail && <span className="block text-2xs break-all text-subtle">{s.detail}</span>}
-      </span>
-      {s.link && !isProposal(s) && s.status === 'done' && s.link.type !== 'note' && s.link.type !== 'source' && (
-        <StepLinkButton link={s.link} />
-      )}
-      {s.link && isProposal(s) && s.status === 'done' && (
-        <button onClick={open} className="inline-flex shrink-0 items-center gap-0.5 text-2xs text-accent hover:underline">
-          {t('chat.reviewProposal')}
-          <ArrowUpRight className="size-3" />
-        </button>
-      )}
+      <TraceLine status={s.status}>
+        {s.status === 'running' || s.status === 'waiting' ? (
+          <LoaderCircle className="mt-px size-3.5 shrink-0 animate-spin text-accent" />
+        ) : s.status === 'denied' ? (
+          <CircleX className="mt-px size-3.5 shrink-0 text-subtle" />
+        ) : s.status === 'error' ? (
+          <CircleX className="mt-px size-3.5 shrink-0 text-danger" />
+        ) : (
+          <Check className="mt-px size-3.5 shrink-0 text-accent" />
+        )}
+        <span className="min-w-0 flex-1">
+          <span className={cn('text-muted', s.status === 'error' && 'text-danger')}>{s.label}</span>
+          {s.detail && <span className="block text-2xs break-all text-subtle">{s.detail}</span>}
+        </span>
+        {s.link && !isProposal(s) && s.status === 'done' && s.link.type !== 'note' && s.link.type !== 'source' && (
+          <StepLinkButton link={s.link} />
+        )}
+        {s.link && isProposal(s) && s.status === 'done' && (
+          <button onClick={open} className="inline-flex shrink-0 items-center gap-0.5 text-2xs text-accent hover:underline">
+            {t('chat.reviewProposal')}
+            <ArrowUpRight className="size-3" />
+          </button>
+        )}
+      </TraceLine>
     </li>
   )
 }
@@ -164,25 +163,18 @@ function Steps({ steps, streaming }: { steps: AgentStep[]; streaming: boolean })
   const others = steps.filter((s) => !isProposal(s) && !s.approval)
   const expanded = open || streaming
   return (
-    <div className="mb-3 space-y-1.5">
+    <div className="mb-3 flex flex-col gap-1.5">
       {others.length > 0 && (
-        <div>
-          <button
-            onClick={() => setOpen(!open)}
-            className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs text-subtle transition-colors hover:bg-surface-hover hover:text-fg"
-          >
-            <ListChecks className="size-3.5" />
-            {t('chat.steps', { count: others.length })}
-            <ChevronRight className={cn('size-3 transition-transform', expanded && 'rotate-90')} />
-          </button>
-          {expanded && (
-            <ul className="mt-1.5 space-y-1 border-l-2 border-border pl-3">
+        <Trace open={expanded} onOpenChange={setOpen}>
+          <TraceTrigger icon={<ListChecks />}>{t('chat.steps', { count: others.length })}</TraceTrigger>
+          <TraceContent>
+            <ul className="flex flex-col gap-2">
               {others.map((s) => (
                 <StepRow key={s.id} s={s} />
               ))}
             </ul>
-          )}
-        </div>
+          </TraceContent>
+        </Trace>
       )}
       {approvals.length > 0 && (
         <div className="space-y-1.5">
@@ -213,7 +205,7 @@ function CitationCard({ c, conversationId }: { c: Citation; conversationId: stri
         ? t('retrieval.snapshot.fetchedAt', { date: formatDate(date, i18n.language) })
         : formatDate(date, i18n.language)
   return (
-    <button
+    <Source
       onClick={() => openCitation(c, conversationId)}
       className="group flex w-full gap-3 rounded-lg px-3 py-2 text-left transition-colors hover:bg-surface-hover"
       data-testid={web ? 'web-citation-card' : undefined}
@@ -274,7 +266,7 @@ function CitationCard({ c, conversationId }: { c: Citation; conversationId: stri
         </span>
         <span className="mt-0.5 line-clamp-2 block text-2xs leading-relaxed text-muted">{c.snippet.replace(/^#{1,6}\s+/gm, '')}</span>
       </span>
-    </button>
+    </Source>
   )
 }
 
@@ -334,22 +326,19 @@ function Choices({ step, conversationId, active }: { step: AgentStep; conversati
   return (
     <div className="mt-3 flex flex-wrap gap-2" role="group" aria-label={step.choices.question} data-testid="ask-choices">
       {step.choices.options.map((o) => (
-        <button
+        <Button
+          size="sm"
+          variant={picked === o ? 'primary' : 'outline'}
           key={o}
           disabled={!active || !!picked}
           onClick={() => {
             setPicked(o)
             replyInConversation(conversationId, o)
           }}
-          className={cn(
-            'rounded-full border px-3.5 py-1.5 text-sm transition-colors',
-            picked === o
-              ? 'border-accent bg-accent-soft text-accent'
-              : 'border-border bg-surface text-fg enabled:hover:border-accent/50 enabled:hover:bg-accent-soft/40 disabled:opacity-50'
-          )}
+          className="h-auto max-w-full rounded-full py-2 whitespace-normal"
         >
           {o}
-        </button>
+        </Button>
       ))}
     </div>
   )
@@ -376,28 +365,21 @@ function Basis({ citations, conversationId }: { citations: Citation[]; conversat
     .filter(Boolean)
     .join(' · ')
   return (
-    <div className="mt-3" data-testid="answer-basis">
+    <Trace open={open} onOpenChange={setOpen} className="mt-3" data-testid="answer-basis">
       <Tip label={t('chat.basisHint')} side="top">
-        <button
-          onClick={() => setOpen(!open)}
-          aria-expanded={open}
-          aria-label={open ? t('chat.basisHide') : t('chat.basisShow')}
-          className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs text-subtle transition-colors hover:bg-surface-hover hover:text-fg"
-        >
-          <Library className="size-3.5" />
+        <TraceTrigger icon={<Library />} aria-label={open ? t('chat.basisHide') : t('chat.basisShow')}>
           {title}
           {via && <span className="text-2xs text-subtle/80">· {via}</span>}
-          <ChevronRight className={cn('size-3 transition-transform', open && 'rotate-90')} />
-        </button>
+        </TraceTrigger>
       </Tip>
-      {open && (
-        <div className="mt-1.5 rounded-xl border border-border bg-surface/60 py-1">
+      <TraceContent>
+        <div className="rounded-xl border border-border bg-surface/60 py-1">
           {citations.map((c) => (
             <CitationCard key={c.n} c={c} conversationId={conversationId} />
           ))}
         </div>
-      )}
-    </div>
+      </TraceContent>
+    </Trace>
   )
 }
 
@@ -440,12 +422,16 @@ export function MessageItem({
 
   if (m.role === 'user') {
     return (
-      <div className="flex justify-end">
-        <div className="paper max-w-[78%] rounded-2xl rounded-br-md px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap text-fg shadow-[var(--shadow-1)]">
-          {m.content}
-          {!!m.attachments?.length && <MessageAttachments items={m.attachments} conversationId={m.conversationId} />}
-        </div>
-      </div>
+      <Message align="end">
+        <MessageContent>
+          <Bubble align="end" variant="muted">
+            <BubbleContent className="whitespace-pre-wrap">
+              {m.content}
+              {!!m.attachments?.length && <MessageAttachments items={m.attachments} conversationId={m.conversationId} />}
+            </BubbleContent>
+          </Bubble>
+        </MessageContent>
+      </Message>
     )
   }
 
@@ -470,122 +456,146 @@ export function MessageItem({
   }
 
   return (
-    <div className="group/msg">
-      {m.reasoning && <Reasoning text={m.reasoning} streaming={streaming && !m.content} seconds={seconds} />}
-      {m.steps.length > 0 && <Steps steps={m.steps} streaming={streaming} />}
-      {m.content ? (
-        <div
-          ref={bodyRef}
-          className="chat-md select-text"
-          data-reply-id={plain ? undefined : m.id}
-          data-conversation-id={m.conversationId}
-          data-streaming={streaming ? 'true' : undefined}
-          data-reply-restricted={replyRestricted ? 'true' : undefined}
-        >
-          <ReplySelectionContext.Provider
-            value={{ messageId: plain ? undefined : m.id, conversationId: m.conversationId, streaming, restricted: !!replyRestricted }}
-          >
-            <UiMessageProvider message={m} isLatest={!!last} compact={!!compact}>
-              <Streamdown
-                // 两种模式采用不同的块树；组件回答保持流式树，结束只停止动画，保留组件实例。
-                mode={plain && !streaming ? 'static' : 'streaming'}
-                isAnimating={streaming}
-                components={components as never}
-                controls={{ code: true, table: true, mermaid: false }}
-                plugins={plain ? plainPlugins : uiPlugins}
+    <Message className="group/msg">
+      <MessageContent>
+        <Bubble variant="ghost" className="w-full">
+          <BubbleContent className="w-full">
+            {m.reasoning && <Reasoning text={m.reasoning} streaming={streaming && !m.content} seconds={seconds} />}
+            {m.steps.length > 0 && <Steps steps={m.steps} streaming={streaming} />}
+            {m.content ? (
+              <div
+                ref={bodyRef}
+                className="chat-md select-text"
+                data-reply-id={plain ? undefined : m.id}
+                data-conversation-id={m.conversationId}
+                data-streaming={streaming ? 'true' : undefined}
+                data-reply-restricted={replyRestricted ? 'true' : undefined}
               >
-                {md}
-              </Streamdown>
-            </UiMessageProvider>
-          </ReplySelectionContext.Provider>
-        </div>
-      ) : (
-        streaming && !m.reasoning && !m.steps.length && <div className="h-5 w-16 animate-pulse rounded bg-sunken" />
-      )}
-      {m.status === 'done' &&
-        m.steps
-          .filter((s) => s.choices)
-          .slice(-1)
-          .map((s) => <Choices key={s.id} step={s} conversationId={m.conversationId} active={!!last} />)}
-      {m.status === 'error' && budgetKind(m.error) && <BudgetNotice error={m.error!} />}
-      {m.status === 'error' && !budgetKind(m.error) && (
-        <div className="mt-2 flex items-start gap-2 rounded-lg bg-danger-soft px-3 py-2 text-xs text-danger">
-          <CircleAlert className="mt-0.5 size-3.5 shrink-0" />
-          <span className="break-all">{m.error}</span>
-        </div>
-      )}
-      {m.status === 'stopped' && <p className="mt-2 text-2xs text-subtle">{t('chat.stopped')}</p>}
-
-      {!!last &&
-        !streaming &&
-        m.status !== 'stopped' &&
-        !replyRestricted &&
-        m.steps
-          .filter((step) => step.cloudRead)
-          .map((step) => <CloudReadOption key={step.id} url={step.cloudRead!.url} conversationId={m.conversationId} />)}
-      {cloudOrigin && (
-        <p className="mt-3 text-xs text-muted" data-testid="cloud-answer-origin">
-          {webOriginLabel(cloudOrigin, i18n.language.startsWith('zh'))}
-        </p>
-      )}
-
-      <MessageReadiness message={m} />
-      {m.citations.length > 0 && <Basis conversationId={m.conversationId} citations={m.citations} />}
-      {!plain &&
-        !grounded &&
-        m.status === 'done' &&
-        !m.readiness?.length &&
-        m.citations.length === 0 &&
-        m.steps.length === 0 &&
-        m.content && <p className="mt-2 text-2xs text-subtle">{t('chat.generalOnly')}</p>}
-
-      {threads.length > 0 && !replyRestricted && (
-        <div className="mt-2 text-xs text-muted">
-          <button
-            className="rounded px-1 py-1 hover:bg-sunken hover:text-accent"
-            aria-expanded={threadsOpen}
-            onClick={() => setThreadsOpen(!threadsOpen)}
-          >
-            {t('assist.replyThreads', { count: threads.length })}
-          </button>
-          {threadsOpen && (
-            <div className="mt-1 space-y-1 rounded-lg border border-border p-2">
-              {threads.map((thread) => (
-                <button
-                  key={thread.id}
-                  className="block w-full rounded px-2 py-1 text-left hover:bg-sunken"
-                  onClick={async (event) => {
-                    const rect = elementRect(event.currentTarget)
-                    const messages = await api.chat.messages(thread.id)
-                    const question = messages.find((message) => message.role === 'user')?.content ?? thread.title
-                    if (thread.anchor)
-                      useAssist.getState().openCard({ anchor: thread.anchor, rect, conversationId: thread.id, action: 'ask', question })
+                <ReplySelectionContext.Provider
+                  value={{
+                    messageId: plain ? undefined : m.id,
+                    conversationId: m.conversationId,
+                    streaming,
+                    restricted: !!replyRestricted
                   }}
                 >
-                  <span className="block line-clamp-1 font-kai">{thread.anchor?.quote}</span>
-                  <span className="block line-clamp-1 text-2xs text-subtle">{thread.title}</span>
+                  <UiMessageProvider message={m} isLatest={!!last} compact={!!compact}>
+                    <Streamdown
+                      // 两种模式采用不同的块树；组件回答保持流式树，结束只停止动画，保留组件实例。
+                      mode={plain && !streaming ? 'static' : 'streaming'}
+                      isAnimating={streaming}
+                      components={components as never}
+                      controls={{ code: true, table: true, mermaid: false }}
+                      plugins={plain ? plainPlugins : uiPlugins}
+                    >
+                      {md}
+                    </Streamdown>
+                  </UiMessageProvider>
+                </ReplySelectionContext.Provider>
+              </div>
+            ) : (
+              streaming &&
+              !m.reasoning &&
+              !m.steps.length && (
+                <Marker role="status" aria-label={t('chat.thinking')}>
+                  <MarkerIcon>
+                    <LoaderCircle className="animate-spin" />
+                  </MarkerIcon>
+                  <MarkerContent>{t('chat.thinking')}</MarkerContent>
+                </Marker>
+              )
+            )}
+            {m.status === 'done' &&
+              m.steps
+                .filter((s) => s.choices)
+                .slice(-1)
+                .map((s) => <Choices key={s.id} step={s} conversationId={m.conversationId} active={!!last} />)}
+            {m.status === 'error' && budgetKind(m.error) && <BudgetNotice error={m.error!} />}
+            {m.status === 'error' && !budgetKind(m.error) && (
+              <div className="mt-2 flex items-start gap-2 rounded-lg bg-danger-soft px-3 py-2 text-xs text-danger">
+                <CircleAlert className="mt-0.5 size-3.5 shrink-0" />
+                <span className="break-all">{m.error}</span>
+              </div>
+            )}
+            {m.status === 'stopped' && <p className="mt-2 text-2xs text-subtle">{t('chat.stopped')}</p>}
+
+            {!!last &&
+              !streaming &&
+              m.status !== 'stopped' &&
+              !replyRestricted &&
+              m.steps
+                .filter((step) => step.cloudRead)
+                .map((step) => <CloudReadOption key={step.id} url={step.cloudRead!.url} conversationId={m.conversationId} />)}
+            {cloudOrigin && (
+              <p className="mt-3 text-xs text-muted" data-testid="cloud-answer-origin">
+                {webOriginLabel(cloudOrigin, i18n.language.startsWith('zh'))}
+              </p>
+            )}
+
+            <MessageReadiness message={m} />
+            {m.citations.length > 0 && <Basis conversationId={m.conversationId} citations={m.citations} />}
+            {!plain &&
+              !grounded &&
+              m.status === 'done' &&
+              !m.readiness?.length &&
+              m.citations.length === 0 &&
+              m.steps.length === 0 &&
+              m.content && <p className="mt-2 text-2xs text-subtle">{t('chat.generalOnly')}</p>}
+
+            {threads.length > 0 && !replyRestricted && (
+              <div className="mt-2 text-xs text-muted">
+                <button
+                  className="rounded px-1 py-1 hover:bg-sunken hover:text-accent"
+                  aria-expanded={threadsOpen}
+                  onClick={() => setThreadsOpen(!threadsOpen)}
+                >
+                  {t('assist.replyThreads', { count: threads.length })}
                 </button>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-      {!streaming && m.content && !compact && (
-        <div className="mt-2 flex items-center gap-2 text-2xs text-subtle opacity-0 transition-opacity group-hover/msg:opacity-100">
-          <button onClick={copy} className="inline-flex items-center gap-1 rounded px-1 hover:text-fg" aria-label={t('chat.copy')}>
-            {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
-          </button>
-          {m.model && <span className="font-mono">{m.model}</span>}
-          {m.effort && <span>· {t('chat.effortLabel', { level: t(`ai.efforts.${m.effort}`) })}</span>}
-          {m.usage && (
-            <span>
-              · {fmtTokens(m.usage.inputTokens)} → {fmtTokens(m.usage.outputTokens)} tokens
-              {m.usage.reasoningTokens ? `（${t('chat.reasoningTokens', { n: fmtTokens(m.usage.reasoningTokens) })}）` : ''}
-              {m.usage.cost !== null ? ` · ≈${money.format(m.usage.cost)}` : ''} · {(m.usage.durationMs / 1000).toFixed(1)}s
-            </span>
-          )}
-        </div>
-      )}
-    </div>
+                {threadsOpen && (
+                  <div className="mt-1 space-y-1 rounded-lg border border-border p-2">
+                    {threads.map((thread) => (
+                      <button
+                        key={thread.id}
+                        className="block w-full rounded px-2 py-1 text-left hover:bg-sunken"
+                        onClick={async (event) => {
+                          const rect = elementRect(event.currentTarget)
+                          const messages = await api.chat.messages(thread.id)
+                          const question = messages.find((message) => message.role === 'user')?.content ?? thread.title
+                          if (thread.anchor)
+                            useAssist
+                              .getState()
+                              .openCard({ anchor: thread.anchor, rect, conversationId: thread.id, action: 'ask', question })
+                        }}
+                      >
+                        <span className="block line-clamp-1 font-kai">{thread.anchor?.quote}</span>
+                        <span className="block line-clamp-1 text-2xs text-subtle">{thread.title}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </BubbleContent>
+        </Bubble>
+        {!streaming && m.content && (
+          <MessageFooter className="flex-wrap gap-x-2 gap-y-1">
+            <Tip label={t('chat.copy')} side="top">
+              <Button onClick={copy} size="icon-sm" variant="ghost" aria-label={t('chat.copy')}>
+                {copied ? <Check /> : <Copy />}
+              </Button>
+            </Tip>
+            {!compact && m.model && <span className="font-mono break-all">{m.model}</span>}
+            {!compact && m.effort && <span>· {t('chat.effortLabel', { level: t(`ai.efforts.${m.effort}`) })}</span>}
+            {!compact && m.usage && (
+              <ContextUsage>
+                · {fmtTokens(m.usage.inputTokens)} → {fmtTokens(m.usage.outputTokens)} tokens
+                {m.usage.reasoningTokens ? `（${t('chat.reasoningTokens', { n: fmtTokens(m.usage.reasoningTokens) })}）` : ''}
+                {m.usage.cost !== null ? ` · ≈${money.format(m.usage.cost)}` : ''} · {(m.usage.durationMs / 1000).toFixed(1)}s
+              </ContextUsage>
+            )}
+          </MessageFooter>
+        )}
+      </MessageContent>
+    </Message>
   )
 }

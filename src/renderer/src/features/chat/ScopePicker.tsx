@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Menu, MenuContent, MenuItem, MenuTrigger, Tip } from '@/components/ui/primitives'
 import { KIND_ICON } from '../library/LibraryView'
+import { ContextTag } from '@/components/ai-elements/context'
 
 /** 检索范围：全部知识库 / 指定笔记与资料 / 不使用知识库 */
 export function ScopePicker({ value, onChange }: { value: ChatScope; onChange: (s: ChatScope) => void }) {
@@ -26,14 +27,16 @@ export function ScopePicker({ value, onChange }: { value: ChatScope; onChange: (
     <>
       <Menu>
         <MenuTrigger asChild>
-          <button
-            className="inline-flex h-7 items-center gap-1.5 rounded-lg border border-border bg-surface px-2.5 text-xs text-fg hover:bg-surface-hover"
-            aria-label={t('chat.scope.label')}
-          >
-            {value.type === 'none' ? <CircleSlash className="size-3.5 text-subtle" /> : <Library className="size-3.5 text-accent" />}
-            {label}
-            <ChevronDown className="size-3 opacity-60" />
-          </button>
+          <ContextTag asChild>
+            <button
+              className="inline-flex h-7 items-center gap-1.5 rounded-lg border border-border bg-surface px-2.5 text-xs text-fg hover:bg-surface-hover"
+              aria-label={t('chat.scope.label')}
+            >
+              {value.type === 'none' ? <CircleSlash className="size-3.5 text-subtle" /> : <Library className="size-3.5 text-accent" />}
+              {label}
+              <ChevronDown className="size-3 opacity-60" />
+            </button>
+          </ContextTag>
         </MenuTrigger>
         <MenuContent align="start">
           <MenuItem onSelect={() => onChange({ type: 'all' })}>

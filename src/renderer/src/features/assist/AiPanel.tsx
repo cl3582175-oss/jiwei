@@ -31,7 +31,7 @@ import { usePageContext } from './pageContext'
 import { packetFromWorkspace, fmtTime, type ContextPacket } from '@shared/context'
 import { collectTabSources, sameContextTab, withTabSources, type SelectedTab } from '@shared/browserTabContext'
 import type { WorkspaceContext } from '@shared/types'
-import { api, cn, modKey } from '@/lib/utils'
+import { api, modKey } from '@/lib/utils'
 import { useApp } from '@/store/app'
 import { useChatProjects, useConversations, useNote } from '@/lib/queries'
 import { Button } from '@/components/ui/button'
@@ -44,6 +44,8 @@ import { EffortPicker } from '../ai/EffortPicker'
 import { WebModePicker, useWebMode } from '../retrieval/WebModePicker'
 import { useAssist, usePanel, usePanelPage, getPanel } from './store'
 import { activeTab, aiAllowed, useBrowser } from '../browser/store'
+import { InputGroup, InputGroupAddon, InputGroupTextarea, InputGroupButton, InputGroupTools } from '@/components/ai-elements/input-group'
+import { Context, ContextTag } from '@/components/ai-elements/context'
 
 // 工作区 AI 面板：右下角按钮 → 浮动面板 → 可钉住为右侧栏。
 // 它“看得见”两侧：当前笔记（光标所在行）、当前资料（可见位置 / 选中文字），以标签显示，可逐个移除。
@@ -357,13 +359,15 @@ function PanelBody({ pinned, page }: { pinned: boolean; page: string }) {
               <p className="text-xs leading-relaxed text-muted">{t(view === 'notes' ? 'assist.panelHint' : 'assist.pageHint')}</p>
               <div className="mt-4 flex flex-col items-start gap-2">
                 {(view === 'notes' ? SUGGESTIONS : (PAGE_SUGGESTIONS[view] ?? GENERAL_SUGGESTIONS)).map((k) => (
-                  <button
+                  <Button
+                    variant="outline"
+                    size="sm"
                     key={k}
                     onClick={() => void send(t(k))}
-                    className="rounded-full border border-border bg-surface px-3 py-1.5 text-left text-xs text-muted transition-colors hover:border-accent hover:text-accent"
+                    className="h-auto max-w-full justify-start rounded-full py-2 text-left whitespace-normal"
                   >
                     {t(k)}
-                  </button>
+                  </Button>
                 ))}
               </div>
             </div>
@@ -374,15 +378,9 @@ function PanelBody({ pinned, page }: { pinned: boolean; page: string }) {
 
         <div className="shrink-0 border-t border-border/70 p-3">
           {(chips.length > 0 || selectedTabs.length > 0 || (browserOpen && availableTabs.length > 1)) && (
-            <div className="mb-2 flex flex-wrap gap-1.5" aria-label={t('assist.context')}>
+            <Context className="mb-2" aria-label={t('assist.context')}>
               {chips.map((c) => (
-                <span
-                  key={c.id}
-                  className={cn(
-                    'inline-flex h-6 max-w-full items-center gap-1 rounded-md border px-1.5 text-2xs [&_svg]:size-3 [&_svg]:shrink-0',
-                    off.has(c.id) ? 'border-dashed border-border text-subtle line-through' : 'border-border bg-surface text-muted'
-                  )}
-                >
+                <ContextTag key={c.id} inactive={off.has(c.id)}>
                   {c.icon}
                   <span className="truncate">{c.label}</span>
                   <button
@@ -402,15 +400,12 @@ function PanelBody({ pinned, page }: { pinned: boolean; page: string }) {
                   >
                     <X />
                   </button>
-                </span>
+                </ContextTag>
               ))}
               {selectedTabs
                 .filter((tab) => tab.id !== browserState.activeId)
                 .map((tab) => (
-                  <span
-                    key={tab.id}
-                    className="inline-flex h-6 max-w-full items-center gap-1 rounded-md border border-border bg-surface px-1.5 text-2xs text-muted [&_svg]:size-3 [&_svg]:shrink-0"
-                  >
+                  <ContextTag key={tab.id}>
                     <Globe />
                     <span className="truncate">{t('assist.tabContext', { title: tab.title })}</span>
                     <Tip label={t('assist.removeContext', { label: tab.title })}>
@@ -422,7 +417,7 @@ function PanelBody({ pinned, page }: { pinned: boolean; page: string }) {
                         <X />
                       </button>
                     </Tip>
-                  </span>
+                  </ContextTag>
                 ))}
               {browserOpen && availableTabs.length > 1 && (
                 <Menu>
@@ -474,9 +469,9 @@ function PanelBody({ pinned, page }: { pinned: boolean; page: string }) {
                   </MenuContent>
                 </Menu>
               )}
-            </div>
+            </Context>
           )}
-          <div className="rounded-xl border border-border bg-surface focus-within:border-accent">
+          <InputGroup>
             <AttachmentInput
               controller={attachments}
               provider={provider}
@@ -486,7 +481,7 @@ function PanelBody({ pinned, page }: { pinned: boolean; page: string }) {
               onMentionPicked={() => setText(text.replace(/@[^\s@]*$/, ''))}
             />
             <ReplyQuote conversationId={conversationId} />
-            <textarea
+            <InputGroupTextarea
               ref={input}
               rows={2}
               value={text}
@@ -504,41 +499,40 @@ function PanelBody({ pinned, page }: { pinned: boolean; page: string }) {
                   void send(text)
                 }
               }}
-              className="block max-h-40 w-full resize-none bg-transparent px-3 pt-2.5 text-sm leading-relaxed text-fg outline-none placeholder:text-subtle"
+              className="max-h-40"
             />
-            <div className="flex flex-wrap items-center gap-1.5 px-2 pb-2">
-              <AttachmentButton controller={attachments} />
-              <ModelPicker compact value={choice} onChange={setChoice} />
-              {provider && <EffortPicker compact kind={provider.kind} value={effort} onChange={setEffort} />}
-              <span className="contents" data-testid="panel-web-mode">
-                <WebModePicker value={web} onChange={setWeb} />
-              </span>
-              <span className="flex-1" />
+            <InputGroupAddon className="flex-nowrap items-end">
+              <InputGroupTools>
+                <AttachmentButton controller={attachments} />
+                <ModelPicker compact value={choice} onChange={setChoice} />
+                {provider && <EffortPicker compact kind={provider.kind} value={effort} onChange={setEffort} />}
+                <span className="contents" data-testid="panel-web-mode">
+                  <WebModePicker value={web} onChange={setWeb} />
+                </span>
+              </InputGroupTools>
               {streaming ? (
-                <Button
+                <InputGroupButton
                   size="icon-sm"
                   variant="secondary"
-                  className="rounded-full"
                   onClick={() => void api.chat.stop(streaming.id)}
                   aria-label={t('chat.stop')}
                 >
                   <Square className="size-3 fill-current" />
-                </Button>
+                </InputGroupButton>
               ) : (
-                <Button
+                <InputGroupButton
                   size="icon-sm"
                   variant="primary"
-                  className="rounded-full"
                   disabled={(!text.trim() && !attachments.ids().length) || attachments.adding || preparing || readerPreparing}
                   aria-busy={preparing}
                   onClick={() => void send(text)}
                   aria-label={t('chat.send')}
                 >
                   <ArrowUp />
-                </Button>
+                </InputGroupButton>
               )}
-            </div>
-          </div>
+            </InputGroupAddon>
+          </InputGroup>
         </div>
       </div>
     </AttachmentDropZone>

@@ -9,6 +9,7 @@ import { api, cn, formatDateTime } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { confirm } from '@/components/ui/confirm'
 import { previewExtensions } from './editor/preview'
+import { Checkpoint } from '@/components/ai-elements/checkpoint'
 
 /** 版本历史：左侧时间线，右侧只读预览，可恢复到任意版本 */
 export function HistoryDialog({
@@ -69,8 +70,9 @@ export function HistoryDialog({
             <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-4">
               {list.length === 0 && <p className="px-3 py-6 text-xs leading-relaxed text-subtle">{t('history.empty')}</p>}
               {list.map((r) => (
-                <button
+                <Checkpoint
                   key={r.id}
+                  selected={r.id === current}
                   onClick={() => setSelected(r.id)}
                   className={cn(
                     'mb-0.5 w-full rounded-lg px-3 py-2.5 text-left transition-colors',
@@ -84,7 +86,7 @@ export function HistoryDialog({
                   <div className="mt-0.5 text-2xs text-subtle">
                     {t(`history.reason.${r.reason}`)} · {t('common.words', { count: r.wordCount })}
                   </div>
-                </button>
+                </Checkpoint>
               ))}
             </div>
           </aside>

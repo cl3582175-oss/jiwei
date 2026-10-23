@@ -402,7 +402,10 @@ for (const q of UI_EVAL)
           conversationId
         )
         // 真实模型首包可能超过 5 秒，界面在开始流式时才刷新出这条用户消息
-        await expect(page.locator('main .paper.whitespace-pre-wrap').last()).toHaveText(turn.text, { timeout: controlled ? 5_000 : 30_000 })
+        await expect(page.locator('main [data-slot="message"][data-align="end"] [data-slot="bubble-content"]').last()).toHaveText(
+          turn.text,
+          { timeout: controlled ? 5_000 : 30_000 }
+        )
         await expect
           .poll(
             () =>

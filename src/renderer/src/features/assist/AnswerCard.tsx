@@ -21,6 +21,7 @@ import {
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Tip } from '@/components/ui/primitives'
+import { InputGroup, InputGroupAddon, InputGroupTextarea, InputGroupButton } from '@/components/ai-elements/input-group'
 import { MessageItem, REPLY_EVENT, type ReplyDetail } from '../chat/MessageItem'
 import { useChatThread } from '../chat/useChat'
 import { useAssist, isRevise, type AskAction } from './store'
@@ -64,8 +65,8 @@ function Composer({ placeholder, onSend, autoFocus }: { placeholder: string; onS
     setText('')
   }
   return (
-    <div className="flex items-end gap-2 rounded-xl border border-border bg-surface px-3 py-2 focus-within:border-accent">
-      <textarea
+    <InputGroup>
+      <InputGroupTextarea
         ref={ref}
         rows={1}
         value={text}
@@ -78,19 +79,15 @@ function Composer({ placeholder, onSend, autoFocus }: { placeholder: string; onS
             submit()
           }
         }}
-        className="max-h-24 min-h-5 flex-1 resize-none bg-transparent text-sm leading-relaxed text-fg outline-none placeholder:text-subtle"
+        className="max-h-24"
       />
-      <Button
-        size="icon-sm"
-        variant="primary"
-        className="size-6 rounded-full"
-        disabled={!text.trim()}
-        onClick={submit}
-        aria-label={placeholder}
-      >
-        <ArrowUp className="size-3.5" />
-      </Button>
-    </div>
+      <InputGroupAddon>
+        <span className="flex-1" />
+        <InputGroupButton size="icon-sm" variant="primary" disabled={!text.trim()} onClick={submit} aria-label={placeholder}>
+          <ArrowUp className="size-3.5" />
+        </InputGroupButton>
+      </InputGroupAddon>
+    </InputGroup>
   )
 }
 

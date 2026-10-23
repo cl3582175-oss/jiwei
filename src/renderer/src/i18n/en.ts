@@ -1139,8 +1139,11 @@ const en: Messages = {
     defaults: 'Default model and thinking effort',
     model: 'Model',
     pickModel: 'Choose a model',
+    searchModels: 'Search models',
+    noMatchingModels: 'No matching configured models',
     noModels: 'Add a model service in Settings first',
     effort: 'Thinking effort',
+    effortShort: 'Thinking',
     effortHint: 'Thinking effort: deeper is slower and costs more',
     effortDesc:
       '"Off" answers directly — fastest and cheapest. Low / Medium / High / Max think progressively deeper. Only the levels your provider supports are shown. You can also switch per question.',

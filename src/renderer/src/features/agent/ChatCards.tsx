@@ -7,6 +7,7 @@ import type { AgentStep } from '@shared/types'
 import { Button } from '@/components/ui/button'
 import { api, cn } from '@/lib/utils'
 import { useApp } from '@/store/app'
+import { Confirmation, ConfirmationTitle, ConfirmationActions } from '@/components/ai-elements/confirmation'
 
 // 积微助手（v0.7）：对话中的确认卡片、费用上限提示、办事结果的“查看”入口。
 
@@ -16,8 +17,10 @@ export function openStepLink(link: NonNullable<AgentStep['link']>): void {
   if (link.type === 'note') s.openNote(link.id)
   else if (link.type === 'source') s.openSource(link.id)
   else if (link.type === 'goal') s.openGoal(link.id)
-  else if (link.type === 'task') { useApp.setState({ taskFocusId: link.id }); s.openSettings('tasks') }
-  else if (link.type === 'inbox') s.goNav('inbox')
+  else if (link.type === 'task') {
+    useApp.setState({ taskFocusId: link.id })
+    s.openSettings('tasks')
+  } else if (link.type === 'inbox') s.goNav('inbox')
   else s.goNav('today')
 }
 
@@ -65,18 +68,13 @@ export function ApprovalCard({ step }: { step: AgentStep }) {
     )
   }
   return (
-    <div
-      className="rounded-xl border border-accent/35 bg-accent-soft/50 px-4 py-3 shadow-card"
-      role="group"
-      aria-label={t('agent.approval.title')}
-      data-testid="approval-card"
-    >
-      <div className="flex items-center gap-2 text-xs font-medium text-accent">
+    <Confirmation role="group" aria-label={t('agent.approval.title')} data-testid="approval-card">
+      <ConfirmationTitle>
         {a.level === 'external' ? <ShieldAlert className="size-4" /> : <ShieldQuestion className="size-4" />}
         {t('agent.approval.title')}
         <span className="rounded-full bg-surface px-2 py-px text-xs font-normal text-muted">{t(`agent.approval.${a.level}`)}</span>
         {step.server && <span className="truncate text-xs font-normal text-muted">· {step.server}</span>}
-      </div>
+      </ConfirmationTitle>
       <p className="mt-2 text-sm leading-relaxed text-fg">{a.title}</p>
       {a.detail && (
         <p className="mt-1 max-h-32 overflow-y-auto text-xs leading-relaxed break-words whitespace-pre-wrap text-muted">{a.detail}</p>
@@ -87,15 +85,15 @@ export function ApprovalCard({ step }: { step: AgentStep }) {
           {t('agent.approval.tainted')}
         </p>
       )}
-      <div className="mt-3 flex items-center gap-2">
+      <ConfirmationActions>
         <Button size="sm" variant="primary" disabled={busy} onClick={() => void decide(true)}>
           {t('agent.approval.allow')}
         </Button>
         <Button size="sm" variant="outline" disabled={busy} onClick={() => void decide(false)}>
           {t('agent.approval.deny')}
         </Button>
-      </div>
-    </div>
+      </ConfirmationActions>
+    </Confirmation>
   )
 }
 

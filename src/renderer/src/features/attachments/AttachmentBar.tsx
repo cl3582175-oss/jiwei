@@ -6,6 +6,15 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { useApp, openSourceAt } from '@/store/app'
 import type { AttachmentsController } from './useAttachments'
+import {
+  Attachment as AttachmentView,
+  AttachmentMedia,
+  AttachmentContent,
+  AttachmentTitle,
+  AttachmentDescription,
+  AttachmentActions,
+  AttachmentTrigger
+} from '@/components/ai-elements/attachment'
 
 export const formatAttachmentSize = (n: number): string =>
   n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`
@@ -58,51 +67,60 @@ export function AttachmentBar({
   return (
     <div className="flex flex-wrap gap-2" aria-live="polite">
       {items.map((a) => (
-        <div
+        <AttachmentView
           key={a.sourceId}
           data-testid="attachment-chip"
           data-status={a.status}
-          className={cn(
-            'relative flex w-[220px] max-w-full items-center gap-2 overflow-hidden rounded-lg border border-border bg-surface px-2.5 py-2',
-            a.deleted && 'opacity-50'
-          )}
+          size={small ? 'sm' : 'default'}
+          state={
+            a.error || a.deleted || a.status === 'unsupported'
+              ? 'error'
+              : a.status === 'adding'
+                ? 'uploading'
+                : ['parsing', 'recognizing', 'transcribing'].includes(a.status)
+                  ? 'processing'
+                  : 'done'
+          }
+          className={cn('w-[220px] overflow-hidden', a.deleted && 'opacity-50')}
         >
-          <button
+          <AttachmentTrigger
             type="button"
             className="flex min-w-0 flex-1 items-center gap-2 text-left"
             disabled={a.deleted || a.status === 'adding' || a.status === 'unsupported'}
             onClick={() => openAttachment(a, conversationId)}
             aria-label={`${t('attach.preview')} ${a.name}`}
           >
-            <AttachmentIcon a={a} />
-            <span className="min-w-0">
-              <span className={cn('block truncate text-xs font-medium text-fg', small && 'text-2xs')} title={a.name}>
-                {a.name}
-              </span>
-              <span className="block truncate text-2xs text-muted" title={a.error ?? undefined}>
+            <AttachmentMedia>
+              <AttachmentIcon a={a} />
+            </AttachmentMedia>
+            <AttachmentContent>
+              <AttachmentTitle title={a.name}>{a.name}</AttachmentTitle>
+              <AttachmentDescription title={a.error ?? undefined}>
                 {a.deleted
                   ? t('attach.deleted')
                   : `${formatAttachmentSize(a.size)} · ${t('attach.status.' + (a.status === 'recognizing' && a.askable ? 'recognizingAskable' : a.status), { p: Math.round((a.progress ?? 0) * 100), reason: a.error ?? '' })}`}
-              </span>
+              </AttachmentDescription>
               {a.space === 'library' && <span className="block text-right text-2xs text-muted">{t('attach.archived')}</span>}
-            </span>
-          </button>
+            </AttachmentContent>
+          </AttachmentTrigger>
           {onRemove && (
-            <button
-              type="button"
-              className="self-start rounded text-muted hover:text-fg"
-              aria-label={`${t('attach.remove')} ${a.name}`}
-              onClick={() => onRemove(a.sourceId)}
-            >
-              <X className="size-3.5" />
-            </button>
+            <AttachmentActions className="self-start">
+              <button
+                type="button"
+                className="self-start rounded text-muted hover:text-fg"
+                aria-label={`${t('attach.remove')} ${a.name}`}
+                onClick={() => onRemove(a.sourceId)}
+              >
+                <X className="size-3.5" />
+              </button>
+            </AttachmentActions>
           )}
           {['adding', 'parsing', 'recognizing', 'transcribing'].includes(a.status) && (
             <div className="absolute right-0 bottom-0 left-0 h-0.5 bg-sunken">
               <div className="h-full" style={{ background: 'var(--viz-1)', width: `${Math.max(5, (a.progress ?? 0) * 100)}%` }} />
             </div>
           )}
-        </div>
+        </AttachmentView>
       ))}
     </div>
   )

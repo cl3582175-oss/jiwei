@@ -1,8 +1,10 @@
 import { useTranslation } from 'react-i18next'
-import { Brain } from 'lucide-react'
+import { Brain, Check, ChevronDown } from 'lucide-react'
+import { DropdownMenu } from 'radix-ui'
 import { PROVIDER_PRESETS, type Effort, type ProviderKind } from '@shared/ai'
 import { cn } from '@/lib/utils'
-import { Tip } from '@/components/ui/primitives'
+import { Tip, Menu, MenuTrigger, MenuContent, MenuLabel } from '@/components/ui/primitives'
+import { InputGroupButton } from '@/components/ai-elements/input-group'
 
 /**
  * 思考强度选择：只显示当前服务商支持的档位。
@@ -23,6 +25,46 @@ export function EffortPicker({
   const levels = PROVIDER_PRESETS[kind].efforts
   // 当前值不在支持范围时，显示为就近的档位
   const shown = levels.includes(value) ? value : (levels.find((l) => l !== 'off') ?? levels[0])
+  if (compact) {
+    return (
+      <Menu>
+        <MenuTrigger asChild>
+          <InputGroupButton size="sm" variant="ghost" aria-label={t('ai.effort')} title={t('ai.effortHint')}>
+            <Brain data-icon="inline-start" />
+            <span>
+              {t('ai.effortShort')} · {t(`ai.efforts.${shown}`)}
+            </span>
+            <ChevronDown data-icon="inline-end" />
+          </InputGroupButton>
+        </MenuTrigger>
+        <MenuContent align="start">
+          <MenuLabel>{t('ai.effort')}</MenuLabel>
+          <DropdownMenu.RadioGroup
+            value={shown}
+            onValueChange={(next) => {
+              if (levels.includes(next as Effort)) onChange(next as Effort)
+            }}
+          >
+            {levels.map((level) => (
+              <DropdownMenu.RadioItem
+                key={level}
+                value={level}
+                className="relative flex max-w-[280px] cursor-default items-start gap-2 rounded-lg py-2 pr-3 pl-8 text-left text-xs text-fg outline-none select-none data-[highlighted]:bg-surface-hover"
+              >
+                <DropdownMenu.ItemIndicator className="absolute top-2.5 left-2">
+                  <Check aria-hidden="true" className="size-3.5" />
+                </DropdownMenu.ItemIndicator>
+                <span className="flex min-w-0 flex-col gap-1">
+                  <span className="font-medium">{t(`ai.efforts.${level}`)}</span>
+                  <span className="text-2xs leading-relaxed text-muted">{t(`ai.effortTips.${level}`)}</span>
+                </span>
+              </DropdownMenu.RadioItem>
+            ))}
+          </DropdownMenu.RadioGroup>
+        </MenuContent>
+      </Menu>
+    )
+  }
   return (
     <div
       role="radiogroup"

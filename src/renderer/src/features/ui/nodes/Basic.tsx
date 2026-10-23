@@ -8,6 +8,7 @@ import { ConfirmSheet, type ConfirmItem } from '../ConfirmSheet'
 import { canReply, sendUiReply } from '../reply'
 import { useExpandedPresentation } from '@/components/ui/ExpandableSurface'
 import { toast } from 'sonner'
+import { Task } from '@/components/ai-elements/plan'
 
 export function Columns({ children, compact, ratio }: { children: ReactNode; compact: boolean; ratio?: string }) {
   const { expanded } = useExpandedPresentation()
@@ -268,25 +269,27 @@ export function ListNode({
     <div>
       <Tag className="ui-plain-list space-y-2 px-4 py-3 text-sm">
         {(node.items ?? []).map((item, i) => (
-          <li key={i} className="flex items-start gap-2">
-            {node.checkable ? (
-              <input
-                aria-label={item.text}
-                type="checkbox"
-                checked={checked?.[i] ?? item.done ?? false}
-                disabled={disabled}
-                onChange={(e) => ctx.setState(uiKey, { checked: { ...checked, [i]: e.target.checked } })}
-                className="mt-1 accent-accent"
-              />
-            ) : (
-              <span className="text-subtle">{node.ordered ? `${i + 1}.` : '•'}</span>
-            )}
-            <div className="min-w-0">
-              <span>{item.text}</span>
-              {created[i] && <small className="ml-2 text-subtle">{t('ui.saved')}</small>}
-              {item.note && <p className="mt-1 text-xs text-muted">{item.note}</p>}
-            </div>
-          </li>
+          <Task key={i} asChild state={(checked?.[i] ?? item.done) ? 'done' : 'pending'}>
+            <li className="flex items-start gap-2">
+              {node.checkable ? (
+                <input
+                  aria-label={item.text}
+                  type="checkbox"
+                  checked={checked?.[i] ?? item.done ?? false}
+                  disabled={disabled}
+                  onChange={(e) => ctx.setState(uiKey, { checked: { ...checked, [i]: e.target.checked } })}
+                  className="mt-1 accent-accent"
+                />
+              ) : (
+                <span className="text-subtle">{node.ordered ? `${i + 1}.` : '•'}</span>
+              )}
+              <div className="min-w-0">
+                <span>{item.text}</span>
+                {created[i] && <small className="ml-2 text-subtle">{t('ui.saved')}</small>}
+                {item.note && <p className="mt-1 text-xs text-muted">{item.note}</p>}
+              </div>
+            </li>
+          </Task>
         ))}
       </Tag>
       {node.checkable && (

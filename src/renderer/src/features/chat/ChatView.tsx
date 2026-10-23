@@ -218,13 +218,15 @@ function ChatPanel() {
               ) : (
                 <div className="mt-6 flex flex-wrap justify-center gap-2">
                   {SUGGESTIONS.map((k) => (
-                    <button
+                    <Button
+                      variant="outline"
+                      size="sm"
                       key={k}
                       onClick={() => void send(t(k))}
-                      className="rounded-full border border-border bg-surface px-3.5 py-1.5 text-xs text-muted transition-colors hover:border-accent hover:text-accent"
+                      className="h-auto max-w-full rounded-full py-2 whitespace-normal"
                     >
                       {t(k)}
-                    </button>
+                    </Button>
                   ))}
                 </div>
               )}
@@ -239,7 +241,7 @@ function ChatPanel() {
       </div>
 
       <div className="shrink-0 px-8 pb-5">
-        <div className="paper mx-auto max-w-[760px] rounded-2xl shadow-[var(--shadow-2)]">
+        <div className="mx-auto max-w-[760px]">
           <Composer
             conversationId={conversationId}
             prefill={prefill}
@@ -250,40 +252,42 @@ function ChatPanel() {
             newConversation={!conversationId}
             onSend={(text) => send(text)}
             onStop={() => streaming && void api.chat.stop(streaming.id)}
+            tools={
+              <>
+                <ModelPicker compact value={choice} onChange={setChoice} />
+                {provider && <EffortPicker compact kind={provider.kind} value={effort} onChange={setEffort} />}
+                <ScopePicker
+                  value={scope}
+                  onChange={(next) => {
+                    scopeExplicit.current = true
+                    setScope(next)
+                  }}
+                />
+                <span className="contents" data-testid="chat-web-mode">
+                  <WebModePicker value={web} onChange={setWeb} />
+                </span>
+                {!conv && (
+                  <Tip label={t('chat.incognitoHint')} side="top">
+                    <button
+                      role="switch"
+                      aria-checked={incognitoNew}
+                      aria-label={t('chat.incognito')}
+                      disabled={!!attachments.items.length}
+                      onClick={() => setIncognitoNew(!incognitoNew)}
+                      className={cn(
+                        'inline-flex h-7 items-center gap-1.5 rounded-lg border px-2.5 text-xs transition-colors',
+                        incognitoNew ? 'border-fg/70 bg-fg text-bg' : 'border-border bg-surface text-muted hover:text-fg'
+                      )}
+                    >
+                      <EyeOff className="size-3.5" />
+                      {t('chat.incognito')}
+                    </button>
+                  </Tip>
+                )}
+              </>
+            }
           />
-          <div className="flex flex-wrap items-center gap-2 border-t border-border/60 px-3 py-2">
-            <ModelPicker compact value={choice} onChange={setChoice} />
-            {provider && <EffortPicker compact kind={provider.kind} value={effort} onChange={setEffort} />}
-            <ScopePicker
-              value={scope}
-              onChange={(next) => {
-                scopeExplicit.current = true
-                setScope(next)
-              }}
-            />
-            <span className="contents" data-testid="chat-web-mode">
-              <WebModePicker value={web} onChange={setWeb} />
-            </span>
-            {!conv && (
-              <Tip label={t('chat.incognitoHint')} side="top">
-                <button
-                  role="switch"
-                  aria-checked={incognitoNew}
-                  aria-label={t('chat.incognito')}
-                  disabled={!!attachments.items.length}
-                  onClick={() => setIncognitoNew(!incognitoNew)}
-                  className={cn(
-                    'inline-flex h-7 items-center gap-1.5 rounded-lg border px-2.5 text-xs transition-colors',
-                    incognitoNew ? 'border-fg/70 bg-fg text-bg' : 'border-border bg-surface text-muted hover:text-fg'
-                  )}
-                >
-                  <EyeOff className="size-3.5" />
-                  {t('chat.incognito')}
-                </button>
-              </Tip>
-            )}
-            <span className="ml-auto text-2xs text-subtle">{t('chat.keys', { mod: modKey })}</span>
-          </div>
+          <p className="px-2 pt-2 text-right text-2xs text-subtle">{t('chat.keys', { mod: modKey })}</p>
         </div>
       </div>
     </AttachmentDropZone>
