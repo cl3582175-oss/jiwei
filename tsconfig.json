@@ -1,8 +1,4 @@
 {
-  "compilerOptions": {
-    "baseUrl": ".",
-    "paths": { "@/*": ["src/renderer/src/*"], "@shared/*": ["src/shared/*"] }
-  },
   "files": [],
   "compilerOptions": {
     "baseUrl": ".",

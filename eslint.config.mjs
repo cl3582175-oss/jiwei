@@ -8,15 +8,6 @@ export default tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    // Node test fixtures are intentionally CommonJS, including their require() imports.
-    files: ['e2e/fixtures/*.cjs'],
-    languageOptions: { sourceType: 'commonjs', globals: globals.node },
-    rules: {
-      '@typescript-eslint/no-require-imports': 'off',
-      'no-redeclare': ['error', { builtinGlobals: false }]
-    }
-  },
-  {
     files: ['src/**/*.{ts,tsx}', 'e2e/**/*.ts'],
     languageOptions: { globals: { ...globals.browser, ...globals.node } },
     plugins: { 'react-hooks': reactHooks },
