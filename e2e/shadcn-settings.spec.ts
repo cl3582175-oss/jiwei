@@ -141,6 +141,64 @@ const release = (app: ElectronApplication): Promise<void> =>
     Reflect.get(globalThis, '__jiweiSettingsGate').release?.()
   })
 
+test('external backup changes retain a pending keep value across frequency, folder and disable actions, then restart', async () => {
+  const userData = mkdtempSync(join(tmpdir(), 'jiwei-backup-settings-overlap-'))
+  const firstFolder = mkdtempSync(join(tmpdir(), 'jiwei-backup-first-'))
+  const nextFolder = mkdtempSync(join(tmpdir(), 'jiwei-backup-next-'))
+  let app = await launch(userData)
+  try {
+    let page = await app.firstWindow()
+    await page.waitForSelector('nav')
+    await page.evaluate((path) => window.jiwei.settings.set({ backup: { external: { path, frequency: 'weekly', keep: 4 } } }), firstFolder)
+    await settings(page, '数据')
+    const view = page.getByTestId('backup-settings')
+    const keep = view.locator('input[type="number"]')
+    const frequency = view.locator('select')
+    await expect(keep).toHaveValue('4')
+    await expect(frequency).toHaveValue('weekly')
+    const holdKeep = async (value: string): Promise<void> => {
+      await gate(app, 'settings:set', 'hold')
+      await keep.fill(value)
+      await keep.blur()
+      await expect.poll(() => app.evaluate(() => Reflect.get(globalThis, '__jiweiSettingsGate').calls)).toBe(1)
+    }
+    const resume = async (expected: { path: string | null; frequency: 'daily' | 'weekly'; keep: number }): Promise<void> => {
+      await release(app)
+      await expect.poll(() => page.evaluate(() => window.jiwei.settings.get().then((settings) => settings.backup?.external))).toEqual(expected)
+      await expect(keep).toHaveValue(String(expected.keep))
+      await app.evaluate(() => Reflect.get(globalThis, '__jiweiSettingsGate').restore())
+    }
+
+    await holdKeep('5')
+    await frequency.selectOption('daily')
+    await resume({ path: firstFolder, frequency: 'daily', keep: 5 })
+    await expect(frequency).toBeEnabled()
+
+    await app.evaluate(({ dialog }, path) => {
+      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [path] })
+    }, nextFolder)
+    await holdKeep('6')
+    await view.getByRole('button', { name: /选择.*位置|选择.*文件夹/ }).click()
+    await resume({ path: nextFolder, frequency: 'daily', keep: 6 })
+    await expect(frequency).toBeEnabled()
+
+    await holdKeep('7')
+    await view.getByRole('button', { name: /停用|禁用/ }).click()
+    await resume({ path: null, frequency: 'daily', keep: 7 })
+    await expect(frequency).toBeDisabled()
+
+    await app.close()
+    app = await launch(userData)
+    page = await app.firstWindow()
+    await settings(page, '数据')
+    await expect(page.getByTestId('backup-settings').locator('input[type="number"]')).toHaveValue('7')
+    expect(await page.evaluate(() => window.jiwei.settings.get().then((settings) => settings.backup?.external))).toEqual({ path: null, frequency: 'daily', keep: 7 })
+  } finally {
+    await release(app).catch(() => {})
+    await app.close()
+  }
+})
+
 test('two real renderer clients retain different review leaves despite a delayed old response and restart', async () => {
   const userData = mkdtempSync(join(tmpdir(), 'jiwei-settings-two-clients-'))
   let app = await launch(userData)

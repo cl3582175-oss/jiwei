@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/shadcn-button'
 import { Dialog, DialogContent } from '@/components/ui/shadcn-primitives'
 import { confirm, useConfirmSignal, withActionLock } from '@/components/ui/shadcn-confirm'
 import { api, formatBytes } from '@/lib/utils'
-import type { BackupManifest, BackupPreview } from '@shared/backup'
+import type { BackupManifest, BackupPreview, ExternalBackup } from '@shared/backup'
 import { SafetyProgress, safetyMessage } from './SafetyProgress'
 import { updateSettings } from '@/lib/queries'
 import { useSettingsDraft } from '@/lib/useSettingsDraft'
@@ -47,6 +47,17 @@ export function BackupSettings() {
     void qc.invalidateQueries({ queryKey: ['backups'] })
     void qc.invalidateQueries({ queryKey: ['backup-status'] })
   }
+  // Polling status is for display; queued writes must retain earlier confirmed edits.
+  const saveExternal = (patch: Partial<ExternalBackup>) =>
+    updateSettings(qc, (current) => ({
+      backup: {
+        ...current.backup,
+        external: {
+          ...(current.backup?.external ?? status?.external ?? { path: null, frequency: 'weekly', keep: 4 }),
+          ...patch
+        }
+      }
+    }))
   const keep = useSettingsDraft({
     key: 'backup.keep',
     value: String(status?.external.keep ?? 4),
@@ -54,7 +65,7 @@ export function BackupSettings() {
       !/^\d+$/.test(value) || Number(value) < 1 || Number(value) > 100 ? settingsMessages(translation.language).keepInvalid : null,
     persist: async (value) => {
       if (!status) throw new Error(t('memory.saveFailed'))
-      await updateSettings(qc, { backup: { external: { ...status.external, keep: Number(value) } } })
+      await saveExternal({ keep: Number(value) })
       refresh()
     },
     onError: (error) => toast.error(safetyMessage(error))
@@ -206,10 +217,7 @@ export function BackupSettings() {
             onClick={() =>
               void action(async () => {
                 const path = await api.backups.pickExternal()
-                if (path)
-                  await updateSettings(qc, {
-                    backup: { external: { path, frequency: status?.external.frequency ?? 'weekly', keep: status?.external.keep ?? 4 } }
-                  })
+                if (path) await saveExternal({ path })
               })
             }
           >
@@ -220,11 +228,10 @@ export function BackupSettings() {
             className="rounded-lg border border-border bg-surface px-3 py-2 text-sm"
             disabled={!status?.external.path || running}
             value={status?.external.frequency ?? 'weekly'}
-            onChange={(e) =>
-              void action(() =>
-                updateSettings(qc, { backup: { external: { ...status!.external, frequency: e.target.value as 'daily' | 'weekly' } } })
-              )
-            }
+            onChange={(e) => {
+              const frequency = e.currentTarget.value as 'daily' | 'weekly'
+              void action(() => saveExternal({ frequency }))
+            }}
           >
             <option value="daily">{t('safety.backup.daily')}</option>
             <option value="weekly">{t('safety.backup.weekly')}</option>
@@ -252,7 +259,7 @@ export function BackupSettings() {
           {status?.external.path && (
             <Button
               variant="ghost"
-              onClick={() => void action(() => updateSettings(qc, { backup: { external: { ...status.external, path: null } } }))}
+              onClick={() => void action(() => saveExternal({ path: null }))}
             >
               {t('safety.backup.disableExternal')}
             </Button>

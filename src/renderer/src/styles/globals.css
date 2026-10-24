@@ -1174,16 +1174,16 @@
     justify-content: flex-start;
     gap: 10px;
     margin-bottom: 2px;
-    border: 1px solid transparent;
+    border: 0;
     border-radius: 6px;
-    padding: 2px 12px;
+    padding: 0 12px;
     font-size: var(--text-sm);
     line-height: var(--text-sm--line-height);
     font-weight: 400;
     white-space: nowrap;
     color: var(--fg-muted);
     outline: none;
-    transition: color 150ms, background-color 150ms, border-color 150ms;
+    transition: color 150ms, background-color 150ms;
   }
   .ui-tabs-navigation-trigger[data-state='active'] {
     @apply shadow-card;
@@ -1195,8 +1195,8 @@
     color: var(--fg);
   }
   .ui-tabs-navigation-trigger:focus-visible {
-    outline: 2px solid var(--ring);
-    outline-offset: -2px;
+    outline: 2px solid color-mix(in oklab, var(--accent) 60%, transparent);
+    outline-offset: 1px;
   }
   .ui-tabs-navigation-trigger:disabled {
     pointer-events: none;
