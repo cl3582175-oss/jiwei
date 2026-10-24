@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ArrowUp, Square } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { InputGroup, InputGroupAddon, InputGroupTextarea, InputGroupButton, InputGroupTools } from '@/components/ai-elements/input-group'
 import { Tip } from '@/components/ui/primitives'
 import { ReplyQuote, useReplyQuote } from '../assist/ReplyQuote'
 import { quotedMessage } from '../assist/replySelection'
@@ -21,6 +21,7 @@ export function Composer({
   newConversation,
   conversationId,
   attachmentButton,
+  tools,
   disabled = false
 }: {
   busy: boolean
@@ -34,6 +35,7 @@ export function Composer({
   newConversation?: boolean
   conversationId?: string | null
   attachmentButton?: ReactNode
+  tools?: ReactNode
   disabled?: boolean
 }) {
   const { t } = useTranslation()
@@ -73,7 +75,7 @@ export function Composer({
     }
   }
   return (
-    <div className="relative">
+    <InputGroup>
       <ReplyQuote conversationId={conversationId} />
       {attachments && (
         <AttachmentInput
@@ -85,7 +87,7 @@ export function Composer({
           onMentionPicked={() => setText(text.replace(/@[^\s@]*$/, ''))}
         />
       )}
-      <textarea
+      <InputGroupTextarea
         ref={ref}
         rows={1}
         disabled={disabled}
@@ -104,31 +106,32 @@ export function Composer({
         }}
         placeholder={placeholder ?? t('chat.placeholder')}
         aria-label={placeholder ?? t('chat.placeholder')}
-        className="block max-h-[220px] min-h-[52px] w-full resize-none bg-transparent px-4 pt-3.5 pb-2 text-sm leading-relaxed text-fg outline-none placeholder:text-subtle"
       />
-      {attachments && <div className="px-2 pb-2">{attachmentButton ?? <AttachmentButton controller={attachments} />}</div>}
-      <div className="absolute right-2.5 bottom-2.5">
+      <InputGroupAddon className="flex-nowrap items-end">
+        <InputGroupTools>
+          {attachments && (attachmentButton ?? <AttachmentButton controller={attachments} />)}
+          {tools}
+        </InputGroupTools>
         {busy ? (
           <Tip label={t('chat.stop')} side="top">
-            <Button size="icon-sm" variant="secondary" className="rounded-full" onClick={onStop} aria-label={t('chat.stop')}>
+            <InputGroupButton size="icon-sm" variant="secondary" onClick={onStop} aria-label={t('chat.stop')}>
               <Square className="size-3 fill-current" />
-            </Button>
+            </InputGroupButton>
           </Tip>
         ) : (
           <Tip label={t('chat.sendHint')} side="top">
-            <Button
+            <InputGroupButton
               size="icon-sm"
               variant="primary"
-              className="rounded-full"
               disabled={disabled || (!text.trim() && !attachments?.ids().length) || sending || attachments?.adding}
               onClick={() => void submit()}
               aria-label={t('chat.send')}
             >
               <ArrowUp />
-            </Button>
+            </InputGroupButton>
           </Tip>
         )}
-      </div>
-    </div>
+      </InputGroupAddon>
+    </InputGroup>
   )
 }

@@ -2,9 +2,9 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AlertCircle, CheckCircle2, ChevronRight, Download, Loader2, RefreshCw } from 'lucide-react'
 import { Logo } from '@/components/Logo'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/primitives'
-import { Switch } from '@/components/ui/switch'
+import { Button } from '@/components/ui/shadcn-button'
+import { Input } from '@/components/ui/shadcn-primitives'
+import { Switch } from '@/components/ui/shadcn-switch'
 import { useSettings } from '@/lib/queries'
 import { api, cn, formatBytes } from '@/lib/utils'
 import type { UpdateState } from '@shared/updates'
@@ -139,7 +139,7 @@ export function AboutSettings() {
               </p>
             </div>
             {!disabled && !['downloading', 'ready'].includes(state.status) && (
-              <Button size="sm" variant="outline" disabled={busy || checking} onClick={() => void run(() => api.updates.check())}>
+              <Button size="sm" variant="secondary" disabled={busy || checking} onClick={() => void run(() => api.updates.check())}>
                 {t('updates.check')}
               </Button>
             )}
@@ -234,7 +234,7 @@ export function AboutSettings() {
                 value={feed}
                 onChange={(event) => setFeed(event.target.value)}
               />
-              <Button size="sm" variant="outline" onClick={() => void save()}>
+              <Button size="sm" variant="secondary" onClick={() => void save()}>
                 {t('updates.save')}
               </Button>
             </div>

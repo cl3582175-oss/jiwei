@@ -4,6 +4,7 @@ import type { NoteSort, WorkspaceContext } from '@shared/types'
 import { toast } from 'sonner'
 import { resolveSourceHighlight, type Highlight } from '../lib/sourceHighlight'
 import { selectorFromParams, selectorLocator } from '@shared/sourceTarget'
+import { settingsTransition } from '../lib/settingsTransition'
 
 export type StarterIntent =
   | { kind: 'chat'; text: string; skill?: string }
@@ -159,7 +160,7 @@ interface AppState extends Location {
   setGraphFocus: (key: string | null) => void
   openGraph: (focus?: string | null) => void
   /** 用量看板（v0.7.5）：从设置进入时先关闭设置 */
-  openUsage: () => void
+  openUsage: () => Promise<boolean>
 
   /** 复习页的标签：今日复习 / 掌握度地图 / 方向 */
   reviewTab: 'today' | 'cards' | 'mistakes' | 'mastery'
@@ -212,14 +213,14 @@ interface AppState extends Location {
   noteSort: NoteSort
   setNoteSort: (s: NoteSort) => void
   settingsOpen: boolean
-  setSettingsOpen: (o: boolean) => void
+  setSettingsOpen: (o: boolean) => Promise<boolean>
   /** 打开设置时定位的标签页 */
   settingsPluginId?: string | null
   settingsTab: string | null
-  openSettings: (tab?: string) => void
+  openSettings: (tab?: string) => Promise<boolean>
   /** 模型配置引导对话框（未配置 AI 时从横幅、功能入口打开） */
   modelSetupOpen: boolean
-  openModelSetup: () => void
+  openModelSetup: () => Promise<boolean>
   paletteOpen: boolean
   setPaletteOpen: (o: boolean) => void
 }
@@ -238,6 +239,16 @@ let sourceOpenRequest = 0
 
 export const useApp = create<AppState>((set, get) => {
   let highlightRequest = 0
+  const leaveSettings = (key: string, commit: () => void): Promise<boolean> => {
+    if (!get().settingsOpen) {
+      commit()
+      return Promise.resolve(true)
+    }
+    return settingsTransition.request(key, () => {
+      set({ settingsOpen: false })
+      commit()
+    })
+  }
   const apply = (loc: Location): void => {
     sourceOpenRequest++
     set((s) => ({
@@ -276,6 +287,10 @@ export const useApp = create<AppState>((set, get) => {
     historyIndex: 0,
 
     navigate: (to) => {
+      if (get().settingsOpen) {
+        void leaveSettings(`navigate:${JSON.stringify(to)}`, () => get().navigate(to))
+        return
+      }
       const s = get()
       const next: Location = {
         view: to.view ?? s.view,
@@ -295,12 +310,20 @@ export const useApp = create<AppState>((set, get) => {
       apply(next)
     },
     back: () => {
+      if (get().settingsOpen) {
+        void leaveSettings('navigate:back', () => get().back())
+        return
+      }
       const { historyIndex, history } = get()
       if (historyIndex <= 0) return
       set({ historyIndex: historyIndex - 1 })
       apply(history[historyIndex - 1])
     },
     forward: () => {
+      if (get().settingsOpen) {
+        void leaveSettings('navigate:forward', () => get().forward())
+        return
+      }
       const { historyIndex, history } = get()
       if (historyIndex >= history.length - 1) return
       set({ historyIndex: historyIndex + 1 })
@@ -352,6 +375,10 @@ export const useApp = create<AppState>((set, get) => {
     },
     browserOpen: false,
     openBrowser: (input, opts) => {
+      if (get().settingsOpen) {
+        void leaveSettings(`browser:${input ?? ''}:${!!opts?.incognito}`, () => get().openBrowser(input, opts))
+        return
+      }
       sourceOpenRequest++
       set({ browserOpen: true })
       if (get().view !== 'notes') get().navigate({ view: 'notes' })
@@ -388,10 +415,7 @@ export const useApp = create<AppState>((set, get) => {
       set({ graphFocus: focus ?? null })
       get().navigate({ view: 'graph' })
     },
-    openUsage: () => {
-      set({ settingsOpen: false })
-      get().navigate({ view: 'usage' })
-    },
+    openUsage: () => leaveSettings('navigate:usage', () => get().navigate({ view: 'usage' })),
 
     reviewTab: 'today',
     setReviewTab: (reviewTab) => set({ reviewTab }),
@@ -479,13 +503,19 @@ export const useApp = create<AppState>((set, get) => {
     setNoteSort: (noteSort) => set({ noteSort }),
     settingsOpen: false,
     setSettingsOpen: (settingsOpen) => {
-      if (!settingsOpen) window.dispatchEvent(new Event('jiwei:flush-settings'))
+      if (!settingsOpen) return leaveSettings('close', () => {})
       set({ settingsOpen })
+      return Promise.resolve(true)
     },
     settingsTab: null,
-    openSettings: (tab) => set({ settingsOpen: true, settingsTab: tab ?? null, modelSetupOpen: false }),
+    openSettings: (tab) => {
+      const commit = (): void => set({ settingsOpen: true, settingsTab: tab ?? get().settingsTab, modelSetupOpen: false })
+      if (get().settingsOpen && tab && tab !== get().settingsTab) return settingsTransition.request(`tab:${tab}`, commit)
+      commit()
+      return Promise.resolve(true)
+    },
     modelSetupOpen: false,
-    openModelSetup: () => set({ modelSetupOpen: true, settingsOpen: false }),
+    openModelSetup: () => leaveSettings('model-setup', () => set({ modelSetupOpen: true })),
     paletteOpen: false,
     setPaletteOpen: (paletteOpen) => set({ paletteOpen })
   }

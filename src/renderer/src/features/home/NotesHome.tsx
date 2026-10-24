@@ -5,8 +5,8 @@ import { useHeatmap, useNotes } from '@/lib/queries'
 import { useApp } from '@/store/app'
 import { useCreateNote } from '@/lib/shortcuts'
 import { formatRelative, modKey } from '@/lib/utils'
-import { Button } from '@/components/ui/button'
-import { Kbd } from '@/components/ui/primitives'
+import { Button } from '@/components/ui/shadcn-button'
+import { Kbd } from '@/components/ui/shadcn-primitives'
 import { Heatmap } from './Heatmap'
 import { useReviewStats } from '../review/ReviewView'
 import { InkNotes } from '@/components/Illustrations'
@@ -91,7 +91,7 @@ export function NotesHome() {
 
         {/* 今日复习 */}
         {review && review.due > 0 && (
-          <button
+          <Button variant="ghost" size="auto"
             onClick={() => setView('review')}
             className="paper group mt-6 flex w-full items-center gap-4 rounded-2xl px-6 py-4 text-left shadow-[var(--shadow-1)] transition-shadow hover:shadow-[var(--shadow-2)]"
             data-testid="home-review"
@@ -104,7 +104,7 @@ export function NotesHome() {
               <span className="mt-0.5 block text-xs text-muted">{t('home.reviewHint')}</span>
             </span>
             <span className="text-sm text-accent group-hover:underline">{t('home.reviewStart')}</span>
-          </button>
+          </Button>
         )}
 
         {/* 热力图 */}
@@ -131,7 +131,7 @@ export function NotesHome() {
             // 卡片宽高比取黄金比例
             <div className="grid grid-cols-1 gap-4 @min-[420px]:grid-cols-2 @min-[640px]:grid-cols-3">
               {notes.slice(0, 6).map((n) => (
-                <button
+                <Button variant="ghost" size="auto"
                   key={n.id}
                   onClick={() => openNote(n.id)}
                   className="paper group flex aspect-[1.618] flex-col rounded-2xl p-5 text-left shadow-[var(--shadow-1)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[var(--shadow-3)]"
@@ -142,7 +142,7 @@ export function NotesHome() {
                   </div>
                   <p className="mt-2 line-clamp-3 text-xs leading-[1.7] text-muted">{n.excerpt}</p>
                   <p className="mt-auto pt-2 text-2xs text-subtle">{formatRelative(n.editedAt, i18n.language)}</p>
-                </button>
+                </Button>
               ))}
             </div>
           )}

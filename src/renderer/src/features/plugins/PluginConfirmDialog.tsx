@@ -6,6 +6,7 @@ import type { PluginConfig, PluginInfo, PluginManifest, PluginPreview } from '@s
 import { Button } from '@/components/ui/button'
 import { field } from '../plan/ui'
 import { api } from '@/lib/utils'
+import { Confirmation } from '@/components/ai-elements/confirmation'
 
 export const pluginError = (e: unknown): string => {
   const message = String(e instanceof Error ? e.message : e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
@@ -243,7 +244,7 @@ export function PluginConfirmDialog({
             {preview.origin.market !== 'jiwei' && <p className="text-xs text-warning">{t('plugins.thirdParty')}</p>}
           </header>
           <div className="min-h-0 space-y-4 overflow-y-auto p-5 [overflow-wrap:anywhere]">
-            <section className="space-y-2" aria-label={t('plugins.capabilities')}>
+            <Confirmation className="flex flex-col gap-2" aria-label={t('plugins.capabilities')}>
               {c.commands.length > 0 && (
                 <div className="rounded-lg border border-warning/40 bg-warning/10 p-3 text-xs text-warning">
                   <p>{t('plugins.commandsRisk')}</p>
@@ -268,7 +269,7 @@ export function PluginConfirmDialog({
                 </p>
               )}
               {!!c.servers.length && <p className="text-xs text-muted">{t('plugins.mcpDisabled')}</p>}
-            </section>
+            </Confirmation>
             {current && Object.keys(preview.added).length > 0 && (
               <section className="rounded-lg border border-warning/40 p-3 text-xs text-warning">
                 <h3>{t('plugins.added')}</h3>

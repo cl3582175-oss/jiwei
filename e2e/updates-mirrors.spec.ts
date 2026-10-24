@@ -5,7 +5,7 @@ test('About falls back to a mirror when the default GitHub check fails before di
   const env = await updateMirrorFixture()
   try {
     await env.page.getByRole('button', { name: /^设置/ }).click()
-    await env.page.getByRole('button', { name: '关于', exact: true }).click()
+    await env.page.getByRole('tab', { name: '关于', exact: true }).click()
     expect((await env.page.evaluate(() => window.jiwei.settings.get())).updates?.feedUrl).toBe('')
     await env.page.getByRole('button', { name: '检查更新', exact: true }).click()
     await expect(env.page.getByTestId('update-settings')).toContainText('发现新版本 1.0.0')
@@ -24,7 +24,7 @@ test('About uses the second mirror if the first mirror fails', async () => {
   try {
     env.control.firstMirror = false
     await env.page.getByRole('button', { name: /^设置/ }).click()
-    await env.page.getByRole('button', { name: '关于', exact: true }).click()
+    await env.page.getByRole('tab', { name: '关于', exact: true }).click()
     await env.page.getByRole('button', { name: '检查更新', exact: true }).click()
     await expect(env.page.getByTestId('update-settings')).toContainText('发现新版本 1.0.0')
     expect((await env.networkRequests()).some((url) => url.startsWith('https://ghfast.top/'))).toBe(true)
@@ -39,7 +39,7 @@ test('About aborts a hanging GitHub request before falling back to a mirror', as
   try {
     env.control.hangPrimary = true
     await env.page.getByRole('button', { name: /^设置/ }).click()
-    await env.page.getByRole('button', { name: '关于', exact: true }).click()
+    await env.page.getByRole('tab', { name: '关于', exact: true }).click()
     await env.page.getByRole('button', { name: '检查更新', exact: true }).click()
     await expect(env.page.getByTestId('update-settings')).toContainText('发现新版本 1.0.0', { timeout: 15_000 })
     expect(env.control.abortedPrimary).toBeGreaterThan(0)
@@ -53,7 +53,7 @@ test('changing to a custom source cancels a hanging default check without starti
   try {
     env.control.hangPrimary = true
     await env.page.getByRole('button', { name: /^设置/ }).click()
-    await env.page.getByRole('button', { name: '关于', exact: true }).click()
+    await env.page.getByRole('tab', { name: '关于', exact: true }).click()
     await env.page.getByRole('button', { name: '检查更新', exact: true }).click()
     await expect.poll(() => env.control.requests.some((url) => url.startsWith('/github/'))).toBe(true)
     await env.page.evaluate(() =>
@@ -73,7 +73,7 @@ test('About can report the current version through a mirror', async () => {
   try {
     env.control.response = 'current'
     await env.page.getByRole('button', { name: /^设置/ }).click()
-    await env.page.getByRole('button', { name: '关于', exact: true }).click()
+    await env.page.getByRole('tab', { name: '关于', exact: true }).click()
     await env.page.getByRole('button', { name: '检查更新', exact: true }).click()
     await expect(env.page.getByTestId('update-settings')).toContainText('已是最新版本')
   } finally {
@@ -86,7 +86,7 @@ test('About keeps GitHub when it is reachable', async () => {
   try {
     env.control.primary = true
     await env.page.getByRole('button', { name: /^设置/ }).click()
-    await env.page.getByRole('button', { name: '关于', exact: true }).click()
+    await env.page.getByRole('tab', { name: '关于', exact: true }).click()
     await env.page.getByRole('button', { name: '检查更新', exact: true }).click()
     await expect(env.page.getByTestId('update-settings')).toContainText('发现新版本 1.0.0')
     expect((await env.networkRequests()).some((url) => /gh-proxy\.com|ghfast\.top/.test(new URL(url).hostname))).toBe(false)
@@ -100,7 +100,7 @@ test('About shows failure when every source fails and recovers on a new check', 
   try {
     env.control.response = 'unavailable'
     await env.page.getByRole('button', { name: /^设置/ }).click()
-    await env.page.getByRole('button', { name: '关于', exact: true }).click()
+    await env.page.getByRole('tab', { name: '关于', exact: true }).click()
     await env.page.getByRole('button', { name: '检查更新', exact: true }).click()
     await expect(env.page.getByRole('alert')).toContainText('无法连接更新服务器')
     await expect(env.page.getByTestId('update-settings')).not.toContainText('已是最新版本')
@@ -123,7 +123,7 @@ test('custom feed settings persist and bypass default mirror fallback even on fa
     env = await updateMirrorFixture({ userData })
     env.control.response = 'unavailable'
     await env.page.getByRole('button', { name: /^设置/ }).click()
-    await env.page.getByRole('button', { name: '关于', exact: true }).click()
+    await env.page.getByRole('tab', { name: '关于', exact: true }).click()
     await env.page.getByRole('button', { name: '检查更新', exact: true }).click()
     await expect(env.page.getByRole('alert')).toBeVisible()
     const settings = await env.page.evaluate(() => window.jiwei.settings.get())

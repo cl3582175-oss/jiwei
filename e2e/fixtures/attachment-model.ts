@@ -8,7 +8,7 @@ export interface ModelRequest {
 }
 export const textOf = (value: unknown): string =>
   typeof value === 'string' ? value : Array.isArray(value) ? value.map((part) => part.text ?? '').join('') : ''
-export async function attachmentModel(options: { embeddingDimensions?: number; chunkDelayMs?: number } = {}): Promise<{
+export async function attachmentModel(options: { embeddingDimensions?: number; chunkDelayMs?: number; chunkSize?: number; reasoning?: string } = {}): Promise<{
   server: Server
   url: string
   requests: ModelRequest[]
@@ -154,11 +154,13 @@ export async function attachmentModel(options: { embeddingDimensions?: number; c
         )
         send({}, 'tool_calls')
       } else {
+        if (options.reasoning) send({ reasoning_content: options.reasoning }, null)
         const system = textOf(input.messages.find((m) => m.role === 'system')?.content)
         const response = /第一行.*#|first line.*#/i.test(system) ? `# 受控主题\n- 摘要稳定事实 {${segmentId}}` : answer
-        for (let i = 0; i < response.length; i += 12) {
+        const chunkSize = Math.max(1, options.chunkSize ?? 12)
+        for (let i = 0; i < response.length; i += chunkSize) {
           if (options.chunkDelayMs) await new Promise((resolve) => setTimeout(resolve, options.chunkDelayMs))
-          send({ content: response.slice(i, i + 12) }, null)
+          send({ content: response.slice(i, i + chunkSize) }, null)
         }
         send({}, 'stop')
       }

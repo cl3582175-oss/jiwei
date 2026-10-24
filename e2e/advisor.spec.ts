@@ -5,6 +5,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import { createServer, type Server } from 'http'
 import { navTo } from './fixtures/nav'
+import { writeOpenAiCompletion } from './fixtures/openaiResponse'
 
 // v0.9 参谋与决策日志：知识库依据 → 备忘录（受控模型）→ 调权重 → 记录决定 → 到期提醒 → 回看并生成教训卡片。
 test.describe.configure({ mode: 'serial' })
@@ -69,26 +70,24 @@ test.beforeAll(async () => {
       prompts.push(prompt)
       const ids = [...prompt.matchAll(/"id":"(S\d+)"/g)].map((m) => m[1])
       const respond = () =>
-        res.writeHead(200, { 'content-type': 'application/json' }).end(
-          JSON.stringify({
-            id: 'controlled',
-            object: 'chat.completion',
-            created: 1,
-            model: 'deepseek-flash',
-            choices: [
-              {
-                index: 0,
-                message: {
-                  role: 'assistant',
-                  content: null,
-                  tool_calls: [{ id: 'submit', type: 'function', function: { name: 'submit', arguments: JSON.stringify(memo(ids)) } }]
-                },
-                finish_reason: 'tool_calls'
-              }
-            ],
-            usage: { prompt_tokens: 3000, completion_tokens: 900, total_tokens: 3900 }
-          })
-        )
+        writeOpenAiCompletion(res, {
+          id: 'controlled',
+          object: 'chat.completion',
+          created: 1,
+          model: 'deepseek-flash',
+          choices: [
+            {
+              index: 0,
+              message: {
+                role: 'assistant',
+                content: null,
+                tool_calls: [{ id: 'submit', type: 'function', function: { name: 'submit', arguments: JSON.stringify(memo(ids)) } }]
+              },
+              finish_reason: 'tool_calls'
+            }
+          ],
+          usage: { prompt_tokens: 3000, completion_tokens: 900, total_tokens: 3900 }
+        }, !!input.stream)
       if (prompt.includes('【慢】')) {
         const timer = setTimeout(respond, 10_000)
         res.on('close', () => clearTimeout(timer))
@@ -193,7 +192,7 @@ test('记录决定 → 到期在今日页提醒 → 回看并把教训写成复�
   const dialog = page.getByTestId('decide-dialog')
   await expect(dialog.getByRole('radio', { name: /去实习/ })).toBeChecked()
   await dialog.getByRole('textbox', { name: '我的预期' }).fill('三个月后拿到一段完整项目经历，模拟考成绩不低于 110')
-  await dialog.getByRole('button', { name: '2 周后' }).click()
+  await dialog.getByRole('radio', { name: '2 周后' }).click()
   await dialog.getByRole('button', { name: '记下' }).click()
   await expect(page.getByTestId('decision-record')).toContainText('去实习')
   // 把回看日期改到过去，模拟到期
@@ -209,7 +208,7 @@ test('记录决定 → 到期在今日页提醒 → 回看并把教训写成复�
   await page.getByRole('button', { name: '现在回看' }).click()
   const review = page.getByTestId('review-decision-dialog')
   await review.getByRole('textbox', { name: '实际结果' }).fill('项目经历拿到了，但模拟考只有 98 分')
-  await review.getByRole('button', { name: '部分准确' }).click()
+  await review.getByRole('radio', { name: '部分准确' }).click()
   await review.getByRole('textbox', { name: '教训' }).fill('先和单位约定好每周的工作天数')
   await review.getByRole('button', { name: '记下' }).click()
   await expect(page.getByTestId('decision-record')).toContainText('部分准确')

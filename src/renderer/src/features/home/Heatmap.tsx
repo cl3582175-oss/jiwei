@@ -1,7 +1,7 @@
 import { useLayoutEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { HeatmapDay } from '@shared/types'
-import { Tip } from '@/components/ui/primitives'
+import { Tip } from '@/components/ui/shadcn-primitives'
 
 const CELL = 12
 const GAP = 3

@@ -145,9 +145,9 @@ test('editing a cue keeps the card; removing it removes the card; excluding the 
 
 test('settings: new cards per day and target retention', async () => {
   await page.keyboard.press('ControlOrMeta+,')
-  await page.getByRole('dialog').getByRole('button', { name: '学习', exact: true }).click()
-  await page.getByRole('button', { name: '10', exact: true }).click()
-  await page.getByRole('button', { name: '95%', exact: true }).click()
+  await page.getByRole('dialog').getByRole('tab', { name: '学习', exact: true }).click()
+  await page.getByRole('radio', { name: '10', exact: true }).click()
+  await page.getByRole('radio', { name: '95%', exact: true }).click()
   await expect.poll(async () => (await page.evaluate(() => window.jiwei.settings.get())).review).toEqual({ newPerDay: 10, retention: 0.95 })
   await page.keyboard.press('Escape')
 })

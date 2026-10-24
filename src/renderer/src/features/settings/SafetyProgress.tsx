@@ -1,5 +1,5 @@
 import type { SafetyProgress as Progress } from '@shared/backup'
-import { Button } from '@/components/ui/button'
+import { Button } from '@/components/ui/shadcn-button'
 import { formatBytes } from '@/lib/utils'
 import i18n from 'i18next'
 import { useTranslation } from 'react-i18next'

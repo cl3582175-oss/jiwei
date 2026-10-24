@@ -1,3 +1,4 @@
+import { Button } from '@/components/ui/shadcn-button'
 import { useState } from 'react'
 import { useEditorState, type Editor } from '@tiptap/react'
 import { useTranslation } from 'react-i18next'
@@ -35,7 +36,7 @@ function FormatButton({
   children: React.ReactNode
 }) {
   return (
-    <button
+    <Button variant="ghost" size="auto"
       title={label}
       aria-label={label}
       onMouseDown={(e) => e.preventDefault()}
@@ -46,7 +47,7 @@ function FormatButton({
       )}
     >
       {children}
-    </button>
+    </Button>
   )
 }
 
@@ -77,7 +78,7 @@ function AiMenu({ editor, noteId }: { editor: Editor; noteId: string }) {
     'flex h-8 w-full items-center gap-2 rounded-md px-2.5 text-left text-xs text-fg hover:bg-surface-hover [&_svg]:size-3.5 [&_svg]:text-accent'
   return (
     <div className="relative">
-      <button
+      <Button variant="ghost" size="auto"
         aria-label={t('assist.aiMenu')}
         aria-expanded={open}
         onMouseDown={(e) => e.preventDefault()}
@@ -87,7 +88,7 @@ function AiMenu({ editor, noteId }: { editor: Editor; noteId: string }) {
         <Sparkles />
         AI
         <ChevronDown className={cn('!size-3 opacity-60 transition-transform', open && 'rotate-180')} />
-      </button>
+      </Button>
       {open && (
         <div
           role="menu"
@@ -95,24 +96,24 @@ function AiMenu({ editor, noteId }: { editor: Editor; noteId: string }) {
           className="absolute top-full left-0 z-10 mt-2 w-44 rounded-lg border border-border bg-surface p-1 shadow-float"
         >
           {REVISE_ACTIONS.map((a) => (
-            <button key={a} role="menuitem" className={item} onMouseDown={(e) => e.preventDefault()} onClick={() => run(a)}>
+            <Button variant="ghost" size="auto" key={a} role="menuitem" className={item} onMouseDown={(e) => e.preventDefault()} onClick={() => run(a)}>
               <PenLine />
               {t(`assist.actions.${a}`)}
-            </button>
+            </Button>
           ))}
-          <button role="menuitem" className={item} onMouseDown={(e) => e.preventDefault()} onClick={() => run('custom')}>
+          <Button variant="ghost" size="auto" role="menuitem" className={item} onMouseDown={(e) => e.preventDefault()} onClick={() => run('custom')}>
             <Sparkles />
             {t('assist.actions.revise')}
-          </button>
+          </Button>
           <div className="my-1 h-px bg-border" />
-          <button role="menuitem" className={item} onMouseDown={(e) => e.preventDefault()} onClick={() => run('explain')}>
+          <Button variant="ghost" size="auto" role="menuitem" className={item} onMouseDown={(e) => e.preventDefault()} onClick={() => run('explain')}>
             <Lightbulb />
             {t('assist.actions.explain')}
-          </button>
-          <button role="menuitem" className={item} onMouseDown={(e) => e.preventDefault()} onClick={() => run('feynman')}>
+          </Button>
+          <Button variant="ghost" size="auto" role="menuitem" className={item} onMouseDown={(e) => e.preventDefault()} onClick={() => run('feynman')}>
             <GraduationCap />
             {t('feynman.action')}
-          </button>
+          </Button>
         </div>
       )}
     </div>

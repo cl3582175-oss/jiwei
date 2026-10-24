@@ -25,7 +25,7 @@ test.afterAll(async () => {
 
 const openSettings = async (tab: string): Promise<void> => {
   await page.keyboard.press('ControlOrMeta+,')
-  await page.getByRole('dialog').getByRole('button', { name: tab, exact: true }).click()
+  await page.getByRole('dialog').getByRole('tab', { name: tab, exact: true }).click()
 }
 
 test('skills: built-in list, view, disable', async () => {
@@ -61,7 +61,7 @@ test('skills: built-in list, view, disable', async () => {
 })
 
 test('about me: profile and memories', async () => {
-  await page.getByRole('dialog').getByRole('button', { name: '关于我', exact: true }).click()
+  await page.getByRole('dialog').getByRole('tab', { name: '关于我', exact: true }).click()
   // 个人档案：失焦即保存
   const role = page.getByRole('textbox', { name: '我是' })
   await role.fill('大三计算机专业学生，准备考研')

@@ -209,7 +209,7 @@ test('办事：出练习卷 → 新建笔记确认 → 打开笔记', async () =
 
 test('外部工具：在设置里添加本地 MCP 服务器，工具按级别显示策略', async () => {
   await page.keyboard.press('ControlOrMeta+,')
-  await page.getByRole('button', { name: '连接' }).click()
+  await page.getByRole('tab', { name: '连接' }).click()
   const settings = page.getByTestId('connections-settings')
   await expect(settings).toContainText('还没有接入外部工具')
   await settings.getByRole('button', { name: '添加', exact: true }).click()
@@ -343,7 +343,7 @@ test('单次上限：一次回答超过后停止后续步骤', async () => {
 
 test('设置 → 费用与权限：花费、分项、上限与最近做了什么', async () => {
   await page.keyboard.press('ControlOrMeta+,')
-  await page.getByRole('button', { name: '费用与权限' }).click()
+  await page.getByRole('tab', { name: '费用与权限' }).click()
   const view = page.getByTestId('usage-settings')
   await expect(view.getByTestId('usage-month')).toContainText('¥')
   await expect(view).toContainText('助手对话')
@@ -363,14 +363,14 @@ test('窄窗与深色：确认卡片与设置页不溢出', async () => {
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1000, 680))
   await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'dark'))
   await page.keyboard.press('ControlOrMeta+,')
-  await page.getByRole('button', { name: '连接' }).click()
+  await page.getByRole('tab', { name: '连接' }).click()
   const overflow = await page.evaluate(() => {
     const el = document.querySelector('[data-testid="connections-settings"]')!.parentElement!
     return el.scrollWidth - el.clientWidth
   })
   expect(overflow).toBeLessThanOrEqual(1)
   await shot('agent-connections-dark')
-  await page.getByRole('button', { name: '费用与权限' }).click()
+  await page.getByRole('tab', { name: '费用与权限' }).click()
   await shot('agent-usage-dark')
   await page.keyboard.press('Escape')
   await page.evaluate(() => document.documentElement.removeAttribute('data-theme'))

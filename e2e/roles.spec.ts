@@ -33,7 +33,7 @@ test.afterAll(async () => {
 
 test('settings roles: grouped cards, multi-select, combined confirmation installs both packs', async () => {
   await page.keyboard.press('ControlOrMeta+,')
-  await page.getByRole('button', { name: '插件', exact: true }).click()
+  await page.getByRole('tab', { name: '插件', exact: true }).click()
   // 没有装过插件时先看角色
   await expect(page.getByTestId('roles-panel')).toBeVisible()
   await expect(page.getByRole('heading', { name: '我是学生' })).toBeVisible()
@@ -127,8 +127,8 @@ test('completed starters stay checked; dismissing persists across restart', asyn
 
 const pluginsSettings = async (tab: '角色' | '市场' | '已安装'): Promise<void> => {
   await page.keyboard.press('ControlOrMeta+,')
-  await page.getByRole('button', { name: '插件', exact: true }).click()
-  await page.getByRole('group', { name: '插件', exact: true }).getByRole('button', { name: tab, exact: true }).click()
+  await page.getByRole('tab', { name: '插件', exact: true }).click()
+  await page.getByRole('radiogroup', { name: '插件', exact: true }).getByRole('radio', { name: tab, exact: true }).click()
 }
 
 test('customize copies an installed role into an editable folder, turns the original off, and reloads edits on update', async () => {

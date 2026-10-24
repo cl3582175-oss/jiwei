@@ -1093,8 +1093,11 @@ const zhCN = {
     defaults: '默认模型与思考强度',
     model: '模型',
     pickModel: '选择模型',
+    searchModels: '搜索模型',
+    noMatchingModels: '没有匹配的已配置模型',
     noModels: '先在设置中添加模型服务',
     effort: '思考强度',
+    effortShort: '思考',
     effortHint: '思考强度：越高越深入，也越慢、越贵',
     effortDesc:
       '“关闭”直接回答，最快最省；“低 / 中 / 高 / 极限”逐级加深思考。不同服务商支持的档位不同，只显示可用的档位。每次提问时也可以单独切换。',

@@ -1,3 +1,4 @@
+import { Button } from '@/components/ui/shadcn-button'
 import { useState } from 'react'
 import Image, { type ImageOptions } from '@tiptap/extension-image'
 import { NodeViewWrapper, ReactNodeViewRenderer, type NodeViewProps } from '@tiptap/react'
@@ -59,16 +60,16 @@ function ImageView({ node, editor, selected, extension }: NodeViewProps) {
         className={selected ? 'ProseMirror-selectednode' : ''}
       />
       {editor.isEditable && noteId && (
-        <button
+        <Button variant="ghost" size="auto"
           type="button"
           contentEditable={false}
-          className="pointer-events-none absolute bottom-2 left-2 max-w-[calc(100%-1rem)] rounded border border-border bg-paper px-2 py-1 text-xs shadow opacity-0 group-hover/image:pointer-events-auto group-hover/image:opacity-100 focus:pointer-events-auto focus:opacity-100"
+          className="pointer-events-none absolute bottom-2 left-2 max-w-[calc(100%-1rem)] rounded bg-secondary bg-paper px-2 py-1 text-xs shadow opacity-0 group-hover/image:pointer-events-auto group-hover/image:opacity-100 focus:pointer-events-auto focus:opacity-100"
           style={selected || busy ? { opacity: 1, pointerEvents: 'auto' } : undefined}
           disabled={busy}
           onClick={() => void recognize()}
         >
           {t(busy ? 'captureContent.recognizing' : 'captureContent.recognizeFormula')}
-        </button>
+        </Button>
       )}
     </NodeViewWrapper>
   )

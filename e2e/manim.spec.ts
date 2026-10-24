@@ -52,8 +52,8 @@ test.afterAll(async () => {
 
 test('plugin explains the runtime it needs; runtime panel offers the download', async () => {
   await page.keyboard.press('ControlOrMeta+,')
-  await page.getByRole('button', { name: '插件', exact: true }).click()
-  await page.getByRole('group', { name: '插件', exact: true }).getByRole('button', { name: '已安装', exact: true }).click()
+  await page.getByRole('tab', { name: '插件', exact: true }).click()
+  await page.getByRole('radiogroup', { name: '插件', exact: true }).getByRole('radio', { name: '已安装', exact: true }).click()
   const row = page.locator('[data-plugin-id="manim@jiwei"]')
   await expect(row).toContainText('数学动画（Manim）')
   await expect(row).toContainText('下载运行环境')

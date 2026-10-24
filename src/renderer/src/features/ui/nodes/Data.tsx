@@ -12,6 +12,7 @@ import { DecisionBox, UsageBox } from './Tools'
 import type { UiContext } from '../context'
 import { ConfirmSheet, uiAction, type ConfirmItem } from '../ConfirmSheet'
 import { readUiData, dataText, type DataNode, type UiData } from '../readData'
+import { Plan, Task } from '@/components/ai-elements/plan'
 
 type Pending = { kind: 'schedule' | 'create' | 'complete'; items: ConfirmItem[] }
 export function DataNodeView({ node, uiKey, ctx }: { node: DataNode; uiKey: string; ctx: UiContext }) {
@@ -137,28 +138,31 @@ export function DataNodeView({ node, uiKey, ctx }: { node: DataNode; uiKey: stri
             <div className="space-y-2">
               {data?.type === 'tasks' &&
                 data.actions.map((a) => (
-                  <label key={a.id} className="flex items-start gap-2 rounded-lg bg-sunken p-2 text-sm">
-                    <input
-                      type="checkbox"
-                      className="mt-1 accent-accent"
-                      aria-label={a.title}
-                      checked={
-                        a.status === 'done' ||
-                        !!completed[a.id] ||
-                        (pending?.kind === 'complete' && pending.items.some((i) => i.id === a.id))
-                      }
-                      disabled={disabled || !!completed[a.id]}
-                      onChange={(e) => setPending(e.target.checked ? { kind: 'complete', items: [{ id: a.id, label: a.title }] } : null)}
-                    />
-                    <span>
-                      {a.title}
-                      {a.dueAt && <small className="block text-subtle">{new Date(a.dueAt).toLocaleDateString(i18n.language)}</small>}
-                    </span>
-                  </label>
+                  <Task key={a.id} asChild state={a.status === 'done' || completed[a.id] ? 'done' : 'pending'}>
+                    <label className="flex items-start gap-2">
+                      <input
+                        type="checkbox"
+                        className="mt-1 accent-accent"
+                        aria-label={a.title}
+                        checked={
+                          a.status === 'done' ||
+                          !!completed[a.id] ||
+                          (pending?.kind === 'complete' && pending.items.some((i) => i.id === a.id))
+                        }
+                        disabled={disabled || !!completed[a.id]}
+                        onChange={(e) => setPending(e.target.checked ? { kind: 'complete', items: [{ id: a.id, label: a.title }] } : null)}
+                      />
+                      <span>
+                        {a.title}
+                        {a.dueAt && <small className="block text-subtle">{new Date(a.dueAt).toLocaleDateString(i18n.language)}</small>}
+                      </span>
+                    </label>
+                  </Task>
                 ))}
               {(node.drafts ?? []).map((draft, i) => (
-                <div
+                <Task
                   key={i}
+                  state={created[i] ? 'done' : 'pending'}
                   className={cn(
                     'rounded-lg border p-2 text-sm',
                     created[i] ? 'border-border' : 'border-dashed border-emph/60 bg-emph-soft/40'
@@ -171,7 +175,7 @@ export function DataNodeView({ node, uiKey, ctx }: { node: DataNode; uiKey: stri
                   </span>
                   {draft.title}
                   {draft.due && <small className="ml-2 text-subtle">{draft.due}</small>}
-                </div>
+                </Task>
               ))}
               {!!node.drafts?.length && (
                 <button
@@ -288,7 +292,7 @@ function Schedule({
     excluded[i] || created[i] ? [] : [{ id: String(i), label: p.title, detail: `${p.start} – ${p.end}` }]
   )
   return (
-    <div>
+    <Plan>
       <div
         className="grid min-w-0 gap-2"
         style={{ gridTemplateColumns: ctx.compact || days.length > 7 ? 'minmax(0,1fr)' : `repeat(${days.length},minmax(0,1fr))` }}
@@ -381,7 +385,7 @@ function Schedule({
           {t('ui.action.schedule')}
         </button>
       )}
-    </div>
+    </Plan>
   )
 }
 function Mastery({ data }: { data: Extract<UiData, { type: 'mastery' }> }) {

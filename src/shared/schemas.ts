@@ -142,8 +142,12 @@ export const SettingsPatchSchema = z.object({
       /** HH:mm */
       time: z.string().regex(/^\d{2}:\d{2}$/)
     })
+    .partial()
     .optional(),
-  review: z.object({ newPerDay: z.number().int().min(0).max(500), retention: z.number().min(0.8).max(0.97) }).optional(),
+  review: z
+    .object({ newPerDay: z.number().int().min(0).max(500), retention: z.number().min(0.8).max(0.97) })
+    .partial()
+    .optional(),
   /** 内置浏览器（v0.6.0）：搜索引擎、不发送给 AI 的网站、主动程度 */
   browser: z
     .object({

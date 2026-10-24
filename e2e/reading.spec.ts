@@ -30,8 +30,8 @@ async function shot(name:string,sample:ReadingApp=env,reopenWord?:()=>Promise<vo
     }
     await sample.page.getByRole('button',{name:/^设置/}).click()
     const settings=sample.page.getByRole('dialog',{name:'设置',exact:true})
-    await settings.getByRole('button',{name:'外观',exact:true}).click()
-    await settings.getByRole('button',{name:theme==='dark'?'深色':'浅色',exact:true}).click()
+    await settings.getByRole('tab',{name:'外观',exact:true}).click()
+    await settings.getByRole('radio',{name:theme==='dark'?'深色':'浅色',exact:true}).click()
     await expect.poll(()=>sample.page.evaluate(()=>document.documentElement.dataset.theme)).toBe(theme)
     // Clicking the close control preserves a non-modal grammar AnswerCard, whose Escape handler would close it too.
     await settings.locator('button').last().click();await expect(settings).not.toBeVisible()

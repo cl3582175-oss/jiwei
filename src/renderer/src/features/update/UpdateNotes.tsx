@@ -1,3 +1,5 @@
+import { Separator } from '@/components/ui/separator'
+import { Button } from '@/components/ui/shadcn-button'
 import { marked, type Token, type Tokens } from 'marked'
 import type { ReactNode } from 'react'
 import { api } from '@/lib/utils'
@@ -56,13 +58,13 @@ export function UpdateNotes({ text }: { text: string }) {
             /* Unsafe links stay text. */
           }
           return safe ? (
-            <button
+            <Button variant="ghost" size="auto"
               key={i}
               className="text-accent underline"
               onClick={() => void api.updates.openLink(String(token.href)).catch(() => undefined)}
             >
               {content}
-            </button>
+            </Button>
           ) : (
             <span key={i}>{content}</span>
           )
@@ -72,7 +74,7 @@ export function UpdateNotes({ text }: { text: string }) {
         case 'br':
           return <br key={i} />
         case 'hr':
-          return <hr key={i} className="border-border" />
+          return <Separator key={i} className="border-border" />
         default:
           return <span key={i}>{content}</span>
       }

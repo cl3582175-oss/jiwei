@@ -7,6 +7,7 @@ import { createCanvas, loadImage } from '@napi-rs/canvas'
 import { MATH_QUESTION, MATH_MY_ANSWER, PHYSICS_QUESTION, PHYSICS_MY_ANSWER } from './mistakes-images'
 import type { Mistake } from '../../src/shared/mistakes'
 import { navTo } from './nav'
+import { writeOpenAiCompletion } from './openaiResponse'
 
 export interface MistakesApp {
   app: ElectronApplication; page: Page; userData: string; provider: Server
@@ -23,7 +24,7 @@ export async function startMistakesApp(options: { provider?: boolean; importProv
     request.on('data', (chunk: Buffer) => { body += chunk.toString() })
     request.on('end', () => { void (async () => {
       try {
-        const input = JSON.parse(body) as { messages: { role: string; content: string | { type: string; text?: string; image_url?: { url: string } }[] | null }[]; tools?: { function: { parameters: { properties: Record<string, unknown> } } }[] }
+        const input = JSON.parse(body) as { messages: { role: string; content: string | { type: string; text?: string; image_url?: { url: string } }[] | null }[]; stream?: boolean; tools?: { function: { parameters: { properties: Record<string, unknown> } } }[] }
         const props = input.tools?.[0]?.function.parameters.properties ?? {}, content = input.messages.flatMap((m) => typeof m.content === 'string' ? [{ type: 'text', text: m.content }] : m.content ?? [])
         const prompt = content.filter((c) => c.type === 'text').map((c) => c.text ?? '').join('\n'), images = content.filter((c) => c.type === 'image_url')
         const capture = /<mistake-data>\s*([\s\S]*?)\s*<\/mistake-data>/.exec(prompt)
@@ -57,7 +58,7 @@ export async function startMistakesApp(options: { provider?: boolean; importProv
           if (wrong) state.mismatch--
           output = { answer: wrong ? 'x=2,999' : answers.get(String(data.question)) ?? 'x=2,5', numericAnswer: null, unit: '' }
         } else output = { verdict: '受控流程夹具：本题答案正确。', missing: [], wrong: [], suggested: 3 }
-        response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ id: `mistake-${requests.length}`, object: 'chat.completion', created: 1, model: 'mistakes-transport-fixture', choices: [{ index: 0, message: { role: 'assistant', content: null, tool_calls: [{ id: `submit-${requests.length}`, type: 'function', function: { name: 'submit', arguments: JSON.stringify(output) } }] }, finish_reason: 'tool_calls' }], usage: { prompt_tokens: 100, completion_tokens: 100, total_tokens: 200 } }))
+        writeOpenAiCompletion(response, { id: `mistake-${requests.length}`, object: 'chat.completion', created: 1, model: 'mistakes-transport-fixture', choices: [{ index: 0, message: { role: 'assistant', content: null, tool_calls: [{ id: `submit-${requests.length}`, type: 'function', function: { name: 'submit', arguments: JSON.stringify(output) } }] }, finish_reason: 'tool_calls' }], usage: { prompt_tokens: 100, completion_tokens: 100, total_tokens: 200 } }, !!input.stream)
         if (kind === 'independent' && state.failAfterIndependent !== null && --state.failAfterIndependent === 0) { state.failAfterIndependent = null; state.fail = true }
       } catch { response.writeHead(400).end('Invalid controlled fixture input') }
     })() })

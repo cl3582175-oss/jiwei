@@ -17,5 +17,13 @@ export default tseslint.config(
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_', ignoreRestSiblings: true }],
       '@typescript-eslint/no-explicit-any': 'warn'
     }
+  },
+  {
+    files: ['e2e/**/*.cjs'],
+    languageOptions: { sourceType: 'commonjs', globals: globals.node },
+    rules: {
+      '@typescript-eslint/no-require-imports': 'off',
+      'no-redeclare': ['error', { builtinGlobals: false }]
+    }
   }
 )

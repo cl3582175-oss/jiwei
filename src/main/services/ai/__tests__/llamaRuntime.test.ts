@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createHash, randomUUID } from 'crypto'
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'fs'
+import { cpSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'fs'
 import { spawnSync } from 'child_process'
 import { tmpdir } from 'os'
 import { join } from 'path'
@@ -57,6 +57,11 @@ afterEach(() => {
 async function archive(file: string, bytes: Buffer): Promise<RuntimeArchive> {
   archives.set(file, bytes)
   return { file, size: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') }
+}
+async function tarSpec(source: string, files: string[]): Promise<RuntimeSpec> {
+  const path = join(source, 'fixture.tar.gz')
+  tar({ cwd: source, file: path, gzip: true, sync: true }, files)
+  return { variant: 'vulkan', archives: [await archive('runtime.tar.gz', readFileSync(path))] }
 }
 function manager(options: { download?: (file: string) => Promise<void>; probe?: () => Promise<void> } = {}) {
   return new LlamaRuntimeManager(
@@ -231,6 +236,102 @@ describe('transactional installation', () => {
     specs.set('vulkan', { variant: 'vulkan', archives: [await archive('unsafe.tar.gz', Buffer.concat(chunks))] })
     await expect(manager().install(specs.get('vulkan')!)).rejects.toThrow(/路径/)
     expect(readFileSync(join(fixture.root, 'sentinel'), 'utf8')).toBe('keep')
+  })
+  it('installs internal tar symlink chains in archive order and publishes a complete receipt', async () => {
+    const source = join(fixture.root, 'tar-source')
+    mkdirSync(source)
+    writeFileSync(join(source, 'llama-server.exe'), 'runtime binary')
+    writeFileSync(join(source, 'libfixture.0.1.dylib'), 'runtime library')
+    symlinkSync('libfixture.0.1.dylib', join(source, 'libfixture.0.dylib'))
+    symlinkSync('libfixture.0.dylib', join(source, 'libfixture.dylib'))
+    const spec = await tarSpec(source, ['libfixture.0.dylib', 'libfixture.dylib', 'libfixture.0.1.dylib', 'llama-server.exe'])
+    specs.set('vulkan', spec)
+    const runtime = manager()
+    const result = await runtime.install(spec)
+    expect(readFileSync(join(result.directory, 'libfixture.dylib'), 'utf8')).toBe('runtime library')
+    expect(readFileSync(join(result.directory, 'libfixture.0.dylib'), 'utf8')).toBe('runtime library')
+    expect(readFileSync(result.binary, 'utf8')).toBe('runtime binary')
+    expect(JSON.parse(readFileSync(join(result.directory, 'runtime.json'), 'utf8')).archives).toEqual(spec.archives)
+    expect((await runtime.installed('vulkan'))?.directory).toBe(result.directory)
+  })
+  it('installs direct and chained tar links targeting their containing directory', async () => {
+    const source = join(fixture.root, 'tar-source')
+    mkdirSync(join(source, 'lib'), { recursive: true })
+    writeFileSync(join(source, 'llama-server.exe'), 'runtime binary')
+    writeFileSync(join(source, 'lib/library.dylib'), 'runtime library')
+    symlinkSync('.', join(source, 'lib/alias'))
+    symlinkSync('alias', join(source, 'lib/chained-alias'))
+    const spec = await tarSpec(source, ['llama-server.exe', 'lib'])
+    specs.set('vulkan', spec)
+    const runtime = manager()
+    const result = await runtime.install(spec)
+    expect(readFileSync(join(result.directory, 'lib/alias/library.dylib'), 'utf8')).toBe('runtime library')
+    expect(readFileSync(join(result.directory, 'lib/chained-alias/library.dylib'), 'utf8')).toBe('runtime library')
+    expect((await runtime.installed('vulkan'))?.directory).toBe(result.directory)
+  })
+  it.each(['/absolute-library.dylib', 'C:\\absolute-library.dylib'])('rejects absolute tar symlink target %s', async (target) => {
+    const source = join(fixture.root, 'tar-source')
+    mkdirSync(source)
+    writeFileSync(join(source, 'llama-server.exe'), 'runtime binary')
+    symlinkSync(target, join(source, 'libfixture.dylib'))
+    const spec = await tarSpec(source, ['llama-server.exe', 'libfixture.dylib'])
+    const runtime = manager()
+    await expect(runtime.install(spec)).rejects.toThrow(/路径/)
+    expect(await runtime.installed('vulkan')).toBeNull()
+  })
+  it('rejects a tar symlink cycle before publishing a runtime', async () => {
+    const source = join(fixture.root, 'tar-source')
+    mkdirSync(source)
+    writeFileSync(join(source, 'llama-server.exe'), 'runtime binary')
+    symlinkSync('second.dylib', join(source, 'first.dylib'))
+    symlinkSync('first.dylib', join(source, 'second.dylib'))
+    const spec = await tarSpec(source, ['llama-server.exe', 'first.dylib', 'second.dylib'])
+    const runtime = manager()
+    await expect(runtime.install(spec)).rejects.toThrow(/循环/)
+    expect(await runtime.installed('vulkan')).toBeNull()
+  })
+  it('rejects tar symlink targets missing from the verified archive', async () => {
+    const source = join(fixture.root, 'tar-source')
+    mkdirSync(source)
+    writeFileSync(join(source, 'llama-server.exe'), 'runtime binary')
+    writeFileSync(join(source, 'omitted.dylib'), 'not archived')
+    symlinkSync('omitted.dylib', join(source, 'libfixture.dylib'))
+    const spec = await tarSpec(source, ['llama-server.exe', 'libfixture.dylib'])
+    const runtime = manager()
+    await expect(runtime.install(spec)).rejects.toThrow(/目标.*压缩包/)
+    expect(await runtime.installed('vulkan')).toBeNull()
+  })
+  it('rejects tar symlink targets represented by ambiguous hardlinks', async () => {
+    const source = join(fixture.root, 'tar-source')
+    mkdirSync(source)
+    writeFileSync(join(source, 'llama-server.exe'), 'runtime binary')
+    writeFileSync(join(source, 'original.dylib'), 'runtime library')
+    linkSync(join(source, 'original.dylib'), join(source, 'hardlink.dylib'))
+    symlinkSync('hardlink.dylib', join(source, 'libfixture.dylib'))
+    const spec = await tarSpec(source, ['llama-server.exe', 'original.dylib', 'hardlink.dylib', 'libfixture.dylib'])
+    const runtime = manager()
+    await expect(runtime.install(spec)).rejects.toThrow(/硬链接/)
+    expect(await runtime.installed('vulkan')).toBeNull()
+  })
+  it('retains strict tar rejection of file writes through a symbolic directory', async () => {
+    const source = join(fixture.root, 'tar-source')
+    mkdirSync(join(source, 'safe-dir'), { recursive: true })
+    writeFileSync(join(source, 'llama-server.exe'), 'runtime binary')
+    writeFileSync(join(source, 'safe-dir/library.dylib'), 'runtime library')
+    symlinkSync('safe-dir', join(source, 'alias-dir'))
+    const spec = await tarSpec(source, ['llama-server.exe', 'safe-dir', 'alias-dir', 'alias-dir/library.dylib'])
+    const runtime = manager()
+    await expect(runtime.install(spec)).rejects.toThrow(/symbolic link/)
+    expect(await runtime.installed('vulkan')).toBeNull()
+  })
+  it('rejects duplicate tar paths before resolving their link targets', async () => {
+    const source = join(fixture.root, 'tar-source')
+    mkdirSync(source)
+    writeFileSync(join(source, 'llama-server.exe'), 'runtime binary')
+    const spec = await tarSpec(source, ['llama-server.exe', 'llama-server.exe'])
+    const runtime = manager()
+    await expect(runtime.install(spec)).rejects.toThrow(/重复路径/)
+    expect(await runtime.installed('vulkan')).toBeNull()
   })
 })
 

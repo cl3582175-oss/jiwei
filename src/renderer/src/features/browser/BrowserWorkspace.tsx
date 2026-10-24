@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { Group, Panel, Separator } from 'react-resizable-panels'
+import { ResizablePanelGroup as Group, ResizablePanel as Panel, ResizableHandle as Separator } from '@/components/ui/resizable'
 import { useApp } from '@/store/app'
 import { useNoteLayout } from './noteBar'
 import { FloatingPanel } from '@/components/FloatingPanel'

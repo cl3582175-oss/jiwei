@@ -4,9 +4,10 @@ import { useQuery } from '@tanstack/react-query'
 import { FileDown, X, CircleHelp, MessageSquare, Highlighter } from 'lucide-react'
 import { toast } from 'sonner'
 import type { Annotation, Segment } from '@shared/types'
-import { api, cn } from '@/lib/utils'
+import { api } from '@/lib/utils'
 import { useApp } from '@/store/app'
-import { Button } from '@/components/ui/button'
+import { Button } from '@/components/ui/shadcn-button'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { useAnnotate, useAnnotations } from './store'
 import { SWATCH } from './AnnotationCard'
 import { locateQuote } from './anchor'
@@ -63,6 +64,7 @@ export function AnnotationsPanel({ sourceId, isPdf, onClose }: { sourceId: strin
   }
 
   return (
+    <Tabs asChild className="gap-0" value={filter} onValueChange={(value) => { if (value === 'all' || value === 'comments' || value === 'questions') setFilter(value) }}>
     <aside
       aria-label={t('annotate.panel')}
       data-testid="annotations-panel"
@@ -76,27 +78,21 @@ export function AnnotationsPanel({ sourceId, isPdf, onClose }: { sourceId: strin
           <X />
         </Button>
       </header>
-      <div className="flex shrink-0 gap-1 px-3 pt-2.5" role="tablist">
+      <TabsList variant="line" aria-label={t('annotate.panel')} className="h-auto shrink-0 justify-start gap-1 px-3 pt-2.5">
         {(['all', 'comments', 'questions'] as const).map((f) => (
-          <button
+          <TabsTrigger value={f}
             key={f}
-            role="tab"
-            aria-selected={filter === f}
-            onClick={() => setFilter(f)}
-            className={cn(
-              'rounded-md px-2 py-1 text-xs transition-colors',
-              filter === f ? 'bg-accent-soft text-accent' : 'text-muted hover:text-fg'
-            )}
+            className="flex-none rounded-md px-2 py-1 text-xs"
           >
             {t(`annotate.filter.${f}`)}
-          </button>
+          </TabsTrigger>
         ))}
-      </div>
-      <ul className="min-h-0 flex-1 space-y-1 overflow-y-auto p-2">
+      </TabsList>
+      <TabsContent value={filter} className="min-h-0 flex-1"><ul className="h-full min-h-0 space-y-1 overflow-y-auto p-2">
         {shown.length === 0 && <li className="px-2 py-6 text-center text-xs leading-relaxed text-subtle">{t('annotate.empty')}</li>}
         {shown.map((a) => (
           <li key={a.id}>
-            <button
+            <Button variant="ghost" size="auto"
               onClick={(e) => jump(a, e.currentTarget)}
               data-annotation={a.id}
               className="group flex w-full gap-2.5 rounded-lg px-2 py-2 text-left hover:bg-surface-hover"
@@ -111,10 +107,10 @@ export function AnnotationsPanel({ sourceId, isPdf, onClose }: { sourceId: strin
                   {orphans.has(a.id) && <span className="rounded bg-danger-soft px-1 text-danger">{t('annotate.orphan')}</span>}
                 </span>
               </span>
-            </button>
+            </Button>
           </li>
         ))}
-      </ul>
+      </ul></TabsContent>
       {isPdf && list.length > 0 && (
         <footer className="shrink-0 border-t border-border/70 p-2">
           <Button size="sm" variant="ghost" className="w-full" onClick={() => void exportPdf()}>
@@ -124,5 +120,6 @@ export function AnnotationsPanel({ sourceId, isPdf, onClose }: { sourceId: strin
         </footer>
       )}
     </aside>
+    </Tabs>
   )
 }

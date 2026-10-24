@@ -1,3 +1,4 @@
+import { Button } from '@/components/ui/shadcn-button'
 import { useState, type DragEvent, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQueryClient } from '@tanstack/react-query'
@@ -16,8 +17,8 @@ import {
   MenuSubContent,
   MenuSubTrigger,
   MenuTrigger
-} from '@/components/ui/primitives'
-import { prompt } from '@/components/ui/confirm'
+} from '@/components/ui/shadcn-primitives'
+import { prompt, useConfirmSignal, withActionLock } from '@/components/ui/shadcn-confirm'
 
 /** 分类 ID → “父 / 子 / 孙” 路径名 */
 export function categoryPaths(cats: Category[]): Map<string, string> {
@@ -116,6 +117,7 @@ interface TreeProps {
 }
 
 export function CategoryTree({ kind, activeId, onSelect, onRemoved, leading, onDropNotes }: TreeProps) {
+  const confirmSignal = useConfirmSignal(kind)
   const { t } = useTranslation()
   const qc = useQueryClient()
   const { data: cats = [] } = useCategories(kind)
@@ -125,22 +127,32 @@ export function CategoryTree({ kind, activeId, onSelect, onRemoved, leading, onD
     cats.filter((c) => (c.parentId ?? null) === parentId || (parentId === null && c.parentId && !cats.some((p) => p.id === c.parentId)))
 
   const add = async (parentId: string | null): Promise<void> => {
-    const name = await prompt({
-      title: parentId ? t('categories.newSub') : t('notes.newCategory'),
-      placeholder: t('notes.categoryName'),
-      confirmText: t('common.create')
-    })
-    if (!name) return
-    const c = await api.categories.create(kind, name, parentId)
-    invalidate(qc, 'categories')
-    if (parentId) setCollapsed((s) => (s.delete(parentId), new Set(s)))
-    onSelect(c.id)
+    const operationKey = `category:${kind}:${parentId ?? 'root'}:create`
+    await withActionLock(operationKey, async () => {
+      const created: { id?: string } = {}
+      const name = await prompt({
+        operationKey,
+        signal: confirmSignal,
+        title: parentId ? t('categories.newSub') : t('notes.newCategory'),
+        placeholder: t('notes.categoryName'),
+        confirmText: t('common.create'),
+        submit: async (value) => { created.id = (await api.categories.create(kind, value, parentId)).id }
+      })
+      if (!name || confirmSignal.aborted || !created.id) return
+      invalidate(qc, 'categories')
+      if (parentId) setCollapsed((s) => (s.delete(parentId), new Set(s)))
+      onSelect(created.id)
+    }, { signal: confirmSignal })
   }
   const rename = async (c: Category): Promise<void> => {
-    const name = await prompt({ title: t('common.rename'), defaultValue: c.name, confirmText: t('common.save') })
-    if (!name) return
-    await api.categories.update(c.id, { name })
-    invalidate(qc, 'categories')
+    const operationKey = `category:${c.id}:rename`
+    await withActionLock(operationKey, async () => {
+      const name = await prompt({ title: t('common.rename'), defaultValue: c.name, confirmText: t('common.save'), operationKey, signal: confirmSignal,
+        submit: async (value) => { await api.categories.update(c.id, { name: value }) }
+      })
+      if (!name || confirmSignal.aborted) return
+      invalidate(qc, 'categories')
+    }, { signal: confirmSignal })
   }
   const remove = async (c: Category): Promise<void> => {
     await api.categories.remove(c.id)
@@ -165,7 +177,7 @@ export function CategoryTree({ kind, activeId, onSelect, onRemoved, leading, onD
           onClick={() => onSelect(c.id)}
           onDropNotes={onDropNotes ? (ids) => onDropNotes(c.id, ids) : undefined}
           leading={
-            <button
+            <Button variant="ghost" size="auto"
               onClick={(e) => {
                 e.stopPropagation()
                 setCollapsed((s) => (s.has(c.id) ? s.delete(c.id) : s.add(c.id), new Set(s)))
@@ -174,7 +186,7 @@ export function CategoryTree({ kind, activeId, onSelect, onRemoved, leading, onD
               aria-label="toggle"
             >
               <ChevronRight className={cn('size-3 transition-transform', open && 'rotate-90')} />
-            </button>
+            </Button>
           }
           icon={
             <span data-tint={tintFor(c.id, c.color)} className="grid size-4 shrink-0 place-items-center">
@@ -189,12 +201,12 @@ export function CategoryTree({ kind, activeId, onSelect, onRemoved, leading, onD
           trailing={
             <Menu>
               <MenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                <button
+                <Button variant="ghost" size="auto"
                   className="rounded p-0.5 text-subtle opacity-0 group-hover:opacity-100 hover:text-fg data-[state=open]:opacity-100"
                   aria-label={t('common.more')}
                 >
                   <MoreHorizontal className="size-4" />
-                </button>
+                </Button>
               </MenuTrigger>
               <MenuContent>
                 <MenuItem onSelect={() => void add(c.id)}>
@@ -213,7 +225,7 @@ export function CategoryTree({ kind, activeId, onSelect, onRemoved, leading, onD
                   <MenuSubContent>
                     <div className="flex gap-1.5 p-1.5">
                       {TINTS.map((tn) => (
-                        <button
+                        <Button variant="ghost" size="auto"
                           key={tn}
                           data-tint={tn}
                           title={t(`tints.${tn}`)}
@@ -225,7 +237,7 @@ export function CategoryTree({ kind, activeId, onSelect, onRemoved, leading, onD
                           )}
                         >
                           <span className="tint-dot size-2 rounded-full" />
-                        </button>
+                        </Button>
                       ))}
                     </div>
                   </MenuSubContent>
@@ -258,9 +270,9 @@ export function SectionHeader({ label, onAdd, addLabel }: { label: string; onAdd
     <div className="flex items-center justify-between px-2 pt-4 pb-1">
       <span className="text-2xs font-medium tracking-wider text-subtle uppercase">{label}</span>
       {onAdd && (
-        <button onClick={onAdd} className="rounded p-0.5 text-subtle hover:bg-surface-hover hover:text-fg" aria-label={addLabel}>
+        <Button variant="ghost" size="auto" onClick={onAdd} className="rounded p-0.5 text-subtle hover:bg-surface-hover hover:text-fg" aria-label={addLabel}>
           <FolderPlus className="size-3.5" />
-        </button>
+        </Button>
       )}
     </div>
   )

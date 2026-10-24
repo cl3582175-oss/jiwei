@@ -37,12 +37,30 @@ test.afterAll(async () => {
 
 /** 原生网页视图与浏览器区域重合 */
 async function nativeMatches(): Promise<void> {
-  // 菜单关闭后的原生视图冻结有一个渲染过渡，不能在插槽隐藏时读取坐标。
-  await expect(page.getByTestId('browser-view')).toBeVisible()
-  const slot = (await page.getByTestId('browser-view').boundingBox())!
+  // Changing side remounts the split and unfreezes the native view asynchronously.
+  // Read both current geometries in each poll, including a second DOM read so an
+  // old visible slot cannot be compared with its replacement's native bounds.
   await expect
-    .poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].contentView.children[0]?.getBounds() ?? null))
-    .toEqual({ x: Math.round(slot.x), y: Math.round(slot.y), width: Math.round(slot.width), height: Math.round(slot.height) })
+    .poll(async () => {
+      const slot = await page.getByTestId('browser-view').boundingBox()
+      const native = await app.evaluate(({ BrowserWindow }) => {
+        const view = BrowserWindow.getAllWindows()[0].contentView.children[0]
+        return view ? { bounds: view.getBounds(), visible: view.getVisible() } : null
+      })
+      const current = await page.getByTestId('browser-view').boundingBox()
+      const rounded = (rect: NonNullable<typeof slot>) => ({
+        x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height)
+      })
+      const expected = slot ? rounded(slot) : null
+      const settled = current ? rounded(current) : null
+      return {
+        matched: !!slot && slot.width > 0 && slot.height > 0 && native?.visible === true &&
+          (['x', 'y', 'width', 'height'] as const).every((key) =>
+            expected?.[key] === settled?.[key] && expected?.[key] === native.bounds[key]),
+        slot: expected, current: settled, native
+      }
+    })
+    .toMatchObject({ matched: true })
 }
 const box = async (testId: string) => (await page.getByTestId(testId).boundingBox())!
 const side = () => page.getByTestId('browser-workspace').getAttribute('data-side')

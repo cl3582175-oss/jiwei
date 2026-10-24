@@ -4,6 +4,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { navTo } from './fixtures/nav'
+import { writeOpenAiCompletion } from './fixtures/openaiResponse'
 
 test.describe.configure({ mode: 'serial' })
 let app: ElectronApplication,
@@ -25,29 +26,25 @@ function samplePdf(): string {
 }
 const textOf = (v: unknown): string =>
   typeof v === 'string' ? v : Array.isArray(v) ? v.map((p: { text?: string }) => p.text ?? '').join('') : ''
-function completion(res: ServerResponse, result: unknown): void {
-  res
-    .writeHead(200, { 'content-type': 'application/json' })
-    .end(
-      JSON.stringify({
-        id: 'controlled',
-        object: 'chat.completion',
-        created: 1,
-        model: 'deepseek-flash',
-        choices: [
-          {
-            index: 0,
-            message: {
-              role: 'assistant',
-              content: null,
-              tool_calls: [{ id: 'submit-1', type: 'function', function: { name: 'submit', arguments: JSON.stringify(result) } }]
-            },
-            finish_reason: 'tool_calls'
-          }
-        ],
-        usage: { prompt_tokens: 1000, completion_tokens: 200, total_tokens: 1200 }
-      })
-    )
+function completion(res: ServerResponse, result: unknown, streaming: boolean): void {
+  writeOpenAiCompletion(res, {
+    id: 'controlled',
+    object: 'chat.completion',
+    created: 1,
+    model: 'deepseek-flash',
+    choices: [
+      {
+        index: 0,
+        message: {
+          role: 'assistant',
+          content: null,
+          tool_calls: [{ id: 'submit-1', type: 'function', function: { name: 'submit', arguments: JSON.stringify(result) } }]
+        },
+        finish_reason: 'tool_calls'
+      }
+    ],
+    usage: { prompt_tokens: 1000, completion_tokens: 200, total_tokens: 1200 }
+  }, streaming)
 }
 async function dbRun(sql: string, args: unknown[] = []): Promise<void> {
   await app.evaluate(
@@ -170,7 +167,7 @@ test.beforeAll(async () => {
           raw = textOf(input.messages.find((m: { role: string }) => m.role === 'user')?.content)
         modelRequests.push({ system, data: raw })
         const data = JSON.parse(raw.slice(raw.indexOf('\n') + 1, raw.lastIndexOf('\n')))
-        if (system.includes('focused search queries')) completion(res, { queries: ['概率论条件', '概率论推理', '概率论练习'] })
+        if (system.includes('focused search queries')) completion(res, { queries: ['概率论条件', '概率论推理', '概率论练习'] }, !!input.stream)
         else if (system.includes('Score each candidate'))
           completion(res, {
             items: data.candidates.map((i: { id: string; title: string }) => ({
@@ -187,7 +184,7 @@ test.beforeAll(async () => {
               diverse: i.title === '反方观点',
               news: i.title === '新闻'
             }))
-          })
+          }, !!input.stream)
         else if (system.includes('progressive 4–8'))
           completion(res, {
             steps: Array.from({ length: 4 }, (_, i) => ({
@@ -196,9 +193,9 @@ test.beforeAll(async () => {
               objective: '由基础到实际练习',
               resourceIds: [data.resources[0].id]
             }))
-          })
+          }, !!input.stream)
         else if (system.includes('Select up to three'))
-          completion(res, { resources: [{ id: data.resources[0].id, reason: '补足条件概率概念', gap: '条件概率', minutes: 10 }] })
+          completion(res, { resources: [{ id: data.resources[0].id, reason: '补足条件概率概念', gap: '条件概率', minutes: 10 }] }, !!input.stream)
         else res.writeHead(500).end('unexpected controlled model request')
         return
       }
@@ -294,7 +291,7 @@ test.afterAll(async () => {
       audit: (await window.jiwei.agent.audit({ limit: 30 })).filter((a) => a.tool.startsWith('discover'))
     }))
     writeFileSync(
-      `.superpowers/sdd/v0.8-plan-tasks-discovery/logs/p6-e2e-diagnostic-${Date.now()}.json`,
+      test.info().outputPath('p6-e2e-diagnostic.json'),
       JSON.stringify({ diagnostic, modelRequests }, null, 2)
     )
   }

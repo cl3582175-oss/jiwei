@@ -1,7 +1,9 @@
+import { NativeSelect } from '@/components/ui/native-select'
+import { Checkbox } from '@/components/ui/checkbox'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Dialog as D } from 'radix-ui'
+import { DialogParts as D } from '@/components/ui/dialog'
 import {
   AlertTriangle,
   ArrowLeft,
@@ -23,9 +25,9 @@ import {
 import { api, cn } from '@/lib/utils'
 import { useMoney } from '@/lib/money'
 import { useApp } from '@/store/app'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/primitives'
-import { confirm } from '@/components/ui/confirm'
+import { Button } from '@/components/ui/shadcn-button'
+import { Input } from '@/components/ui/shadcn-primitives'
+import { confirm, useConfirmSignal, withActionLock } from '@/components/ui/shadcn-confirm'
 import { ImportPreview } from './ImportPreview'
 import type { ImportEntry, ImportIssue, ImportOptions, ImportPreview as Preview, ImportRun } from '@shared/importer'
 
@@ -97,15 +99,11 @@ function Tree({
             <details key={path} open className="group">
               <summary className="flex cursor-pointer list-none items-center gap-2 rounded-md px-1 py-1.5 text-sm hover:bg-surface-hover">
                 <ChevronRight className="size-3.5 shrink-0 text-subtle transition-transform group-open:rotate-90" />
-                <input
-                  type="checkbox"
+                <Checkbox
                   className="accent-[var(--color-accent)]"
                   aria-label={t('importer.folderLabel', { name: path.slice(0, -1) })}
-                  checked={count === paths.length}
-                  ref={(input) => {
-                    if (input) input.indeterminate = count > 0 && count < paths.length
-                  }}
-                  onChange={(e) => toggle(paths, e.target.checked)}
+                  checked={count > 0 && count < paths.length ? 'indeterminate' : count === paths.length}
+                  onCheckedChange={(next) => toggle(paths, next === true)}
                 />
                 <Folder className="size-4 shrink-0 text-subtle" />
                 <span className="min-w-0 flex-1 truncate">{folder}</span>
@@ -125,21 +123,21 @@ function Tree({
               active === e.path && 'bg-accent-soft hover:bg-accent-soft'
             )}
           >
-            <input
-              type="checkbox"
+            <Checkbox
+
               className="accent-[var(--color-accent)]"
               aria-label={e.path}
               checked={selected.has(e.path)}
-              onChange={(event) => toggle([e.path], event.target.checked)}
+              onCheckedChange={(nextChecked) => toggle([e.path], (nextChecked === true))}
             />
-            <button
+            <Button variant="ghost" size="auto"
               className="min-w-0 flex-1 text-left hover:text-accent"
               aria-label={t('importer.preview', { title: e.title })}
               onClick={() => preview(e.path)}
             >
               <span className="block truncate">{e.title}</span>
               {e.path !== `${e.title}.md` && <span className="block truncate font-mono text-[11px] text-subtle">{e.path}</span>}
-            </button>
+            </Button>
             {e.status !== 'new' && (
               <span className={cn('shrink-0 text-xs', e.status === 'changed' ? 'text-warning' : 'text-subtle')}>
                 {t(`importer.statuses.${e.status}`)}
@@ -163,6 +161,7 @@ function Tree({
 }
 
 export function ImportLibraryButton() {
+  const confirmSignal = useConfirmSignal('import-library')
   const { t } = useTranslation(),
     qc = useQueryClient()
   const [open, setOpen] = useState(false),
@@ -290,13 +289,13 @@ export function ImportLibraryButton() {
   const check = (key: 'preserveFolders' | 'tags' | 'aiExcluded' | 'aiCues' | 'importChanged', hint?: React.ReactNode) => (
     <div>
       <label className="flex items-start gap-2.5">
-        <input
-          type="checkbox"
+        <Checkbox
+
           className="mt-0.5 size-4 accent-[var(--color-accent)]"
           checked={options[key]}
           disabled={key === 'aiCues' && (options.aiExcluded || !estimate?.available)}
-          onChange={(e) => {
-            const v = e.target.checked
+          onCheckedChange={(nextChecked) => {
+            const v = (nextChecked === true)
             setOptions({ ...options, [key]: v, ...(key === 'aiExcluded' && v ? { aiCues: false } : {}) })
             if (key === 'importChanged' && v && scan)
               toggle(
@@ -324,7 +323,7 @@ export function ImportLibraryButton() {
     scan?.entries.find((e) => e.path === path)?.title ?? path.replace(/.*\//, '').replace(/\.[^.]+$/, '')
   const source = (mode: 'folder' | 'files' | 'notion', Icon: typeof FolderOpen, title: string, desc: string, extra?: React.ReactNode) => (
     <div className="flex flex-col rounded-xl border border-border bg-surface transition-colors hover:border-accent/50 hover:bg-surface-hover">
-      <button
+      <Button variant="ghost" size="auto"
         disabled={busy}
         aria-label={t(`importer.${mode}`)}
         className="flex flex-1 flex-col items-start gap-2 p-4 text-left disabled:opacity-60"
@@ -335,7 +334,7 @@ export function ImportLibraryButton() {
         </span>
         <span className="font-medium text-fg">{title}</span>
         <span className="text-xs leading-relaxed text-muted">{desc}</span>
-      </button>
+      </Button>
       {extra}
     </div>
   )
@@ -345,7 +344,7 @@ export function ImportLibraryButton() {
   return (
     <D.Root open={open} onOpenChange={setOpen}>
       <Button
-        variant="outline"
+        variant="secondary"
         size="sm"
         className="no-drag"
         onClick={() => {
@@ -409,14 +408,14 @@ export function ImportLibraryButton() {
                   FileArchive,
                   t('importer.sources.notionTitle'),
                   t('importer.sources.notionBody'),
-                  <button
+                  <Button variant="ghost" size="auto"
                     disabled={busy}
                     aria-label={t('importer.notionFolder')}
                     className="border-t border-border px-4 py-2 text-left text-xs text-accent hover:underline disabled:opacity-60"
                     onClick={() => void choose('notion-folder')}
                   >
                     {t('importer.sources.notionFolderLink')}
-                  </button>
+                  </Button>
                 )}
               </div>
               <p className="flex items-center gap-2 text-xs text-muted">
@@ -462,7 +461,7 @@ export function ImportLibraryButton() {
                   <Loader2 className="mx-auto size-6 animate-spin text-accent" />
                   <p className="text-sm">{t('importer.scan')}</p>
                   <Bar value={scan.progress} />
-                  <Button size="sm" variant="outline" onClick={() => void attempt(() => api.importer.cancelScan(scan.id))}>
+                  <Button size="sm" variant="secondary" onClick={() => void attempt(() => api.importer.cancelScan(scan.id))}>
                     {t('importer.cancel')}
                   </Button>
                 </div>
@@ -472,7 +471,7 @@ export function ImportLibraryButton() {
                   <p role="alert" className="text-sm">
                     {scan.status === 'failed' ? t(`importer.scanErrors.${scan.error ?? 'scan-failed'}`) : t('importer.canceled')}
                   </p>
-                  <Button variant="outline" onClick={reset}>
+                  <Button variant="secondary" onClick={reset}>
                     <ArrowLeft />
                     {t('importer.steps.source')}
                   </Button>
@@ -565,7 +564,7 @@ export function ImportLibraryButton() {
                 <Group title={t('importer.optionsGroupWhere')}>
                   <label className="block space-y-1">
                     <span className="text-muted">{t('importer.destination')}</span>
-                    <select
+                    <NativeSelect
                       className="w-full rounded-md border border-border bg-surface px-2 py-1.5"
                       value={options.categoryId ?? ''}
                       onChange={(e) => setOptions({ ...options, categoryId: e.target.value || null })}
@@ -576,7 +575,7 @@ export function ImportLibraryButton() {
                           {c.name}
                         </option>
                       ))}
-                    </select>
+                    </NativeSelect>
                   </label>
                   {!options.categoryId && (
                     <label className="block space-y-1">
@@ -741,7 +740,7 @@ export function ImportLibraryButton() {
                   <>
                     <span className="mr-auto" />
                     <Button
-                      variant="outline"
+                      variant="secondary"
                       disabled={run.status === 'canceling'}
                       onClick={() => void attempt(() => api.importer.cancel(run.id))}
                     >
@@ -758,16 +757,22 @@ export function ImportLibraryButton() {
                         title={t('importer.attachmentsHint')}
                         onClick={() =>
                           void attempt(async () => {
-                            if (
-                              await confirm({
-                                title: t('importer.undoTitle'),
-                                description: t('importer.undoHint'),
-                                confirmText: t('importer.undo')
-                              })
-                            ) {
-                              await api.importer.undo(run.id)
-                              void qc.invalidateQueries()
-                            }
+                            const operationKey = `import:${run.id}:undo`
+                            await withActionLock(operationKey, async () => {
+                              if (
+                                await confirm({
+                                  operationKey,
+                                  signal: confirmSignal,
+                                  title: t('importer.undoTitle'),
+                                  description: t('importer.undoHint'),
+                                  confirmText: t('importer.undo')
+                                })
+                              ) {
+                                if (confirmSignal.aborted) return
+                                await api.importer.undo(run.id)
+                                void qc.invalidateQueries()
+                              }
+                            }, { signal: confirmSignal })
                           })
                         }
                       >
@@ -776,7 +781,7 @@ export function ImportLibraryButton() {
                       </Button>
                     )}
                     <span className="mr-auto" />
-                    <Button variant="outline" onClick={reset}>
+                    <Button variant="secondary" onClick={reset}>
                       {t('importer.again')}
                     </Button>
                     <Button variant="primary" onClick={() => setOpen(false)}>
@@ -816,7 +821,7 @@ function HistoryList({ runs, onOpen }: { runs: ImportRun[]; onOpen: (run: Import
     <ul className="divide-y divide-border rounded-lg border border-border">
       {runs.map((r) => (
         <li key={r.id}>
-          <button className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm hover:bg-surface-hover" onClick={() => onOpen(r)}>
+          <Button variant="ghost" size="auto" className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm hover:bg-surface-hover" onClick={() => onOpen(r)}>
             <span className="rounded bg-sunken px-1.5 py-0.5 text-xs text-muted">{t(`importer.kinds.${r.kind}`)}</span>
             <span className="min-w-0 flex-1 truncate">{r.label}</span>
             <span className="shrink-0 text-xs text-subtle">
@@ -827,7 +832,7 @@ function HistoryList({ runs, onOpen }: { runs: ImportRun[]; onOpen: (run: Import
               {new Date(r.createdAt).toLocaleDateString(i18n.language)}
             </span>
             <ChevronRight className="size-4 shrink-0 text-subtle" />
-          </button>
+          </Button>
         </li>
       ))}
     </ul>

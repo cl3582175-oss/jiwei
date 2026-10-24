@@ -4,8 +4,8 @@ import { Check, ChevronDown, NotebookPen, PanelBottom, PanelLeft, PanelRight, Pa
 import { useApp } from '@/store/app'
 import { useNotes, useSettings, useUpdateSettings } from '@/lib/queries'
 import { useCreateNote } from '@/lib/shortcuts'
-import { Button } from '@/components/ui/button'
-import { Menu, MenuContent, MenuItem, MenuLabel, MenuSeparator, MenuTrigger, Tip } from '@/components/ui/primitives'
+import { Button } from '@/components/ui/shadcn-button'
+import { Menu, MenuContent, MenuItem, MenuLabel, MenuSeparator, MenuTrigger, Tip } from '@/components/ui/shadcn-primitives'
 import { cn } from '@/lib/utils'
 
 // 浏览器旁的笔记栏（v0.7.2）：地址栏上的“记笔记”按钮，以及笔记栏位置与大小的设置。

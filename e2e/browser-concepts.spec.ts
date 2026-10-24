@@ -108,12 +108,24 @@ test.afterAll(async () => {
   server?.close()
 })
 
+async function conceptHoverPoint(): Promise<{ x: number; y: number }> {
+  // Page loading can finish before its native view has received the renderer's bounds.
+  await expect.poll(() => app.evaluate(async ({ BrowserWindow, webContents }) => {
+    const contents = webContents.getAllWebContents().find((item) => item.getURL().endsWith('/a'))!
+    const view = BrowserWindow.getAllWindows()[0].contentView.children.find((item) => 'webContents' in item && item.webContents === contents)
+    if (!view?.getVisible()) return false
+    const bounds = view.getBounds()
+    const viewport = await contents.executeJavaScript('({width:innerWidth,height:innerHeight})') as { width: number; height: number }
+    const zoom = contents.getZoomFactor()
+    return viewport.width > 0 && viewport.height > 0 && Math.abs(bounds.width - viewport.width * zoom) <= 2 && Math.abs(bounds.height - viewport.height * zoom) <= 2
+  })).toBe(true)
+  return inPage<{ x: number; y: number }>(app,
+    `(() => { const r = [...CSS.highlights.get('jw-concept')][0].getClientRects()[0]; return { x: r.left + Math.min(2, r.width / 2), y: r.top + r.height / 2 } })()`)
+}
+
 test('weak concepts are highlighted; hover waits before a closed-shadow hint and ask uses the existing card', async () => {
   await expect.poll(() => inPage<number>(app, `CSS.highlights.get('jw-concept')?.size ?? 0`)).toBeGreaterThan(0)
-  const point = await inPage<{ x: number; y: number }>(
-    app,
-    `(() => { const r = [...CSS.highlights.get('jw-concept')][0].getClientRects()[0]; return { x: r.left + Math.min(2, r.width / 2), y: r.top + r.height / 2 } })()`
-  )
+  const point = await conceptHoverPoint()
   const geometry = await app.evaluate(async ({ webContents }, point) => {
     const wc = webContents.getAllWebContents().find((contents) => contents.getURL().endsWith('/a'))!
     return { point, zoom: wc.getZoomFactor(), viewport: await wc.executeJavaScript('({width:innerWidth,height:innerHeight})') }
@@ -166,10 +178,7 @@ test('changing mastery refreshes already loaded pages without a reload', async (
 })
 
 test('a pending hover cannot restore a tooltip after quiet mode is enabled', async () => {
-  const point = await inPage<{ x: number; y: number }>(
-    app,
-    `(() => { const r = [...CSS.highlights.get('jw-concept')][0].getClientRects()[0]; return { x: r.left + Math.min(2, r.width / 2), y: r.top + r.height / 2 } })()`
-  )
+  const point = await conceptHoverPoint()
   await app.evaluate(({ webContents }, point) => {
     const contents = webContents.getAllWebContents().find((item) => item.getURL().endsWith('/a'))!
     const zoom = contents.getZoomFactor()

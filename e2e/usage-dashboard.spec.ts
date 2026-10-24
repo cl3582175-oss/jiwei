@@ -121,7 +121,7 @@ test('三家模型各用一次：按人民币显示，价格未知的单独提�
 
 test('设置 → 费用与权限：默认人民币；换币种时上限一并换算；没有汇率的币种先填汇率', async () => {
   await page.keyboard.press('ControlOrMeta+,')
-  await page.getByRole('button', { name: '费用与权限' }).click()
+  await page.getByRole('tab', { name: '费用与权限' }).click()
   const view = page.getByTestId('usage-settings')
   await expect(view.getByTestId('usage-month')).toContainText('¥')
   await expect(view.getByTestId('usage-forecast')).toContainText('月底约')
@@ -171,7 +171,7 @@ test('设置 → 费用与权限：默认人民币；换币种时上限一并换
 
 test('AI 模型：价格小标，填写未知模型的价格后补算历史', async () => {
   await page.keyboard.press('ControlOrMeta+,')
-  await page.getByRole('button', { name: 'AI 模型' }).click()
+  await page.getByRole('tab', { name: 'AI 模型' }).click()
   await page.getByRole('button', { name: /^乙服务商 http/ }).click()
   const row = page.locator('[data-model="local-x"]')
   const kimiRow = page.locator('[data-model="kimi-k2.6"]')

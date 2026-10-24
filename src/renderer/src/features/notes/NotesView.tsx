@@ -1,5 +1,7 @@
+import { useShallow } from 'zustand/react/shallow'
 import { useEffect } from 'react'
-import { Group, Panel, Separator, usePanelRef } from 'react-resizable-panels'
+import { usePanelRef } from 'react-resizable-panels'
+import { ResizablePanelGroup as Group, ResizablePanel as Panel, ResizableHandle as Separator } from '@/components/ui/resizable'
 import { useApp } from '@/store/app'
 import { NotesSidebar } from './NotesSidebar'
 import { NoteEditor } from './NoteEditor'
@@ -18,7 +20,16 @@ import { usePanel } from '../assist/store'
  * 资料栏可拖动，默认按黄金比例 0.382；AI 面板未钉住时浮在右下角。
  */
 export function NotesView() {
-  const { noteId, sourceId, browserOpen, sourcePaneSize, setSourcePaneSize, sourceFocus } = useApp()
+  const { noteId, sourceId, browserOpen, sourcePaneSize, setSourcePaneSize, sourceFocus } = useApp(
+    useShallow((state) => ({
+      noteId: state.noteId,
+      sourceId: state.sourceId,
+      browserOpen: state.browserOpen,
+      sourcePaneSize: state.sourcePaneSize,
+      setSourcePaneSize: state.setSourcePaneSize,
+      sourceFocus: state.sourceFocus
+    }))
+  )
   const sourceRef = usePanelRef()
   // 整理审阅需要左右两栏（转写稿 | 结果）：临时放宽资料栏并收起笔记列表；结束后回到用户自己的宽度
   const focus = sourceFocus && !browserOpen && !!sourceId

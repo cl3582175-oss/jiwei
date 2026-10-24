@@ -23,6 +23,8 @@
     "src/worker/**/*",
     "src/preload/**/*",
     "src/shared/**/*",
+    "src/renderer/src/lib/settingsUpdates.ts",
+    "src/renderer/src/features/agent/budgetSettings.ts",
     "src/renderer/src/i18n/zh-CN.ts",
     "src/renderer/src/i18n/en.ts",
     "src/renderer/src/features/mistakes/messages.ts",

@@ -51,7 +51,7 @@ for (const platform of ['darwin', 'win32'] as const)
       const page = await app.firstWindow()
       await page.waitForSelector('nav')
       await page.getByRole('button', { name: /^设置/ }).click()
-      await page.getByRole('button', { name: '关于', exact: true }).click({ timeout: 5000 })
+      await page.getByRole('tab', { name: '关于', exact: true }).click({ timeout: 5000 })
       await page.getByRole('button', { name: '检查更新', exact: true }).click()
       const started = Date.now()
       // Windows 自动模式发现新版本后直接下载；macOS 需要点“下载更新”

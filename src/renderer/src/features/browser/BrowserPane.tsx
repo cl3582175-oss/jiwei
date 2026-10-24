@@ -1,3 +1,4 @@
+import { Input } from '@/components/ui/input'
 import { LoginSafetyBar, WebsiteNetwork } from './BrowserSafety'
 import { NoteBarButton } from './noteBar'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
@@ -23,8 +24,8 @@ import { toast } from 'sonner'
 import type { BrowserTab } from '@shared/types'
 import { api, cn } from '@/lib/utils'
 import { useApp } from '@/store/app'
-import { Button } from '@/components/ui/button'
-import { Tip, Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui/primitives'
+import { Button } from '@/components/ui/shadcn-button'
+import { Tip, Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui/shadcn-primitives'
 import { activeTab, aiAllowed, useBrowser } from './store'
 import { CoursePanel } from './CoursePanel'
 import { CaptureSelection, useBrowserCapture } from './BrowserCapture'
@@ -34,7 +35,7 @@ import { ReadingControls } from '../reading/ReadingControls'
 // 叠放在本组件的占位区域上：占位区域的位置、大小随布局同步；弹出层盖住网页时换成截图。
 
 /** 会盖住网页的弹出层：对话框、菜单、下拉、卡片 */
-const OVERLAYS = '[role="dialog"], [role="menu"], [role="listbox"], [data-radix-popper-content-wrapper], [cmdk-root]'
+const OVERLAYS = '[data-ui-overlay], [role="alertdialog"], [role="dialog"], [role="menu"], [role="listbox"], [data-radix-popper-content-wrapper], [cmdk-root]'
 
 const intersects = (a: DOMRect, b: DOMRect): boolean => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top
 
@@ -84,6 +85,8 @@ function useNativeView(slot: React.RefObject<HTMLDivElement | null>, show: boole
           (o) =>
             !el.contains(o) &&
             o.getClientRects().length > 0 &&
+            !o.hidden &&
+            getComputedStyle(o).display !== 'none' &&
             getComputedStyle(o).visibility !== 'hidden' &&
             intersects(o.getBoundingClientRect(), box)
         )
@@ -100,7 +103,7 @@ function useNativeView(slot: React.RefObject<HTMLDivElement | null>, show: boole
     }
     const mo = new MutationObserver(check)
     check()
-    mo.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'data-state', 'class'] })
+    mo.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'data-state', 'class', 'role', 'hidden', 'aria-hidden', 'data-ui-overlay'] })
     return () => {
       canceled = true
       mo.disconnect()
@@ -158,7 +161,7 @@ function TabStrip({ tabs, activeId }: { tabs: BrowserTab[]; activeId: string | n
             <Globe className="size-3 shrink-0 text-subtle" />
           )}
           <span className="min-w-0 flex-1 truncate">{tab.url === 'about:blank' ? t('browser.newTab') : tab.title}</span>
-          <button
+          <Button variant="ghost" size="auto"
             aria-label={t('browser.closeTab', { title: tab.title })}
             onClick={(e) => {
               e.stopPropagation()
@@ -167,17 +170,17 @@ function TabStrip({ tabs, activeId }: { tabs: BrowserTab[]; activeId: string | n
             className="grid size-4 shrink-0 place-items-center rounded text-subtle opacity-0 group-hover:opacity-100 hover:bg-surface-hover hover:text-fg aria-selected:opacity-100 [&_svg]:size-3"
           >
             <X />
-          </button>
+          </Button>
         </div>
       ))}
       <Menu>
         <MenuTrigger asChild>
-          <button
+          <Button variant="ghost" size="auto"
             aria-label={t('browser.newTab')}
             className="mb-1 grid size-6 shrink-0 place-items-center rounded-md text-muted hover:bg-surface-hover hover:text-fg [&_svg]:size-3.5"
           >
             <Plus />
-          </button>
+          </Button>
         </MenuTrigger>
         <MenuContent align="start">
           <MenuItem onSelect={() => void api.browser.open('', { newTab: true })}>
@@ -270,7 +273,7 @@ function AddressBar({ tab, capture }: { tab: BrowserTab; capture: () => void }) 
           input.current?.blur()
         }}
       >
-        <input
+        <Input
           data-testid="browser-address"
           ref={input}
           aria-label={t('browser.address')}
@@ -362,13 +365,13 @@ function RelatedStrip({ tab }: { tab: BrowserTab }) {
       <span className="shrink-0 text-subtle">{t('browser.related')}</span>
       {r.items.map((i) => (
         <Tip key={`${i.type}:${i.id}`} label={i.text} side="bottom">
-          <button
+          <Button variant="ghost" size="auto"
             onClick={() => (i.type === 'note' ? useApp.getState().openNote(i.id) : useApp.getState().openSource(i.id))}
             className="flex max-w-[200px] shrink-0 items-center gap-1 rounded-full bg-accent-soft px-2 py-0.5 text-accent hover:brightness-95 [&_svg]:size-3"
           >
             {i.type === 'note' ? <NotebookText /> : <FileText />}
             <span className="truncate">{i.title || t('common.untitled')}</span>
-          </button>
+          </Button>
         </Tip>
       ))}
     </div>
@@ -391,7 +394,7 @@ function StartPage({ tab }: { tab: BrowserTab }) {
       >
         <label className="flex h-11 items-center gap-2 rounded-xl border border-border bg-surface px-4 shadow-sm focus-within:border-accent">
           <Search className="size-4 text-subtle" />
-          <input
+          <Input
             autoFocus
             aria-label={t('browser.addressHint')}
             value={q}

@@ -113,9 +113,9 @@ test('topic review and insights with versions', async () => {
 
 test('reminder settings', async () => {
   await page.keyboard.press('ControlOrMeta+,')
-  await page.getByRole('dialog').getByRole('button', { name: '学习', exact: true }).click()
+  await page.getByRole('dialog').getByRole('tab', { name: '学习', exact: true }).click()
   await page.getByRole('switch', { name: '每周复盘' }).click()
-  await page.getByRole('button', { name: '周五', exact: true }).click()
+  await page.getByRole('radio', { name: '周五', exact: true }).click()
   await expect
     .poll(async () => (await page.evaluate(() => window.jiwei.settings.get())).reflection)
     .toMatchObject({ weekly: false, weeklyDay: 5 })

@@ -1,10 +1,12 @@
+import { Button } from '@/components/ui/shadcn-button'
+import { Textarea } from '@/components/ui/textarea'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQueryClient } from '@tanstack/react-query'
 import { CircleHelp, MessageCircleQuestion, Trash2, X } from 'lucide-react'
 import type { Annotation } from '@shared/types'
 import { api, cn } from '@/lib/utils'
-import { Tip } from '@/components/ui/primitives'
+import { Tip } from '@/components/ui/shadcn-primitives'
 import { useAssist } from '../assist/store'
 import { ANNO_COLORS, rememberColor, removeAnnotation, selectorAnchor, useAnnotate, useAnnotations, type AnnoColor } from './store'
 
@@ -88,7 +90,7 @@ function CardBody() {
           {a.selector.quote}
         </p>
       )}
-      <textarea
+      <Textarea
         aria-label={question ? t('annotate.questionPlaceholder') : t('annotate.commentPlaceholder')}
         autoFocus={card.edit}
         value={text}
@@ -107,7 +109,7 @@ function CardBody() {
       />
       <div className="mt-2 flex items-center gap-1">
         {ANNO_COLORS.map((c) => (
-          <button
+          <Button variant="ghost" size="auto"
             key={c}
             aria-label={t(`annotate.colors.${c}`)}
             aria-pressed={(a.color ?? 'yellow') === c}
@@ -124,7 +126,7 @@ function CardBody() {
         ))}
         <span className="flex-1" />
         <Tip label={question ? t('annotate.unmarkQuestion') : t('annotate.markQuestion')}>
-          <button
+          <Button variant="ghost" size="auto"
             aria-label={t('annotate.question')}
             aria-pressed={question}
             onClick={() => void save({ motivation: question ? (a.body ? 'commenting' : 'highlighting') : 'questioning' })}
@@ -134,10 +136,10 @@ function CardBody() {
             )}
           >
             <CircleHelp />
-          </button>
+          </Button>
         </Tip>
         <Tip label={t('annotate.askAi')}>
-          <button
+          <Button variant="ghost" size="auto"
             aria-label={t('annotate.askAi')}
             onClick={() => {
               commit()
@@ -147,18 +149,18 @@ function CardBody() {
             className="grid size-7 place-items-center rounded-lg text-muted hover:bg-surface-hover hover:text-fg [&_svg]:size-4"
           >
             <MessageCircleQuestion />
-          </button>
+          </Button>
         </Tip>
         <Tip label={t('annotate.remove')}>
-          <button
+          <Button variant="ghost" size="auto"
             aria-label={t('annotate.remove')}
             onClick={() => void removeAnnotation(a)}
             className="grid size-7 place-items-center rounded-lg text-muted hover:bg-surface-hover hover:text-danger [&_svg]:size-4"
           >
             <Trash2 />
-          </button>
+          </Button>
         </Tip>
-        <button
+        <Button variant="ghost" size="auto"
           aria-label={t('common.close')}
           onClick={() => {
             commit()
@@ -167,7 +169,7 @@ function CardBody() {
           className="grid size-7 place-items-center rounded-lg text-subtle hover:bg-surface-hover hover:text-fg [&_svg]:size-4"
         >
           <X />
-        </button>
+        </Button>
       </div>
     </div>
   )

@@ -4,6 +4,7 @@ import { mkdtempSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { currentNav, navTo } from './fixtures/nav'
+import { writeOpenAiCompletion } from './fixtures/openaiResponse'
 
 // v0.6.7：「今日」首页、导航分组、学习活动记录、积微助手统一。
 // 受控的模型服务：结构化调用（晨报）返回固定文字，对话流返回一句话；记录收到的全部请求。
@@ -11,7 +12,7 @@ import { currentNav, navTo } from './fixtures/nav'
 const shots = process.env.SHOTS_DIR
 const BRIEF = '受控晨报：先把逾期的“重做第三章错题”处理掉，再复习到期的卡片。'
 let app: ElectronApplication, page: Page, provider: Server
-const requests: { body: string; stream: boolean }[] = []
+const requests: { body: string; stream: boolean; structured: boolean }[] = []
 let userData = ''
 
 async function launch(): Promise<void> {
@@ -52,29 +53,27 @@ test.beforeAll(async () => {
     req.on('data', (c: Buffer) => (body += c.toString()))
     req.on('end', () => {
       const input = JSON.parse(body) as { stream?: boolean; tools?: { function: { name: string } }[] }
-      requests.push({ body, stream: !!input.stream })
-      if (input.stream) {
-        res.writeHead(200, { 'content-type': 'text/event-stream' })
-        const chunk = (delta: unknown, finish: string | null) =>
-          `data: ${JSON.stringify({ id: 'c', object: 'chat.completion.chunk', created: 1, model: 'today-fixture', choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`
-        res.write(chunk({ role: 'assistant', content: '先处理逾期的行动项。' }, null))
-        res.write(chunk({}, 'stop'))
-        res.end('data: [DONE]\n\n')
+      const structured = input.tools?.some((tool) => tool.function.name === 'submit') ?? false
+      requests.push({ body, stream: !!input.stream, structured })
+      if (!structured) {
+        writeOpenAiCompletion(res, {
+          id: 'c',
+          object: 'chat.completion',
+          created: 1,
+          model: 'today-fixture',
+          choices: [{ index: 0, message: { role: 'assistant', content: '先处理逾期的行动项。' }, finish_reason: 'stop' }]
+        }, !!input.stream)
         return
       }
-      const call = { id: 's', type: 'function', function: { name: 'submit', arguments: JSON.stringify({ text: BRIEF }) } }
-      res
-        .writeHead(200, { 'content-type': 'application/json' })
-        .end(
-          JSON.stringify({
-            id: 'r',
-            object: 'chat.completion',
-            created: 1,
-            model: 'today-fixture',
-            choices: [{ index: 0, message: { role: 'assistant', content: null, tool_calls: [call] }, finish_reason: 'tool_calls' }],
-            usage: { prompt_tokens: 10, completion_tokens: 10, total_tokens: 20 }
-          })
-        )
+      const call = { id: 's', type: 'function' as const, function: { name: 'submit', arguments: JSON.stringify({ text: BRIEF }) } }
+      writeOpenAiCompletion(res, {
+        id: 'r',
+        object: 'chat.completion',
+        created: 1,
+        model: 'today-fixture',
+        choices: [{ index: 0, message: { role: 'assistant', content: null, tool_calls: [call] }, finish_reason: 'tool_calls' }],
+        usage: { prompt_tokens: 10, completion_tokens: 10, total_tokens: 20 }
+      }, !!input.stream)
     })
   })
   await new Promise<void>((r) => provider.listen(0, '127.0.0.1', r))
@@ -158,7 +157,8 @@ test('有数据时：今天要做、行动项可完成、目标与投入时长�
   await expect(page.getByText('六月通过考研数学一')).toBeVisible()
   // 要点变了（全新 → 有内容、有行动项），晨报重新生成，这次由模型生成
   await expect(page.getByTestId('today-briefing-text')).toHaveText(BRIEF, { timeout: 30000 })
-  const brief = requests.filter((r) => !r.stream && r.body.includes('<today>')).at(-1)!
+  const brief = requests.filter((r) => r.structured && r.body.includes('<today>')).at(-1)!
+  expect(brief.stream).toBe(true)
   expect(brief.body).toContain('重做第三章错题')
   expect(brief.body).not.toContain('看一下 FSRS 论文') // 收件箱内容不发给模型，只发数量
   await shot('today-filled')
@@ -179,7 +179,7 @@ test('积微助手：⌘J 在今日页打开侧栏并附带当前页面，可展
   await shot('today-assistant-panel')
   await panel.getByRole('button', { name: '今天我应该先做什么？' }).click()
   await expect(panel).toContainText('先处理逾期的行动项。')
-  const chat = requests.filter((r) => r.stream).at(-1)!
+  const chat = requests.filter((r) => r.stream && !r.structured).at(-1)!
   expect(chat.body).toContain('用户当前所在的页面')
   expect(chat.body).toContain('重做第三章错题')
   await panel.getByRole('button', { name: '展开为全屏' }).click()
@@ -191,18 +191,21 @@ test('积微助手：⌘J 在今日页打开侧栏并附带当前页面，可展
 test('今日输入框与回复晨报：进入助手页自动发送，晨报作为上下文', async () => {
   await page.getByTestId('today-briefing').getByRole('button', { name: '回复' }).click()
   await expect(page.getByTestId('today-ask')).toContainText('回复晨报')
-  const before = requests.filter((r) => r.stream).length
+  const before = requests.filter((r) => r.stream && !r.structured).length
   await page.getByRole('textbox', { name: '问积微，或交代一件事……' }).first().fill('好，先做哪一步？')
   await page.keyboard.press('Enter')
   await expect(page.getByTestId('nav-rail').getByRole('button', { name: /^积微助手/ })).toHaveAttribute('aria-current', 'page')
-  await expect.poll(() => requests.filter((r) => r.stream).length).toBeGreaterThan(before)
-  const chat = requests.filter((r) => r.stream).at(-1)!
+  await expect.poll(() => requests.filter((r) => r.stream && !r.structured).length).toBeGreaterThan(before)
+  const chat = requests.filter((r) => r.stream && !r.structured).at(-1)!
   expect(chat.body).toContain('好，先做哪一步？')
   expect(chat.body).toContain('受控晨报')
   await expect(page.getByText('先处理逾期的行动项。').last()).toBeVisible()
 })
 
 test('学习活动：写笔记的有效时长被记录，切到别处立即上报；设置中可以清除', async () => {
+  // The previous scenario intentionally ends in chat, where Mod+N creates a conversation.
+  await page.keyboard.press('ControlOrMeta+1')
+  await expect(page.getByTestId('sidebar-notes')).toBeVisible()
   await page.keyboard.press('ControlOrMeta+n')
   await page.getByPlaceholder('笔记标题').fill('活动记录验证')
   await page.keyboard.press('Enter')
@@ -223,7 +226,7 @@ test('学习活动：写笔记的有效时长被记录，切到别处立即上�
   })
   // 清除
   await page.keyboard.press('ControlOrMeta+,')
-  await page.getByRole('dialog').getByRole('button', { name: /^数据/ }).click()
+  await page.getByRole('dialog').getByRole('tab', { name: /^数据/ }).click()
   await page.getByTestId('activity-settings').getByRole('button', { name: '清除活动记录' }).click()
   await page.getByRole('alertdialog').getByRole('button', { name: '清除活动记录' }).click()
   await expect.poll(async () => (await activityRows()).length).toBe(0)

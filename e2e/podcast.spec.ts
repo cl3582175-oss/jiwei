@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
 import { navTo } from './fixtures/nav'
+import { writeOpenAiCompletion } from './fixtures/openaiResponse'
 
 let app: ElectronApplication,
   page: Page,
@@ -37,6 +38,7 @@ test.beforeAll(async () => {
       body += v.toString()
     })
     req.on('end', () => {
+      const input = JSON.parse(body) as { stream?: boolean }
       const podcast = body.includes('discover.podcast')
       if (podcast) requests.push(body)
       const result = podcast
@@ -47,26 +49,24 @@ test.beforeAll(async () => {
             )
           }
         : { text: '先从今天要复习的问题开始。' }
-      res.writeHead(200, { 'content-type': 'application/json' }).end(
-        JSON.stringify({
-          id: 'p',
-          object: 'chat.completion',
-          created: 1,
-          model: 'deepseek-flash',
-          choices: [
-            {
-              index: 0,
-              message: {
-                role: 'assistant',
-                content: null,
-                tool_calls: [{ id: 'submit', type: 'function', function: { name: 'submit', arguments: JSON.stringify(result) } }]
-              },
-              finish_reason: 'tool_calls'
-            }
-          ],
-          usage: { prompt_tokens: 100, completion_tokens: 500, total_tokens: 600 }
-        })
-      )
+      writeOpenAiCompletion(res, {
+        id: 'p',
+        object: 'chat.completion',
+        created: 1,
+        model: 'deepseek-flash',
+        choices: [
+          {
+            index: 0,
+            message: {
+              role: 'assistant',
+              content: null,
+              tool_calls: [{ id: 'submit', type: 'function', function: { name: 'submit', arguments: JSON.stringify(result) } }]
+            },
+            finish_reason: 'tool_calls'
+          }
+        ],
+        usage: { prompt_tokens: 100, completion_tokens: 500, total_tokens: 600 }
+      }, !!input.stream)
     })
   })
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r))
@@ -208,7 +208,7 @@ test('P7 默认关闭，设置启用后真实生成与当天覆盖，费用可�
   await expect(page.getByTestId('podcast-player')).toHaveCount(0)
   expect(requests).toHaveLength(0)
   await page.getByRole('button', { name: /^设置/ }).click()
-  await page.getByRole('button', { name: '发现', exact: true }).click()
+  await page.getByRole('tab', { name: '发现', exact: true }).click()
   await page.getByRole('switch', { name: '每日学习播客', exact: true }).click()
   await page.keyboard.press('Escape')
   const player = page.getByTestId('podcast-player')

@@ -3,5 +3,5 @@ import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
   resolve: { alias: { '@shared': resolve('src/shared') } },
-  test: { include: ['src/**/*.test.ts', 'e2e/fixtures/uiEval.test.ts', 'e2e/fixtures/rag*.test.ts'], environment: 'node' }
+  test: { include: ['src/**/*.test.ts', 'e2e/fixtures/uiEval.test.ts', 'e2e/fixtures/rag*.test.ts', 'e2e/fixtures/embeddingCache.test.ts', 'e2e/fixtures/openaiResponse.test.ts'], environment: 'node' }
 })

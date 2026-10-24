@@ -133,6 +133,18 @@ test.beforeAll(async () => {
     { assetId, ocr }
   )
   await expect(page.locator('.cornell-body img')).toBeVisible()
+  // The request below calls the main-process API directly. Wait for the real
+  // editor autosave so note_read observes the image, rather than an older doc.
+  await expect.poll(async () => {
+    const bytes = await page.evaluate((id) => window.jiwei.notes.loadDoc(id).then((state) => Array.from(state)), noteId)
+    const saved = new Y.Doc()
+    try {
+      Y.applyUpdate(saved, new Uint8Array(bytes))
+      return JSON.stringify(yDocToProsemirrorJSON(saved, DOC_FIELD)).includes(imageId)
+    } finally {
+      saved.destroy()
+    }
+  }).toBe(true)
 })
 test.afterAll(async () => {
   await app?.close()

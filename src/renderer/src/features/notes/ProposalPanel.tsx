@@ -18,6 +18,7 @@ import { embedViews } from './editor/embeds/registry'
 import { embedsMap, writeEmbed } from './editor/embeds/ydata'
 import { previewExtensions } from './editor/preview'
 import { PendingVocabulary } from '../reading/PendingVocabulary'
+import { Confirmation } from '@/components/ai-elements/confirmation'
 
 /** AI 修改提案面板：逐条预览、接受或拒绝；接受的内容以 AI 来源写入，可撤销 */
 /** 富内容块预览：用真正的显示组件渲染（导图、图表、图示……），数据放在临时的 Yjs 文档中 */
@@ -233,7 +234,7 @@ export function ProposalPanel({ noteId, editor, ydoc }: { noteId: string; editor
         p.skill === 'vocabulary-landing' ? (
           <PendingVocabulary key={p.id} proposal={p} editor={editor} ydoc={ydoc} />
         ) : (
-          <section key={p.id} className="rounded-xl border border-border p-3 text-xs" data-testid="learning-proposal-notice">
+          <Confirmation key={p.id} data-testid="learning-proposal-notice" aria-label={t('learning.pendingProposal')}>
             <p>{t('learning.pendingProposal')}</p>
             <Button
               variant="outline"
@@ -251,11 +252,11 @@ export function ProposalPanel({ noteId, editor, ydoc }: { noteId: string; editor
             >
               {p.skill?.startsWith('mistake-') ? t('inbox.action.mistake') : t('learning.returnReading')}
             </Button>
-          </section>
+          </Confirmation>
         )
       )}
       {lensProposals.map((p) => (
-        <section key={p.id} className="rounded-xl border border-border p-3 text-xs" data-testid="lens-proposal-notice">
+        <Confirmation key={p.id} data-testid="lens-proposal-notice" aria-label={t('lens.errors.reviewInSource')}>
           <p>{t('lens.errors.reviewInSource')}</p>
           <Button
             variant="outline"
@@ -268,10 +269,10 @@ export function ProposalPanel({ noteId, editor, ydoc }: { noteId: string; editor
           >
             {t('lens.source')}
           </Button>
-        </section>
+        </Confirmation>
       ))}
       {visible.map((p) => (
-        <section key={p.id} className="overflow-hidden rounded-xl border border-accent/30 bg-accent-soft/40 shadow-card">
+        <Confirmation key={p.id} className="overflow-hidden p-0" aria-label={p.title}>
           <header className="flex items-center gap-2.5 border-b border-accent/20 px-4 py-2.5">
             <Sparkles className="size-4 text-accent" />
             <span className="flex-1 truncate text-sm font-medium text-fg">{p.title}</span>
@@ -334,7 +335,7 @@ export function ProposalPanel({ noteId, editor, ydoc }: { noteId: string; editor
               </Button>
             </div>
           </footer>
-        </section>
+        </Confirmation>
       ))}
     </div>
   )

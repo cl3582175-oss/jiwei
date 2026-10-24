@@ -5,6 +5,7 @@ import { Popover } from 'radix-ui'
 import { Loader2, CircleAlert, RotateCw, X, Check, Clock } from 'lucide-react'
 import { api, cn } from '@/lib/utils'
 import { Tip } from './ui/primitives'
+import { Queue, QueueList, QueueItem } from './ai-elements/plan'
 
 /** 后台任务指示器：有任务运行或失败时出现在导航栏 */
 export function JobsIndicator() {
@@ -33,7 +34,12 @@ export function JobsIndicator() {
     .filter((job) => job.lane === 'user' && job.status === 'queued' && !job.waiting && job.runAfter <= now)
     .sort((a, b) => a.runAfter - b.runAfter || a.createdAt - b.createdAt || a.id.localeCompare(b.id))
   // 名额未满时任务在下一拍就会开始：到期超过 3 秒仍在排队、且前面确实有任务时才提示。
-  const ahead = (id: string): number => runningUsers + Math.max(0, queuedUsers.findIndex((job) => job.id === id))
+  const ahead = (id: string): number =>
+    runningUsers +
+    Math.max(
+      0,
+      queuedUsers.findIndex((job) => job.id === id)
+    )
 
   return (
     <Popover.Root>
@@ -73,91 +79,96 @@ export function JobsIndicator() {
         >
           <p className="px-2 pt-1 pb-2 text-xs font-medium text-muted">{t('jobs.title')}</p>
           {groups.map(({ lane, entries }) => (
-            <section key={lane} data-testid={`jobs-lane-${lane}`} aria-label={t(`jobs.${lane}`)}>
+            <Queue key={lane} data-testid={`jobs-lane-${lane}`} aria-label={t(`jobs.${lane}`)}>
               <h3 className="px-2 pt-2 pb-1 text-2xs font-medium text-muted">{t(`jobs.${lane}`)}</h3>
-              {entries.map((j) => (
-                <div key={j.id} data-testid={`job-${j.id}`} className="flex items-center gap-2.5 rounded-md px-2 py-2 text-sm">
-                  <span className="shrink-0 [&_svg]:size-4">
-                    {j.status === 'queued' && (j.waiting || j.yielded || j.runAfter > now + 60_000) ? (
-                      <Clock className="text-subtle" />
-                    ) : j.status === 'running' || j.status === 'queued' ? (
-                      <Loader2 className="animate-spin text-accent" />
-                    ) : j.status === 'failed' ? (
-                      <CircleAlert className="text-danger" />
-                    ) : j.status === 'canceled' ? (
-                      <X className="text-subtle" />
-                    ) : (
-                      <Check className="text-subtle" />
-                    )}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-fg">{t(j.title, { defaultValue: j.title })}</p>
-                    {j.status === 'queued' && j.waiting && (
-                      <p className="text-2xs text-subtle">
-                        {j.waiting.reason === 'parsing' ? t('jobs.waitingParsing') : t('jobs.waitingRecognition', j.waiting)}
-                        {j.waiting.reason === 'recognition' && (
-                          <button onClick={() => void api.jobs.digestNow(j.id)} className="ml-2 text-accent hover:underline">
-                            {t('jobs.digestNow')}
+              <QueueList>
+                {entries.map((j) => (
+                  <QueueItem key={j.id} state={j.status} data-testid={`job-${j.id}`}>
+                    <span className="shrink-0 [&_svg]:size-4">
+                      {j.status === 'queued' && (j.waiting || j.yielded || j.runAfter > now + 60_000) ? (
+                        <Clock className="text-subtle" />
+                      ) : j.status === 'running' || j.status === 'queued' ? (
+                        <Loader2 className="animate-spin text-accent" />
+                      ) : j.status === 'failed' ? (
+                        <CircleAlert className="text-danger" />
+                      ) : j.status === 'canceled' ? (
+                        <X className="text-subtle" />
+                      ) : (
+                        <Check className="text-subtle" />
+                      )}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-fg">{t(j.title, { defaultValue: j.title })}</p>
+                      {j.status === 'queued' && j.waiting && (
+                        <p className="text-2xs text-subtle">
+                          {j.waiting.reason === 'parsing' ? t('jobs.waitingParsing') : t('jobs.waitingRecognition', j.waiting)}
+                          {j.waiting.reason === 'recognition' && (
+                            <button onClick={() => void api.jobs.digestNow(j.id)} className="ml-2 text-accent hover:underline">
+                              {t('jobs.digestNow')}
+                            </button>
+                          )}
+                        </p>
+                      )}
+                      {j.status === 'queued' && j.yielded && !j.waiting && <p className="text-2xs text-subtle">{t('jobs.yielded')}</p>}
+                      {j.status === 'queued' &&
+                        !j.waiting &&
+                        !j.yielded &&
+                        j.lane === 'user' &&
+                        j.runAfter <= now - 3000 &&
+                        ahead(j.id) > 0 && <p className="text-2xs text-subtle">{t('jobs.ahead', { count: ahead(j.id) })}</p>}
+                      {j.status === 'queued' && !j.waiting && !j.yielded && j.runAfter > now + 60_000 && (
+                        <p className="text-2xs text-subtle" data-testid="job-offpeak">
+                          {t('spend.jobs.offPeak', {
+                            time: new Date(j.runAfter).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+                          })}
+                          <button onClick={() => void api.jobs.runNow(j.id)} className="ml-2 text-accent hover:underline">
+                            {t('spend.jobs.runNow')}
                           </button>
-                        )}
-                      </p>
-                    )}
-                    {j.status === 'queued' && j.yielded && !j.waiting && <p className="text-2xs text-subtle">{t('jobs.yielded')}</p>}
-                    {j.status === 'queued' && !j.waiting && !j.yielded && j.lane === 'user' && j.runAfter <= now - 3000 && ahead(j.id) > 0 && (
-                      <p className="text-2xs text-subtle">{t('jobs.ahead', { count: ahead(j.id) })}</p>
-                    )}
-                    {j.status === 'queued' && !j.waiting && !j.yielded && j.runAfter > now + 60_000 && (
-                      <p className="text-2xs text-subtle" data-testid="job-offpeak">
-                        {t('spend.jobs.offPeak', {
-                          time: new Date(j.runAfter).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
-                        })}
-                        <button onClick={() => void api.jobs.runNow(j.id)} className="ml-2 text-accent hover:underline">
-                          {t('spend.jobs.runNow')}
-                        </button>
-                      </p>
-                    )}
-                    {j.status === 'canceled' && j.kind === 'inbox.recognize' && (
-                      <p className="text-2xs text-subtle">{t('inbox.recognition.canceled')}</p>
-                    )}
-                    {(j.status === 'running' || j.yielded) && (
-                      <div
-                        role="progressbar"
-                        aria-label={j.title}
-                        aria-valuemin={0}
-                        aria-valuemax={100}
-                        aria-valuenow={Math.round(j.progress * 100)}
-                        className="mt-1 h-1 overflow-hidden rounded-full bg-sunken"
+                        </p>
+                      )}
+                      {j.status === 'canceled' && j.kind === 'inbox.recognize' && (
+                        <p className="text-2xs text-subtle">{t('inbox.recognition.canceled')}</p>
+                      )}
+                      {(j.status === 'running' || j.yielded) && (
+                        <div
+                          role="progressbar"
+                          aria-label={j.title}
+                          aria-valuemin={0}
+                          aria-valuemax={100}
+                          aria-valuenow={Math.round(j.progress * 100)}
+                          className="mt-1 h-1 overflow-hidden rounded-full bg-sunken"
+                        >
+                          <div className="h-full bg-accent transition-[width]" style={{ width: `${Math.round(j.progress * 100)}%` }} />
+                        </div>
+                      )}
+                      {j.status === 'failed' && j.error && (
+                        <p className="truncate text-2xs text-danger" title={j.error}>
+                          {j.error}
+                        </p>
+                      )}
+                    </div>
+                    {(j.status === 'failed' || (j.status === 'canceled' && j.kind === 'inbox.recognize')) && (
+                      <button
+                        onClick={() => void api.jobs.retry(j.id)}
+                        className="rounded p-1 text-subtle hover:text-fg"
+                        aria-label={t('jobs.retry')}
                       >
-                        <div className="h-full bg-accent transition-[width]" style={{ width: `${Math.round(j.progress * 100)}%` }} />
-                      </div>
+                        <RotateCw className="size-3.5" />
+                      </button>
                     )}
-                    {j.status === 'failed' && j.error && (
-                      <p className="truncate text-2xs text-danger" title={j.error}>
-                        {j.error}
-                      </p>
+                    {(j.status === 'queued' || j.status === 'running') && (
+                      <button
+                        onClick={() => void api.jobs.cancel(j.id)}
+                        className="rounded p-1 text-subtle hover:text-fg"
+                        aria-label={t('common.cancel')}
+                      >
+                        <X className="size-3.5" />
+                      </button>
                     )}
-                  </div>
-                  {(j.status === 'failed' || (j.status === 'canceled' && j.kind === 'inbox.recognize')) && (
-                    <button
-                      onClick={() => void api.jobs.retry(j.id)}
-                      className="rounded p-1 text-subtle hover:text-fg"
-                      aria-label={t('jobs.retry')}
-                    >
-                      <RotateCw className="size-3.5" />
-                    </button>
-                  )}
-                  {(j.status === 'queued' || j.status === 'running') && (
-                    <button
-                      onClick={() => void api.jobs.cancel(j.id)}
-                      className="rounded p-1 text-subtle hover:text-fg"
-                      aria-label={t('common.cancel')}
-                    >
-                      <X className="size-3.5" />
-                    </button>
-                  )}
-                </div>
-              ))}
-            </section>
+                  </QueueItem>
+                ))}
+              </QueueList>
+            </Queue>
           ))}
         </Popover.Content>
       </Popover.Portal>

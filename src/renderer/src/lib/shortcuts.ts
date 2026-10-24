@@ -32,7 +32,7 @@ export function useGlobalShortcuts(): void {
       const s = useApp.getState()
       if (k === 'w' && s.settingsOpen) {
         e.preventDefault()
-        s.setSettingsOpen(false)
+        void s.setSettingsOpen(false)
       } else if (k === 'k') {
         e.preventDefault()
         s.setPaletteOpen(!s.paletteOpen)
@@ -53,7 +53,7 @@ export function useGlobalShortcuts(): void {
         } else void createNote()
       } else if (k === ',') {
         e.preventDefault()
-        s.setSettingsOpen(true)
+        void s.openSettings()
       } else if (k === '\\') {
         // 当前页面的列表栏（v0.7.3：各页面分别记住）
         if (toggleActiveSidebar()) e.preventDefault()

@@ -125,8 +125,8 @@ const card = (n: number) => page.getByTestId('speaker-card').filter({ hasText: `
 async function setTheme(theme: 'light' | 'dark'): Promise<void> {
   await page.getByRole('button', { name: /^设置/ }).click()
   const settings = page.getByRole('dialog')
-  await settings.getByRole('button', { name: '外观', exact: true }).click()
-  await settings.getByRole('button', { name: theme === 'dark' ? '深色' : '浅色', exact: true }).click()
+  await settings.getByRole('tab', { name: '外观', exact: true }).click()
+  await settings.getByRole('radio', { name: theme === 'dark' ? '深色' : '浅色', exact: true }).click()
   await expect.poll(() => page.evaluate(() => document.documentElement.dataset.theme)).toBe(theme)
   await expect.poll(() => page.evaluate(() => window.jiwei.settings.get().then((s) => s.theme))).toBe(theme)
   await page.keyboard.press('Escape')

@@ -7,7 +7,7 @@ import { hostname } from 'os'
 import { createHash, randomUUID } from 'crypto'
 import Database from 'better-sqlite3'
 import { backupsDir, dataDir, getSqlite, closeDatabase, openDatabase } from '../db'
-import { profileDb, profileDbPath, closeProfileDb } from '../db/profile'
+import { profileDb, profileDbPath, closeProfileDb, PROFILE_LEGACY_VERSION } from '../db/profile'
 import { defaultDataDir, readBootConfig, writeBootConfig } from '../lib/config'
 import { filesIn, fileHash, copySafeFile, withRecordingStore, ensureDiskSpace } from '../lib/safetyFiles'
 import { readTar, readTarBytes, writeTar, copyRange, type TarEntry } from '../lib/tar'
@@ -50,7 +50,7 @@ const migrations = (personal = false): number =>
     ) as { entries: unknown[] }
   ).entries.length
 function readManifest(raw: unknown): BackupManifest {
-  return parseBackupManifest(raw, migrations(), migrations(true), 2)
+  return parseBackupManifest(raw, migrations(), migrations(true), PROFILE_LEGACY_VERSION)
 }
 function migrationCount(db: Database.Database): number {
   return db.prepare("SELECT 1 FROM sqlite_master WHERE name='__drizzle_migrations'").get()

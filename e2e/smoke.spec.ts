@@ -147,7 +147,7 @@ test('delete note → trash → restore', async () => {
 
 test('settings data tab shows location and backups', async () => {
   await page.keyboard.press('ControlOrMeta+,')
-  await page.getByRole('button', { name: '数据' }).click()
+  await page.getByRole('tab', { name: '数据' }).click()
   await page.getByTestId('backup-settings').scrollIntoViewIfNeeded()
   await expect(page.getByRole('heading', { name: '备份与恢复' })).toBeVisible()
   await expect(page.getByText('上次本地完整备份', { exact: true })).toBeVisible()

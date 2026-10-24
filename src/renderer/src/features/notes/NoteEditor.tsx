@@ -1,3 +1,4 @@
+import { useShallow } from 'zustand/react/shallow'
 import { useRecording } from '../recording/store'
 import { Mic } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
@@ -38,7 +39,7 @@ import type { KnowledgeStatus, NoteMetaUpdate, NoteSummary } from '@shared/types
 import { useCategories, useNote, invalidate } from '@/lib/queries'
 import { api, cn, formatDate, formatDateTime, formatRelative, toDateInput, fromDateInput } from '@/lib/utils'
 import { useApp } from '@/store/app'
-import { Button } from '@/components/ui/button'
+import { Button } from '@/components/ui/shadcn-button'
 import {
   Menu,
   MenuContent,
@@ -50,9 +51,9 @@ import {
   MenuSubTrigger,
   MenuTrigger,
   Tip
-} from '@/components/ui/primitives'
+} from '@/components/ui/shadcn-primitives'
 import { exportCurrentNote } from './exportNote'
-import { confirm } from '@/components/ui/confirm'
+import { confirm, useConfirmSignal, withActionLock } from '@/components/ui/shadcn-confirm'
 import { CornellEditor } from './editor/CornellEditor'
 import { useNoteDoc } from './editor/useNoteDoc'
 import { TagEditor } from './TagEditor'
@@ -142,11 +143,11 @@ function CategoryPicker({ value, onChange }: { value: string | null; onChange: (
   return (
     <Menu>
       <MenuTrigger asChild>
-        <button className="no-drag flex h-7 items-center gap-1.5 rounded-md px-2 text-xs text-muted transition-colors hover:bg-surface-hover hover:text-fg">
+        <Button variant="ghost" size="auto" className="no-drag flex h-7 items-center gap-1.5 rounded-md px-2 text-xs text-muted transition-colors hover:bg-surface-hover hover:text-fg">
           {value ? <Folder className="size-3.5" /> : <Inbox className="size-3.5" />}
           <span className="max-w-[260px] truncate">{name}</span>
           <ChevronDown className="size-3 opacity-60" />
-        </button>
+        </Button>
       </MenuTrigger>
       <MenuContent align="start" className="max-h-[60vh] overflow-y-auto">
         <MenuItem onSelect={() => onChange(null)}>
@@ -212,9 +213,21 @@ function focusFirstBody(ed: Editor): void {
 }
 
 function EditorBody({ note: initial }: { note: NoteSummary }) {
+  const confirmSignal = useConfirmSignal(initial.id)
   const { t, i18n } = useTranslation()
   const qc = useQueryClient()
-  const { openNote, openSource, sourceId, back, forward, historyIndex, history, browserOpen } = useApp()
+  const { openNote, openSource, sourceId, back, forward, historyIndex, history, browserOpen } = useApp(
+    useShallow((state) => ({
+      openNote: state.openNote,
+      openSource: state.openSource,
+      sourceId: state.sourceId,
+      back: state.back,
+      forward: state.forward,
+      historyIndex: state.historyIndex,
+      history: state.history,
+      browserOpen: state.browserOpen
+    }))
+  )
   const { ydoc, saving } = useNoteDoc(initial.id)
   const [note, setNote] = useState(initial)
   const editorRef = useRef<Editor | null>(null)
@@ -257,18 +270,23 @@ function EditorBody({ note: initial }: { note: NoteSummary }) {
   useEffect(() => flushTitle, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const remove = async (): Promise<void> => {
-    const ok = await confirm({
-      title: t('notes.deleteTitle'),
-      description: t('notes.deleteDesc'),
-      confirmText: t('common.delete'),
-      danger: true
-    })
-    if (!ok) return
-    flushTitle()
-    await api.notes.trash(note.id)
-    invalidate(qc, 'notes', 'trash')
-    openNote(null)
-    toast(t('notes.deleted'))
+    const operationKey = `note:${note.id}:delete`
+    await withActionLock(operationKey, async () => {
+      const ok = await confirm({
+        operationKey,
+        signal: confirmSignal,
+        title: t('notes.deleteTitle'),
+        description: t('notes.deleteDesc'),
+        confirmText: t('common.delete'),
+        danger: true
+      })
+      if (!ok || confirmSignal.aborted) return
+      flushTitle()
+      await api.notes.trash(note.id)
+      invalidate(qc, 'notes', 'trash')
+      if (useApp.getState().noteId === note.id) openNote(null)
+      toast(t('notes.deleted'))
+    }, { signal: confirmSignal })
   }
 
   const saveVersion = async (): Promise<void> => {
@@ -484,18 +502,18 @@ function EditorBody({ note: initial }: { note: NoteSummary }) {
                   <>
                     {' '}
                     {t('notes.supersededBy')}
-                    <button
+                    <Button variant="ghost" size="auto"
                       onClick={() => openNote(superseder.id)}
                       className="mx-1 font-medium text-accent underline-offset-2 hover:underline"
                     >
                       《{superseder.title || t('common.untitled')}》
-                    </button>
+                    </Button>
                   </>
                 )}
               </span>
-              <button onClick={() => void update({ status: 'active', supersededBy: null })} className="text-xs text-subtle hover:text-fg">
+              <Button variant="ghost" size="auto" onClick={() => void update({ status: 'active', supersededBy: null })} className="text-xs text-subtle hover:text-fg">
                 {t('notes.markActive')}
-              </button>
+              </Button>
             </div>
           )}
 

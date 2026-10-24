@@ -72,7 +72,7 @@ test.afterAll(async () => {
 
 test('复盘 → 洞察：漏斗、投入、内化、产出与成本', async () => {
   await navTo(page, /^复盘/)
-  await page.getByRole('button', { name: '洞察', exact: true }).click()
+  await page.getByRole('radio', { name: '洞察', exact: true }).click()
   const view = page.getByTestId('insights-view')
   await expect(view).toBeVisible()
   const funnel = page.getByTestId('knowledge-funnel')
@@ -88,6 +88,6 @@ test('复盘 → 洞察：漏斗、投入、内化、产出与成本', async () 
   await expect(page.getByTestId('insights-output')).toContainText('1 篇笔记被用进作品或决策')
   if (shots) await page.screenshot({ path: join(shots, '401-insights.png'), fullPage: true })
   // 切换统计范围
-  await page.getByRole('button', { name: '7 天' }).click()
+  await page.getByRole('radio', { name: '7 天' }).click()
   await expect(funnel.locator('[data-stage="note"]')).toContainText('2')
 })

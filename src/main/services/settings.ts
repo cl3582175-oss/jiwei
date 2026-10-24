@@ -87,6 +87,10 @@ export function setSettings(patch: SettingsPatch): Settings {
   if (patch.plugins) patch = { ...patch, plugins: { ...getSettings().plugins, ...patch.plugins } }
   if (patch.discover) patch = { ...patch, discover: { ...getSettings().discover, ...patch.discover } }
   if (patch.tasks) patch = { ...patch, tasks: { ...getSettings().tasks, ...patch.tasks } }
+  if (patch.review) patch = { ...patch, review: { ...getSettings().review, ...patch.review } }
+  if (patch.reflection) patch = { ...patch, reflection: { ...getSettings().reflection, ...patch.reflection } }
+  // The schema accepts independent complete page records; retain other pages.
+  if (patch.sidebars) patch = { ...patch, sidebars: { ...getSettings().sidebars, ...patch.sidebars } }
   const db = getDb()
   if (patch.capture) patch = { ...patch, capture: { ...getSettings().capture, ...patch.capture } }
   if (patch.money) {

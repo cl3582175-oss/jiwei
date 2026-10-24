@@ -110,7 +110,7 @@ function ProfileField({ k, value }: { k: ProfileKey; value: string }) {
           void save.flush().catch(() => {})
         }}
         className={cn(
-          'mt-1.5 block w-full resize-none rounded-lg border bg-surface px-3 py-2 text-sm leading-relaxed text-fg outline-none placeholder:text-subtle',
+          'mt-1.5 block w-full resize-none rounded-lg border bg-sunken px-3 py-2 text-sm leading-relaxed text-fg outline-none placeholder:text-subtle',
           overLimit ? 'border-danger focus:border-danger' : 'border-border focus:border-accent'
         )}
       />
@@ -558,7 +558,7 @@ export function MemorySettingsTab() {
   const [section, setSection] = useState<Section>('profile')
   return (
     <div className="py-4">
-      <div role="tablist" className="mb-6 inline-flex rounded-lg bg-sunken p-0.5">
+      <div role="tablist" aria-orientation="horizontal" className="mb-6 inline-flex max-w-full flex-row flex-nowrap overflow-x-auto rounded-lg bg-sunken p-0.5">
         {SECTIONS.map((s) => (
           <button
             key={s}
@@ -566,7 +566,7 @@ export function MemorySettingsTab() {
             aria-selected={section === s}
             onClick={() => setSection(s)}
             className={cn(
-              'rounded-md px-3 py-1 text-xs transition-colors',
+              'shrink-0 rounded-md px-3 py-1 text-xs whitespace-nowrap transition-colors',
               section === s ? 'bg-surface text-fg shadow-card' : 'text-muted hover:text-fg'
             )}
           >

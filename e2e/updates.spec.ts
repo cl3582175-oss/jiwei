@@ -29,7 +29,7 @@ test('macOS manual: real feed check, progress, verified dmg and replacement guid
   const env = await updateFixture()
   try {
     await env.page.getByRole('button', { name: /^设置/ }).click()
-    await env.page.getByRole('button', { name: '关于', exact: true }).click({ timeout: 5000 })
+    await env.page.getByRole('tab', { name: '关于', exact: true }).click({ timeout: 5000 })
     await env.page.getByRole('button', { name: '检查更新', exact: true }).click()
     await expect(env.page.getByTestId('update-settings')).toContainText('发现新版本 1.0.0')
     await expect(env.page.getByTestId('update-notes')).toContainText('原创更新说明')
@@ -61,7 +61,7 @@ test('Windows automatic branch downloads through real electron-updater and offer
   const env = await updateFixture({ platform: 'win32' })
   try {
     await env.page.getByRole('button', { name: /^设置/ }).click()
-    await env.page.getByRole('button', { name: '关于', exact: true }).click({ timeout: 5000 })
+    await env.page.getByRole('tab', { name: '关于', exact: true }).click({ timeout: 5000 })
     await env.page.getByRole('button', { name: '检查更新', exact: true }).click()
     await expect(env.page.getByRole('button', { name: '重新启动以更新', exact: true })).toBeVisible()
     await env.page.keyboard.press('Escape')
@@ -71,7 +71,7 @@ test('Windows automatic branch downloads through real electron-updater and offer
     await env.page.getByRole('button', { name: '稍后', exact: true }).click({ timeout: 5000 })
     await expect(env.page.getByTestId('update-restart-notice')).toHaveCount(0)
     await env.page.getByRole('button', { name: /^设置/ }).click()
-    await env.page.getByRole('button', { name: '关于', exact: true }).click()
+    await env.page.getByRole('tab', { name: '关于', exact: true }).click()
     await env.page.getByRole('button', { name: '重新启动以更新', exact: true }).click()
     await expect(env.page.getByTestId('update-settings')).toBeVisible()
   } finally {
@@ -83,7 +83,7 @@ test('checksum mismatch removes the unverified dmg and presents an inline retry'
   const env = await updateFixture({ corrupt: true })
   try {
     await env.page.getByRole('button', { name: /^设置/ }).click()
-    await env.page.getByRole('button', { name: '关于', exact: true }).click({ timeout: 5000 })
+    await env.page.getByRole('tab', { name: '关于', exact: true }).click({ timeout: 5000 })
     await env.page.getByRole('button', { name: '检查更新', exact: true }).click()
     await expect(env.page.getByRole('button', { name: '下载更新', exact: true })).toBeVisible()
     await env.page.getByRole('button', { name: '下载更新', exact: true }).click()
@@ -115,7 +115,7 @@ test('manual download uses the release selected by the user even when the feed a
   const env = await updateFixture()
   try {
     await env.page.getByRole('button', { name: /^设置/ }).click()
-    await env.page.getByRole('button', { name: '关于', exact: true }).click()
+    await env.page.getByRole('tab', { name: '关于', exact: true }).click()
     await env.page.getByRole('button', { name: '检查更新', exact: true }).click()
     await expect(env.page.getByRole('button', { name: '下载更新', exact: true })).toBeVisible()
     env.metadata.version = '1.1.0'
@@ -132,7 +132,7 @@ test('a read-only download folder produces a recoverable storage error', async (
   const env = await updateFixture()
   try {
     await env.page.getByRole('button', { name: /^设置/ }).click()
-    await env.page.getByRole('button', { name: '关于', exact: true }).click()
+    await env.page.getByRole('tab', { name: '关于', exact: true }).click()
     await env.page.getByRole('button', { name: '检查更新', exact: true }).click()
     await expect(env.page.getByRole('button', { name: '下载更新', exact: true })).toBeVisible()
     chmodSync(env.downloads, 0o500)
@@ -184,7 +184,7 @@ test('an upgraded vault is snapshotted before its version record changes and ret
     }
     expect(readdirSync(join(userData, 'data', 'backups', 'updates')).filter((n) => n.endsWith('.db'))).toHaveLength(2)
     await env.page.getByRole('button', { name: /^设置/ }).click()
-    await env.page.getByRole('button', { name: '关于', exact: true }).click()
+    await env.page.getByRole('tab', { name: '关于', exact: true }).click()
     await expect(env.page.getByTestId('update-settings')).toContainText(`已更新到 ${version}`)
     await env.page.getByRole('button', { name: '关闭升级提示', exact: true }).click()
     await expect(env.page.getByTestId('update-settings')).not.toContainText(`已更新到 ${version}`)

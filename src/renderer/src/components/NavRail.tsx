@@ -1,3 +1,5 @@
+import { useShallow } from 'zustand/react/shallow'
+import { Button } from '@/components/ui/shadcn-button'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { NavRing } from './NavRing'
@@ -29,7 +31,7 @@ import {
 } from 'lucide-react'
 import { useApp, NAV_GROUPS, currentNavItem, groupOf, type NavGroup, type NavItem } from '@/store/app'
 import { cn, isMac, modKey } from '@/lib/utils'
-import { Tip } from './ui/primitives'
+import { Tip } from './ui/shadcn-primitives'
 import { Logo } from './Logo'
 import { JobsIndicator } from './JobsIndicator'
 import { useReviewStats } from '@/features/review/ReviewView'
@@ -78,7 +80,7 @@ function RailButton({
   children: ReactNode
 }) {
   const button = (
-    <button
+    <Button variant="ghost" size="auto"
       ref={buttonRef}
       onClick={onClick}
       onPointerEnter={onPointerEnter}
@@ -118,7 +120,7 @@ function RailButton({
         </span>
       )}
       {active && !small && !accent && <span className="absolute top-2.5 -left-[17px] h-5 w-[3px] rounded-r-full bg-accent" />}
-    </button>
+    </Button>
   )
   return noTip ? button : <Tip label={label}>{button}</Tip>
 }
@@ -187,7 +189,15 @@ function useRingHint(): [boolean, boolean, () => void] {
 
 export function NavRail() {
   const { t } = useTranslation()
-  const { view, setSettingsOpen, setPaletteOpen, browserOpen, goNav } = useApp()
+  const { view, setSettingsOpen, setPaletteOpen, browserOpen, goNav } = useApp(
+    useShallow((state) => ({
+      view: state.view,
+      setSettingsOpen: state.setSettingsOpen,
+      setPaletteOpen: state.setPaletteOpen,
+      browserOpen: state.browserOpen,
+      goNav: state.goNav
+    }))
+  )
   const { data: inbox = [] } = useInbox()
   const { data: stats } = useReviewStats()
   const inboxCount = inbox.filter((i) => i.status === 'new' || i.status === 'suggested').length

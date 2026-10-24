@@ -1,8 +1,9 @@
+import { Button } from '@/components/ui/shadcn-button'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQueryClient } from '@tanstack/react-query'
-import { Popover } from 'radix-ui'
-import { Command } from 'cmdk'
+import { PopoverParts as Popover } from '@/components/ui/popover'
+import { CommandParts as Command } from '@/components/ui/command'
 import { Hash, Plus, X, Check } from 'lucide-react'
 import { useTags, invalidate } from '@/lib/queries'
 import { api, cn } from '@/lib/utils'
@@ -46,22 +47,22 @@ export function TagEditor({ entityType, entityId, tagIds }: { entityType: 'note'
           >
             <Hash className="size-3 opacity-60" />
             {tag.name}
-            <button
+            <Button variant="ghost" size="auto"
               onClick={() => toggle(id)}
               className="rounded-full opacity-0 group-hover:opacity-70 hover:opacity-100"
               aria-label={t('common.delete')}
             >
               <X className="size-3" />
-            </button>
+            </Button>
           </span>
         )
       })}
       <Popover.Root open={open} onOpenChange={(o) => (setOpen(o), o || setQ(''))}>
         <Popover.Trigger asChild>
-          <button className="inline-flex h-6 items-center gap-1 rounded-full border border-dashed border-border-strong px-2 text-xs text-subtle transition-colors hover:border-accent hover:text-accent">
+          <Button variant="ghost" size="auto" className="inline-flex h-6 items-center gap-1 rounded-full bg-secondary px-2 text-xs text-subtle transition-colors hover:border-accent hover:text-accent">
             <Plus className="size-3" />
             {selected.length === 0 && t('tags.add')}
-          </button>
+          </Button>
         </Popover.Trigger>
         <Popover.Portal>
           <Popover.Content
@@ -77,6 +78,7 @@ export function TagEditor({ entityType, entityId, tagIds }: { entityType: 'note'
                 className="h-9 w-full border-b border-border bg-transparent px-3 text-sm text-fg outline-none placeholder:text-subtle"
               />
               <Command.List className="max-h-56 overflow-y-auto p-1">
+                <Command.Group>
                 {all.map((tg) => (
                   <Command.Item
                     key={tg.id}
@@ -99,6 +101,7 @@ export function TagEditor({ entityType, entityId, tagIds }: { entityType: 'note'
                     {t('tags.create', { name: q.trim().replace(/^#/, '') })}
                   </Command.Item>
                 )}
+              </Command.Group>
               </Command.List>
             </Command>
           </Popover.Content>

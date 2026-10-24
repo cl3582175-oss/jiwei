@@ -5,6 +5,7 @@ import { join } from 'path'
 import { createServer, type Server } from 'http'
 import JSZip from 'jszip'
 import { navTo } from './fixtures/nav'
+import { writeOpenAiCompletion } from './fixtures/openaiResponse'
 
 // v0.9 创作工坊：素材来自知识库 → 结构 → 起草（共写 / 教练）→ 打磨 → 回流卡片 → 导出 Word / PDF / Markdown / PPTX。
 test.describe.configure({ mode: 'serial' })
@@ -123,28 +124,26 @@ test.beforeAll(async () => {
       const system = text(input.messages.find((m: { role: string }) => m.role === 'system')?.content)
       const prompt = text(input.messages.filter((m: { role: string }) => m.role === 'user').at(-1)?.content)
       prompts.push({ system, prompt })
-      res.writeHead(200, { 'content-type': 'application/json' }).end(
-        JSON.stringify({
-          id: 'controlled',
-          object: 'chat.completion',
-          created: 1,
-          model: 'deepseek-flash',
-          choices: [
-            {
-              index: 0,
-              message: {
-                role: 'assistant',
-                content: null,
-                tool_calls: [
-                  { id: 'submit', type: 'function', function: { name: 'submit', arguments: JSON.stringify(reply(system, prompt)) } }
-                ]
-              },
-              finish_reason: 'tool_calls'
-            }
-          ],
-          usage: { prompt_tokens: 2000, completion_tokens: 600, total_tokens: 2600 }
-        })
-      )
+      writeOpenAiCompletion(res, {
+        id: 'controlled',
+        object: 'chat.completion',
+        created: 1,
+        model: 'deepseek-flash',
+        choices: [
+          {
+            index: 0,
+            message: {
+              role: 'assistant',
+              content: null,
+              tool_calls: [
+                { id: 'submit', type: 'function', function: { name: 'submit', arguments: JSON.stringify(reply(system, prompt)) } }
+              ]
+            },
+            finish_reason: 'tool_calls'
+          }
+        ],
+        usage: { prompt_tokens: 2000, completion_tokens: 600, total_tokens: 2600 }
+      }, !!input.stream)
     })
   })
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r))
@@ -201,7 +200,7 @@ test('长文：素材 → 结构 → 共写起草 → 打磨与回流卡片 → 
   const dialog = page.getByTestId('new-work-dialog')
   await dialog.getByRole('textbox', { name: '选题' }).fill('间隔重复为什么有效')
   await dialog.getByRole('button', { name: '同学', exact: true }).click()
-  await dialog.getByRole('button', { name: '共写', exact: true }).click()
+  await dialog.getByRole('radio', { name: '共写', exact: true }).click()
   if (shots) await page.screenshot({ path: join(shots, '302-new-work.png') })
   await dialog.getByRole('button', { name: '开始创作' }).click()
   // 有选题时直接进入素材，并自动收集
@@ -321,7 +320,7 @@ test('讲解视频：分镜（去掉非法场景）→ 预览 → 渲染 MP4（�
   await expect(board.locator('.katex').first()).toBeVisible()
   if (shots) await page.screenshot({ path: join(shots, '308-storyboard.png') })
   await page.getByRole('button', { name: '下一步' }).click()
-  await page.getByRole('button', { name: '不配音（只有字幕）' }).click()
+  await page.getByRole('radio', { name: '不配音（只有字幕）' }).click()
   const preview = page.getByTestId('video-preview')
   // 第 7 秒：第二个场景旁白中（每个场景开头有 0.35 秒留白，那时本来没有字幕）
   await preview.getByRole('slider', { name: '预览' }).fill('7')

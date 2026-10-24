@@ -8,14 +8,15 @@ import { useCaptureEvents } from './features/capture/events'
 import { PhoneDialog } from './features/capture/PhoneDialog'
 import { InboxView } from './features/inbox/InboxView'
 import { useEffect } from 'react'
-import { useTranslation } from 'react-i18next'
 import { Toaster, toast } from 'sonner'
 import i18n from './i18n'
 import { useQueryClient } from '@tanstack/react-query'
-import { invalidate, useSettings } from './lib/queries'
+import { invalidate, refreshSettings, useSettings } from './lib/queries'
+import { useThemeSync } from './lib/theme'
 import { useApp } from './store/app'
-import { TooltipProvider } from './components/ui/primitives'
-import { DialogHost } from './components/ui/confirm'
+import { TooltipProvider } from './components/ui/shadcn-primitives'
+import { DialogHost } from './components/ui/shadcn-confirm'
+import { DialogHost as ReleasedAiDialogHost } from './components/ui/confirm'
 import { NavRail } from './components/NavRail'
 import { NotesView } from './features/notes/NotesView'
 import { LibraryView } from './features/library/LibraryView'
@@ -45,36 +46,6 @@ import { useActivityTracker } from './features/today/useActivityTracker'
 import { AiPanelBody, AiPanelFloat } from './features/assist/AiPanel'
 import { usePanel } from './features/assist/store'
 import { WebSnapshotDialog } from './features/retrieval/WebSnapshotDialog'
-
-function useThemeSync(): 'light' | 'dark' {
-  const { data: s } = useSettings()
-  const { i18n } = useTranslation()
-  const mode = s?.theme ?? 'system'
-  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)')
-
-  useEffect(() => {
-    const apply = (): void => {
-      const dark = mode === 'dark' || (mode === 'system' && prefersDark.matches)
-      document.documentElement.dataset.theme = dark ? 'dark' : 'light'
-    }
-    apply()
-    prefersDark.addEventListener('change', apply)
-    return () => prefersDark.removeEventListener('change', apply)
-  }, [mode, prefersDark])
-
-  useEffect(() => {
-    document.documentElement.dataset.palette = s?.palette ?? 'qinglu'
-  }, [s?.palette])
-
-  useEffect(() => {
-    if (s?.language && i18n.language !== s.language) {
-      void i18n.changeLanguage(s.language)
-      document.documentElement.lang = s.language
-    }
-  }, [s?.language, i18n])
-
-  return mode === 'dark' || (mode === 'system' && prefersDark.matches) ? 'dark' : 'light'
-}
 
 /** 主进程派生数据更新后刷新列表与当前笔记 */
 function useMainEvents(): void {
@@ -165,7 +136,7 @@ function useMainEvents(): void {
       window.jiweiEvents.on('usage:changed', () => void qc.invalidateQueries({ queryKey: ['usage'] })),
       window.jiweiEvents.on('providers:changed', () => void qc.invalidateQueries({ queryKey: ['providers'] })),
       window.jiweiEvents.on('settings:changed', () => {
-        void qc.invalidateQueries({ queryKey: ['settings'] })
+        void refreshSettings(qc)
         void qc.invalidateQueries({ queryKey: ['plan', 'forecast'] })
       }),
       // 整份资料的导图 / 总结 / 提纲做好了（v0.7.6）
@@ -304,6 +275,7 @@ export function App() {
       <Onboarding />
       <ModelSetupDialog />
       <DialogHost />
+      <ReleasedAiDialogHost />
       <SelectionToolbar />
       <AnnotationCard />
       <AnswerCard />
