@@ -278,9 +278,25 @@ test('reduced motion immediately removes blur while the response keeps streaming
   ).toBe(true)
   const before = (await body.textContent())!.length
   await expect.poll(async () => (await body.textContent())!.length).toBeGreaterThan(before + 12)
-  expect(await body.evaluate((node) => node.getAnimations({ subtree: true }).some((animation) => animation.playState === 'running'))).toBe(
-    false
-  )
+  // Chromium may finish cancelling animations on the next rendering frame after the media change.
+  // Keep the strict no-running-animation condition while the response is still streaming.
+  await expect
+    .poll(
+      () =>
+        body.evaluate((node) =>
+          node
+            .getAnimations({ subtree: true })
+            .filter((animation) => animation.playState === 'running')
+            .map((animation) => ({
+              name: (animation as CSSAnimation).animationName,
+              duration: animation.effect?.getTiming().duration,
+              target: ((animation.effect as KeyframeEffect)?.target as Element | null)?.outerHTML.slice(0, 300)
+            }))
+        ),
+      { timeout: 1000 }
+    )
+    .toEqual([])
+  await expect(body).toHaveAttribute('data-streaming', 'true')
   await page.getByRole('button', { name: '停止生成', exact: true }).click()
 })
 

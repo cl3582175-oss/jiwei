@@ -255,7 +255,7 @@ function ChatPanel() {
             tools={
               <>
                 <ModelPicker compact value={choice} onChange={setChoice} />
-                {provider && <EffortPicker compact kind={provider.kind} value={effort} onChange={setEffort} />}
+                {provider && <EffortPicker compact provider={provider} model={choice.model} value={effort} onChange={setEffort} />}
                 <ScopePicker
                   value={scope}
                   onChange={(next) => {

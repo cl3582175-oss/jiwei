@@ -890,7 +890,8 @@ export function AiSettingsTab() {
           <div className="flex flex-wrap items-center gap-3">
             <ModelPicker value={s.ai.chat} onChange={(chat) => update.mutate({ ai: { ...s.ai, chat } })} />
             <EffortPicker
-              kind={providers.find((p) => p.id === s.ai.chat.providerId)?.kind ?? 'deepseek'}
+              provider={providers.find((p) => p.id === s.ai.chat.providerId) ?? null}
+              model={s.ai.chat.model}
               value={s.ai.effort}
               onChange={(effort: Effort) => update.mutate({ ai: { ...s.ai, effort } })}
             />

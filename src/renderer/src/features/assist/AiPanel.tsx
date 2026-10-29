@@ -505,7 +505,7 @@ function PanelBody({ pinned, page }: { pinned: boolean; page: string }) {
               <InputGroupTools>
                 <AttachmentButton controller={attachments} />
                 <ModelPicker compact value={choice} onChange={setChoice} />
-                {provider && <EffortPicker compact kind={provider.kind} value={effort} onChange={setEffort} />}
+                {provider && <EffortPicker compact provider={provider} model={choice.model} value={effort} onChange={setEffort} />}
                 <span className="contents" data-testid="panel-web-mode">
                   <WebModePicker value={web} onChange={setWeb} />
                 </span>

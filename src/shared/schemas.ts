@@ -15,6 +15,7 @@ import { RecordingFiltersSchema } from './lens'
 import { UpdateSettingsSchema } from './updates'
 import { RetrievalSettingsSchema, WebModeSchema } from './retrieval'
 import { PROFILE_LIMITS } from './profile'
+import { EFFORTS } from './ai'
 
 // 所有跨进程输入的 zod 模式。类型由模式推导，保证“声明一次、处处一致”。
 
@@ -243,7 +244,7 @@ export type ProposalInput = z.infer<typeof ProposalInputSchema>
 /* ——— AI ——— */
 
 export const ProviderKindSchema = z.enum(['deepseek', 'openai', 'anthropic', 'google', 'qwen', 'moonshot', 'zhipu', 'ollama', 'custom'])
-export const EffortSchema = z.enum(['off', 'low', 'medium', 'high', 'max'])
+export const EffortSchema = z.enum(EFFORTS)
 
 export const ProviderInputSchema = z.object({
   id: Id.optional(),

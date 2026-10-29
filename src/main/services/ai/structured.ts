@@ -4,7 +4,13 @@ import { resolveCaps } from '@shared/ai'
 import { extractJson } from '../../lib/learner'
 import { withPurpose } from '../agent/context'
 import { getProviderRow } from './providers'
-import { createModelRequest, logModelFailure, ModelOutputTruncated, type ModelRequestOptions } from './request'
+import {
+  createModelRequest,
+  isUnsupportedOutputParameter,
+  logModelFailure,
+  ModelOutputTruncated,
+  type ModelRequestOptions
+} from './request'
 
 // 后台小任务（记忆整理、技能偏好归纳）的结构化输出。
 // 首选“强制调用一个提交工具”——各家服务商都支持函数调用（DeepSeek、OpenAI 兼容、Claude、Gemini），
@@ -42,7 +48,7 @@ async function run<T>(opts: ModelRequestOptions & { schema: z.ZodType<T> }): Pro
     throw new Error('No tool call in model output')
   } catch (e) {
     logModelFailure('structured', request.diagnostics('tool'), request.state.last)
-    if (opts.signal?.aborted || e instanceof ModelOutputTruncated) throw e
+    if (opts.signal?.aborted || e instanceof ModelOutputTruncated || isUnsupportedOutputParameter(e)) throw e
   }
   opts.guard?.()
   try {

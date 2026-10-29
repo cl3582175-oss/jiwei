@@ -1,8 +1,7 @@
 import { toUsd, type MoneySettings } from './money'
 // AI 服务商预设、统一的“思考强度”与各家参数映射。
 //
-// 思考强度对用户统一为五档：关闭 / 低 / 中 / 高 / 极限。
-// 每家服务商只显示它支持的档位，并在主进程（main/services/ai/model.ts）映射为各自的请求参数：
+// 每个模型只显示已确认支持的档位，并在主进程映射为各自的请求参数：
 //   DeepSeek   thinking.type + reasoning_effort（low / high / max）
 //   OpenAI     reasoning_effort（minimal / low / medium / high）
 //   Anthropic  thinking.budget_tokens
@@ -10,7 +9,9 @@ import { toUsd, type MoneySettings } from './money'
 //   通义千问    enable_thinking + thinking_budget
 //   其他兼容接口 reasoning_effort（可在服务商设置中关闭）
 
-export const EFFORTS = ['off', 'low', 'medium', 'high', 'max'] as const
+export type LegacyEffort = 'off' | 'low' | 'medium' | 'high' | 'max'
+// max 保留旧设置的语义；显式选择 OpenAI 原生 max 使用 openai-max。
+export const EFFORTS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'openai-max'] as const
 export type Effort = (typeof EFFORTS)[number]
 
 /** API 风格：决定使用哪个 SDK 适配器 */
@@ -141,6 +142,103 @@ export const PROVIDER_PRESETS: Record<ProviderKind, ProviderPreset> = {
 }
 
 export const PROVIDER_ORDER: ProviderKind[] = ['deepseek', 'qwen', 'moonshot', 'zhipu', 'openai', 'anthropic', 'google', 'ollama', 'custom']
+
+export interface ModelPolicy {
+  api: ApiStyle | 'openai-chat' | 'openai-responses'
+  efforts: readonly Effort[]
+  effortStatus: 'enabled' | 'disabled' | 'unknown' | 'unsupported'
+}
+
+const SIX_LEVELS: readonly Effort[] = ['off', 'low', 'medium', 'high', 'xhigh', 'openai-max']
+const FIVE_LEVELS: readonly Effort[] = ['off', 'low', 'medium', 'high', 'xhigh']
+const OPENAI_MODELS: Record<string, Pick<ModelPolicy, 'api' | 'efforts'>> = {
+  'gpt-6.1-terra': { api: 'openai-responses', efforts: SIX_LEVELS },
+  'gpt-6-sol': { api: 'openai-responses', efforts: SIX_LEVELS },
+  'gpt-6-luna': { api: 'openai-responses', efforts: SIX_LEVELS },
+  'gpt-6-astra': { api: 'openai-responses', efforts: SIX_LEVELS.slice(1) },
+  'gpt-6.1-sol': { api: 'openai-responses', efforts: SIX_LEVELS.slice(1) },
+  'gpt-5.6-sol': { api: 'openai-chat', efforts: SIX_LEVELS },
+  'gpt-5.6-terra': { api: 'openai-chat', efforts: SIX_LEVELS },
+  'gpt-5.6-luna': { api: 'openai-chat', efforts: SIX_LEVELS },
+  'gpt-5.5': { api: 'openai-chat', efforts: FIVE_LEVELS },
+  'gpt-5.4': { api: 'openai-chat', efforts: FIVE_LEVELS },
+  'gpt-5.2': { api: 'openai-chat', efforts: FIVE_LEVELS },
+  'gpt-5.1': { api: 'openai-chat', efforts: ['off', 'low', 'medium', 'high'] },
+  'gpt-5': { api: 'openai-chat', efforts: ['minimal', 'low', 'medium', 'high'] },
+  'gpt-5-pro': { api: 'openai-responses', efforts: ['high'] },
+  'gpt-4o': { api: 'openai-chat', efforts: [] },
+  'gpt-4o-mini': { api: 'openai-chat', efforts: [] }
+}
+const OPENAI_SNAPSHOTS: Record<string, string> = {
+  'gpt-5-2025-08-07': 'gpt-5',
+  'gpt-5.1-2025-11-13': 'gpt-5.1',
+  'gpt-5.2-2025-12-11': 'gpt-5.2',
+  'gpt-5.4-2026-03-05': 'gpt-5.4',
+  'gpt-5.5-2026-04-23': 'gpt-5.5',
+  'gpt-5-pro-2025-10-06': 'gpt-5-pro'
+}
+
+function isOfficialOpenAI(baseUrl: string): boolean {
+  try {
+    const url = new URL(baseUrl)
+    return (
+      url.protocol === 'https:' &&
+      url.hostname === 'api.openai.com' &&
+      !url.port &&
+      !url.username &&
+      !url.password &&
+      !/[?#]/.test(baseUrl) &&
+      (url.pathname === '/v1' || url.pathname === '/v1/')
+    )
+  } catch {
+    return false
+  }
+}
+
+/** 端点身份与已确认型号共同决定协议；不按未知型号的前缀猜测能力。 */
+export function resolveModelPolicy(
+  provider: { kind: ProviderKind; baseUrl: string; sendEffort: boolean },
+  model: string | null
+): ModelPolicy {
+  const native = (provider.kind === 'openai' || provider.kind === 'custom') && isOfficialOpenAI(provider.baseUrl)
+  const preset = PROVIDER_PRESETS[provider.kind]
+  const id = model && Object.hasOwn(OPENAI_SNAPSHOTS, model) ? OPENAI_SNAPSHOTS[model] : model
+  const known = native && id && Object.hasOwn(OPENAI_MODELS, id) ? OPENAI_MODELS[id] : null
+  const api = native ? (known?.api ?? 'openai-chat') : preset.style
+  if (!model) return { api, efforts: [], effortStatus: 'unknown' }
+  if (!provider.sendEffort && api !== 'anthropic' && api !== 'google') return { api, efforts: [], effortStatus: 'disabled' }
+  if (native && !known) return { api, efforts: [], effortStatus: 'unknown' }
+  const efforts = known?.efforts ?? preset.efforts
+  return { api, efforts, effortStatus: efforts.length ? 'enabled' : 'unsupported' }
+}
+
+/** 同一规则供界面与发送使用；旧 max 在官方 OpenAI 上仍为 high。 */
+export function normalizeEffort(policy: ModelPolicy, requested: Effort): Effort | null {
+  const allowed = policy.efforts
+  if (!allowed.length) return null
+  const native = policy.api === 'openai-chat' || policy.api === 'openai-responses'
+  let effort: Effort = requested
+  if (native) {
+    if (effort === 'max') effort = 'high'
+    if (effort === 'openai-max' && !allowed.includes(effort)) return allowed[allowed.length - 1]
+    if (effort === 'minimal' && !allowed.includes(effort)) effort = 'low'
+    if (effort === 'xhigh' && !allowed.includes(effort)) effort = 'high'
+  } else {
+    if (effort === 'openai-max') effort = 'max'
+    if (effort === 'xhigh') effort = 'high'
+    if (effort === 'minimal') effort = 'low'
+  }
+  if (allowed.includes(effort)) return effort
+  const order: readonly Effort[] = native
+    ? ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'openai-max']
+    : ['off', 'low', 'medium', 'high', 'max']
+  const i = order.indexOf(effort)
+  for (let d = 1; d < order.length; d++) {
+    if (allowed.includes(order[i + d])) return order[i + d]
+    if (allowed.includes(order[i - d])) return order[i - d]
+  }
+  return allowed[0]
+}
 
 /**
  * 模型单价（每百万 token），用于费用估算。currency 为服务商的标价币种，记账时按汇率换成美元。

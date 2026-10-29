@@ -210,10 +210,38 @@ async function generate(args: RequestArgs): Promise<RequestResult> {
   }
 }
 
+/** 参数名不兼容不能通过缩小额度或改用 JSON 解决。 */
+export function isUnsupportedOutputParameter(error: unknown): boolean {
+  const e = error as { statusCode?: number; status?: number; message?: string; data?: unknown; responseBody?: string }
+  const status = e?.statusCode ?? e?.status
+  if (status !== undefined && status !== 400) return false
+  const outputField = (param: unknown): boolean =>
+    typeof param === 'string' && /^(?:max_tokens|max_completion_tokens|max_output_tokens)$/.test(param)
+  const details = (data: unknown): { code?: unknown; param?: unknown } | undefined => {
+    if (!data || typeof data !== 'object') return undefined
+    const obj = data as { error?: unknown; code?: unknown; param?: unknown }
+    return obj.error && typeof obj.error === 'object' ? obj.error : obj
+  }
+  let structured = details(e?.data)
+  if (structured?.code == null && structured?.param == null && e?.responseBody) {
+    try {
+      structured = details(JSON.parse(e.responseBody))
+    } catch {
+      /* 非 JSON 错误使用下方精确文本。 */
+    }
+  }
+  if (structured?.param != null && !outputField(structured.param)) return false
+  if (structured?.code != null || structured?.param != null) {
+    return structured.code === 'unsupported_parameter' && outputField(structured.param)
+  }
+  return /\bUnsupported parameter:\s*['"](?:max_tokens|max_completion_tokens|max_output_tokens)['"]/i.test(e?.message ?? '')
+}
+
 /** 只把输出参数的 400 拒绝当作额度反馈，不把上下文超限误学成输出上限。 */
 export function rejectedOutputLimit(error: unknown, requested: number): number | null {
   const e = error as { statusCode?: number; status?: number; message?: string; responseBody?: string }
   if ((e?.statusCode ?? e?.status) !== 400) return null
+  if (isUnsupportedOutputParameter(error)) return null
   const message = `${e.message ?? ''} ${e.responseBody ?? ''}`
   // 只认明确指向输出额度的拒绝；“maximum” 单独出现太宽（工具数、消息数等也会这么写）。
   if (!/max_tokens|max_output|max_completion_tokens|output tokens?|maximum.{0,40}tokens?\b/i.test(message)) return null
@@ -222,7 +250,7 @@ export function rejectedOutputLimit(error: unknown, requested: number): number |
     /between\s+\d+\s+and\s+([\d,]+)/i,
     /(?:at most|up to|no (?:more|greater) than|cannot exceed|must not exceed|less than or equal to)\s*([\d,]+)/i,
     /maximum(?:\s+(?:allowed|supported))?(?:\s+output)?(?:\s+tokens?)?(?:\s+(?:limit|value))?(?:\s+(?:is|of))?\s*[:=]?\s*([\d,]+)/i,
-    /(?:max_tokens|max_output_tokens)\s*(?:limit)?\s*[:=]\s*([\d,]+)/i
+    /(?:max_tokens|max_output_tokens|max_completion_tokens)\s*(?:limit)?\s*[:=]\s*([\d,]+)/i
   ]
   for (const pattern of patterns) {
     const match = pattern.exec(message)

@@ -3,8 +3,7 @@ import { toast } from 'sonner'
 import type { Anchor } from '@shared/context'
 import type { Effort } from '@shared/ai'
 import type { UiEvent } from '@shared/ui/events'
-import { PROVIDER_PRESETS } from '@shared/ai'
-import type { ChatMessage, ProviderInfo, Settings } from '@shared/types'
+import type { ChatMessage, Settings } from '@shared/types'
 import { api } from '@/lib/utils'
 import { useApp } from '@/store/app'
 import { queryClient } from '@/lib/queryClient'
@@ -39,12 +38,10 @@ export function actionQuestion(action: AskAction, quote: string, region = false)
 
 /**
  * 思考强度：解释、翻译求快（关闭思考）；讲明白与自由提问用设置中的强度。
- * 服务商不支持“关闭”时退回到最低档。
+ * 模型支持与回退由统一构造入口处理，不在这里预先丢弃新档位。
  */
-function effortFor(action: AskAction, s: Settings, p: ProviderInfo): Effort {
-  const levels = PROVIDER_PRESETS[p.kind].efforts
-  const want: Effort = action === 'explain' || action === 'translate' ? 'off' : s.ai.effort
-  return levels.includes(want) ? want : levels[0]
+function effortFor(action: AskAction, s: Settings): Effort {
+  return action === 'explain' || action === 'translate' ? 'off' : s.ai.effort
 }
 
 export async function askInline(
@@ -104,7 +101,7 @@ export async function askInline(
       text,
       providerId: p.id,
       model: settings.ai.chat.model,
-      effort: effortFor(action, settings, p),
+      effort: effortFor(action, settings),
       scope: { type: 'all' },
       skill: ACTION_SKILL[action],
       kind: 'inline',
@@ -193,7 +190,7 @@ export async function followUp(
       attachments,
       providerId: p.id,
       model: settings.ai.chat.model,
-      effort: effortFor('ask', settings, p),
+      effort: effortFor('ask', settings),
       uiEvent,
       scope: { type: 'all' },
       context:

@@ -77,6 +77,14 @@ jobs:
           else
             npx playwright test --config playwright.scanned-pdf.config.ts e2e/pdf-preview.spec.ts --grep "project preview renders a CCITT mask"
           fi
+      - name: OpenAI 参数兼容与思考档位回归（全平台）
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == 'Linux' ]]; then
+            xvfb-run -a npx playwright test e2e/model-compatibility.spec.ts --workers=1
+          else
+            npx playwright test e2e/model-compatibility.spec.ts --workers=1
+          fi
       - name: 输出预览失败的界面与应用日志
         if: failure() && steps.pdf-preview.outcome == 'failure'
         shell: bash

@@ -8,6 +8,7 @@ import {
   type ChatSearchHit
 } from './chatProjects'
 import type { Readiness } from './readiness'
+import type { Effort } from './ai'
 import type { LocalComputeStatus } from './localCompute'
 import { RELATIONS } from './graphRelations'
 import { SourceSelectorSchema } from './sourceTarget'
@@ -726,7 +727,7 @@ export const capabilities = {
     get: cap<Conversation | null>()({ description: '读取指定对话，包括就地提问，用于重发原问题', params: [id('conversationId')] }),
     conversations: cap<Conversation[]>()({ description: '列出 AI 对话', params: none }),
     messages: cap<ChatMessage[]>()({ description: '读取对话消息', params: [id('conversationId')] }),
-    send: cap<{ conversation: Conversation; userMessage: ChatMessage; assistantMessageId: string }>()({
+    send: cap<{ conversation: Conversation; userMessage: ChatMessage; assistantMessageId: string; effort: Effort | null }>()({
       description: '发送消息并开始生成回答（流式结果通过事件推送）',
       params: [['input', S.ChatSendSchema]]
     }),

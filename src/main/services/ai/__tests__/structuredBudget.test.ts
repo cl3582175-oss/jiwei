@@ -97,6 +97,7 @@ it('第二次仍截断时抛类型化错误，报告推理比例且不继续付�
 it.each([
   ['max_tokens must be at most 6000; requested 8192', 6000],
   ['max_output_tokens must be between 1 and 5000', 5000],
+  ['max_completion_tokens=6000', 6000],
   ['maximum output token limit is 7000', 7000],
   ['max_tokens is invalid', 4096]
 ])('400额度拒绝自适应并记住被服务商接受的值：%s', async (message, limit) => {
@@ -196,4 +197,84 @@ it('只把明确指向输出额度的400当作额度反馈', async () => {
   expect(rejectedOutputLimit(bad('messages exceed the maximum allowed'), 8192)).toBeNull()
   expect(rejectedOutputLimit(bad('max_tokens must be less than or equal to 4096'), 8192)).toBe(4096)
   expect(rejectedOutputLimit(bad('maximum output tokens is 6000'), 8192)).toBe(6000)
+})
+
+const unsupportedMessage = "Unsupported parameter: 'max_tokens' is not supported with this model. Use 'max_completion_tokens' instead."
+const unsupportedErrors = [
+  { message: unsupportedMessage, statusCode: 400 },
+  { message: unsupportedMessage },
+  { message: 'Invalid request', statusCode: 400, data: { error: { code: 'unsupported_parameter', param: 'max_completion_tokens' } } },
+  {
+    message: 'Invalid request',
+    status: 400,
+    responseBody: JSON.stringify({ error: { code: 'unsupported_parameter', param: 'max_output_tokens' } })
+  }
+]
+
+it.each(unsupportedErrors)('stops rejected output fields after one structured request without learning: %j', async (details) => {
+  f.model = new MockLanguageModelV4({
+    doStream: async () => {
+      throw Object.assign(new Error(details.message), details)
+    }
+  })
+  await expect(structured({ ...args(), schema: z.object({ ok: z.boolean() }) })).rejects.toThrow(details.message)
+  expect(f.model.doStreamCalls).toHaveLength(1)
+  expect(f.learned).toBeUndefined()
+})
+
+it('does not shrink or repeat a text request for an unsupported output field', async () => {
+  const { createModelRequest } = await import('../request')
+  f.model = new MockLanguageModelV4({
+    doStream: async () => {
+      throw Object.assign(new Error(unsupportedMessage), { statusCode: 400 })
+    }
+  })
+  await expect(createModelRequest(args()).generate('text')).rejects.toThrow(unsupportedMessage)
+  expect(f.model.doStreamCalls).toHaveLength(1)
+  expect(f.learned).toBeUndefined()
+})
+
+it('prioritizes structured errors and exact output names over incidental text', async () => {
+  const { isUnsupportedOutputParameter, rejectedOutputLimit } = await import('../request')
+  expect(isUnsupportedOutputParameter({ message: unsupportedMessage })).toBe(true)
+  expect(rejectedOutputLimit({ statusCode: 400, message: unsupportedMessage }, 8192)).toBeNull()
+  expect(rejectedOutputLimit({ message: unsupportedMessage }, 8192)).toBeNull()
+  expect(isUnsupportedOutputParameter({ statusCode: 429, message: unsupportedMessage })).toBe(false)
+  expect(isUnsupportedOutputParameter({ statusCode: 400, message: 'Invalid max_tokens value' })).toBe(false)
+  expect(
+    isUnsupportedOutputParameter({
+      statusCode: 400,
+      message: unsupportedMessage,
+      data: { error: { code: 'unsupported_parameter', param: 'temperature' } }
+    })
+  ).toBe(false)
+  expect(
+    isUnsupportedOutputParameter({
+      statusCode: 400,
+      message: unsupportedMessage,
+      responseBody: JSON.stringify({ error: { code: 'invalid_value', param: 'max_tokens' } })
+    })
+  ).toBe(false)
+  expect(isUnsupportedOutputParameter({ statusCode: 400, message: "Unsupported parameter: 'tools'; max_tokens was supplied" })).toBe(false)
+})
+
+it('retains the real unsupported-tool JSON fallback', async () => {
+  f.model = new MockLanguageModelV4({
+    doStream: async ({ tools }) => {
+      if (tools?.length) throw Object.assign(new Error("Unsupported parameter: 'tools'"), { statusCode: 400 })
+      return {
+        stream: stream([
+          { type: 'text-start', id: 't' },
+          { type: 'text-delta', id: 't', delta: '{"ok":true}' },
+          { type: 'text-end', id: 't' },
+          success[1]
+        ])
+      }
+    }
+  })
+  await expect(structured({ ...args(), schema: z.object({ ok: z.boolean() }) })).resolves.toEqual({ ok: true })
+  expect(f.model.doStreamCalls).toHaveLength(2)
+  expect(f.model.doStreamCalls[0].tools).toHaveLength(1)
+  expect(f.model.doStreamCalls[1].tools ?? []).toHaveLength(0)
+  expect(f.learned).toBeUndefined()
 })

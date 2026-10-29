@@ -1,11 +1,12 @@
 import { net } from 'electron'
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
+import { createOpenAI } from '@ai-sdk/openai'
 import { createAnthropic } from '@ai-sdk/anthropic'
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
-import { wrapLanguageModel, type LanguageModel, type LanguageModelMiddleware } from 'ai'
+import { wrapLanguageModel, type streamText, type LanguageModel, type LanguageModelMiddleware } from 'ai'
 import { checkBudget, recordUsage } from '../agent/usage'
 import { currentRun } from '../agent/context'
-import { PROVIDER_PRESETS, type Effort, type ProviderKind } from '@shared/ai'
+import { PROVIDER_PRESETS, normalizeEffort, resolveModelPolicy, type Effort, type LegacyEffort, type ProviderKind } from '@shared/ai'
 import { decryptKey, getProviderRow } from './providers'
 
 // 由服务商配置构建 AI SDK 模型，并把统一的“思考强度”映射为各家参数。
@@ -20,32 +21,21 @@ export interface ModelRequest {
 
 export interface BuiltModel {
   model: LanguageModel
+  /** 本轮显式发送的档位；未确认或关闭发送时不伪装成用户偏好。 */
+  effectiveEffort: Effort | null
   /** 传给 streamText 的服务商专用参数 */
-  providerOptions?: Record<string, Record<string, unknown>>
+  providerOptions?: Parameters<typeof streamText>[0]['providerOptions']
   /** 思考模式下最大输出需要放宽 */
   maxOutputTokens?: number
 }
 
-/** 不支持的档位就近取支持的档位（如 DeepSeek 没有“中”，取“高”） */
-export function clampEffort(kind: ProviderKind, effort: Effort): Effort {
-  const allowed = PROVIDER_PRESETS[kind].efforts
-  if (allowed.includes(effort)) return effort
-  const order: Effort[] = ['off', 'low', 'medium', 'high', 'max']
-  const i = order.indexOf(effort)
-  for (let d = 1; d < order.length; d++) {
-    if (allowed.includes(order[i + d])) return order[i + d]
-    if (allowed.includes(order[i - d])) return order[i - d]
-  }
-  return allowed[0]
-}
-
-const ANTHROPIC_BUDGET: Record<Effort, number> = { off: 0, low: 2048, medium: 8192, high: 24576, max: 63999 }
-const GEMINI_BUDGET: Record<Effort, number> = { off: 0, low: 1024, medium: 8192, high: 24576, max: -1 }
-const QWEN_BUDGET: Record<Effort, number> = { off: 0, low: 1024, medium: 4096, high: 16384, max: 38912 }
-const OPENAI_EFFORT: Record<Effort, string> = { off: 'minimal', low: 'low', medium: 'medium', high: 'high', max: 'high' }
+const ANTHROPIC_BUDGET: Record<LegacyEffort, number> = { off: 0, low: 2048, medium: 8192, high: 24576, max: 63999 }
+const GEMINI_BUDGET: Record<LegacyEffort, number> = { off: 0, low: 1024, medium: 8192, high: 24576, max: -1 }
+const QWEN_BUDGET: Record<LegacyEffort, number> = { off: 0, low: 1024, medium: 4096, high: 16384, max: 38912 }
+const OPENAI_EFFORT: Record<LegacyEffort, string> = { off: 'minimal', low: 'low', medium: 'medium', high: 'high', max: 'high' }
 
 /** OpenAI 兼容接口的请求体扩展（按服务商注入思考参数） */
-function compatibleBody(kind: ProviderKind, effort: Effort, sendEffort: boolean): Record<string, unknown> {
+function compatibleBody(kind: ProviderKind, effort: LegacyEffort, sendEffort: boolean): Record<string, unknown> {
   if (!sendEffort) return {}
   switch (kind) {
     case 'deepseek':
@@ -117,13 +107,38 @@ function buildRawModel(req: ModelRequest): BuiltModel {
   const apiKey = decryptKey(row) ?? undefined
   if (!row.baseUrl) throw new Error(`「${row.name}」还没有填写接口地址`)
   if (preset.needsKey && !apiKey) throw new Error(`「${row.name}」还没有设置 API Key`)
-  const effort = clampEffort(kind, req.effort)
   const fetch = req.fetch ?? (net.fetch as unknown as typeof globalThis.fetch)
+  const policy = resolveModelPolicy({ kind, baseUrl: row.baseUrl, sendEffort: row.sendEffort }, req.model)
+  const effectiveEffort = normalizeEffort(policy, req.effort)
+  if (policy.api === 'openai-chat' || policy.api === 'openai-responses') {
+    const provider = createOpenAI({ baseURL: row.baseUrl, apiKey, fetch })
+    const reasoningEffort = effectiveEffort === 'off' ? 'none' : effectiveEffort === 'openai-max' ? 'max' : effectiveEffort
+    const reasoning = reasoningEffort ? { reasoningEffort } : {}
+    return {
+      model: policy.api === 'openai-responses' ? provider.responses(req.model) : provider.chat(req.model),
+      effectiveEffort,
+      providerOptions:
+        policy.api === 'openai-responses'
+          ? { openai: { store: false, reasoningSummary: null, ...reasoning } }
+          : reasoningEffort
+            ? { openai: reasoning }
+            : undefined,
+      maxOutputTokens:
+        effectiveEffort === 'openai-max'
+          ? 65536
+          : !effectiveEffort || effectiveEffort === 'off' || effectiveEffort === 'minimal'
+            ? 8192
+            : 32768
+    }
+  }
+  // 兼容接口即使关闭思考参数，也沿用原来的输出预算；新值先回到旧档位边界。
+  const effort = normalizeEffort({ api: preset.style, efforts: preset.efforts, effortStatus: 'enabled' }, req.effort) as LegacyEffort
 
   if (preset.style === 'anthropic') {
     const provider = createAnthropic({ baseURL: row.baseUrl, apiKey, fetch })
     return {
       model: provider(req.model),
+      effectiveEffort,
       providerOptions:
         effort === 'off' ? undefined : { anthropic: { thinking: { type: 'enabled', budgetTokens: ANTHROPIC_BUDGET[effort] } } },
       maxOutputTokens: effort === 'off' ? 8192 : ANTHROPIC_BUDGET[effort] + 8192
@@ -133,6 +148,7 @@ function buildRawModel(req: ModelRequest): BuiltModel {
     const provider = createGoogleGenerativeAI({ baseURL: row.baseUrl, apiKey, fetch })
     return {
       model: provider(req.model),
+      effectiveEffort,
       providerOptions: { google: { thinkingConfig: { thinkingBudget: GEMINI_BUDGET[effort], includeThoughts: effort !== 'off' } } }
     }
   }
@@ -144,5 +160,5 @@ function buildRawModel(req: ModelRequest): BuiltModel {
     includeUsage: true,
     transformRequestBody: (body) => ({ ...body, ...compatibleBody(kind, effort, row.sendEffort) })
   })
-  return { model: provider(req.model), maxOutputTokens: effort === 'max' ? 65536 : effort === 'off' ? 8192 : 32768 }
+  return { model: provider(req.model), effectiveEffort, maxOutputTokens: effort === 'max' ? 65536 : effort === 'off' ? 8192 : 32768 }
 }

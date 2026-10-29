@@ -65,16 +65,22 @@ function useReplyAnimating(status: ChatMessage['status'], body: RefObject<HTMLDi
     if (!tail) return
     // Streamdown's backlog cap is soft; wait for the actual final characters,
     // including their stagger. Cancellation (e.g. reduced motion) also settles.
-    const animations = body.current?.getAnimations({ subtree: true }).filter((animation) =>
-      animation instanceof CSSAnimation &&
-      (animation.animationName === 'sd-blurIn' || animation.animationName === 'sd-markerIn') &&
-      animation.playState !== 'finished'
-    ) ?? []
+    const animations =
+      body.current
+        ?.getAnimations({ subtree: true })
+        .filter(
+          (animation) =>
+            animation instanceof CSSAnimation &&
+            (animation.animationName === 'sd-blurIn' || animation.animationName === 'sd-markerIn') &&
+            animation.playState !== 'finished'
+        ) ?? []
     let current = true
     void Promise.allSettled(animations.map((animation) => animation.finished)).then(() => {
       if (current) setTail(false)
     })
-    return () => { current = false }
+    return () => {
+      current = false
+    }
   }, [status, tail, body])
   return status === 'streaming' || (status === 'done' && tail)
 }
@@ -612,13 +618,15 @@ export function MessageItem({
             )}
           </BubbleContent>
         </Bubble>
-        {!streaming && m.content && (
+        {((!streaming && m.content) || (streaming && !compact)) && (
           <MessageFooter className="flex-wrap gap-x-2 gap-y-1">
-            <Tip label={t('chat.copy')} side="top">
-              <Button onClick={copy} size="icon-sm" variant="ghost" aria-label={t('chat.copy')}>
-                {copied ? <Check /> : <Copy />}
-              </Button>
-            </Tip>
+            {!streaming && (
+              <Tip label={t('chat.copy')} side="top">
+                <Button onClick={copy} size="icon-sm" variant="ghost" aria-label={t('chat.copy')}>
+                  {copied ? <Check /> : <Copy />}
+                </Button>
+              </Tip>
+            )}
             {!compact && m.model && <span className="font-mono break-all">{m.model}</span>}
             {!compact && m.effort && <span>· {t('chat.effortLabel', { level: t(`ai.efforts.${m.effort}`) })}</span>}
             {!compact && m.usage && (
