@@ -570,11 +570,13 @@ export function MessageItem({
           )}
         </div>
       )}
-      {!streaming && m.content && !compact && (
+      {(streaming || m.content) && !compact && (
         <div className="mt-2 flex items-center gap-2 text-2xs text-subtle opacity-0 transition-opacity group-hover/msg:opacity-100">
-          <button onClick={copy} className="inline-flex items-center gap-1 rounded px-1 hover:text-fg" aria-label={t('chat.copy')}>
-            {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
-          </button>
+          {!streaming && (
+            <button onClick={copy} className="inline-flex items-center gap-1 rounded px-1 hover:text-fg" aria-label={t('chat.copy')}>
+              {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
+            </button>
+          )}
           {m.model && <span className="font-mono">{m.model}</span>}
           {m.effort && <span>· {t('chat.effortLabel', { level: t(`ai.efforts.${m.effort}`) })}</span>}
           {m.usage && (

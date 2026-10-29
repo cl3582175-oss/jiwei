@@ -95,7 +95,7 @@ export async function sendChat(input: ChatSendRequest): Promise<SendResult> {
     citations: [],
     providerId: input.providerId,
     model: input.model,
-    effort: input.effort,
+    effort: r.effort,
     usage: null,
     status: 'streaming',
     error: null,

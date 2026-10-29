@@ -44,7 +44,7 @@ import type { ChatScope, ChatSend, ChatSendRequest } from '@shared/schemas'
 import type { Anchor } from '@shared/context'
 import type { AgentStep, ChatMessage, Citation, Conversation, SearchHit } from '@shared/types'
 import type { WebMode } from '@shared/retrieval'
-import { buildModel } from './model'
+import { buildModel, type BuiltModel } from './model'
 import { recognizeRegion, recognizingSources } from '../recognize'
 import { capsFor, getProviderRow, learnContextLimit } from './providers'
 import { retrieve } from './retrieve'
@@ -451,9 +451,10 @@ export interface SendResult {
   conversation: Conversation
   userMessage: ChatMessage
   assistantMessageId: string
+  effort: Effort | null
 }
 
-function sendInTransaction(input: ChatSend): SendResult {
+function sendInTransaction(input: ChatSend, effectiveEffort: Effort | null): SendResult {
   const db = getDb()
   const anchor = input.conversationId
     ? db.select().from(conversations).where(eq(conversations.id, input.conversationId)).get()?.anchor
@@ -594,7 +595,7 @@ function sendInTransaction(input: ChatSend): SendResult {
       content: '',
       providerId: input.providerId,
       model: input.model,
-      effort: input.effort,
+      effort: effectiveEffort,
       status: 'streaming',
       createdAt: now + 1,
       updatedAt: now + 1
@@ -616,7 +617,8 @@ function sendInTransaction(input: ChatSend): SendResult {
   return {
     conversation: toConversation(db.select().from(conversations).where(eq(conversations.id, convId)).get()!),
     userMessage: toMessage(userMsg),
-    assistantMessageId: assistantId
+    assistantMessageId: assistantId,
+    effort: effectiveEffort
   }
 }
 
@@ -656,16 +658,17 @@ export function send(request: ChatSendRequest): SendResult {
     }
   }
   const normalized = { ...input }
-  const result = getDb().transaction(() => sendInTransaction(normalized))
-  void generate(result.conversation.id, result.assistantMessageId, normalized)
+  const built = buildModel({ providerId: input.providerId, model: input.model, effort: input.effort })
+  const result = getDb().transaction(() => sendInTransaction(normalized, built.effectiveEffort))
+  void generate(result.conversation.id, result.assistantMessageId, normalized, built)
   return result
 }
 
-function generate(conversationId: string, messageId: string, input: ChatSend): Promise<void> {
+function generate(conversationId: string, messageId: string, input: ChatSend, built: BuiltModel): Promise<void> {
   const kind =
     getDb().select({ kind: conversations.kind }).from(conversations).where(eq(conversations.id, conversationId)).get()?.kind ?? 'chat'
   return withRun({ purpose: kind, caller: 'assistant', conversationId, messageId, perRun: perRunLimit() }, () =>
-    generateRun(conversationId, messageId, input)
+    generateRun(conversationId, messageId, input, built)
   )
 }
 
@@ -774,7 +777,7 @@ async function agentTools(
   })
 }
 
-async function generateRun(conversationId: string, messageId: string, input: ChatSend): Promise<void> {
+async function generateRun(conversationId: string, messageId: string, input: ChatSend, built: BuiltModel): Promise<void> {
   const db = getDb()
   const ctrl = new AbortController()
   running.set(messageId, ctrl)
@@ -1294,7 +1297,6 @@ async function generateRun(conversationId: string, messageId: string, input: Cha
       }
     }
 
-    const built = buildModel({ providerId: input.providerId, model: input.model, effort: input.effort })
     const toolset = special
       ? null
       : await agentTools(session, { providerId: input.providerId, model: input.model }, ctrl.signal, (id, patch, call) => {

@@ -32,7 +32,8 @@ vi.mock('../connections', () => ({
 }))
 vi.mock('../ai/providers', () => ({ getProviderRow: () => ({ modelCaps: '{}', models: '["test-model"]' }) }))
 // Keep the graph service and structured first-call/JSON-retry flow real; replace only outbound requests.
-vi.mock('../ai/request', () => ({
+vi.mock('../ai/request', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../ai/request')>()),
   createModelRequest: (request: { prompt: string }) => ({
     generate: async (mode: string) => {
       fixture.transmissions.push({ mode, prompt: request.prompt })

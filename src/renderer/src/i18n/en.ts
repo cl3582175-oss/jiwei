@@ -1141,16 +1141,26 @@ const en: Messages = {
     pickModel: 'Choose a model',
     noModels: 'Add a model service in Settings first',
     effort: 'Thinking effort',
+    effortShort: 'Thinking',
     effortHint: 'Thinking effort: deeper is slower and costs more',
     effortDesc:
-      '"Off" answers directly — fastest and cheapest. Low / Medium / High / Max think progressively deeper. Only the levels your provider supports are shown. You can also switch per question.',
-    efforts: { off: 'Off', low: 'Low', medium: 'Med', high: 'High', max: 'Max' },
+      '"Off" answers directly. Minimal / Low / Medium / High / XHigh / Max think progressively deeper. Only confirmed levels for the selected model are shown. Deeper thinking usually takes longer and costs more. You can also switch per question.',
+    effortDefault: 'Default',
+    effortStates: {
+      unknown: 'Thinking levels for this model are unconfirmed; using provider defaults',
+      disabled: 'Sending thinking parameters is disabled; using provider defaults',
+      unsupported: 'This model has no selectable thinking level; using defaults'
+    },
+    efforts: { off: 'Off', minimal: 'Minimal', low: 'Low', medium: 'Med', high: 'High', xhigh: 'XHigh', max: 'Max', 'openai-max': 'Max' },
     effortTips: {
       off: 'No thinking, answer directly (fastest)',
+      minimal: 'Use minimal thinking for a quick answer',
       low: 'Light thinking for everyday questions',
       medium: 'Moderate thinking',
       high: 'Deep thinking for analysis and summaries',
-      max: 'Deepest thinking for hard problems (slower, costs more)'
+      xhigh: 'Think more deeply about complex problems (slower, costs more)',
+      max: 'Deepest thinking for hard problems (slower, costs more)',
+      'openai-max': 'Use the highest thinking effort supported by this model (slowest, highest cost)'
     },
     kbTitle: 'Knowledge base embeddings',
     kbDesc:
