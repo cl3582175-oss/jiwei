@@ -12,6 +12,7 @@ interface WireState {
   hold: boolean
   releases: (() => void)[]
   original: unknown
+  restoreStorage?: () => void
 }
 let app: ElectronApplication, page: Page, providerId: string
 const models = ['gpt-6.1-terra', 'gpt-6-astra', 'gpt-5', 'gpt-5-pro', 'gpt-4o', 'unconfirmed-model']
@@ -28,9 +29,32 @@ test.beforeEach(async () => {
       JIWEI_MEMORY_DELAY_MS: '3600000'
     }
   })
-  await app.evaluate(({ net }) => {
+  await app.evaluate(({ net, safeStorage }) => {
     const state: WireState = { calls: [], unexpected: [], hold: false, releases: [], original: net.fetch }
     ;(globalThis as unknown as { modelCompatibility: WireState }).modelCompatibility = state
+    // Headless Linux runners have no OS keyring. This test-only peer accepts only
+    // the synthetic key below; production credential handling is never changed.
+    if (!safeStorage.isEncryptionAvailable()) {
+      const original = {
+        isEncryptionAvailable: safeStorage.isEncryptionAvailable,
+        encryptString: safeStorage.encryptString,
+        decryptString: safeStorage.decryptString
+      }
+      const key = 'synthetic-test-key'
+      const encoded = 'jiwei-model-test-only:' + key
+      safeStorage.isEncryptionAvailable = () => true
+      safeStorage.encryptString = (value) => {
+        if (value !== key) throw new Error('Only the synthetic test key is allowed')
+        return Buffer.from(encoded)
+      }
+      safeStorage.decryptString = (value) => {
+        if (value.toString() !== encoded) throw new Error('Unexpected test credential')
+        return key
+      }
+      state.restoreStorage = () => {
+        Object.assign(safeStorage, original)
+      }
+    }
     net.fetch = async (input, init) => {
       const url = String(input)
       if (!['https://api.openai.com/v1/responses', 'https://api.openai.com/v1/chat/completions'].includes(url)) {
@@ -101,6 +125,7 @@ test.beforeEach(async () => {
   })
   page = await app.firstWindow()
   await page.waitForSelector('nav')
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1000, 750))
   providerId = await page.evaluate(async (models) => {
     const p = await window.jiwei.providers.save({
       kind: 'openai',
@@ -132,6 +157,7 @@ test.afterEach(async () => {
       const state = (globalThis as unknown as { modelCompatibility: WireState }).modelCompatibility
       for (const release of state.releases.splice(0)) release()
       net.fetch = state.original as typeof net.fetch
+      state.restoreStorage?.()
       return state.unexpected
     })
     expect(unexpected).toEqual([])
@@ -153,6 +179,14 @@ async function expectCollapsedLevels(labels: string[], root: Page | Locator = pa
 async function choose(model: string, root: Page | Locator = page) {
   await root.getByRole('button', { name: /^(模型|Model)$/ }).click()
   await page.getByRole('option', { name: model, exact: true }).click()
+}
+async function expandChatSidebar() {
+  const sidebar = page.getByTestId('sidebar-chat')
+  await expect(sidebar).toBeVisible()
+  if ((await sidebar.getAttribute('data-collapsed')) === 'true') {
+    await sidebar.getByTestId('sidebar-expand-pin').click()
+  }
+  await expect(sidebar).toHaveAttribute('data-collapsed', 'false')
 }
 async function hold(enabled: boolean) {
   await app.evaluate((_electron, enabled) => {
@@ -184,6 +218,7 @@ test('all four effort pickers follow the model, including default states and nar
   await expectCollapsedLevels([])
   await choose('gpt-6.1-terra')
   const project = await page.evaluate(() => window.jiwei.chatProjects.create({ name: '档位项目', libraryScope: 'none' }))
+  await expandChatSidebar()
   await page
     .locator('[data-project-id="' + project.id + '"] [data-sidebar-row]')
     .first()
@@ -251,6 +286,7 @@ test('effective effort is returned, saved and shown while streaming, then surviv
   await page.reload()
   await page.waitForSelector('nav')
   await navTo(page, /积微助手/)
+  await expandChatSidebar()
   await page
     .locator('[data-conversation-id="' + conv.id + '"] [data-sidebar-row]')
     .first()
@@ -308,6 +344,7 @@ test('effective effort is returned, saved and shown while streaming, then surviv
   await page.reload()
   await page.waitForSelector('nav')
   await navTo(page, /积微助手/)
+  await expandChatSidebar()
   await page
     .locator('[data-conversation-id="' + conv.id + '"] [data-sidebar-row]')
     .first()
@@ -350,6 +387,7 @@ test('inline clarification keeps new preferences while explanation asks for the 
     await page.reload()
     await page.waitForSelector('nav')
     await navTo(page, /积微助手/)
+    await expandChatSidebar()
     await page
       .locator('[data-conversation-id="' + seed.conversation.id + '"] [data-sidebar-row]')
       .first()

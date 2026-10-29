@@ -62,8 +62,9 @@ jobs:
           # scripts/** 不进入产品包，修正检查脚本不移动已审查的产品标签。
           git fetch --no-tags --depth=1 origin "$RELEASE_TEST_REVISION"
           git show "$RELEASE_TEST_REVISION:e2e/pdf-preview.spec.ts" > e2e/pdf-preview.spec.ts
+          git show "$RELEASE_TEST_REVISION:e2e/model-compatibility.spec.ts" > e2e/model-compatibility.spec.ts
           git show "$RELEASE_TEST_REVISION:scripts/release-privacy.mjs" > scripts/release-privacy.mjs
-          git diff --exit-code -- . ':(exclude)e2e/pdf-preview.spec.ts' ':(exclude)scripts/release-privacy.mjs'
+          git diff --exit-code -- . ':(exclude)e2e/pdf-preview.spec.ts' ':(exclude)e2e/model-compatibility.spec.ts' ':(exclude)scripts/release-privacy.mjs'
       - name: 准备预览测试的 Electron 运行时
         run: node -e "require('electron')"
       - name: CCITT 扫描页预览回归（全平台）
