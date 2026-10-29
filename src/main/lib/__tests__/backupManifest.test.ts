@@ -9,6 +9,21 @@ it('admits older versions and rejects newer versions and unsafe/missing/duplicat
   expect(() => parseBackupManifest({ ...manifest, files: [...manifest.files, { ...manifest.files[0], path: 'assets/../../escape' }] }, 18, 2, 2)).toThrow(/不安全/)
   expect(() => parseBackupManifest({ ...manifest, files: [...manifest.files, ...manifest.files] }, 18, 2, 2)).toThrow(/重复/)
 })
+it('accepts current and older profile migrations while rejecting future profile versions', () => {
+  const withProfile: BackupManifest = {
+    ...manifest,
+    includeProfile: true,
+    profileVersion: 2,
+    profileLegacyVersion: 3,
+    totalSize: 150,
+    files: [...manifest.files, { path: 'profile/memory.db', size: 50, sha256: 'b'.repeat(64) }]
+  }
+  expect(parseBackupManifest(withProfile, 18, 2, 3)).toEqual(withProfile)
+  const older = { ...withProfile, profileVersion: 1, profileLegacyVersion: 2 }
+  expect(parseBackupManifest(older, 18, 2, 3)).toEqual(older)
+  expect(() => parseBackupManifest({ ...withProfile, profileLegacyVersion: 4 }, 18, 2, 3)).toThrow(/升级/)
+  expect(() => parseBackupManifest({ ...withProfile, profileVersion: 3 }, 18, 2, 3)).toThrow(/升级/)
+})
 it('requires exact archive membership and sizes', () => {
   const entries = [{ path: 'manifest.json', size: 500, offset: 512, directory: false }, { path: 'jiwei.db', size: 100, offset: 1536, directory: false }]
   expect(() => validateArchiveEntries(entries, manifest)).not.toThrow()

@@ -7,6 +7,7 @@ import { randomUUID } from 'crypto'
 import type { Scene } from '../../src/shared/recording'
 import type { Derivation, LensItem } from '../../src/shared/lens'
 import { navTo } from './nav'
+import { writeOpenAiCompletion } from './openaiResponse'
 export interface TranscriptFixture {
   title: string
   scene: Scene
@@ -111,6 +112,7 @@ export async function startLensApp(options: { provider?: boolean; importProvider
         try {
           const input = JSON.parse(body) as {
             messages: { role: string; content: string | null }[]
+            stream?: boolean
             tools?: { function: { name: string; parameters: { properties: Record<string, unknown> } } }[]
           }
           const submit = input.tools?.find((t) => t.function.name === 'submit'),
@@ -145,34 +147,30 @@ export async function startLensApp(options: { provider?: boolean; importProvider
             (kind === 'scene'
               ? { ...(controlledOutput(kind, prompt) as Record<string, unknown>), confidence: state.confidence }
               : controlledOutput(kind, kind === 'final' ? user : prompt))
-          response
-            .writeHead(200, { 'content-type': 'application/json' })
-            .end(
-              JSON.stringify({
-                id: `lens-${requests.length}`,
-                object: 'chat.completion',
-                created: 1,
-                model: 'lens-transport-fixture',
-                choices: [
-                  {
-                    index: 0,
-                    message: {
-                      role: 'assistant',
-                      content: null,
-                      tool_calls: [
-                        {
-                          id: `submit-${requests.length}`,
-                          type: 'function',
-                          function: { name: 'submit', arguments: JSON.stringify(output) }
-                        }
-                      ]
-                    },
-                    finish_reason: 'tool_calls'
-                  }
-                ],
-                usage: { prompt_tokens: 100, completion_tokens: 100, total_tokens: 200 }
-              })
-            )
+          writeOpenAiCompletion(response, {
+            id: `lens-${requests.length}`,
+            object: 'chat.completion',
+            created: 1,
+            model: 'lens-transport-fixture',
+            choices: [
+              {
+                index: 0,
+                message: {
+                  role: 'assistant',
+                  content: null,
+                  tool_calls: [
+                    {
+                      id: `submit-${requests.length}`,
+                      type: 'function',
+                      function: { name: 'submit', arguments: JSON.stringify(output) }
+                    }
+                  ]
+                },
+                finish_reason: 'tool_calls'
+              }
+            ],
+            usage: { prompt_tokens: 100, completion_tokens: 100, total_tokens: 200 }
+          }, !!input.stream)
         } catch {
           response.writeHead(400).end('Invalid fixture request')
         }
@@ -352,8 +350,8 @@ export async function lensShot(env: LensApp, name: string): Promise<void> {
 export async function setLensTheme(env: LensApp, theme: 'light' | 'dark'): Promise<void> {
   await env.page.getByRole('button', { name: /^设置/ }).click()
   const dialog = env.page.getByRole('dialog')
-  await dialog.getByRole('button', { name: '外观', exact: true }).click()
-  await dialog.getByRole('button', { name: theme === 'dark' ? '深色' : '浅色', exact: true }).click()
+  await dialog.getByRole('tab', { name: '外观', exact: true }).click()
+  await dialog.getByRole('radio', { name: theme === 'dark' ? '深色' : '浅色', exact: true }).click()
   await expect.poll(() => env.page.evaluate(() => document.documentElement.dataset.theme)).toBe(theme)
   await env.page.keyboard.press('Escape')
   await expect(dialog).not.toBeVisible()

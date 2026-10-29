@@ -5,14 +5,15 @@ import { Trash2, RotateCcw, NotebookText, Clock, Folder } from 'lucide-react'
 import type { TrashItem } from '@shared/types'
 import { useTrash, invalidate } from '@/lib/queries'
 import { api, cn, formatRelative } from '@/lib/utils'
-import { Button } from '@/components/ui/button'
-import { EmptyState, Tip } from '@/components/ui/primitives'
-import { confirm } from '@/components/ui/confirm'
+import { Button } from '@/components/ui/shadcn-button'
+import { EmptyState, Tip } from '@/components/ui/shadcn-primitives'
+import { confirm, useConfirmSignal, withActionLock } from '@/components/ui/shadcn-confirm'
 import { FileStack } from 'lucide-react'
 import { FloatingPanel } from '@/components/FloatingPanel'
 import { InkLeaf } from '@/components/Illustrations'
 
 export function TrashView() {
+  const confirmSignal = useConfirmSignal('trash')
   const { t, i18n } = useTranslation()
   const qc = useQueryClient()
   const { data: items = [], isFetched } = useTrash()
@@ -20,31 +21,43 @@ export function TrashView() {
   const refresh = (): void => invalidate(qc, 'trash', 'notes', 'sources', 'categories')
 
   const restore = async (it: TrashItem): Promise<void> => {
-    await api.trash.restore(it.type, it.id)
-    refresh()
-    toast.success(t('trash.restored'))
+    await withActionLock('trash:write', async () => {
+      await api.trash.restore(it.type, it.id)
+      refresh()
+      toast.success(t('trash.restored'))
+    }, { signal: confirmSignal })
   }
   const purge = async (it: TrashItem): Promise<void> => {
-    const ok = await confirm({
-      title: t('trash.purgeTitle', { name: it.title || t('common.untitled') }),
-      description: t('trash.purgeDesc'),
-      confirmText: t('trash.purge'),
-      danger: true
-    })
-    if (!ok) return
-    await api.trash.purge(it.type, it.id)
-    refresh()
+    const operationKey = `trash:${it.type}:${it.id}:purge`
+    await withActionLock(['trash:write', operationKey], async () => {
+      const ok = await confirm({
+        operationKey,
+        signal: confirmSignal,
+        title: t('trash.purgeTitle', { name: it.title || t('common.untitled') }),
+        description: t('trash.purgeDesc'),
+        confirmText: t('trash.purge'),
+        danger: true
+      })
+      if (!ok || confirmSignal.aborted) return
+      await api.trash.purge(it.type, it.id)
+      refresh()
+    }, { signal: confirmSignal })
   }
   const emptyAll = async (): Promise<void> => {
-    const ok = await confirm({
-      title: t('trash.emptyTitle'),
-      description: t('trash.emptyDesc', { count: items.length }),
-      confirmText: t('trash.purge'),
-      danger: true
-    })
-    if (!ok) return
-    await api.trash.empty()
-    refresh()
+    const operationKey = 'trash:empty'
+    await withActionLock(['trash:write', operationKey], async () => {
+      const ok = await confirm({
+        operationKey,
+        signal: confirmSignal,
+        title: t('trash.emptyTitle'),
+        description: t('trash.emptyDesc', { count: items.length }),
+        confirmText: t('trash.purge'),
+        danger: true
+      })
+      if (!ok || confirmSignal.aborted) return
+      await api.trash.empty()
+      refresh()
+    }, { signal: confirmSignal })
   }
 
   return (
@@ -58,7 +71,7 @@ export function TrashView() {
               <p className="mt-1.5 text-sm text-muted">{t('trash.desc')}</p>
             </div>
             {items.length > 0 && (
-              <Button variant="outline" className="text-danger" onClick={() => void emptyAll()}>
+              <Button variant="secondary" className="text-danger" onClick={() => void emptyAll()}>
                 <Trash2 />
                 {t('trash.emptyAll')}
               </Button>

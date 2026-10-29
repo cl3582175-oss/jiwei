@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import type { CategoryKind, NoteQuery, Settings, SourceQuery } from '@shared/types'
 import { api } from './utils'
+import { createSettingsUpdates, type SettingsUpdate } from './settingsUpdates'
 
 export const keys = {
   settings: ['settings'] as const,
@@ -15,19 +16,45 @@ export const keys = {
   tags: ['tags'] as const
 }
 
+const settingsCoordinators = new WeakMap<QueryClient, ReturnType<typeof createSettingsUpdates>>()
+
+function settingsCoordinator(qc: QueryClient) {
+  let coordinator = settingsCoordinators.get(qc)
+  if (!coordinator) {
+    coordinator = createSettingsUpdates({
+      initial: qc.getQueryData<Settings>(keys.settings),
+      read: () => api.settings.get(),
+      write: (patch) => api.settings.set(patch),
+      publish: (settings) => {
+        qc.setQueryData(keys.settings, settings)
+      }
+    })
+    settingsCoordinators.set(qc, coordinator)
+  }
+  return coordinator
+}
+
+export const refreshSettings = (qc: QueryClient): Promise<Settings> => settingsCoordinator(qc).refresh()
+export const updateSettings = (qc: QueryClient, patch: SettingsUpdate): Promise<Settings> => settingsCoordinator(qc).update(patch)
+export const flushSettings = (qc: QueryClient): Promise<void> => settingsCoordinator(qc).flush()
+export const settingsDirty = (qc: QueryClient): boolean => settingsCoordinator(qc).dirty
+
 export function useSettings() {
-  return useQuery({ queryKey: keys.settings, queryFn: () => api.settings.get(), staleTime: Infinity })
+  const qc = useQueryClient()
+  const coordinator = settingsCoordinator(qc)
+  return useQuery({
+    queryKey: keys.settings,
+    queryFn: () => coordinator.refresh(),
+    staleTime: Infinity,
+    // A refetch finishing after publish() must retain the current pending view.
+    structuralSharing: (_previous, incoming) => coordinator.snapshot ?? incoming
+  })
 }
 
 export function useUpdateSettings() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (patch: Partial<Settings>) => api.settings.set(patch),
-    onMutate: (patch) => {
-      const prev = qc.getQueryData<Settings>(keys.settings)
-      if (prev) qc.setQueryData(keys.settings, { ...prev, ...patch })
-    },
-    onSuccess: (s) => qc.setQueryData(keys.settings, s)
+    mutationFn: (patch: SettingsUpdate) => updateSettings(qc, patch)
   })
 }
 

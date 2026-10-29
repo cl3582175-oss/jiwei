@@ -1088,7 +1088,7 @@ test('US3 菜单和顶层对话框逐层 Escape，重复打开与卸载无残留
   await expect(expanded()).toBeVisible()
   await expect(expanded().getByRole('menu')).toHaveCount(0)
   await page.keyboard.press('ControlOrMeta+,')
-  const settings = page.getByRole('dialog').filter({ has: page.getByRole('button', { name: 'AI 模型', exact: true }) })
+  const settings = page.getByRole('dialog').filter({ has: page.getByRole('tab', { name: 'AI 模型', exact: true }) })
   await expect(settings).toBeVisible()
   expect(
     await settings.evaluate((el) => {

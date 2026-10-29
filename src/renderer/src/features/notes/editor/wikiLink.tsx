@@ -1,3 +1,4 @@
+import { Button } from '@/components/ui/shadcn-button'
 import { forwardRef, useEffect, useImperativeHandle, useState } from 'react'
 import { Extension, type Editor, type Range } from '@tiptap/core'
 import { ReactRenderer } from '@tiptap/react'
@@ -65,7 +66,7 @@ const List = forwardRef<ListHandle, ListProps>(function List({ items, command },
         <p className="px-3 py-2 text-xs text-subtle">{i18n.t('links.pickerEmpty')}</p>
       ) : (
         items.map((it, j) => (
-          <button
+          <Button variant="ghost" size="auto"
             key={`${it.type}:${it.id}:${it.title}`}
             role="option"
             aria-selected={j === i}
@@ -79,7 +80,7 @@ const List = forwardRef<ListHandle, ListProps>(function List({ items, command },
               <span className="block truncate text-sm text-fg">{it.type === 'new' ? i18n.t('links.createNote', { title: it.title }) : it.title}</span>
               {it.hint && <span className="block truncate text-2xs text-subtle">{it.hint}</span>}
             </span>
-          </button>
+          </Button>
         ))
       )}
     </div>

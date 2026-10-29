@@ -5,7 +5,7 @@ import { normalizeEffort, resolveModelPolicy, type Effort } from '@shared/ai'
 import type { ProviderInfo } from '@shared/types'
 import { cn } from '@/lib/utils'
 import { Tip, Menu, MenuTrigger, MenuContent, MenuLabel } from '@/components/ui/primitives'
-import { Button } from '@/components/ui/button'
+import { InputGroupButton } from '@/components/ai-elements/input-group'
 
 /**
  * 思考强度选择：与发送端共用当前端点和模型的已确认规则。
@@ -32,20 +32,13 @@ export function EffortPicker({
     return (
       <Menu>
         <MenuTrigger asChild>
-          <Button
-            data-slot="input-group-button"
-            className="rounded-full"
-            size="sm"
-            variant="ghost"
-            aria-label={t('ai.effort')}
-            title={t('ai.effortHint')}
-          >
+          <InputGroupButton size="sm" variant="ghost" aria-label={t('ai.effort')} title={t('ai.effortHint')}>
             <Brain data-icon="inline-start" />
             <span>
               {t('ai.effortShort')} · {shown ? t(`ai.efforts.${shown}`) : t('ai.effortDefault')}
             </span>
             <ChevronDown data-icon="inline-end" />
-          </Button>
+          </InputGroupButton>
         </MenuTrigger>
         <MenuContent align="start">
           <MenuLabel>{t('ai.effort')}</MenuLabel>

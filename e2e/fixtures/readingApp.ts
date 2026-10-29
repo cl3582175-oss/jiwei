@@ -7,6 +7,7 @@ import { startLensApp, type LensApp } from './lensApp'
 import { startReadingSite, READING_SENTENCE } from './readingPage'
 import { makePdf } from './makePdf'
 import type { ReadingBatch, ReadingBatchResult, ReadingTarget } from '../../src/shared/reading'
+import { writeOpenAiCompletion } from './openaiResponse'
 export interface ReadingRequest { paragraphs:{id:string;text:string;translate:boolean;candidates:string[]}[];translation:boolean;prompt:string }
 export interface ReadingApp extends LensApp {site:Server;base:string;readingProvider:Server;readingRequests:ReadingRequest[];readingState:{blocked:boolean;release:(()=>void)|null;fail:boolean};}
 export async function startReadingApp(options:{provider?:boolean;importProviders?:string}={}):Promise<ReadingApp> {
@@ -34,10 +35,10 @@ export async function startReadingApp(options:{provider?:boolean;importProviders
         if(state.fail){response.writeHead(503).end('Controlled reading failure');return}
         const output={paragraphs:paragraphs.map((paragraph)=>({id:paragraph.id,translation:(paragraph.translate??translation)?`受控译文（terminology）：${paragraph.text.slice(0,80)}`:'',annotations:paragraph.candidates.slice(0,6).map((word)=>({word,gloss:'上下文释义'}))}))}
         const text='原句中的主语是 Epistemology，谓语是 clarifies，宾语是 the methodology。of a heuristic paradigm 修饰 methodology，说明方法的所属范围。'
-        if(input.stream){
-          response.writeHead(200,{'content-type':'text/event-stream'});response.write(`data: ${JSON.stringify({id:'reading-chat',object:'chat.completion.chunk',model:'reading-transport-fixture',choices:[{index:0,delta:{role:'assistant',content:text},finish_reason:null}]})}\n\n`);response.write(`data: ${JSON.stringify({id:'reading-chat',object:'chat.completion.chunk',choices:[{index:0,delta:{},finish_reason:'stop'}],usage:{prompt_tokens:100,completion_tokens:80,total_tokens:180}})}\n\n`);response.end('data: [DONE]\n\n');return
+        if(input.stream&&!submit){
+          writeOpenAiCompletion(response,{id:'reading-chat',object:'chat.completion',created:1,model:'reading-transport-fixture',choices:[{index:0,message:{role:'assistant',content:data?JSON.stringify(output):text},finish_reason:'stop'}],usage:{prompt_tokens:100,completion_tokens:80,total_tokens:180}},true);return
         }
-        response.writeHead(200,{'content-type':'application/json'}).end(JSON.stringify({id:`reading-${requests.length}`,object:'chat.completion',created:1,model:'reading-transport-fixture',choices:[{index:0,message:submit?{role:'assistant',content:null,tool_calls:[{id:`submit-${requests.length}`,type:'function',function:{name:'submit',arguments:JSON.stringify(output)}}]}:{role:'assistant',content:data?JSON.stringify(output):text},finish_reason:submit?'tool_calls':'stop'}],usage:{prompt_tokens:100,completion_tokens:100,total_tokens:200}}))
+        writeOpenAiCompletion(response,{id:`reading-${requests.length}`,object:'chat.completion',created:1,model:'reading-transport-fixture',choices:[{index:0,message:submit?{role:'assistant',content:null,tool_calls:[{id:`submit-${requests.length}`,type:'function',function:{name:'submit',arguments:JSON.stringify(output)}}]}:{role:'assistant',content:data?JSON.stringify(output):text},finish_reason:submit?'tool_calls':'stop'}],usage:{prompt_tokens:100,completion_tokens:100,total_tokens:200}},!!input.stream)
       }catch{response.writeHead(400).end('Invalid controlled request')}
     })())
   })

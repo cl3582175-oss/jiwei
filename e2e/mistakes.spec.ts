@@ -19,8 +19,8 @@ async function select(id: string): Promise<void> {
 async function setTheme(theme: 'light' | 'dark'): Promise<void> {
   await env.page.getByRole('button', { name: /^设置/ }).click()
   const settings = env.page.getByRole('dialog')
-  await settings.getByRole('button', { name: '外观', exact: true }).click()
-  await settings.getByRole('button', { name: theme === 'dark' ? '深色' : '浅色', exact: true }).click()
+  await settings.getByRole('tab', { name: '外观', exact: true }).click()
+  await settings.getByRole('radio', { name: theme === 'dark' ? '深色' : '浅色', exact: true }).click()
   await env.page.keyboard.press('Escape')
   await expect(settings).not.toBeVisible()
   await expect(env.page.locator('html')).toHaveAttribute('data-theme', theme)

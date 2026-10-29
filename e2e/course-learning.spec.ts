@@ -7,6 +7,7 @@ import * as Y from 'yjs'
 import { yDocToProsemirrorJSON } from '@tiptap/y-tiptap'
 import type { DocJSON, DocNode, ProposalOp } from '../src/shared/types'
 import { COURSE_CUES, inCoursePage, makeCourseMedia, startCourseSite } from './fixtures/coursePage'
+import { writeOpenAiCompletion } from './fixtures/openaiResponse'
 
 // 本地 HTTP 测试服务商只验证真实 transport → structured → proposal → Yjs / 复习卡持久化。
 // 固定回复不代表模型理解了课程，也不能替代 JIWEI_IMPORT_PROVIDERS_FROM 的语义验收。
@@ -15,6 +16,7 @@ test.describe.configure({ mode: 'serial' })
 
 interface ApiRequest {
   model?: string
+  stream?: boolean
   messages?: { role: string; content?: string | { type: string; text?: string }[] | null }[]
   tools?: { type: string; function: { name: string; parameters?: { properties?: Record<string, unknown> } } }[]
 }
@@ -148,28 +150,26 @@ test.beforeAll(async () => {
             : kind === 'quiz'
               ? { question: QUESTION, answer: '在快要遗忘时复习，并逐步拉长间隔。', t: 4 }
               : { feedback: FEEDBACK }
-        response.writeHead(200, { 'content-type': 'application/json' }).end(
-          JSON.stringify({
-            id: `course-fixture-${requests.length}`,
-            object: 'chat.completion',
-            created: 1,
-            model: 'course-transport-fixture',
-            choices: [
-              {
-                index: 0,
-                message: {
-                  role: 'assistant',
-                  content: null,
-                  tool_calls: [
-                    { id: `submit-${requests.length}`, type: 'function', function: { name: 'submit', arguments: JSON.stringify(output) } }
-                  ]
-                },
-                finish_reason: 'tool_calls'
-              }
-            ],
-            usage: { prompt_tokens: 10, completion_tokens: 10, total_tokens: 20 }
-          })
-        )
+        writeOpenAiCompletion(response, {
+          id: `course-fixture-${requests.length}`,
+          object: 'chat.completion',
+          created: 1,
+          model: 'course-transport-fixture',
+          choices: [
+            {
+              index: 0,
+              message: {
+                role: 'assistant',
+                content: null,
+                tool_calls: [
+                  { id: `submit-${requests.length}`, type: 'function', function: { name: 'submit', arguments: JSON.stringify(output) } }
+                ]
+              },
+              finish_reason: 'tool_calls'
+            }
+          ],
+          usage: { prompt_tokens: 10, completion_tokens: 10, total_tokens: 20 }
+        }, !!payload.stream)
       } catch {
         response.writeHead(400).end('Invalid test request')
       }
@@ -235,6 +235,12 @@ test.beforeAll(async () => {
     selection.removeAllRanges()
     selection.addRange(range)
   })
+  // DOM selectionchange is asynchronous; keep editor focus until its real state reaches the paragraph end.
+  await expect.poll(() => page.locator('.cornell-row .cornell-body p').first().evaluate((paragraph) => {
+    const editor = (paragraph.closest('.tiptap') as HTMLElement & { editor: import('@tiptap/core').Editor }).editor
+    const end = editor.view.posAtDOM(paragraph, paragraph.childNodes.length)
+    return editor.view.hasFocus() && editor.state.selection.empty && editor.state.selection.from === end
+  })).toBe(true)
   await panel().getByRole('button', { name: '插入时间点', exact: true }).click()
   await expect.poll(() => savedDoc().then((state) => state.xml)).toContain('?t=12')
   expect(textOf((await savedDoc()).doc)).toContain(RAW_NOTE)

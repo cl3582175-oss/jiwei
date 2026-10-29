@@ -89,6 +89,6 @@ export async function enableEncryption(env: SafetyApp): Promise<string> {
 }
 export async function settingsData(env: SafetyApp): Promise<void> {
   await env.page.getByRole('button', { name: /^设置/ }).click()
-  await env.page.getByRole('dialog').getByRole('button', { name: '数据', exact: true }).click()
+  await env.page.getByRole('dialog').getByRole('tab', { name: '数据', exact: true }).click()
   await env.page.getByTestId('backup-settings').scrollIntoViewIfNeeded()
 }

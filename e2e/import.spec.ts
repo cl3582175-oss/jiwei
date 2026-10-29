@@ -10,6 +10,7 @@ import type { ImportOptions, ImportScan } from '../src/shared/importer'
 import * as Y from 'yjs'
 import { yDocToProsemirrorJSON } from '@tiptap/y-tiptap'
 import JSZip from 'jszip'
+import { writeOpenAiCompletion } from './fixtures/openaiResponse'
 let env: SafetyApp
 test.afterEach(async () => {
   await env?.close()
@@ -293,31 +294,29 @@ test('optional AI cues use metered proposals and block a note excluded before it
       body += c
     })
     req.on('end', () => {
-      const input = JSON.parse(body) as { messages: { role: string; content: string }[] }
+      const input = JSON.parse(body) as { messages: { role: string; content: string }[]; stream?: boolean }
       if (input.messages.some((m) => m.role === 'system' && m.content.includes('Suggest one concise learning question'))) requests++
       const prompt = input.messages.find((m) => m.role === 'user')?.content ?? ''
       const blockIds = [...prompt.matchAll(/"blockId":"([^"]+)"/g)].map((m) => m[1])
       const args = { questions: blockIds.map((blockId) => ({ blockId, question: '为什么要用自己的话复述？' })) }
-      res.writeHead(200, { 'content-type': 'application/json' }).end(
-        JSON.stringify({
-          id: 'fixture',
-          object: 'chat.completion',
-          created: 1,
-          model: 'gpt-4.1-mini',
-          choices: [
-            {
-              index: 0,
-              message: {
-                role: 'assistant',
-                content: null,
-                tool_calls: [{ id: 'submit-1', type: 'function', function: { name: 'submit', arguments: JSON.stringify(args) } }]
-              },
-              finish_reason: 'tool_calls'
-            }
-          ],
-          usage: { prompt_tokens: 1000, completion_tokens: 100, total_tokens: 1100 }
-        })
-      )
+      writeOpenAiCompletion(res, {
+        id: 'fixture',
+        object: 'chat.completion',
+        created: 1,
+        model: 'gpt-4.1-mini',
+        choices: [
+          {
+            index: 0,
+            message: {
+              role: 'assistant',
+              content: null,
+              tool_calls: [{ id: 'submit-1', type: 'function', function: { name: 'submit', arguments: JSON.stringify(args) } }]
+            },
+            finish_reason: 'tool_calls'
+          }
+        ],
+        usage: { prompt_tokens: 1000, completion_tokens: 100, total_tokens: 1100 }
+      }, !!input.stream)
     })
   })
   await new Promise<void>((done) => server.listen(0, '127.0.0.1', done))

@@ -1,3 +1,5 @@
+import { NativeSelect } from '@/components/ui/native-select'
+import { Checkbox } from '@/components/ui/checkbox'
 import { PicksView } from '../discover/PicksView'
 import { requestPhoneUpload } from '../capture/PhoneDialog'
 import { useMoney } from '@/lib/money'
@@ -10,7 +12,8 @@ import type { InboxItem } from '@shared/inbox'
 import { api, cn, formatRelative } from '@/lib/utils'
 import { useSettings } from '@/lib/queries'
 import { useApp } from '@/store/app'
-import { Button } from '@/components/ui/button'
+import { Button } from '@/components/ui/shadcn-button'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { NotePicker } from '../notes/NotePicker'
 import { applyInboxDocument } from './documents'
 
@@ -73,6 +76,7 @@ export function InboxView() {
   const pending = regular.filter((i) => i.status === 'new' || i.status === 'suggested').length
   const visible = showAll ? regular : regular.filter((i) => i.status === 'new' || i.status === 'suggested')
   return (
+    <Tabs asChild className="gap-0" value={tab} onValueChange={(value) => { if (value === 'captures' || value === 'picks') setTab(value) }}>
     <div className="flex h-full flex-col overflow-hidden" data-testid="inbox-view">
       <header className="drag flex shrink-0 flex-wrap items-end gap-x-4 gap-y-3 px-8 pb-5 pt-12">
         <div className="min-w-0 flex-1">
@@ -96,7 +100,7 @@ export function InboxView() {
           </Button>
           <span className="mx-1 h-5 w-px bg-border" aria-hidden />
           <Button
-            variant="outline"
+            variant="secondary"
             disabled={busy || !regular.some((i) => i.status === 'suggested')}
             onClick={() =>
               void run(async () => {
@@ -125,16 +129,17 @@ export function InboxView() {
           </>}
         </div>
       </header>
-      <div role="tablist" aria-label={t('inbox.title')} className="mb-4 flex gap-2 border-b border-border px-8 pb-3">{(['captures', 'picks'] as const).map((key) => <button key={key} role="tab" aria-selected={tab === key} className={cn('rounded-lg px-3 py-1.5 text-sm', tab === key ? 'bg-accent-soft text-accent' : 'text-muted hover:bg-sunken')} onClick={() => setTab(key)}>{t(`discover.${key}`)}</button>)}</div>
-      {tab === 'picks' ? <PicksView inboxIds={new Set(items.filter((i) => i.kind === 'pick' && i.status === 'new').map((i) => i.id))} /> : <div className="min-h-0 flex-1 overflow-y-auto px-8 pb-10">
+      <TabsList variant="line" aria-label={t('inbox.title')} className="mb-4 h-auto w-full shrink-0 justify-start gap-2 border-b border-border px-8 pb-3">{(['captures', 'picks'] as const).map((key) => <TabsTrigger value={key} key={key} className="flex-none rounded-lg px-3 py-1.5 text-sm">{t(`discover.${key}`)}</TabsTrigger>)}</TabsList>
+      <TabsContent value="picks" className="flex min-h-0 flex-1 flex-col"><PicksView inboxIds={new Set(items.filter((i) => i.kind === 'pick' && i.status === 'new').map((i) => i.id))} /></TabsContent>
+      <TabsContent value="captures" asChild><div className="min-h-0 flex-1 overflow-y-auto px-8 pb-10">
         <div className="mx-auto max-w-3xl">
           <div className="mb-3 flex items-center justify-end border-b border-border pb-3">
             <label className="flex cursor-pointer items-center gap-2 text-xs text-muted">
-              <input
-                type="checkbox"
+              <Checkbox
+
                 className="accent-[var(--color-accent)]"
                 checked={showAll}
-                onChange={(e) => setShowAll(e.target.checked)}
+                onCheckedChange={(nextChecked) => setShowAll((nextChecked === true))}
               />
               {t('inbox.showAll')}
             </label>
@@ -212,7 +217,7 @@ export function InboxView() {
                           >
                             {t('inbox.dismiss')}
                           </Button>
-                          <select
+                          <NativeSelect
                             aria-label={t('inbox.change')}
                             value=""
                             disabled={busy}
@@ -230,7 +235,7 @@ export function InboxView() {
                                 {t(`inbox.action.${action}`)}
                               </option>
                             ))}
-                          </select>
+                          </NativeSelect>
                         </>
                       )}
                       {!done && (i.suggestion || i.filedTo) && (
@@ -283,7 +288,7 @@ export function InboxView() {
             })}
           </div>
         </div>
-      </div>}
+      </div></TabsContent>
       <NotePicker
         open={!!pick}
         title={t('inbox.chooseNote')}
@@ -297,5 +302,6 @@ export function InboxView() {
         }}
       />
     </div>
+    </Tabs>
   )
 }

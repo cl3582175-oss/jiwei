@@ -67,7 +67,7 @@ test('自定义指令运行、保存、设置编辑与删除；普通技能隔�
     .poll(() => env.page.evaluate(() => window.jiwei.lenses.list().then((ls) => ls.find((l) => l.title === '../思考视角')?.id)))
     .toMatch(/^lens-[a-f0-9]{8}$/)
   await env.page.getByRole('button', { name: /^设置/ }).click()
-  await env.page.getByRole('dialog').getByRole('button', { name: '视角', exact: true }).click()
+  await env.page.getByRole('dialog').getByRole('tab', { name: '视角', exact: true }).click()
   const settings = env.page.getByTestId('lens-settings'),
     row = settings.locator('article').filter({ hasText: '../思考视角' })
   await expect(row).toBeVisible()

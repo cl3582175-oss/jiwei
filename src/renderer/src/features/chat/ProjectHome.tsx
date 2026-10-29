@@ -123,7 +123,7 @@ export function ProjectHome({ id }: { id: string }) {
       <div className="min-h-0 flex-1 overflow-y-auto px-8 py-8">
         <div className="mx-auto max-w-[760px]">
           {project.instructions && <p className="mb-5 whitespace-pre-wrap text-sm leading-relaxed text-muted">{project.instructions}</p>}
-          <AttachmentDropZone controller={attachments} className="paper rounded-2xl shadow-card">
+          <AttachmentDropZone controller={attachments}>
             <Composer
               busy={false}
               disabled={sourceAdder.adding}
@@ -133,6 +133,14 @@ export function ProjectHome({ id }: { id: string }) {
               placeholder={t('projects.newChatIn', { name: project.name })}
               onSend={send}
               onStop={() => {}}
+              tools={
+                <>
+                  <ModelPicker compact value={choice} onChange={setChoice} />
+                  {provider && <EffortPicker compact provider={provider} model={choice.model} value={effort} onChange={setEffort} />}
+                  <ScopePicker value={scope} onChange={setScope} />
+                  <WebModePicker value={web} onChange={setWeb} />
+                </>
+              }
               attachmentButton={
                 <Menu>
                   <Tip label={t('attach.add')}>
@@ -155,12 +163,6 @@ export function ProjectHome({ id }: { id: string }) {
                 </Menu>
               }
             />
-            <div className="flex flex-wrap items-center gap-2 border-t border-border/60 px-3 py-2">
-              <ModelPicker compact value={choice} onChange={setChoice} />
-              {provider && <EffortPicker compact provider={provider} model={choice.model} value={effort} onChange={setEffort} />}
-              <ScopePicker value={scope} onChange={setScope} />
-              <WebModePicker value={web} onChange={setWeb} />
-            </div>
           </AttachmentDropZone>
           {sourceAdder.adding && (
             <p role="status" className="mt-2 text-xs text-muted">

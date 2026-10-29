@@ -1,3 +1,5 @@
+import { useShallow } from 'zustand/react/shallow'
+import { Input } from '@/components/ui/input'
 import { useEffect, useRef, useState, type MouseEvent } from 'react'
 import { SidebarToggle } from '@/components/PageSidebar'
 import { useTranslation } from 'react-i18next'
@@ -8,9 +10,9 @@ import { useApp, type NoteFilter } from '@/store/app'
 import { useNotes, useTags, invalidate } from '@/lib/queries'
 import { api, cn, formatDate, formatRelative, modKey } from '@/lib/utils'
 import { useCreateNote } from '@/lib/shortcuts'
-import { Button } from '@/components/ui/button'
-import { Menu, MenuContent, MenuItem, MenuTrigger, Tip } from '@/components/ui/primitives'
-import { confirm } from '@/components/ui/confirm'
+import { Button } from '@/components/ui/shadcn-button'
+import { Menu, MenuContent, MenuItem, MenuTrigger, Tip } from '@/components/ui/shadcn-primitives'
+import { confirm, useConfirmSignal, withActionLock } from '@/components/ui/shadcn-confirm'
 import { CategoryTree, FilterRow, NOTE_DRAG_TYPE, SectionHeader } from './CategoryTree'
 import { NoteMenuItems, useNoteActions } from './NoteMenu'
 import { STATUS_META } from './NoteEditor'
@@ -49,6 +51,7 @@ function NoteItem({
 }) {
   const { t, i18n } = useTranslation()
   const [menuOpen, setMenuOpen] = useState(false)
+  const confirmSignal = useConfirmSignal(`notes:${targets.map((item) => item.id).sort().join(',')}`)
   const time =
     sort === 'learned'
       ? formatDate(note.learnedAt, i18n.language)
@@ -105,7 +108,7 @@ function NoteItem({
       <p className="mt-1 text-2xs text-subtle">{time}</p>
       <Menu open={menuOpen} onOpenChange={setMenuOpen}>
         <MenuTrigger asChild>
-          <button
+          <Button variant="ghost" size="auto"
             onClick={(e) => e.stopPropagation()}
             aria-label={t('notes.noteActions')}
             className={cn(
@@ -114,10 +117,10 @@ function NoteItem({
             )}
           >
             <MoreHorizontal />
-          </button>
+          </Button>
         </MenuTrigger>
         <MenuContent align="end">
-          <NoteMenuItems notes={targets} />
+          <NoteMenuItems notes={targets} signal={confirmSignal} />
         </MenuContent>
       </Menu>
     </div>
@@ -127,7 +130,8 @@ function NoteItem({
 /** 多选时的操作条：移动、删除、取消 */
 function BulkBar({ notes, onClear }: { notes: NoteSummary[]; onClear: () => void }) {
   const { t } = useTranslation()
-  const { paths, move, remove } = useNoteActions()
+  const confirmSignal = useConfirmSignal(`notes:${notes.map((item) => item.id).sort().join(',')}`)
+  const { paths, move, remove } = useNoteActions(confirmSignal)
   const ids = notes.map((n) => n.id)
   return (
     <div
@@ -179,12 +183,22 @@ function BulkBar({ notes, onClear }: { notes: NoteSummary[]; onClear: () => void
 export function NotesSidebar() {
   const { t } = useTranslation()
   const qc = useQueryClient()
-  const { noteFilter, setNoteFilter, noteSort, setNoteSort, noteId: activeNoteId, openNote } = useApp()
+  const { noteFilter, setNoteFilter, noteSort, setNoteSort, noteId: activeNoteId, openNote } = useApp(
+    useShallow((state) => ({
+      noteFilter: state.noteFilter,
+      setNoteFilter: state.setNoteFilter,
+      noteSort: state.noteSort,
+      setNoteSort: state.setNoteSort,
+      noteId: state.noteId,
+      openNote: state.openNote
+    }))
+  )
   const [search, setSearch] = useState('')
   const createNote = useCreateNote()
   const { data: tags = [] } = useTags()
   const { data: notes = [], isFetched } = useNotes({ ...filterToQuery(noteFilter), search, sort: noteSort })
-  const { move } = useNoteActions()
+  const confirmSignal = useConfirmSignal('notes-sidebar')
+  const { move } = useNoteActions(confirmSignal)
   // 多选（v0.7.6）：⌘ 点选、Shift 连选；换筛选或按 Esc 清空
   const selected = useApp((s) => s.noteSelection)
   const setSelected = useApp((s) => s.setNoteSelection)
@@ -224,16 +238,21 @@ export function NotesSidebar() {
   const is = (f: NoteFilter): boolean => f.type === noteFilter.type && (!('id' in f) || ('id' in noteFilter && noteFilter.id === f.id))
 
   const removeTag = async (id: string, name: string): Promise<void> => {
-    const ok = await confirm({
-      title: t('tags.deleteTitle', { name }),
-      description: t('tags.deleteDesc'),
-      confirmText: t('common.delete'),
-      danger: true
-    })
-    if (!ok) return
-    await api.tags.remove(id)
-    if (noteFilter.type === 'tag' && noteFilter.id === id) setNoteFilter({ type: 'all' })
-    invalidate(qc, 'tags', 'notes')
+    const operationKey = `tag:${id}:delete`
+    await withActionLock(operationKey, async () => {
+      const ok = await confirm({
+        operationKey,
+        signal: confirmSignal,
+        title: t('tags.deleteTitle', { name }),
+        description: t('tags.deleteDesc'),
+        confirmText: t('common.delete'),
+        danger: true
+      })
+      if (!ok || confirmSignal.aborted) return
+      await api.tags.remove(id)
+      if (noteFilter.type === 'tag' && noteFilter.id === id) setNoteFilter({ type: 'all' })
+      invalidate(qc, 'tags', 'notes')
+    }, { signal: confirmSignal })
   }
 
   return (
@@ -261,7 +280,7 @@ export function NotesSidebar() {
           </Menu>
           <Tip label={`${t('notes.new')}  ${modKey}N`} side="bottom">
             <Button
-              variant="outline"
+              variant="secondary"
               size="sm"
               className="ml-1 h-7 rounded-full px-2.5"
               onClick={() => void createNote()}
@@ -277,7 +296,7 @@ export function NotesSidebar() {
       <div className="px-3 pt-2 pb-2">
         <div className="relative">
           <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-subtle" />
-          <input
+          <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             onKeyDown={(e) => e.key === 'Escape' && setSearch('')}
@@ -285,13 +304,13 @@ export function NotesSidebar() {
             className="h-8 w-full rounded-md border border-transparent bg-surface pr-7 pl-8 text-sm text-fg shadow-card outline-none placeholder:text-subtle focus:border-accent focus:ring-3 focus:ring-accent-soft"
           />
           {search && (
-            <button
+            <Button variant="ghost" size="auto"
               onClick={() => setSearch('')}
               className="absolute top-1/2 right-2 -translate-y-1/2 text-subtle hover:text-fg"
               aria-label={t('common.clear')}
             >
               <X className="size-3.5" />
-            </button>
+            </Button>
           )}
         </div>
       </div>
@@ -333,7 +352,7 @@ export function NotesSidebar() {
                   label={tg.name}
                   onClick={() => setNoteFilter({ type: 'tag', id: tg.id })}
                   trailing={
-                    <button
+                    <Button variant="ghost" size="auto"
                       onClick={(e) => {
                         e.stopPropagation()
                         void removeTag(tg.id, tg.name)
@@ -342,7 +361,7 @@ export function NotesSidebar() {
                       aria-label={t('common.delete')}
                     >
                       <Trash2 className="size-3.5" />
-                    </button>
+                    </Button>
                   }
                 />
               ))}

@@ -74,7 +74,7 @@ test('PDF pages are triaged: scanned page and table page need recognition', asyn
 
 test('settings: engine choice, local model download, figures', async () => {
   await page.keyboard.press('ControlOrMeta+,')
-  await page.getByRole('button', { name: 'AI 模型' }).click()
+  await page.getByRole('tab', { name: 'AI 模型' }).click()
   const sec = page.getByTestId('recognition-settings')
   await sec.scrollIntoViewIfNeeded()
   await expect(sec.getByRole('radio', { name: '云端看图模型' })).toHaveAttribute('aria-checked', 'true')

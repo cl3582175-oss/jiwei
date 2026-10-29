@@ -151,6 +151,7 @@ async function extract(archivePath: string, staging: string): Promise<void> {
     }
   } else {
     let unsafe: Error | null = null
+    const entries = new Map<string, { type: string; target: string | null }>()
     await listTar({
       file: archivePath,
       preservePaths: true,
@@ -158,19 +159,53 @@ async function extract(archivePath: string, staging: string): Promise<void> {
       onReadEntry: (entry) => {
         try {
           const output = safePath(staging, entry.path)
+          if (entries.has(output)) throw new Error('运行时压缩包包含重复路径')
+          let target: string | null = null
           if (entry.type === 'SymbolicLink' || entry.type === 'Link') {
             if (!entry.linkpath) throw new Error('运行时压缩包链接路径无效')
+            const link = entry.linkpath.replaceAll('\\', '/')
+            if (isAbsolute(link) || /^[a-z]:/i.test(link)) throw new Error('运行时压缩包包含不安全链接路径')
             const base = entry.type === 'SymbolicLink' ? dirname(output) : staging
-            const target = resolve(base, entry.linkpath)
+            target = resolve(base, link)
             safePath(staging, relative(staging, target))
           }
+          entries.set(output, { type: entry.type, target })
         } catch (error) {
           unsafe = error instanceof Error ? error : new Error('运行时压缩包路径无效')
         }
       }
     })
     if (unsafe) throw unsafe
-    await untar({ file: archivePath, cwd: staging, strict: true })
+    const linkTargets = new Map<string, string>()
+    for (const [output, entry] of entries) {
+      if (entry.type !== 'SymbolicLink') continue
+      const seen = new Set([output])
+      let target = entry.target!
+      for (;;) {
+        if (seen.has(target)) throw new Error('运行时压缩包包含循环符号链接')
+        seen.add(target)
+        const destination = entries.get(target)
+        if (!destination) throw new Error('运行时链接目标未包含在压缩包中')
+        if (destination.type === 'Link') throw new Error('运行时符号链接目标不能是硬链接')
+        if (destination.type !== 'SymbolicLink') {
+          if (!['File', 'OldFile', 'Directory'].includes(destination.type)) throw new Error('运行时链接目标类型无效')
+          linkTargets.set(output, relative(dirname(output), target) || '.')
+          break
+        }
+        target = destination.target!
+      }
+    }
+    // tar rejects targets that are already symlinks. Flatten only validated archive links,
+    // retaining strict tar's checks against traversal and symlink parent directories.
+    await untar({
+      file: archivePath,
+      cwd: staging,
+      strict: true,
+      filter: (path, entry) => {
+        if ('type' in entry && entry.type === 'SymbolicLink') entry.linkpath = linkTargets.get(safePath(staging, path))!
+        return true
+      }
+    })
   }
 }
 

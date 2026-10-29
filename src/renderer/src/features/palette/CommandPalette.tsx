@@ -1,14 +1,15 @@
+import { useShallow } from 'zustand/react/shallow'
 import { requestPhoneUpload } from '../capture/PhoneDialog'
 import { useState } from 'react'
-import { Command } from 'cmdk'
-import { Dialog as D } from 'radix-ui'
+import { CommandParts as Command } from '@/components/ui/command'
+import { DialogParts as D } from '@/components/ui/dialog'
 import { useTranslation } from 'react-i18next'
-import { NotebookText, PenLine, Library, Settings, Trash2, Search, Home, Layers, GraduationCap, Sprout, Network, Globe, Sun, Sparkles, Target, CalendarDays, BarChart3, Scale } from 'lucide-react'
+import { NotebookText, PenLine, Library, Settings, Trash2, Home, Layers, GraduationCap, Sprout, Network, Globe, Sun, Sparkles, Target, CalendarDays, BarChart3, Scale } from 'lucide-react'
 import { useApp } from '@/store/app'
 import { useNotes } from '@/lib/queries'
 import { useCreateNote } from '@/lib/shortcuts'
 import { modKey } from '@/lib/utils'
-import { Kbd } from '@/components/ui/primitives'
+import { Kbd } from '@/components/ui/shadcn-primitives'
 
 const itemCls =
   'flex h-10 cursor-default items-center gap-3 rounded-lg px-3 text-sm text-fg data-[selected=true]:bg-accent-soft data-[selected=true]:text-accent [&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:text-subtle data-[selected=true]:[&_svg]:text-accent'
@@ -18,7 +19,15 @@ const USAGE_WORDS = ['用量', '费用', '花费', '花销', 'token', 'usage', '
 
 export function CommandPalette() {
   const { t } = useTranslation()
-  const { paletteOpen, setPaletteOpen, openNote, setView, setSettingsOpen } = useApp()
+  const { paletteOpen, setPaletteOpen, openNote, setView, setSettingsOpen } = useApp(
+    useShallow((state) => ({
+      paletteOpen: state.paletteOpen,
+      setPaletteOpen: state.setPaletteOpen,
+      openNote: state.openNote,
+      setView: state.setView,
+      setSettingsOpen: state.setSettingsOpen
+    }))
+  )
   const [q, setQ] = useState('')
   const { data: notes = [] } = useNotes({ search: q, sort: 'edited' })
   const createNote = useCreateNote()
@@ -33,13 +42,12 @@ export function CommandPalette() {
     <D.Root open={paletteOpen} onOpenChange={(o) => (setPaletteOpen(o), o || setQ(''))}>
       <D.Portal>
         <D.Overlay className="fixed inset-0 z-40 bg-black/20 backdrop-blur-[2px] data-[state=open]:animate-[fade-in_140ms_ease-out]" />
-        <D.Content className="fixed top-[19%] left-1/2 z-50 w-[min(92vw,620px)] -translate-x-1/2 overflow-hidden rounded-2xl border border-border bg-surface shadow-float outline-none data-[state=open]:animate-[pop-in_160ms_ease-out]">
+        <D.Content data-ui-overlay="command" className="fixed top-[19%] left-1/2 z-50 w-[min(92vw,620px)] -translate-x-1/2 overflow-hidden rounded-2xl border border-border bg-surface shadow-float outline-none data-[state=open]:animate-[pop-in_160ms_ease-out]">
           <D.Title className="sr-only">{t('nav.search')}</D.Title>
           <D.Description className="sr-only">{t('palette.placeholder')}</D.Description>
           {/* 笔记检索由数据库完成，关闭 cmdk 自带过滤 */}
           <Command shouldFilter={false} loop>
             <div className="flex items-center gap-3 border-b border-border px-4">
-              <Search className="size-[18px] text-subtle" />
               <Command.Input
                 value={q}
                 onValueChange={setQ}

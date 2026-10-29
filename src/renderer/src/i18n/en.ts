@@ -1139,6 +1139,8 @@ const en: Messages = {
     defaults: 'Default model and thinking effort',
     model: 'Model',
     pickModel: 'Choose a model',
+    searchModels: 'Search models',
+    noMatchingModels: 'No matching configured models',
     noModels: 'Add a model service in Settings first',
     effort: 'Thinking effort',
     effortShort: 'Thinking',

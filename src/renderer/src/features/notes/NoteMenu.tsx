@@ -19,13 +19,13 @@ import type { KnowledgeStatus, NoteSummary } from '@shared/types'
 import { invalidate, useCategories } from '@/lib/queries'
 import { api, cn } from '@/lib/utils'
 import { useApp } from '@/store/app'
-import { MenuItem, MenuSeparator, MenuSub, MenuSubContent, MenuSubTrigger } from '@/components/ui/primitives'
-import { confirm } from '@/components/ui/confirm'
+import { MenuItem, MenuSeparator, MenuSub, MenuSubContent, MenuSubTrigger } from '@/components/ui/shadcn-primitives'
+import { confirm, withActionLock } from '@/components/ui/shadcn-confirm'
 import { categoryPaths } from './CategoryTree'
 
 // 笔记列表的操作（v0.7.6）：右键或悬停“⋯”打开；选中多篇时对全部生效。
 
-export function useNoteActions() {
+export function useNoteActions(signal: AbortSignal) {
   const { t } = useTranslation()
   const qc = useQueryClient()
   const { data: cats = [] } = useCategories('note')
@@ -38,24 +38,32 @@ export function useNoteActions() {
     toast(ids.length > 1 ? t('notes.movedMany', { count: ids.length, name }) : t('notes.movedTo', { name }))
   }
   const remove = async (ids: string[]): Promise<boolean> => {
-    const ok = await confirm({
-      title: ids.length > 1 ? t('notes.deleteMany', { count: ids.length }) : t('notes.deleteTitle'),
-      description: t('notes.deleteDesc'),
-      confirmText: t('common.delete'),
-      danger: true
-    })
-    if (!ok) return false
-    await Promise.all(ids.map((id) => api.notes.trash(id)))
-    const app = useApp.getState()
-    if (app.noteId && ids.includes(app.noteId)) app.openNote(null)
-    refresh()
-    toast(ids.length > 1 ? t('notes.deletedMany', { count: ids.length }) : t('notes.deleted'), {
-      action: {
-        label: t('common.undo'),
-        onClick: () => void Promise.all(ids.map((id) => api.trash.restore('note', id))).then(refresh)
-      }
-    })
-    return true
+    let removed = false
+    if (!ids.length) return false
+    const operationKey = `notes:delete:${[...ids].sort().join(',')}`
+    await withActionLock(ids.map((id) => `note:${id}:delete`), async () => {
+      const ok = await confirm({
+        operationKey,
+        signal,
+        title: ids.length > 1 ? t('notes.deleteMany', { count: ids.length }) : t('notes.deleteTitle'),
+        description: t('notes.deleteDesc'),
+        confirmText: t('common.delete'),
+        danger: true
+      })
+      if (!ok || signal.aborted) return
+      await Promise.all(ids.map((id) => api.notes.trash(id)))
+      const app = useApp.getState()
+      if (app.noteId && ids.includes(app.noteId)) app.openNote(null)
+      refresh()
+      toast(ids.length > 1 ? t('notes.deletedMany', { count: ids.length }) : t('notes.deleted'), {
+        action: {
+          label: t('common.undo'),
+          onClick: () => void Promise.all(ids.map((id) => api.trash.restore('note', id))).then(refresh)
+        }
+      })
+      removed = true
+    }, { signal })
+    return removed
   }
   const update = async (ids: string[], patch: { pinned?: boolean; status?: KnowledgeStatus; aiExcluded?: boolean }): Promise<void> => {
     await Promise.all(ids.map((id) => api.notes.update(id, patch)))
@@ -65,9 +73,9 @@ export function useNoteActions() {
 }
 
 /** 菜单内容：notes 为要操作的笔记（单篇或已选的多篇） */
-export function NoteMenuItems({ notes, onDone }: { notes: NoteSummary[]; onDone?: () => void }) {
+export function NoteMenuItems({ notes, onDone, signal }: { notes: NoteSummary[]; onDone?: () => void; signal: AbortSignal }) {
   const { t } = useTranslation()
-  const { paths, move, remove, update } = useNoteActions()
+  const { paths, move, remove, update } = useNoteActions(signal)
   const ids = notes.map((n) => n.id)
   const one = notes.length === 1 ? notes[0] : null
   const allPinned = notes.every((n) => n.pinned)

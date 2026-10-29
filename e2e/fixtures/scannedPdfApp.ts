@@ -37,6 +37,7 @@ export async function launchScannedPdfApp(directory: string, ocrCache?: string) 
     args: [bootstrap, '--use-mock-keychain', `--user-data-dir=${directory}`],
     env: {
       ...process.env,
+      JIWEI_TEST_MODEL_CACHE_ROOT: modelData,
       ELECTRON_RENDERER_URL: '',
       JIWEI_LANG: 'zh-CN',
       JIWEI_SKIP_ONBOARDING: '1',

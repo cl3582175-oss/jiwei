@@ -1,3 +1,5 @@
+import { Button } from '@/components/ui/shadcn-button'
+import { Input } from '@/components/ui/input'
 import { InputRule } from '@tiptap/core'
 import { useState } from 'react'
 import { NodeViewWrapper, ReactNodeViewRenderer, type NodeViewProps } from '@tiptap/react'
@@ -23,7 +25,7 @@ function MathView({ node, editor, updateAttributes }: NodeViewProps) {
     >
       {editing ? (
         <span className="inline-flex max-w-full flex-wrap items-center gap-1 rounded border border-border bg-paper p-1">
-          <input
+          <Input
             aria-label={t('captureContent.latex')}
             value={latex}
             maxLength={10000}
@@ -39,7 +41,7 @@ function MathView({ node, editor, updateAttributes }: NodeViewProps) {
               }
             }}
           />
-          <button
+          <Button variant="ghost" size="auto"
             type="button"
             disabled={!latex.trim()}
             onClick={() => {
@@ -49,10 +51,10 @@ function MathView({ node, editor, updateAttributes }: NodeViewProps) {
             }}
           >
             {t('captureContent.save')}
-          </button>
-          <button type="button" onClick={() => setEditing(false)}>
+          </Button>
+          <Button variant="ghost" size="auto" type="button" onClick={() => setEditing(false)}>
             {t('captureContent.cancel')}
-          </button>
+          </Button>
         </span>
       ) : (
         <span

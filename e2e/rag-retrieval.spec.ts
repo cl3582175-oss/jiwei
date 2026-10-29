@@ -86,7 +86,8 @@ test('explicit small source sends all15 sections with clickable persisted citati
   await navTo(page, /AI 对话/)
   await page.getByText('请完整阅读指定资料并引用最后一节。', { exact: true }).first().click()
   await page.locator('.cite-chip').first().click()
-  await expect(page.locator('.source-text .is-flash')).toContainText('END-15')
+  await expect(page.locator(`.source-text [data-segment="${segments[14].id}"]`)).toBeVisible()
+  await expect.poll(() => page.evaluate(() => [...(CSS.highlights.get('jw-source-target') ?? [])].map((range) => (range as Range).toString()).join('\n'))).toContain('END-15')
 })
 
 test('follow-up composition is shared with evaluation and used by actual chat retrieval', async () => {

@@ -1,11 +1,12 @@
+import { NativeSelect } from '@/components/ui/native-select'
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Globe, LogIn } from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '@/lib/utils'
 import { useTranslation } from 'react-i18next'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/primitives'
+import { Button } from '@/components/ui/shadcn-button'
+import { Input } from '@/components/ui/shadcn-primitives'
 import { useSettings } from '@/lib/queries'
 import { safetyMessage } from './SafetyProgress'
 import { DomainSchema } from '@shared/browserSafety'
@@ -87,7 +88,7 @@ export function BrowserSafetySettings() {
           <Input value={domain} onChange={(e) => setDomain(e.target.value)} placeholder={t('safety.browser.domainPlaceholder')} aria-label={t('safety.browser.domain')} />
         </label>
         <div className="flex flex-wrap gap-2">
-          <select
+          <NativeSelect
             aria-label={t('safety.browser.mode')}
             value={mode}
             onChange={(e) => setMode(e.target.value as 'direct' | 'proxy')}
@@ -97,7 +98,7 @@ export function BrowserSafetySettings() {
             <option value="proxy" disabled={!network?.proxyAvailable}>
               {t(network?.proxyAvailable ? 'safety.browser.proxy' : 'safety.browser.proxyOff')}
             </option>
-          </select>
+          </NativeSelect>
           <Button variant="primary" disabled={busy || !domain.trim()} type="submit">
             {t('safety.browser.save')}
           </Button>
@@ -105,7 +106,7 @@ export function BrowserSafetySettings() {
         <p className="text-xs leading-relaxed text-muted">{t('safety.browser.ruleHint')}</p>
       </form>
       <Button
-        variant="outline"
+        variant="secondary"
         disabled={busy}
         onClick={() =>
           void act(() =>

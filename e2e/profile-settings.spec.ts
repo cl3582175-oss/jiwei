@@ -23,7 +23,7 @@ async function openProfile(app: ElectronApplication, language = 'zh-CN'): Promis
   await page.keyboard.press('Meta+,')
   await page
     .getByRole('dialog')
-    .getByRole('button', { name: language === 'zh-CN' ? '关于我' : 'About me', exact: true })
+    .getByRole('tab', { name: language === 'zh-CN' ? '关于我' : 'About me', exact: true })
     .click()
   await expect(page.getByRole('textbox', { name: language === 'zh-CN' ? '我是' : 'I am', exact: true })).toBeVisible()
   return page

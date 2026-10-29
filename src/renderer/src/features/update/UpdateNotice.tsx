@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Button } from '@/components/ui/button'
+import { Button } from '@/components/ui/shadcn-button'
 import { api } from '@/lib/utils'
 import { useApp } from '@/store/app'
 import { useUpdates } from './useUpdates'

@@ -68,13 +68,13 @@ async function packages() {
 }
 async function settings() {
   await page.keyboard.press('ControlOrMeta+,')
-  await page.getByRole('button', { name: '插件', exact: true }).click()
+  await page.getByRole('tab', { name: '插件', exact: true }).click()
 }
 async function marketTab() {
-  await page.getByRole('button', { name: '市场', exact: true }).click()
+  await page.getByRole('radio', { name: '市场', exact: true }).click()
 }
 async function installedTab() {
-  await page.getByRole('group', { name: '插件', exact: true }).getByRole('button', { name: '已安装', exact: true }).click()
+  await page.getByRole('radiogroup', { name: '插件', exact: true }).getByRole('radio', { name: '已安装', exact: true }).click()
 }
 function card(name = 'p2-evidence') {
   return page.locator(`[data-catalog-id="${name}@p2-market"]`)
@@ -309,7 +309,7 @@ test('safe README details, system browser link, real pure-text install and regis
   await page.getByLabel('用分析框架').selectOption('p2-evidence:decision')
   await shot('p2-framework')
   await page.keyboard.press('ControlOrMeta+,')
-  await page.getByRole('button', { name: 'AI 任务', exact: true }).click()
+  await page.getByRole('tab', { name: 'AI 任务', exact: true }).click()
   await page.getByRole('button', { name: '市场证据任务', exact: true }).click()
   await expect(page.getByLabel('任务名称')).toHaveValue('市场证据任务')
   await page.getByRole('button', { name: '保存', exact: true }).click()
@@ -357,9 +357,9 @@ test('risky connector focus, config presence/change/clear, disabled MCP and narr
   await detail.getByText('Third-party market · p2-market', { exact: true }).scrollIntoViewIfNeeded()
   await shot('p2-details-top-dark-narrow-english')
   await detail.getByRole('button', { name: 'Close', exact: true }).last().click()
-  const marketButton = page.getByRole('button', { name: 'Marketplace', exact: true })
+  const marketButton = page.getByRole('radio', { name: 'Marketplace', exact: true })
   await marketButton.click()
-  await expect(marketButton).toHaveAttribute('aria-pressed', 'true')
+  await expect(marketButton).toHaveAttribute('aria-checked', 'true')
   await expect(page.getByTestId('plugin-marketplace')).toBeVisible()
   await shot('p2-market-dark-narrow-english')
   await card().scrollIntoViewIfNeeded()

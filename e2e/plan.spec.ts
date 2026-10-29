@@ -4,6 +4,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import { createServer, type Server } from 'http'
 import { navTo } from './fixtures/nav'
+import { writeOpenAiCompletion } from './fixtures/openaiResponse'
 
 test.describe.configure({ mode: 'serial' })
 let app: ElectronApplication, page: Page
@@ -25,7 +26,7 @@ test.beforeAll(async () => {
           const date = (d: Date): string => [d.getFullYear(), String(d.getMonth()+1).padStart(2,'0'), String(d.getDate()).padStart(2,'0')].join('-')
           args = { phases: [{ title: '概率基础', start: date(first), end: date(new Date(context.options.targetAt)), objective: '掌握概率分布并练习' }], milestones: [{ title: '完成练习', date: date(new Date(context.options.targetAt)) }], sessions: [0,1,2].map((i) => {const d=new Date(first);d.setDate(d.getDate()+i);return {date:date(d), time:'10:00',minutes:60,title:'概率练习 '+(i+1),phase:0}}), tradeoffs: context.lag ? '把未完成练习分配到剩余时段，优先基础。' : '每天练习一小时，避开外部讨论。' }
         }
-        res.writeHead(200, {'content-type':'application/json'}).end(JSON.stringify({ id:'controlled', object:'chat.completion', created:1, model:'deepseek-flash', choices:[{index:0,message:{role:'assistant',content:null,tool_calls:[{id:'submit',type:'function',function:{name:'submit',arguments:JSON.stringify(args)}}]},finish_reason:'tool_calls'}],usage:{prompt_tokens:1000,completion_tokens:300,total_tokens:1300} }))
+        writeOpenAiCompletion(res, { id:'controlled', object:'chat.completion', created:1, model:'deepseek-flash', choices:[{index:0,message:{role:'assistant',content:null,tool_calls:[{id:'submit',type:'function',function:{name:'submit',arguments:JSON.stringify(args)}}]},finish_reason:'tool_calls'}],usage:{prompt_tokens:1000,completion_tokens:300,total_tokens:1300} }, !!input.stream)
       }); return
     }
     // Node 将请求头按 latin1 解码；Electron 默认 UA 包含中文应用名，先还原线上 UTF-8 字节。
@@ -64,9 +65,9 @@ test('P1 方向表单、日历导航、每周投入持久化', async () => {
   expect(goals[0]).toMatchObject({ title: '学习概率统计', kind: 'exam', weeklyMinutes: 180 })
   await navTo(page, /^日历/)
   await expect(page.getByTestId('calendar-view')).toBeVisible()
-  await page.getByRole('button', { name: '月视图' }).click()
+  await page.getByRole('radio', { name: '月视图' }).click()
   await expect(page.getByTestId('calendar-month')).toBeVisible()
-  await page.getByRole('button', { name: '周视图' }).click()
+  await page.getByRole('radio', { name: '周视图' }).click()
 })
 
 test('P1 拖选创建、拖动改期、完成日程与今日安排', async () => {

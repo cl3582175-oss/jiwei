@@ -215,14 +215,15 @@ test('P7 二十四类组件的浅深主题、窄面板、确认和笔记截图',
     (id) => window.jiwei.segments.list(id).then((ss) => ss.find((s) => s.text.includes('真实产品路径'))!.id),
     sourceId
   )
-  await page.evaluate(async () => {
-    await window.jiwei.plan.eventSave({
+  const galleryPlan = await page.evaluate(async () => {
+    const event = await window.jiwei.plan.eventSave({
       kind: 'event',
       title: '已有：项目讨论',
       startAt: new Date('2026-10-27T19:00').getTime(),
       endAt: new Date('2026-10-27T20:00').getTime()
     })
-    await window.jiwei.actions.create('已有：检查交付证据', new Date().setHours(0, 0, 0, 0))
+    const action = await window.jiwei.actions.create('已有：检查交付证据', new Date().setHours(0, 0, 0, 0))
+    return { eventId: event.id, actionId: action.id }
   })
   await navTo(page, /AI 对话/)
   const nodes: Record<string, unknown> = {
@@ -321,7 +322,9 @@ test('P7 二十四类组件的浅深主题、窄面板、确认和笔记截图',
     await expect(page.locator('html')).toHaveAttribute('data-theme', theme)
     for (const { type } of UI_TYPES) {
       await ask(`审查截图 ${theme} ${type}`, fence({ ...(nodes[type] as object), title: `${type} · 智能界面` }))
-      await expect(page.locator('main .paper.whitespace-pre-wrap').last()).toHaveText(`审查截图 ${theme} ${type}`)
+      await expect(page.locator('main [data-slot="message"][data-align="end"] [data-slot="bubble-content"]').last()).toHaveText(
+        `审查截图 ${theme} ${type}`
+      )
       await expect(block()).toHaveAttribute('data-ui-type', type)
       await done()
       // 围栏闭合早于回答 done；等消息结束，避免截取 Streamdown 正在替换的流式 DOM。
@@ -344,6 +347,11 @@ test('P7 二十四类组件的浅深主题、窄面板、确认和笔记截图',
     }
   }
   expect(captured).toHaveLength(48)
+  // The gallery shares an app with later behavior tests. Remove only its own planning fixtures.
+  await page.evaluate(async ({ eventId, actionId }) => {
+    await window.jiwei.plan.eventRemove(eventId)
+    await window.jiwei.actions.remove(actionId)
+  }, galleryPlan)
   await page.evaluate(() => window.jiwei.settings.set({ theme: 'light' }))
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1000, 900))
   await expect(page.getByTestId('sidebar-chat')).toHaveAttribute('data-collapsed', 'true')

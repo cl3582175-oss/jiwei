@@ -1,9 +1,11 @@
-import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
+import { test, expect, type ElectronApplication, type Page } from '@playwright/test'
 import type { Server } from 'http'
-import { mkdtempSync, writeFileSync } from 'fs'
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { clickInPage as clickOf, inPage as inPageOf, pageAction as actionOf, startSite } from './fixtures/browserPage'
+import { isolatedElectron as electron } from './fixtures/isolateElectron'
+import { prepareEmbeddingInstallCache } from './fixtures/embeddingCache'
 
 // 内置浏览器（v0.6.0）：打开网页、相关笔记旁注、网页中的选区浮条（真实鼠标点击）→ 存为资料 → 高亮 / 批注 / 就地提问，
 // 弹出层盖住网页时暂停显示、下载自动导入资料库、敏感页面关闭 AI、AI 面板带上当前网页。
@@ -13,11 +15,15 @@ let app: ElectronApplication
 let page: Page
 let server: Server
 let base = ''
+let modelRoot = ''
 const shots = process.env.SHOTS_DIR
 const downloads = mkdtempSync(join(tmpdir(), 'jiwei-e2e-dl-'))
 
 test.beforeAll(async () => {
   ;({ server, base } = await startSite())
+  modelRoot = process.env.JIWEI_E2E_EMBEDDING_ARTIFACTS
+    ? await prepareEmbeddingInstallCache(process.env.JIWEI_E2E_EMBEDDING_ARTIFACTS)
+    : mkdtempSync(join(tmpdir(), 'jiwei-browser-model-cache-'))
   app = await electron.launch({
     args: ['.', `--user-data-dir=${mkdtempSync(join(tmpdir(), 'jiwei-e2e-browser-'))}`],
     env: {
@@ -25,6 +31,7 @@ test.beforeAll(async () => {
       JIWEI_LANG: 'zh-CN',
       JIWEI_SKIP_ONBOARDING: '1',
       JIWEI_IMPORT_PROVIDERS_FROM: '',
+      JIWEI_TEST_MODEL_CACHE_ROOT: modelRoot,
       JIWEI_DOWNLOAD_DIR: downloads,
       JIWEI_TEST_LOGIN_BLOCK_HOSTS: '127.0.0.1'
     }
@@ -38,6 +45,7 @@ test.beforeAll(async () => {
 test.afterAll(async () => {
   await app?.close()
   server?.close()
+  if (modelRoot) rmSync(modelRoot, { recursive: true, force: true })
 })
 
 const inPage = <T>(code: string): Promise<T> => inPageOf<T>(app, code)
@@ -45,10 +53,20 @@ const clickInPage = (x: number, y: number): Promise<void> => clickOf(app, x, y)
 const pageAction = (text: string, action: string): Promise<void> => actionOf(app, text, action)
 
 const tabs = () => page.evaluate(() => window.jiwei.browser.state())
+const runtimeDirectories = () => {
+  const models = join(modelRoot, 'jiwei-models')
+  return existsSync(models) ? readdirSync(models).filter((name) => /^llama-b11491-(metal|cpu|vulkan|cuda12|cuda13)$/.test(name)) : []
+}
 
 test('a note to relate to; the browser opens beside it with a start page', async () => {
   test.setTimeout(300_000)
+  expect(runtimeDirectories()).toHaveLength(0)
   await page.evaluate(() => window.jiwei.embedding.installLocal())
+  const runtimes = runtimeDirectories()
+  expect(runtimes).toHaveLength(1)
+  const receipt = JSON.parse(readFileSync(join(modelRoot, 'jiwei-models', runtimes[0], 'runtime.json'), 'utf8'))
+  expect(receipt.build).toBe('b11491')
+  expect(receipt.archives.length).toBeGreaterThan(0)
   await page.keyboard.press('ControlOrMeta+n')
   await page.getByPlaceholder('笔记标题').fill('间隔重复')
   await page.keyboard.press('Enter')

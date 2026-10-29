@@ -5,6 +5,7 @@ import { join, dirname } from 'path'
 import { createServer, type Server } from 'http'
 import JSZip from 'jszip'
 import { navTo } from './fixtures/nav'
+import { writeOpenAiCompletion } from './fixtures/openaiResponse'
 
 test.describe.configure({ mode: 'serial' })
 let app: ElectronApplication, page: Page, server: Server, root: string, source: string, userData: string, harness: string
@@ -97,7 +98,7 @@ async function start() {
 }
 async function settings(tab = '插件') {
   await page.keyboard.press('ControlOrMeta+,')
-  await page.getByRole('button', { name: tab, exact: true }).click()
+  await page.getByRole('tab', { name: tab, exact: true }).click()
   if (tab === '插件') await installedTab()
 }
 async function picker(path: string) {
@@ -120,7 +121,7 @@ async function manage() {
   return page.getByTestId('plugin-details')
 }
 async function installedTab() {
-  await page.getByRole('group', { name: '插件', exact: true }).getByRole('button', { name: '已安装', exact: true }).click()
+  await page.getByRole('radiogroup', { name: '插件', exact: true }).getByRole('radio', { name: '已安装', exact: true }).click()
 }
 test.beforeAll(async () => {
   root = mkdtempSync(join(tmpdir(), 'jiwei-b2-e2e-'))
@@ -182,26 +183,24 @@ test.beforeAll(async () => {
                 { title: '结论与局限', points: ['不确定性'], sources: [] }
               ]
             }
-      res.writeHead(200, { 'content-type': 'application/json' }).end(
-        JSON.stringify({
-          id: 'controlled',
-          object: 'chat.completion',
-          created: 1,
-          model: 'deepseek-flash',
-          choices: [
-            {
-              index: 0,
-              message: {
-                role: 'assistant',
-                content: null,
-                tool_calls: [{ id: 'submit', type: 'function', function: { name: 'submit', arguments: JSON.stringify(reply) } }]
-              },
-              finish_reason: 'tool_calls'
-            }
-          ],
-          usage: { prompt_tokens: 500, completion_tokens: 300, total_tokens: 800 }
-        })
-      )
+      writeOpenAiCompletion(res, {
+        id: 'controlled',
+        object: 'chat.completion',
+        created: 1,
+        model: 'deepseek-flash',
+        choices: [
+          {
+            index: 0,
+            message: {
+              role: 'assistant',
+              content: null,
+              tool_calls: [{ id: 'submit', type: 'function', function: { name: 'submit', arguments: JSON.stringify(reply) } }]
+            },
+            finish_reason: 'tool_calls'
+          }
+        ],
+        usage: { prompt_tokens: 500, completion_tokens: 300, total_tokens: 800 }
+      }, !!input.stream)
     })
   })
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r))
@@ -253,11 +252,11 @@ test('folder picker -> real preview token -> confirmation, cancellation and actu
   expect(data.lenses.some((x) => x.id === 'b2-fixture:evidence')).toBe(true)
   expect(data.feeds.map((x) => x.title)).toEqual(['自编信息源'])
   expect(data.recipes.some((x) => x.id === 'b2-fixture:review')).toBe(true)
-  await page.getByRole('button', { name: '技能', exact: true }).click()
+  await page.getByRole('tab', { name: '技能', exact: true }).click()
   await expect(page.getByText('b2-fixture:read', { exact: true }).first()).toBeVisible()
   await page.getByRole('button', { name: '自编产品插件', exact: true }).first().click()
   await expect(pluginCard()).toBeVisible()
-  await page.getByRole('button', { name: '视角', exact: true }).click()
+  await page.getByRole('tab', { name: '视角', exact: true }).click()
   const lens = page.getByTestId('lens-settings').locator('article').filter({ hasText: '自编证据视角' })
   await expect(lens).toBeVisible()
   await expect(lens.getByRole('button', { name: /编辑|删除|移除/ })).toHaveCount(0)
@@ -384,7 +383,7 @@ test('capability update needs high-risk confirmation, safe focus, presence-only 
   await expect(details).toContainText('已设置')
   await expect(details.getByLabel('合成凭证')).toHaveValue('')
   await page.keyboard.press('Escape')
-  await page.getByRole('button', { name: '连接', exact: true }).click()
+  await page.getByRole('tab', { name: '连接', exact: true }).click()
   const connector = page.getByTestId('mcp-server').filter({ hasText: 'fixture-connector' })
   await expect(connector).toBeVisible()
   await expect(connector.getByRole('switch')).not.toBeChecked()

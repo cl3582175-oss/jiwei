@@ -223,7 +223,7 @@ test('备份、恢复码、迁移与浏览器：两种尺寸 × 浅深主题逐�
         env = await startSafetyApp({ userData: currentUserData, env: { JIWEI_TEST_LOGIN_BLOCK_HOSTS: '127.0.0.1' } })
         await env.app.evaluate(({ BrowserWindow }, size) => BrowserWindow.getAllWindows()[0].setSize(size[0], size[1]), [width, height])
         await settingsData(env)
-        await env.page.getByRole('dialog').getByRole('button', { name: '浏览器', exact: true }).click()
+        await env.page.getByRole('dialog').getByRole('tab', { name: '浏览器', exact: true }).click()
         await env.page.getByRole('button', { name: 'bilibili（含视频 CDN）设为直连', exact: true }).click()
         await expect(env.page.getByTestId('browser-safety-settings')).toContainText('bilivideo.com')
         await capture(`${prefix}-10-website-network`, env.page.getByTestId('browser-safety-settings'))

@@ -6,6 +6,7 @@ import { validContext, type ModelCaps } from '@shared/ai'
 import { Button } from '@/components/ui/button'
 import { Input, Tip } from '@/components/ui/primitives'
 import { cn } from '@/lib/utils'
+import { ContextTag, ContextUsage } from '@/components/ai-elements/context'
 
 const label = (value: number): string => (value >= 1_000_000 ? `${+(value / 1_000_000).toFixed(2)}M` : `${+(value / 1000).toFixed(1)}K`)
 
@@ -29,16 +30,18 @@ export function ContextChip({ model, caps, onSave }: { model: string; caps: Mode
     >
       <Tip label={t('ai.caps.contextHelp')}>
         <Popover.Trigger asChild>
-          <button
-            aria-label={`${model} ${t('ai.caps.context')}`}
-            className={cn(
-              'inline-flex h-6 items-center gap-1 rounded-full px-2 text-2xs text-muted hover:bg-sunken [&_svg]:size-3',
-              caps.contextSource === 'manual' && 'ring-1 ring-accent/40'
-            )}
-          >
-            <TextCursorInput />
-            {t('ai.caps.context')} {label(caps.context)}（{source}）
-          </button>
+          <ContextTag asChild>
+            <button
+              aria-label={`${model} ${t('ai.caps.context')}`}
+              className={cn(
+                'inline-flex h-6 items-center gap-1 rounded-full px-2 text-2xs text-muted hover:bg-sunken [&_svg]:size-3',
+                caps.contextSource === 'manual' && 'ring-1 ring-accent/40'
+              )}
+            >
+              <TextCursorInput />
+              {t('ai.caps.context')} {label(caps.context)}（{source}）
+            </button>
+          </ContextTag>
         </Popover.Trigger>
       </Tip>
       <Popover.Portal>
@@ -74,12 +77,12 @@ export function ContextChip({ model, caps, onSave }: { model: string; caps: Mode
           <Button variant="ghost" size="sm" className="mt-2" onClick={() => save(undefined)}>
             {t('ai.caps.contextAuto')}
           </Button>
-          <p className="mt-1 text-2xs text-subtle">
+          <ContextUsage className="mt-1 block">
             {t('ai.caps.contextAutomatic', {
               value: label(caps.auto.context),
               source: t(`ai.caps.contextSource.${caps.auto.contextSource}`)
             })}
-          </p>
+          </ContextUsage>
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>

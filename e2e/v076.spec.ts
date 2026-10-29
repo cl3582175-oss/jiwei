@@ -4,6 +4,7 @@ import { mkdtempSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { navTo } from './fixtures/nav'
+import { writeOpenAiCompletion } from './fixtures/openaiResponse'
 
 // v0.7.6：知识库看得见（依据折叠、索引状态）、资料记笔记起始页、范围先问（选择题）与整份资料后台整理、
 // 笔记列表菜单 / 多选 / 拖到分类、复习卡片库与自选复习、费曼练习首页。
@@ -49,10 +50,26 @@ test.beforeAll(async () => {
     let body = ''
     req.on('data', (c) => (body += c))
     req.on('end', () => {
-      const input = JSON.parse(body || '{}') as { stream?: boolean; messages: Msg[] }
+      const input = JSON.parse(body || '{}') as { stream?: boolean; messages: Msg[]; tools?: { function: { name: string } }[] }
       const system = textOf(input.messages.find((m) => m.role === 'system')?.content)
       const usage = { prompt_tokens: 3000, completion_tokens: 300, total_tokens: 3300 }
-      if (!input.stream) {
+      // Digest map requests use Markdown text, before the structured outline reduce step.
+      if (system.includes('每行写 - 要点 {片段ID}')) {
+        const prompt = textOf(input.messages.filter((m) => m.role === 'user').at(-1)?.content)
+        const ids = [...prompt.matchAll(/\[([0-9a-f-]{36})/g)].map((m) => m[1])
+        if (!ids.length) return void res.writeHead(422).end('Digest fixture expected source segment IDs')
+        const content = `# 学习方法\n- 间隔重复在快要遗忘时复习 {${ids[0]}}\n- 提取练习比重读有效 {${ids[1] ?? ids[0]}}`
+        writeOpenAiCompletion(res, {
+          id: 'digest-points',
+          object: 'chat.completion',
+          created: 1,
+          model: 'deepseek-flash',
+          choices: [{ index: 0, message: { role: 'assistant', content }, finish_reason: 'stop' }],
+          usage
+        }, !!input.stream)
+        return
+      }
+      if (input.tools?.some((tool) => tool.function.name === 'submit')) {
         const prompt = textOf(input.messages.filter((m) => m.role === 'user').at(-1)?.content)
         const ids = [...prompt.matchAll(/\[([0-9a-f-]{36})/g)].map((m) => m[1])
         const id = ids[0] ?? /\{([0-9a-f-]{36})\}/.exec(prompt)?.[1] ?? ''
@@ -72,48 +89,44 @@ test.beforeAll(async () => {
                 ]
               }
             : {}
-        const call = { id: 's', type: 'function', function: { name: 'submit', arguments: JSON.stringify(args) } }
-        res.writeHead(200, { 'content-type': 'application/json' }).end(
-          JSON.stringify({
-            id: 'r',
-            object: 'chat.completion',
-            created: 1,
-            model: 'deepseek-flash',
-            choices: [{ index: 0, message: { role: 'assistant', content: null, tool_calls: [call] }, finish_reason: 'tool_calls' }],
-            usage
-          })
-        )
+        const call = { id: 's', type: 'function' as const, function: { name: 'submit', arguments: JSON.stringify(args) } }
+        writeOpenAiCompletion(res, {
+          id: 'r',
+          object: 'chat.completion',
+          created: 1,
+          model: 'deepseek-flash',
+          choices: [{ index: 0, message: { role: 'assistant', content: null, tool_calls: [call] }, finish_reason: 'tool_calls' }],
+          usage
+        }, !!input.stream)
         return
       }
       const lastUser = textOf(input.messages.filter((m) => m.role === 'user').at(-1)?.content)
       seen.push({ lastUser, tools: calledSince(input.messages) })
       const next = script(input.messages)
-      const chunk = (delta: unknown, finish: string | null, u?: unknown) =>
-        `data: ${JSON.stringify({ id: 'c', object: 'chat.completion.chunk', created: 1, model: 'deepseek-flash', choices: [{ index: 0, delta, finish_reason: finish }], ...(u ? { usage: u } : {}) })}\n\n`
-      res.writeHead(200, { 'content-type': 'text/event-stream' })
-      if (next.call) {
-        res.write(
-          chunk(
-            {
+      writeOpenAiCompletion(res, {
+        id: 'c',
+        object: 'chat.completion',
+        created: 1,
+        model: 'deepseek-flash',
+        choices: [{
+          index: 0,
+          message: next.call
+            ? {
               role: 'assistant',
+              content: null,
               tool_calls: [
                 {
-                  index: 0,
                   id: `call_${Date.now()}`,
                   type: 'function',
                   function: { name: next.call.name, arguments: JSON.stringify(next.call.args) }
                 }
               ]
-            },
-            null
-          )
-        )
-        res.write(chunk({}, 'tool_calls', usage))
-      } else {
-        res.write(chunk({ role: 'assistant', content: next.text }, null))
-        res.write(chunk({}, 'stop', usage))
-      }
-      res.end('data: [DONE]\n\n')
+            }
+            : { role: 'assistant', content: next.text ?? null },
+          finish_reason: next.call ? 'tool_calls' : 'stop'
+        }],
+        usage
+      }, !!input.stream)
     })
   })
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r))
@@ -133,7 +146,7 @@ test.beforeAll(async () => {
       '# 学习方法',
       ...Array.from(
         { length: 60 },
-        (_, i) => `第 ${i + 1} 段：间隔重复与提取练习是两种被反复验证的学习方法，交错练习也能帮助区分相似的问题，编号 ${i + 1}。`
+        (_, i) => `第 ${i + 1} 段：间隔重复与提取练习是两种被反复验证的学习方法，交错练习也能帮助区分相似的问题，编号 ${i + 1}。`.repeat(8)
       )
     ].join('\n\n')
   )

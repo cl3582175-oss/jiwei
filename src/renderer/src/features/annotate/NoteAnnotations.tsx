@@ -1,10 +1,11 @@
+import { Button } from '@/components/ui/shadcn-button'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { Editor } from '@tiptap/react'
 import { MessageSquarePlus, MessageSquare, CircleHelp } from 'lucide-react'
 import type { Annotation } from '@shared/types'
 import { cn } from '@/lib/utils'
-import { Tip } from '@/components/ui/primitives'
+import { Tip } from '@/components/ui/shadcn-primitives'
 import { annotate, useAnnotate, useAnnotations } from './store'
 import { SWATCH } from './AnnotationCard'
 
@@ -102,7 +103,7 @@ export function NoteAnnotations({ noteId, editor, wrapper }: { noteId: string; e
         <div key={p.ownerId} className="note-anno-bubble pointer-events-auto absolute right-0 flex flex-col gap-1" style={{ top: p.top + 2 }}>
           {p.list.map((a) => (
             <Tip key={a.id} label={a.body || t('annotate.emptyComment')} side="left">
-              <button
+              <Button variant="ghost" size="auto"
                 aria-label={t('annotate.open', { text: (a.body ?? '').slice(0, 40) })}
                 data-annotation={a.id}
                 onClick={(e) => open(a, e.currentTarget)}
@@ -113,7 +114,7 @@ export function NoteAnnotations({ noteId, editor, wrapper }: { noteId: string; e
                 style={{ borderColor: a.color ? SWATCH[a.color] : undefined }}
               >
                 {a.motivation === 'questioning' ? <CircleHelp /> : <MessageSquare />}
-              </button>
+              </Button>
             </Tip>
           ))}
         </div>
@@ -121,14 +122,14 @@ export function NoteAnnotations({ noteId, editor, wrapper }: { noteId: string; e
       {hover && !busy.has(hover.ownerId) && (
         <div className="note-anno-bubble pointer-events-auto absolute right-0" style={{ top: hover.top + 2 }}>
           <Tip label={t('annotate.addToParagraph')} side="left">
-            <button
+            <Button variant="ghost" size="auto"
               aria-label={t('annotate.addToParagraph')}
               onMouseDown={(e) => e.preventDefault()}
               onClick={(e) => add(hover, e.currentTarget)}
               className="grid size-6 place-items-center rounded-full text-subtle transition-colors hover:bg-surface-hover hover:text-accent [&_svg]:size-3.5"
             >
               <MessageSquarePlus />
-            </button>
+            </Button>
           </Tip>
         </div>
       )}

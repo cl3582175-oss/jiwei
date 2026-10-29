@@ -97,6 +97,8 @@ const MIGRATIONS: string[] = [
    CREATE INDEX skill_feedback_project ON skill_feedback(project_id, kind, skill);`
 ]
 
+export const PROFILE_LEGACY_VERSION = MIGRATIONS.length
+
 export const profileDbPath = (): string => join(app.getPath('userData'), 'profile', 'memory.db')
 
 export function profileDb(): Database.Database {

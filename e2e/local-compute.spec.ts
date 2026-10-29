@@ -18,7 +18,7 @@ function save(name: string, value: unknown) {
 
 async function openComputeSettings(page: Page) {
   await page.keyboard.press(process.platform === 'darwin' ? 'Meta+,' : 'Control+,')
-  await page.getByRole('button', { name: 'AI 模型', exact: true }).click()
+  await page.getByRole('tab', { name: 'AI 模型', exact: true }).click()
   const section = page.getByTestId('local-compute-settings')
   await expect(section).toBeVisible()
   await section.scrollIntoViewIfNeeded()

@@ -111,9 +111,15 @@ test('text source: highlight, comment, question', async () => {
 test('click a highlight: card to recolour, delete and undo', async () => {
   // 点在高亮上
   const box = await page.evaluate(() => {
-    const r = [...(CSS.highlights.get('jw-question') as Set<Range>)][0].getBoundingClientRect()
-    return { x: r.left + r.width / 2, y: r.top + r.height / 2 }
+    const range = [...(CSS.highlights.get('jw-question') as Set<Range>)][0]
+    // Wrapped text has separate painted rectangles; its union can include an unhighlighted gap.
+    const r = [...range.getClientRects()].find((rect) => rect.width > 0 && rect.height > 0)!
+    const x = r.left + r.width / 2, y = r.top + r.height / 2
+    const rects = [...range.getClientRects()].map((rect) => ({ left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom }))
+    return { x, y, rects, hitsHighlight: rects.some((rect) => x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) }
   })
+  await test.info().attach('highlight-hit-geometry', { body: JSON.stringify(box), contentType: 'application/json' })
+  expect(box.hitsHighlight, 'the pointer must land on a painted highlight fragment').toBe(true)
   await page.mouse.click(box.x, box.y)
   await expect(card()).toBeVisible()
   await expect(card().getByRole('textbox')).toHaveValue('交错练习为什么有效？')

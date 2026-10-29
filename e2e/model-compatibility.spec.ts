@@ -152,7 +152,7 @@ async function expectCollapsedLevels(labels: string[], root: Page | Locator = pa
 }
 async function choose(model: string, root: Page | Locator = page) {
   await root.getByRole('button', { name: /^(模型|Model)$/ }).click()
-  await page.getByRole('menuitem', { name: model, exact: true }).click()
+  await page.getByRole('option', { name: model, exact: true }).click()
 }
 async function hold(enabled: boolean) {
   await app.evaluate((_electron, enabled) => {
@@ -201,7 +201,7 @@ test('all four effort pickers follow the model, including default states and nar
   await page.keyboard.press('ControlOrMeta+j')
   await page.keyboard.press('ControlOrMeta+,')
   const dialog = page.getByRole('dialog')
-  await dialog.getByRole('button', { name: 'AI 模型', exact: true }).click()
+  await dialog.getByRole('tab', { name: 'AI 模型', exact: true }).click()
   await expect(group(dialog).getByRole('radio')).toHaveCount(6)
   await choose('gpt-6-astra', dialog)
   await expect(group(dialog).getByRole('radio')).toHaveCount(5)
@@ -365,11 +365,15 @@ test('inline clarification keeps new preferences while explanation asks for the 
     })
     const previous = (await wire()).length
     const previousThreads = (await page.evaluate((id) => window.jiwei.chat.threads(id), seed.assistantMessageId)).map((t) => t.id)
+    await hold(true)
     await page.getByRole('toolbar').getByRole('button', { name: action, exact: true }).click()
     const card = page.getByRole('dialog', { name: '就地答复' })
     await expect(card).toBeVisible()
     await expect.poll(async () => (await wire()).length).toBe(previous + 1)
     expect((await wire()).at(-1)!.body.reasoning).toEqual({ effort: wireEffort })
+    await expect(card.locator('.chat-md').last()).toContainText('这是一段用于快捷提问的公开回答。')
+    await expect(card.locator('[data-slot="message-footer"]')).toHaveCount(0)
+    await hold(false)
     const threads = await page.evaluate((id) => window.jiwei.chat.threads(id), seed.assistantMessageId)
     const thread = threads.find((t) => !previousThreads.includes(t.id))!
     await expect.poll(async () => (await lastAssistant(thread.id)).status).toBe('done')

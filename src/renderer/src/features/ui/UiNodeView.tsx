@@ -16,6 +16,9 @@ import { CalcNode } from './nodes/Calc'
 import { openCitation } from '@/features/chat/MessageItem'
 import { cn } from '@/lib/utils'
 import { UiTypeIcon } from './typeIcon'
+import { InlineCitation } from '@/components/ai-elements/inline-citation'
+import { Plan, Task } from '@/components/ai-elements/plan'
+import { Trace, TraceContent, TraceTrigger } from '@/components/ai-elements/trace'
 
 export function estimateHeight(type?: string, value: Record<string, unknown> = {}): number {
   const count = (key: string, min = 0) => Math.max(min, Array.isArray(value[key]) ? value[key].length : 0)
@@ -64,15 +67,16 @@ export function UiNodeView(props: ViewProps) {
           {[...new Set(refs)].map((n) => {
             const citation = citations.find((c) => c.n === n)
             return citation ? (
-              <button
+              <InlineCitation
                 key={n}
                 className="cite-chip"
                 aria-label={`[${n}] ${citation.title}`}
                 title={citation.title}
+                preview={citation.snippet}
                 onClick={() => runOutside(() => openCitation(citation, ctx.conversationId))}
               >
                 {n}
-              </button>
+              </InlineCitation>
             ) : (
               <sup key={n} className="text-2xs text-subtle">
                 [{n}]
@@ -190,31 +194,40 @@ function UiContent({ node, uiKey, ctx, partial = false }: ViewProps) {
       return <ListNode node={node} uiKey={uiKey} ctx={ctx} disabled={disabled} />
     case 'steps':
       return (
-        <ol className="ui-steps ui-plain-list px-4 py-3">
-          {(node.items ?? []).map((item, i) => {
-            const state = node.current === undefined ? 'todo' : i < node.current ? 'done' : i === node.current ? 'current' : 'todo'
-            const head = (
-              <>
-                <span className="ui-step-dot" aria-hidden="true">
-                  {i + 1}
-                </span>
-                <span className="min-w-0 pt-0.5 text-sm">{item.title}</span>
-              </>
-            )
-            return (
-              <li key={i} className="ui-step" data-state={state} aria-current={state === 'current' ? 'step' : undefined}>
-                {item.detail ? (
-                  <details>
-                    <summary className="ui-step-head">{head}</summary>
-                    <p className="ui-step-detail">{item.detail}</p>
-                  </details>
-                ) : (
-                  <div className="ui-step-head">{head}</div>
-                )}
-              </li>
-            )
-          })}
-        </ol>
+        <Plan>
+          <ol className="ui-steps ui-plain-list px-4 py-3">
+            {(node.items ?? []).map((item, i) => {
+              const state = node.current === undefined ? 'todo' : i < node.current ? 'done' : i === node.current ? 'current' : 'todo'
+              const head = (
+                <>
+                  <span className="ui-step-dot" aria-hidden="true">
+                    {i + 1}
+                  </span>
+                  <span className="min-w-0 pt-0.5 text-sm">{item.title}</span>
+                </>
+              )
+              return (
+                <Task asChild key={i} state={state === 'current' ? 'running' : state} className="border-0 bg-transparent p-0">
+                  <li className="ui-step" data-state={state} aria-current={state === 'current' ? 'step' : undefined}>
+                    {item.detail ? (
+                      <Trace>
+                        <TraceTrigger
+                          className="px-0 [&_[data-slot=marker-icon]]:size-6"
+                          icon={<span className="ui-step-dot">{i + 1}</span>}
+                        >
+                          <span className={cn('text-sm', state === 'current' && 'font-semibold')}>{item.title}</span>
+                        </TraceTrigger>
+                        <TraceContent>{item.detail}</TraceContent>
+                      </Trace>
+                    ) : (
+                      <div className="ui-step-head">{head}</div>
+                    )}
+                  </li>
+                </Task>
+              )
+            })}
+          </ol>
+        </Plan>
       )
     case 'chart':
       return (

@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { Confirmation, ConfirmationTitle, ConfirmationActions } from '@/components/ai-elements/confirmation'
+import { Button } from '@/components/ui/button'
 
 export const uiAction = 'rounded-lg border border-border px-3 py-1.5 text-xs hover:bg-sunken disabled:opacity-40'
 
@@ -24,8 +26,8 @@ export function ConfirmSheet({
     [busy, setBusy] = useState(false),
     [error, setError] = useState('')
   return (
-    <div data-testid="ui-confirm" className="m-3 rounded-lg border border-accent/30 bg-accent/5 p-3">
-      <p className="text-sm font-medium">{t('ui.confirm.title')}</p>
+    <Confirmation data-testid="ui-confirm" className="m-3" aria-label={t('ui.confirm.title')}>
+      <ConfirmationTitle>{t('ui.confirm.title')}</ConfirmationTitle>
       <p className="mt-1 text-xs text-muted">{target}</p>
       <ul className="my-3 space-y-2">
         {items.map((item) => (
@@ -58,9 +60,10 @@ export function ConfirmSheet({
           {error}
         </p>
       )}
-      <div className="flex gap-2">
-        <button
-          className="rounded-lg bg-accent px-3 py-1.5 text-xs text-accent-fg disabled:opacity-40"
+      <ConfirmationActions>
+        <Button
+          size="sm"
+          variant="primary"
           disabled={busy || !selected.size}
           onClick={() => {
             setBusy(true)
@@ -71,11 +74,11 @@ export function ConfirmSheet({
           }}
         >
           {t('ui.confirm.ok')}
-        </button>
-        <button disabled={busy} className="rounded-lg border border-border px-3 py-1.5 text-xs" onClick={onCancel}>
+        </Button>
+        <Button size="sm" variant="outline" disabled={busy} onClick={onCancel}>
           {t('ui.confirm.cancel')}
-        </button>
-      </div>
-    </div>
+        </Button>
+      </ConfirmationActions>
+    </Confirmation>
   )
 }

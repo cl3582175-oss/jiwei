@@ -190,7 +190,7 @@ test('upgrade switch persists and all readiness surfaces render in Chinese/Engli
       await expect(page.getByTestId('chat-readiness')).toContainText(text.readyScanAll)
       await shot(`p5-chat-${language}-${theme}`)
       await page.keyboard.press(process.platform === 'darwin' ? 'Meta+,' : 'Control+,')
-      await page.getByRole('button', { name: /^AI 模型$|^AI models$/i }).click()
+      await page.getByRole('tab', { name: /^AI 模型$|^AI models$/i }).click()
       await page.getByText(text.readyUpgradeTitle, { exact: true }).scrollIntoViewIfNeeded()
       const toggle = page.getByRole('switch', { name: text.readyUpgradeToggle })
       await expect(toggle).not.toBeChecked()
@@ -263,7 +263,7 @@ test('cloud dimension failure displays exact actionable bilingual error without 
     await page.reload()
     await page.waitForSelector('nav')
     await page.keyboard.press(process.platform === 'darwin' ? 'Meta+,' : 'Control+,')
-    await page.getByRole('button', { name: /^AI 模型$|^AI models$/i }).click()
+    await page.getByRole('tab', { name: /^AI 模型$|^AI models$/i }).click()
     const error = page.getByRole('alert').filter({ hasText: '768' })
     await expect(error).toContainText(
       language === 'zh-CN'

@@ -1,10 +1,10 @@
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { create } from 'zustand'
 import { PanelLeftClose, PanelLeftOpen, Pin } from 'lucide-react'
 import { useSettings, useUpdateSettings } from '@/lib/queries'
-import { Button } from '@/components/ui/button'
-import { Tip } from '@/components/ui/primitives'
+import { Button } from '@/components/ui/shadcn-button'
+import { Tip } from '@/components/ui/shadcn-primitives'
 import { cn, modKey } from '@/lib/utils'
 import type { SidebarPage } from '@shared/types'
 
@@ -21,7 +21,7 @@ const MIN_WIDTH = 220
 const MAX_WIDTH = 420
 /** 拖到比这更窄就收起 */
 const SNAP_WIDTH = 150
-export const SPINE_WIDTH = 16
+export const SPINE_WIDTH = 32
 const PEEK_DELAY = 220
 const PEEK_LEAVE = 260
 
@@ -66,13 +66,12 @@ export function usePageSidebar(page: SidebarPage, auto = false): SidebarState {
   useEffect(() => {
     if (!auto && override) setOverride(page, false)
   }, [auto, override, page, setOverride])
-  const latest = useRef(s)
-  latest.current = s
   const save = (patch: { collapsed?: boolean; width?: number }): void => {
-    const cur = latest.current
-    if (!cur) return
-    const prev = cur.sidebars?.[page] ?? { collapsed: cur.sidebarCollapsed ?? false, width: SIDEBAR_WIDTH }
-    update.mutate({ sidebars: { ...cur.sidebars, [page]: { ...prev, ...patch } } })
+    if (!s) return
+    update.mutate((current) => {
+      const prev = current.sidebars?.[page] ?? { collapsed: current.sidebarCollapsed ?? false, width: SIDEBAR_WIDTH }
+      return { sidebars: { [page]: { ...prev, ...patch } } }
+    })
   }
   const autoCollapsed = auto && !override
   const collapsed = userCollapsed || autoCollapsed
@@ -149,41 +148,44 @@ export function PageSidebar({
   const [dragWidth, setDragWidth] = useState<number | null>(null)
   const enter = useRef<number | undefined>(undefined)
   const leave = useRef<number | undefined>(undefined)
-  const panel = useRef<HTMLDivElement>(null)
+  const container = useRef<HTMLDivElement>(null)
+  const panelId = useId()
   const { collapsed } = state
   const width = dragWidth ?? state.width
+  const cancelPeekTimers = useCallback((): void => {
+    window.clearTimeout(enter.current)
+    window.clearTimeout(leave.current)
+  }, [])
+  const closePeek = useCallback((): void => {
+    cancelPeekTimers()
+    setPeeking(false)
+  }, [cancelPeekTimers])
   const toggleRef = useRef(state.toggle)
   toggleRef.current = state.toggle
   useEffect(() => {
     const fn = (): void => {
-      setPeeking(false)
+      closePeek()
       toggleRef.current()
     }
     activeToggle = fn
     return () => {
       if (activeToggle === fn) activeToggle = null
     }
-  }, [])
+  }, [closePeek])
 
   // 展开后不再窥视；离开时清理计时器
   useEffect(() => {
-    if (!collapsed) setPeeking(false)
-  }, [collapsed])
-  useEffect(
-    () => () => {
-      window.clearTimeout(enter.current)
-      window.clearTimeout(leave.current)
-    },
-    []
-  )
+    if (!collapsed) closePeek()
+  }, [collapsed, closePeek])
+  useEffect(() => cancelPeekTimers, [cancelPeekTimers])
   useEffect(() => {
     if (!peeking) return
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') setPeeking(false)
+      if (e.key === 'Escape') closePeek()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [peeking])
+  }, [peeking, closePeek])
 
   const startPeek = (): void => {
     window.clearTimeout(leave.current)
@@ -196,12 +198,13 @@ export function PageSidebar({
     window.clearTimeout(leave.current)
     // 浮层里的菜单、对话框挂在别处：鼠标在它们上面时不收回
     leave.current = window.setTimeout(() => {
+      if (container.current?.matches(':hover')) return
       if (document.querySelector('[data-radix-popper-content-wrapper], [role="dialog"]')) return endPeek()
       setPeeking(false)
     }, PEEK_LEAVE)
   }
   const pin = (): void => {
-    setPeeking(false)
+    closePeek()
     state.toggle()
   }
 
@@ -232,40 +235,70 @@ export function PageSidebar({
   return (
     <SidebarContext.Provider value={{ state, peeking, pin }}>
       <div
+        ref={container}
         className="relative h-full shrink-0 transition-[width] duration-300 ease-[cubic-bezier(0.2,0.9,0.3,1)]"
         style={{ width: collapsed ? SPINE_WIDTH : width, transitionDuration: dragWidth !== null ? '0ms' : undefined }}
         data-collapsed={collapsed}
         data-peeking={peeking}
+        data-page-sidebar=""
         data-testid={`sidebar-${page}`}
+        onMouseLeave={collapsed ? endPeek : undefined}
       >
+        {collapsed && !peeking && (
+          <Tip label={`${t('nav.expandSidebar')} · ${t('nav.pinSidebar')}`} side="right">
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="no-drag absolute top-[18px] left-0.5 z-10"
+              onMouseEnter={cancelPeekTimers}
+              onClick={pin}
+              aria-label={`${t('nav.expandSidebar')} · ${t('nav.pinSidebar')} · ${label}`}
+              aria-expanded={false}
+              aria-controls={panelId}
+              data-testid="sidebar-expand-pin"
+            >
+              <PanelLeftOpen />
+            </Button>
+          </Tip>
+        )}
         {collapsed && (
-          <button
-            className="group absolute inset-y-0 left-0 z-10 flex w-[16px] flex-col items-center gap-2 pt-[60px] text-subtle transition-colors hover:bg-surface-hover/70 hover:text-fg"
+          <Button
+            variant="ghost"
+            size="auto"
+            className="no-drag group absolute inset-x-0 top-14 bottom-0 z-10 flex flex-col items-center justify-start gap-2 pt-2 text-subtle transition-colors hover:bg-surface-hover/70 hover:text-fg"
             onMouseEnter={startPeek}
-            onMouseLeave={endPeek}
             onClick={pin}
             aria-label={`${t('nav.expandSidebar')} · ${label}`}
+            aria-expanded={peeking}
+            aria-controls={panelId}
             data-testid="sidebar-spine"
           >
-            <PanelLeftOpen className="size-3.5 shrink-0 opacity-70 group-hover:opacity-100" />
-            <span className="max-h-[60vh] overflow-hidden text-xs tracking-[0.2em] whitespace-nowrap [writing-mode:vertical-rl]">{label}</span>
-          </button>
+            <span className="max-h-[60vh] overflow-hidden text-xs tracking-[0.2em] whitespace-nowrap [writing-mode:vertical-rl]">
+              {label}
+            </span>
+          </Button>
         )}
         <div
-          ref={panel}
+          id={panelId}
           className={cn(
-            'h-full overflow-hidden',
+            'h-full',
             collapsed &&
-              'absolute inset-y-2 left-0 z-40 rounded-r-xl border border-l-0 border-border bg-[var(--desk)] shadow-float transition-[transform,opacity] duration-200 ease-out',
+              'no-drag absolute inset-y-0 left-0 z-40 py-2 transition-[transform,opacity] duration-200 ease-out [&_.drag]:[-webkit-app-region:no-drag]',
             collapsed && !peeking && 'pointer-events-none -translate-x-[105%] opacity-0'
           )}
           style={{ width }}
           inert={!open}
-          onMouseEnter={collapsed ? startPeek : undefined}
-          onMouseLeave={collapsed ? endPeek : undefined}
+          onMouseEnter={collapsed ? cancelPeekTimers : undefined}
           data-testid="sidebar-panel"
         >
-          <div className={cn('h-full', className)} style={{ width }}>
+          <div
+            className={cn(
+              'h-full overflow-hidden',
+              collapsed && 'rounded-r-xl border border-l-0 border-border bg-[var(--desk)] shadow-float',
+              className
+            )}
+            style={{ width }}
+          >
             {children}
           </div>
         </div>

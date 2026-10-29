@@ -1093,6 +1093,8 @@ const zhCN = {
     defaults: '默认模型与思考强度',
     model: '模型',
     pickModel: '选择模型',
+    searchModels: '搜索模型',
+    noMatchingModels: '没有匹配的已配置模型',
     noModels: '先在设置中添加模型服务',
     effort: '思考强度',
     effortShort: '思考',

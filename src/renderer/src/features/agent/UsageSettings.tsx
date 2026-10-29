@@ -205,7 +205,8 @@ function CurrencySection() {
         {code !== 'USD' && (
           <div className="flex items-center gap-2 text-sm">
             <span className="text-muted">{t('spend.currency.rate')}</span>
-            <span className="flex h-9 items-center rounded-lg border border-border bg-surface px-3 focus-within:border-accent">
+            {/* Match the currency picker's neutral frame, including while editing. */}
+            <span className="flex h-9 items-center rounded-lg border border-border bg-surface px-3">
               <input
                 inputMode="decimal"
                 value={rateText}

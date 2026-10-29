@@ -317,7 +317,7 @@ test('P8 账号删除、目标排除和工具失效仍允许暂停，恢复须�
   }, setup)
   await sql('UPDATE ai_tasks SET tools=? WHERE id=?', [JSON.stringify(['mcp_removed_tool']), t.id])
   await page.keyboard.press('ControlOrMeta+,')
-  await page.getByRole('button', { name: 'AI 任务', exact: true }).click()
+  await page.getByRole('tab', { name: 'AI 任务', exact: true }).click()
   await page.locator(`[data-task-id="${t.id}"]`).getByRole('switch').click()
   await expect.poll(async () => (await page.evaluate(() => window.jiwei.tasks.list())).find((x) => x.id === t.id)?.enabled).toBe(false)
   await expect(

@@ -94,7 +94,7 @@ test('selecting a term and asking to explain records a learning signal immediate
 
   // 「关于我 · 学习情况」
   await page.keyboard.press('ControlOrMeta+,')
-  await page.getByRole('dialog').getByRole('button', { name: '关于我', exact: true }).click()
+  await page.getByRole('dialog').getByRole('tab', { name: '关于我', exact: true }).click()
   await page.getByRole('tab', { name: '学习情况' }).click()
   await expect(page.locator('[data-concept="标准差"]')).toBeVisible()
   if (shots) await page.screenshot({ path: join(shots, '111-progress.png') })

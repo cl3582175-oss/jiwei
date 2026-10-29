@@ -158,10 +158,10 @@ test('navigation history: back and forward', async () => {
 
 test('settings: knowledge bases and profile', async () => {
   await page.keyboard.press('ControlOrMeta+,')
-  await page.getByRole('button', { name: '数据' }).click()
+  await page.getByRole('tab', { name: '数据' }).click()
   await expect(page.getByText('知识库', { exact: true })).toBeVisible()
   await expect(page.getByText('当前', { exact: true })).toBeVisible()
-  await page.getByRole('button', { name: '通用' }).click()
+  await page.getByRole('tab', { name: '通用' }).click()
   await expect(page.getByText('你的名字')).toBeVisible()
   await page.keyboard.press('Escape')
 })

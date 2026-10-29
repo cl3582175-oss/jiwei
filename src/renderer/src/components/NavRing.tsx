@@ -1,3 +1,4 @@
+import { Button } from '@/components/ui/shadcn-button'
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { cn } from '@/lib/utils'
@@ -110,7 +111,7 @@ export function NavRing({
   const joined = Math.abs(top - rect.top) < 1
 
   return createPortal(
-    <div role="menu" aria-label={title} data-testid="nav-ring" className="pointer-events-none fixed inset-0 z-50">
+    <div role="menu" data-ui-overlay="menu" aria-label={title} data-testid="nav-ring" className="pointer-events-none fixed inset-0 z-50">
       <div
         ref={card}
         className={cn(
@@ -130,7 +131,7 @@ export function NavRing({
         {items.map((it, i) => {
           const name = it.hint ? `${it.label}  ${it.hint}` : it.label
           return (
-            <button
+            <Button variant="ghost" size="auto"
               key={it.id}
               ref={(el) => {
                 refs.current[i] = el
@@ -162,7 +163,7 @@ export function NavRing({
               ) : (
                 it.hint && <span className="text-xs text-subtle">{it.hint}</span>
               )}
-            </button>
+            </Button>
           )
         })}
       </div>

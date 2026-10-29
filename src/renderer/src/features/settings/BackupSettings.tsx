@@ -1,25 +1,34 @@
+import { Checkbox } from '@/components/ui/checkbox'
+import { RadioChoices } from '@/features/settings/RadioChoices'
+import { Input } from '@/components/ui/input'
+import { NativeSelect } from '@/components/ui/native-select'
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Archive, FolderOpen, Download, RotateCcw, ShieldCheck } from 'lucide-react'
 import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
 import i18n from 'i18next'
-import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent } from '@/components/ui/primitives'
-import { confirm } from '@/components/ui/confirm'
+import { Button } from '@/components/ui/shadcn-button'
+import { Dialog, DialogContent } from '@/components/ui/shadcn-primitives'
+import { confirm, useConfirmSignal, withActionLock } from '@/components/ui/shadcn-confirm'
 import { api, formatBytes } from '@/lib/utils'
-import type { BackupManifest, BackupPreview } from '@shared/backup'
+import type { BackupManifest, BackupPreview, ExternalBackup } from '@shared/backup'
 import { SafetyProgress, safetyMessage } from './SafetyProgress'
+import { updateSettings } from '@/lib/queries'
+import { useSettingsDraft } from '@/lib/useSettingsDraft'
+import { settingsMessages } from './settingsMessages'
 
 const time = (at: number | null | undefined): string => (at ? new Date(at).toLocaleString() : i18n.t('safety.never'))
 const recordingPrivacy = (manifest: BackupManifest): string => {
   const audio = manifest.files.filter((f) => f.path.startsWith('recordings/') && /\.webm(?:\.enc)?$/.test(f.path))
   if (!audio.length) return i18n.t('safety.preview.noAudio')
   const encrypted = audio.filter((f) => f.path.endsWith('.enc')).length
-  return i18n.t(encrypted === audio.length ? 'safety.preview.allEncrypted' : encrypted ? 'safety.preview.someEncrypted' : 'safety.preview.plain')
+  return i18n.t(
+    encrypted === audio.length ? 'safety.preview.allEncrypted' : encrypted ? 'safety.preview.someEncrypted' : 'safety.preview.plain'
+  )
 }
 export function BackupSettings() {
-  const { t } = useTranslation()
+  const { t, i18n: translation } = useTranslation()
   const qc = useQueryClient(),
     [preview, setPreview] = useState<BackupPreview | null>(null),
     [includeProfile, setIncludeProfile] = useState(true),
@@ -32,11 +41,35 @@ export function BackupSettings() {
     queryFn: () => api.backups.list(),
     refetchInterval: busy ? 1000 : false
   })
+  const signal = useConfirmSignal(preview?.token ?? null)
   const running = busy || status?.progress.state === 'running'
   const refresh = (): void => {
     void qc.invalidateQueries({ queryKey: ['backups'] })
     void qc.invalidateQueries({ queryKey: ['backup-status'] })
   }
+  // Polling status is for display; queued writes must retain earlier confirmed edits.
+  const saveExternal = (patch: Partial<ExternalBackup>) =>
+    updateSettings(qc, (current) => ({
+      backup: {
+        ...current.backup,
+        external: {
+          ...(current.backup?.external ?? status?.external ?? { path: null, frequency: 'weekly', keep: 4 }),
+          ...patch
+        }
+      }
+    }))
+  const keep = useSettingsDraft({
+    key: 'backup.keep',
+    value: String(status?.external.keep ?? 4),
+    validate: (value) =>
+      !/^\d+$/.test(value) || Number(value) < 1 || Number(value) > 100 ? settingsMessages(translation.language).keepInvalid : null,
+    persist: async (value) => {
+      if (!status) throw new Error(t('memory.saveFailed'))
+      await saveExternal({ keep: Number(value) })
+      refresh()
+    },
+    onError: (error) => toast.error(safetyMessage(error))
+  })
   const action = async (fn: () => Promise<unknown>): Promise<void> => {
     setBusy(true)
     try {
@@ -59,40 +92,50 @@ export function BackupSettings() {
     })
   }
   const restore = async (): Promise<void> => {
-    if (!preview) return
-    if (
-      mode === 'replace' &&
-      !(await confirm({
-        title: t('safety.backup.replaceTitle'),
-        description: t('safety.backup.replaceDesc'),
-        danger: true,
-        confirmText: t('safety.backup.replaceOk')
-      }))
+    await withActionLock(
+      `backup:restore:${preview?.token ?? 'none'}`,
+      async () => {
+        if (!preview) return
+        if (
+          mode === 'replace' &&
+          !(await confirm({
+            operationKey: `backup:restore:${preview?.token ?? 'none'}`,
+            signal: signal,
+            title: t('safety.backup.replaceTitle'),
+            description: t('safety.backup.replaceDesc'),
+            danger: true,
+            confirmText: t('safety.backup.replaceOk')
+          }))
+        )
+          return
+        if (
+          restoreProfile &&
+          !preview.profileEmpty &&
+          !(await confirm({
+            operationKey: `backup:restore:${preview?.token ?? 'none'}`,
+            signal: signal,
+            title: t('safety.backup.profileTitle'),
+            description: t('safety.backup.profileDesc'),
+            danger: true,
+            confirmText: t('safety.backup.profileOk')
+          }))
+        )
+          return
+        await action(async () => {
+          const result = await api.backups.restore({
+            token: preview.token,
+            mode,
+            includeProfile: restoreProfile,
+            confirmed: mode === 'replace'
+          })
+          if (result) {
+            setPreview(null)
+            void qc.invalidateQueries()
+          }
+        })
+      },
+      { signal: signal }
     )
-      return
-    if (
-      restoreProfile &&
-      !preview.profileEmpty &&
-      !(await confirm({
-        title: t('safety.backup.profileTitle'),
-        description: t('safety.backup.profileDesc'),
-        danger: true,
-        confirmText: t('safety.backup.profileOk')
-      }))
-    )
-      return
-    await action(async () => {
-      const result = await api.backups.restore({
-        token: preview.token,
-        mode,
-        includeProfile: restoreProfile,
-        confirmed: mode === 'replace'
-      })
-      if (result) {
-        setPreview(null)
-        void qc.invalidateQueries()
-      }
-    })
   }
   return (
     <section className="safety-ui space-y-5 py-5 text-sm" data-testid="backup-settings">
@@ -101,9 +144,7 @@ export function BackupSettings() {
           <ShieldCheck className="size-5 text-accent" />
           {t('safety.backup.title')}
         </h3>
-        <p className="mt-2 leading-relaxed text-muted">
-          {t('safety.backup.desc')}
-        </p>
+        <p className="mt-2 leading-relaxed text-muted">{t('safety.backup.desc')}</p>
       </div>
       {status?.notice && (
         <p className="rounded-lg bg-warning/10 p-3 text-warning" role="status">
@@ -125,11 +166,10 @@ export function BackupSettings() {
         </div>
       </dl>
       <label className="flex items-center gap-2">
-        <input
-          type="checkbox"
+        <Checkbox
           checked={includeProfile}
           disabled={running}
-          onChange={(e) => setIncludeProfile(e.target.checked)}
+          onCheckedChange={(checked) => setIncludeProfile(checked === true)}
           className="size-4 accent-accent"
         />
         {t('safety.backup.includeProfile')}
@@ -139,11 +179,11 @@ export function BackupSettings() {
           <Archive />
           {t('safety.backup.now')}
         </Button>
-        <Button variant="outline" disabled={running} onClick={() => void action(() => api.backups.export(includeProfile))}>
+        <Button variant="secondary" disabled={running} onClick={() => void action(() => api.backups.export(includeProfile))}>
           <Download />
           {t('safety.backup.export')}
         </Button>
-        <Button variant="outline" disabled={running} onClick={() => void select()}>
+        <Button variant="secondary" disabled={running} onClick={() => void select()}>
           <RotateCcw />
           {t('safety.backup.restore')}
         </Button>
@@ -156,16 +196,14 @@ export function BackupSettings() {
       {status?.restoredVault && status.progress.state === 'done' && (
         <div className="rounded-xl border border-accent/30 bg-accent-soft p-4">
           <p>{t('safety.backup.restored', { name: status.restoredVault.name })}</p>
-          <Button variant="outline" className="mt-3" onClick={() => void api.vaults.switch(status.restoredVault!.id)}>
+          <Button variant="secondary" className="mt-3" onClick={() => void api.vaults.switch(status.restoredVault!.id)}>
             {t('safety.backup.switchRestored')}
           </Button>
         </div>
       )}
       <div className="space-y-3 border-t border-border pt-5">
         <h4 className="font-medium">{t('safety.backup.externalTitle')}</h4>
-        <p className="text-xs leading-relaxed text-muted">
-          {t('safety.backup.externalDesc')}
-        </p>
+        <p className="text-xs leading-relaxed text-muted">{t('safety.backup.externalDesc')}</p>
         <p className="break-all text-sm text-muted">{status?.external.path ?? t('safety.backup.externalNone')}</p>
         {status?.externalUnavailable && (
           <p className="text-warning" role="status">
@@ -174,55 +212,54 @@ export function BackupSettings() {
         )}
         <div className="flex flex-wrap items-center gap-2">
           <Button
-            variant="outline"
+            variant="secondary"
             disabled={running}
             onClick={() =>
               void action(async () => {
                 const path = await api.backups.pickExternal()
-                if (path)
-                  await api.settings.set({
-                    backup: { external: { path, frequency: status?.external.frequency ?? 'weekly', keep: status?.external.keep ?? 4 } }
-                  })
+                if (path) await saveExternal({ path })
               })
             }
           >
             {t('safety.backup.pickFolder')}
           </Button>
-          <select
+          <NativeSelect
             aria-label={t('safety.backup.frequency')}
             className="rounded-lg border border-border bg-surface px-3 py-2 text-sm"
             disabled={!status?.external.path || running}
             value={status?.external.frequency ?? 'weekly'}
-            onChange={(e) =>
-              void action(() =>
-                api.settings.set({ backup: { external: { ...status!.external, frequency: e.target.value as 'daily' | 'weekly' } } })
-              )
-            }
+            onChange={(e) => {
+              const frequency = e.currentTarget.value as 'daily' | 'weekly'
+              void action(() => saveExternal({ frequency }))
+            }}
           >
             <option value="daily">{t('safety.backup.daily')}</option>
             <option value="weekly">{t('safety.backup.weekly')}</option>
-          </select>
+          </NativeSelect>
           <label className="flex items-center gap-2 text-xs text-muted">
             {t('safety.backup.keep')}
-            <input
+            <Input
               aria-label={t('safety.backup.keepLabel')}
               type="number"
               min={1}
               max={100}
               className="w-16 rounded-lg border border-border bg-surface px-2 py-2 text-sm text-fg"
-              defaultValue={status?.external.keep ?? 4}
-              key={status?.external.keep}
-              onBlur={(e) => {
-                const keep = Number(e.target.value)
-                if (status && Number.isInteger(keep) && keep >= 1 && keep <= 100)
-                  void action(() => api.settings.set({ backup: { external: { ...status.external, keep } } }))
-              }}
+              value={keep.draft}
+              aria-invalid={!!keep.validationError}
+              aria-describedby={keep.validationError ? 'backup-keep-error' : undefined}
+              onChange={(event) => keep.change(event.target.value)}
+              onBlur={keep.blur}
             />
           </label>
+          {keep.validationError && (
+            <p id="backup-keep-error" role="alert" className="text-xs text-danger">
+              {keep.validationError}
+            </p>
+          )}
           {status?.external.path && (
             <Button
               variant="ghost"
-              onClick={() => void action(() => api.settings.set({ backup: { external: { ...status.external, path: null } } }))}
+              onClick={() => void action(() => saveExternal({ path: null }))}
             >
               {t('safety.backup.disableExternal')}
             </Button>
@@ -240,7 +277,8 @@ export function BackupSettings() {
                 <div>
                   <p>{time(b.createdAt)}</p>
                   <p className="mt-1 text-xs text-muted">
-                    {t(`safety.backup.kinds.${b.kind}`)} · {t(b.format === 'snapshot' ? 'safety.backup.snapshot' : 'safety.backup.database')} · {formatBytes(b.size)}
+                    {t(`safety.backup.kinds.${b.kind}`)} ·{' '}
+                    {t(b.format === 'snapshot' ? 'safety.backup.snapshot' : 'safety.backup.database')} · {formatBytes(b.size)}
                   </p>
                 </div>
                 {b.format === 'snapshot' && (
@@ -253,9 +291,7 @@ export function BackupSettings() {
           </ul>
         )}
       </div>
-      <p className="text-xs leading-relaxed text-muted">
-        {t('safety.backup.archiveNote')}
-      </p>
+      <p className="text-xs leading-relaxed text-muted">{t('safety.backup.archiveNote')}</p>
       <Dialog
         open={!!preview}
         onOpenChange={(open) => {
@@ -280,49 +316,51 @@ export function BackupSettings() {
                   <p>{t('safety.preview.recordings', { count: preview.manifest.recordings })}</p>
                 </div>
                 <p className="mt-3 text-muted">
-                  {formatBytes(preview.manifest.totalSize)} · {t(preview.manifest.includeProfile ? 'safety.preview.withProfile' : 'safety.preview.withoutProfile')} ·{' '}
+                  {formatBytes(preview.manifest.totalSize)} ·{' '}
+                  {t(preview.manifest.includeProfile ? 'safety.preview.withProfile' : 'safety.preview.withoutProfile')} ·{' '}
                   {recordingPrivacy(preview.manifest)}
                 </p>
               </div>
               <fieldset className="space-y-3" disabled={running}>
                 <legend className="mb-3 font-medium">{t('safety.preview.mode')}</legend>
-                <label className="flex gap-3 rounded-xl border border-accent/40 bg-accent-soft p-4">
-                  <input
-                    type="radio"
-                    name="restore-mode"
-                    className="mt-1 size-4 accent-accent"
-                    checked={mode === 'new'}
-                    onChange={() => setMode('new')}
-                  />
-                  <span>
-                    <span className="block font-medium">{t('safety.preview.asNew')}</span>
-                    <span className="mt-1 block text-xs leading-relaxed text-muted">
-                      {t('safety.preview.asNewHint')}
-                    </span>
-                  </span>
-                </label>
-                <label className="flex gap-3 rounded-xl border border-border p-4">
-                  <input
-                    type="radio"
-                    name="restore-mode"
-                    className="mt-1 size-4 accent-accent"
-                    checked={mode === 'replace'}
-                    onChange={() => setMode('replace')}
-                  />
-                  <span>
-                    <span className="block text-danger">{t('safety.preview.replace')}</span>
-                    <span className="mt-1 block text-xs leading-relaxed text-muted">{t('safety.preview.replaceHint')}</span>
-                  </span>
-                </label>
+                <RadioChoices
+                  value={mode}
+                  onChange={setMode}
+                  label={t('safety.preview.mode')}
+                  disabled={running}
+                  className="grid gap-3"
+                  itemClassName={(active) =>
+                    `flex gap-3 rounded-xl border p-4 ${active ? 'border-accent/40 bg-accent-soft' : 'border-border'}`
+                  }
+                  options={[
+                    {
+                      value: 'new',
+                      label: (
+                        <>
+                          <span className="block font-medium">{t('safety.preview.asNew')}</span>
+                          <span className="mt-1 block text-xs leading-relaxed text-muted">{t('safety.preview.asNewHint')}</span>
+                        </>
+                      )
+                    },
+                    {
+                      value: 'replace',
+                      label: (
+                        <>
+                          <span className="block text-danger">{t('safety.preview.replace')}</span>
+                          <span className="mt-1 block text-xs leading-relaxed text-muted">{t('safety.preview.replaceHint')}</span>
+                        </>
+                      )
+                    }
+                  ]}
+                />
               </fieldset>
               {preview.manifest.includeProfile && (
                 <label className="flex items-start gap-3">
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     className="mt-1 size-4 accent-accent"
                     checked={restoreProfile}
                     disabled={running}
-                    onChange={(e) => setRestoreProfile(e.target.checked)}
+                    onCheckedChange={(checked) => setRestoreProfile(checked === true)}
                   />
                   <span>
                     {t('safety.preview.profile')}

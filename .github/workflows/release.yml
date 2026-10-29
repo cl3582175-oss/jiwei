@@ -1,6 +1,6 @@
 name: Release
 
-# 用户审查后手动触发；代码仓库私有，产物仅发布到公开仓库的草稿。
+# 用户审查后手动触发；源码与制品仓库分离，产物先发布到公开制品仓库的草稿。
 on:
   workflow_dispatch:
     inputs:
@@ -53,15 +53,17 @@ jobs:
         env:
           # 渲染进程包很大，macOS 运行器默认约 2 GB 堆内存会在打包时溢出
           NODE_OPTIONS: --max-old-space-size=6144
-      - name: 使用本次工作流版本的预览测试
+      - name: 使用本次工作流版本的发布测试
         shell: bash
         env:
-          PREVIEW_TEST_REVISION: ${{ github.sha }}
+          RELEASE_TEST_REVISION: ${{ github.sha }}
         run: |
-          # 产品源码保持在已审查标签；允许测试步骤修正不同桌面尺寸下的真实导航。
-          git fetch --no-tags --depth=1 origin "$PREVIEW_TEST_REVISION"
-          git show "$PREVIEW_TEST_REVISION:e2e/pdf-preview.spec.ts" > e2e/pdf-preview.spec.ts
-          git diff --exit-code -- . ':(exclude)e2e/pdf-preview.spec.ts'
+          # 产品源码保持在已审查标签；预览测试和打包检查使用触发工作流的版本。
+          # scripts/** 不进入产品包，修正检查脚本不移动已审查的产品标签。
+          git fetch --no-tags --depth=1 origin "$RELEASE_TEST_REVISION"
+          git show "$RELEASE_TEST_REVISION:e2e/pdf-preview.spec.ts" > e2e/pdf-preview.spec.ts
+          git show "$RELEASE_TEST_REVISION:scripts/release-privacy.mjs" > scripts/release-privacy.mjs
+          git diff --exit-code -- . ':(exclude)e2e/pdf-preview.spec.ts' ':(exclude)scripts/release-privacy.mjs'
       - name: 准备预览测试的 Electron 运行时
         run: node -e "require('electron')"
       - name: CCITT 扫描页预览回归（全平台）
@@ -74,6 +76,14 @@ jobs:
             xvfb-run -a npx playwright test --config playwright.scanned-pdf.config.ts e2e/pdf-preview.spec.ts --grep "project preview renders a CCITT mask"
           else
             npx playwright test --config playwright.scanned-pdf.config.ts e2e/pdf-preview.spec.ts --grep "project preview renders a CCITT mask"
+          fi
+      - name: OpenAI 参数兼容与思考档位回归（全平台）
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == 'Linux' ]]; then
+            xvfb-run -a npx playwright test e2e/model-compatibility.spec.ts --workers=1
+          else
+            npx playwright test e2e/model-compatibility.spec.ts --workers=1
           fi
       - name: 输出预览失败的界面与应用日志
         if: failure() && steps.pdf-preview.outcome == 'failure'
@@ -119,6 +129,8 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
           WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+      - name: 检查实际打包内容不含开发资料和凭证
+        run: node scripts/release-privacy.mjs release
       - name: Windows 静默安装和启动烟测
         if: runner.os == 'Windows'
         shell: pwsh

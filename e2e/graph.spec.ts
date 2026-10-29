@@ -84,7 +84,7 @@ test('graph view renders with WebGL; colour modes, search', async () => {
   await expect(page.getByTestId('graph-legend')).toContainText('经济学')
   await page.waitForTimeout(2500)
   if (shots) await page.screenshot({ path: join(shots, '171-graph.png') })
-  await page.getByRole('tab', { name: '按掌握度' }).click()
+  await page.getByRole('radio', { name: '按掌握度' }).click()
   await expect(page.getByTestId('graph-legend')).toContainText('空白')
   await page.getByRole('textbox', { name: '查找笔记' }).fill('需求')
   await page.getByRole('option', { name: '需求曲线' }).click()
@@ -125,9 +125,9 @@ test('v0.14.2 relation types: change a text link to prerequisite in the panel, l
   // 正文链接和手动关系是同一对笔记：图上仍只算一条连线
   await expect(page.getByTestId('graph-count')).toHaveText('6 篇笔记 · 0 份资料 · 5 条连线')
   await expect(panel.getByTestId('graph-relations')).toContainText('学 《A/B 测试》 之前要先懂 《p 值》')
-  await page.getByRole('tab', { name: '关系列表' }).click()
+  await page.getByRole('radio', { name: '关系列表' }).click()
   await expect(page.getByTestId('graph-list')).toContainText('学 《A/B 测试》 之前要先懂 《p 值》')
-  await page.getByRole('tab', { name: '图', exact: true }).click()
+  await page.getByRole('radio', { name: '图', exact: true }).click()
   // 笔记底部的关联面板里也能看到并修改类型
   await panel.getByRole('button', { name: '打开' }).click()
   await expect(page.getByPlaceholder('笔记标题')).toHaveValue('A/B 测试')
